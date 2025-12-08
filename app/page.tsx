@@ -6,13 +6,17 @@ import Starfield from '@/components/Starfield'
 import ShootingStars from '@/components/ShootingStars'
 import Navbar from '@/components/Navbar'
 
-// Dynamic page - chỉ hiển thị khi có server chạy
+// Home page - hỗ trợ cả static và dynamic
 export default function Home() {
   const [isServerRunning, setIsServerRunning] = useState(false);
   const isStaticBuild = process.env.NEXT_PUBLIC_STATIC_BUILD === 'true';
 
   useEffect(() => {
-    if (isStaticBuild) return;
+    if (isStaticBuild) {
+      // Khi build static, không cần check server
+      return;
+    }
+    // Chỉ check server khi không phải static build
     fetch('/api/health')
       .then(() => setIsServerRunning(true))
       .catch(() => setIsServerRunning(false));
@@ -31,9 +35,11 @@ export default function Home() {
           </h1>
           
           <p className="text-xl text-gray-400 mb-8">
-            {isServerRunning 
-              ? '✅ Server đang chạy - Bạn có thể truy cập các tính năng dynamic'
-              : '⚠️ Server chưa chạy - Chạy npm run dev để sử dụng các tính năng'}
+            {isStaticBuild 
+              ? '🌟 Portfolio Website - Xem portfolio tĩnh bên dưới'
+              : isServerRunning 
+                ? '✅ Server đang chạy - Bạn có thể truy cập các tính năng dynamic'
+                : '⚠️ Server chưa chạy - Chạy npm run dev để sử dụng các tính năng'}
           </p>
 
           <div className="grid md:grid-cols-2 gap-6 mt-12">
@@ -75,13 +81,15 @@ export default function Home() {
           </div>
 
           {/* Quick Links */}
-          {isServerRunning && (
+          {(isServerRunning || isStaticBuild) && (
             <div className="mt-12 glass rounded-3xl p-6">
               <h3 className="text-xl font-bold text-white mb-4">Quick Links</h3>
               <div className="flex flex-wrap gap-4 justify-center">
-                <Link href="/habit" className="px-6 py-3 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold hover:scale-105 transition-transform">
-                  Habit - Tarot Research
-                </Link>
+                {isServerRunning && (
+                  <Link href="/habit" className="px-6 py-3 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold hover:scale-105 transition-transform">
+                    Habit - Tarot Research
+                  </Link>
+                )}
                 <Link href="/static" className="px-6 py-3 rounded-full glass text-white font-semibold hover:bg-white/10 transition-colors">
                   Static Portfolio
                 </Link>

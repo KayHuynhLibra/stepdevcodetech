@@ -43,6 +43,15 @@ jobs:
           STATIC_BUILD: 'true'
           NEXT_PUBLIC_STATIC_BUILD: 'true'
       
+      - name: Copy CNAME to out directory
+        run: |
+          if [ -f "CNAME" ]; then
+            cp CNAME out/CNAME
+            echo "CNAME file copied to out directory"
+          else
+            echo "CNAME file not found"
+          fi
+      
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
