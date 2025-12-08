@@ -9,13 +9,14 @@ import Navbar from '@/components/Navbar'
 // Dynamic page - chỉ hiển thị khi có server chạy
 export default function Home() {
   const [isServerRunning, setIsServerRunning] = useState(false);
+  const isStaticBuild = process.env.NEXT_PUBLIC_STATIC_BUILD === 'true';
 
   useEffect(() => {
-    // Kiểm tra xem server có đang chạy không
+    if (isStaticBuild) return;
     fetch('/api/health')
       .then(() => setIsServerRunning(true))
       .catch(() => setIsServerRunning(false));
-  }, []);
+  }, [isStaticBuild]);
 
   return (
     <main className="relative min-h-screen">

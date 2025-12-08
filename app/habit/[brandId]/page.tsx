@@ -143,3 +143,5 @@ export default function BrandDetailPage() {
   );
 }
 
+// Cho static export: không generate đường dẫn nào (chỉ để thỏa yêu cầu Next)
+

@@ -314,3 +314,5 @@ export default function DeckDetailPage() {
   );
 }
 
+// Cho static export: không generate đường dẫn nào (chỉ để thỏa yêu cầu Next)
+
