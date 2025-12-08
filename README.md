@@ -1,6 +1,6 @@
 # StepDevCode.Tech - Portfolio Website
 
-Một trang web portfolio siêu đỉnh với các hiệu ứng animation tuyệt đẹp, được xây dựng bằng Next.js 15 và TypeScript.
+Một trang web portfolio siêu đỉnh với các hiệu ứng animation tuyệt đẹp, được xây dựng bằng Next.js 16 và TypeScript.
 
 🌐 **Live Demo**: [stepdevcode.tech](https://stepdevcode.tech)
 
@@ -29,7 +29,7 @@ npm run dev
 
 ## 🛠️ Công nghệ sử dụng
 
-- **Next.js 15**: React framework với App Router (mới nhất 2025)
+- **Next.js 16**: React framework với App Router và Turbopack (mới nhất 2025)
 - **React 19**: UI library với các tính năng mới
 - **TypeScript**: Type-safe development
 - **Tailwind CSS**: Utility-first CSS framework
