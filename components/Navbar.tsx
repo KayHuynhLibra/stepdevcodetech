@@ -4,10 +4,9 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
 const navItems = [
-  { name: 'Home', href: '#home' },
-  { name: 'About', href: '#about' },
-  { name: 'Projects', href: '#projects' },
-  { name: 'Contact', href: '#contact' },
+  { name: 'Home', href: '/' },
+  { name: 'Static', href: '/static' },
+  { name: 'Habit', href: '/habit' },
 ];
 
 export default function Navbar() {
@@ -59,9 +58,12 @@ export default function Navbar() {
                 key={item.name}
                 href={item.href}
                 onClick={(e) => {
-                  e.preventDefault();
-                  const element = document.querySelector(item.href);
-                  element?.scrollIntoView({ behavior: 'smooth' });
+                  if (item.href.startsWith('#')) {
+                    e.preventDefault();
+                    const element = document.querySelector(item.href);
+                    element?.scrollIntoView({ behavior: 'smooth' });
+                  }
+                  // For route links (/habit), let default behavior handle it
                 }}
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.95 }}

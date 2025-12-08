@@ -35,21 +35,20 @@ npm run dev
 - **Framer Motion**: Animation library cho React
 - **Canvas API**: Để tạo hiệu ứng starfield
 
-## 📁 Cấu trúc dự án
+## 📁 Cấu trúc dự án (2 nhóm chính)
 
 ```
 ├── app/
-│   ├── layout.tsx      # Root layout
-│   ├── page.tsx        # Home page
-│   └── globals.css     # Global styles
-├── components/
-│   ├── Starfield.tsx   # Starfield background component
-│   ├── ShootingStars.tsx # Shooting stars animation
-│   ├── Navbar.tsx      # Navigation bar với glassmorphism
-│   ├── Hero.tsx        # Hero section
-│   ├── About.tsx       # About section
-│   ├── Projects.tsx    # Projects section
-│   └── Contact.tsx     # Contact form
+│   ├── static/                 # Nhóm trang tĩnh (không cần server)
+│   │   └── page.tsx            # Portfolio tĩnh
+│   ├── habit/                  # Nhóm trang động (cần server)
+│   │   ├── page.tsx            # Danh sách hãng
+│   │   └── [brandId]/[deckId]/page.tsx  # Các bộ & lá bài
+│   ├── page.tsx                # Home động (chọn Static vs Dynamic)
+│   ├── layout.tsx
+│   └── globals.css
+├── components/                 # Components dùng chung (tĩnh + động)
+├── docs/                       # Tài liệu (tùy chọn giữ/deploy)
 └── package.json
 ```
 
@@ -78,15 +77,43 @@ Tùy chỉnh tốc độ và hiệu ứng trong:
 
 ## 🚀 Deploy
 
-### Vercel (Recommended)
-1. Push code lên GitHub
-2. Import project vào Vercel
-3. Deploy tự động
+### ✅ Các Platform Deploy (Không bắt buộc Vercel)
 
-### Manual Build
+#### 1. **Netlify** (Khuyến nghị - Dễ nhất)
+- Đăng ký: [netlify.com](https://netlify.com)
+- Connect GitHub → Auto deploy
+- Free tier rộng rãi, custom domain miễn phí
+
+#### 2. **Cloudflare Pages** (Unlimited free)
+- Đăng ký: [pages.cloudflare.com](https://pages.cloudflare.com)
+- Connect GitHub → Auto deploy
+- Unlimited bandwidth, không giới hạn
+
+#### 3. **Render**
+- Đăng ký: [render.com](https://render.com)
+- Free tier có sẵn, auto deploy
+
+#### 4. **Railway**
+- Đăng ký: [railway.app](https://railway.app)
+- $5 credit/tháng free
+
+#### 5. **Vercel** (Nếu muốn)
+- Đăng ký: [vercel.com](https://vercel.com)
+- Hỗ trợ Next.js tốt nhất
+
+📖 **Xem hướng dẫn chi tiết tất cả options**: [DEPLOYMENT_OPTIONS.md](./DEPLOYMENT_OPTIONS.md)
+
+### 💻 Chạy Local (Development)
+
 ```bash
+# Development server
+npm run dev
+# Truy cập: http://localhost:3000
+
+# Production build local
 npm run build
-npm run start
+npm start
+# Truy cập: http://localhost:3000
 ```
 
 ## 📦 Git Setup

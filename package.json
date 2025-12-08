@@ -5,26 +5,28 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:open": "start npm run dev && timeout /t 8 /nobreak >nul && start http://localhost:3000",
     "build": "next build",
+    "build:static": "cross-env STATIC_BUILD=true next build && next export",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
-    "next": "^14.0.4",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "framer-motion": "^10.16.16"
+    "framer-motion": "latest",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest"
   },
   "devDependencies": {
-    "@types/node": "^20.10.6",
-    "@types/react": "^18.2.46",
-    "@types/react-dom": "^18.2.18",
-    "typescript": "^5.3.3",
-    "tailwindcss": "^3.4.0",
-    "postcss": "^8.4.32",
-    "autoprefixer": "^10.4.16",
-    "eslint": "^8.56.0",
-    "eslint-config-next": "^14.0.4"
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "autoprefixer": "^10.4.22",
+    "cross-env": "^10.1.0",
+    "eslint": "latest",
+    "eslint-config-next": "latest",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.18",
+    "typescript": "latest"
   }
 }
-
