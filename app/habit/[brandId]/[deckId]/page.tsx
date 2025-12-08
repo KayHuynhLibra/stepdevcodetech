@@ -87,6 +87,7 @@ const brandNames: Record<string, { name: string; nameVi: string }> = {
   'everyday-witch': { name: 'Everyday Witch', nameVi: 'Everyday Witch Tarot' },
 };
 
+
 export default function DeckDetailPage() {
   const params = useParams();
   const router = useRouter();

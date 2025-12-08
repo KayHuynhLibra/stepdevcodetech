@@ -61,6 +61,7 @@ const brandNames: Record<string, { name: string; nameVi: string }> = {
   'everyday-witch': { name: 'Everyday Witch', nameVi: 'Everyday Witch Tarot' },
 };
 
+
 export default function BrandDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -142,6 +143,4 @@ export default function BrandDetailPage() {
     </main>
   );
 }
-
-// Cho static export: không generate đường dẫn nào (chỉ để thỏa yêu cầu Next)
 

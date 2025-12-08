@@ -7,7 +7,7 @@
     "dev": "next dev",
     "dev:open": "start npm run dev && timeout /t 8 /nobreak >nul && start http://localhost:3000",
     "build": "next build",
-    "build:static": "node -e \"const fs=require('fs');if(fs.existsSync('app/api'))fs.renameSync('app/api','app_api_tmp');if(fs.existsSync('app/habit'))fs.renameSync('app/habit','app_habit_tmp');\" && cross-env STATIC_BUILD=true NEXT_PUBLIC_STATIC_BUILD=true next build && node -e \"const fs=require('fs');const path=require('path');const src=path.join('out','static','index.html');const dest=path.join('out','index.html');if(fs.existsSync(src)){fs.copyFileSync(src,dest);console.log('Copied static index to out/index.html');}\" && node -e \"const fs=require('fs');if(fs.existsSync('app_api_tmp'))fs.renameSync('app_api_tmp','app/api');if(fs.existsSync('app_habit_tmp'))fs.renameSync('app_habit_tmp','app/habit');\"",
+    "build:static": "node -e \"const fs=require('fs');if(fs.existsSync('app/api'))fs.renameSync('app/api','app_api_tmp');\" && cross-env STATIC_BUILD=true NEXT_PUBLIC_STATIC_BUILD=true next build && node -e \"const fs=require('fs');const path=require('path');const src=path.join('out','static','index.html');const dest=path.join('out','index.html');if(fs.existsSync(src)){fs.copyFileSync(src,dest);console.log('Copied static index to out/index.html');}\" && node -e \"const fs=require('fs');if(fs.existsSync('app_api_tmp'))fs.renameSync('app_api_tmp','app/api');\"",
     "start": "next start",
     "lint": "next lint"
   },
