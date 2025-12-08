@@ -37,11 +37,40 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
+      - name: Temporarily move dynamic routes
+        run: |
+          if [ -d "app/api" ]; then
+            mv app/api app_api_tmp
+            echo "Moved app/api to app_api_tmp"
+          fi
+          if [ -d "app/habit" ]; then
+            mv app/habit app_habit_tmp
+            echo "Moved app/habit to app_habit_tmp"
+          fi
+      
       - name: Build static site
-        run: npm run build:static
+        run: npm run build
         env:
           STATIC_BUILD: 'true'
           NEXT_PUBLIC_STATIC_BUILD: 'true'
+      
+      - name: Restore dynamic routes
+        run: |
+          if [ -d "app_api_tmp" ]; then
+            mv app_api_tmp app/api
+            echo "Restored app/api"
+          fi
+          if [ -d "app_habit_tmp" ]; then
+            mv app_habit_tmp app/habit
+            echo "Restored app/habit"
+          fi
+      
+      - name: Copy static index to root
+        run: |
+          if [ -f "out/static/index.html" ]; then
+            cp out/static/index.html out/index.html
+            echo "Copied static/index.html to index.html"
+          fi
       
       - name: Copy CNAME to out directory
         run: |
