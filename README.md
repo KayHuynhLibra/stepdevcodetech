@@ -76,15 +76,40 @@ Tùy chỉnh tốc độ và hiệu ứng trong:
 - `npm run start`: Chạy production server
 - `npm run lint`: Kiểm tra lỗi code
 
-## 🚀 Deploy (gợi ý 2025)
+## 🚀 Deploy
 
-- **Vercel (khuyến nghị cho phần động):** giữ `next.config.js` hiện tại, connect repo, auto deploy.
-- **GitHub Pages / Static host (chỉ phần tĩnh):**
-  ```bash
-  npm run build:static
-  # Deploy thư mục out/ lên Pages hoặc bất kỳ static host
-  ```
-  Chỉ phục vụ trang tĩnh `/static`.
+### GitHub Pages (Tự động với GitHub Actions) ⭐ Khuyến nghị
+
+1. **Cấu hình DNS** (nếu dùng custom domain):
+   - Thêm 4 A records cho `@` (apex domain):
+     - `185.199.108.153`
+     - `185.199.109.153`
+     - `185.199.110.153`
+     - `185.199.111.153`
+   - Thêm CNAME record cho `www` → `stepdevcode.github.io` (thay bằng username của bạn)
+
+2. **Cấu hình GitHub Pages**:
+   - Vào repo → Settings → Pages
+   - Source: Chọn **"GitHub Actions"**
+   - Custom domain: Nhập `stepdevcode.tech` (nếu có)
+   - Bật "Enforce HTTPS"
+
+3. **Workflow tự động**:
+   - File `.github/workflows/pages.yml` đã được cấu hình sẵn
+   - Mỗi khi push lên `main`, workflow sẽ tự động build và deploy
+   - Site sẽ được deploy tại: `https://stepdevcode.github.io/stepdevcodetech` hoặc custom domain của bạn
+
+### Vercel (Khuyến nghị cho phần động)
+
+- Giữ `next.config.js` hiện tại, connect repo, auto deploy
+- Hỗ trợ cả static và dynamic routes
+
+### Deploy thủ công (Static host)
+
+```bash
+npm run build:static
+# Deploy thư mục out/ lên bất kỳ static host
+```
 
 📖 Chi tiết: `docs/STATIC_VS_DYNAMIC.md`, `docs/DEPLOYMENT_OPTIONS.md`
 
