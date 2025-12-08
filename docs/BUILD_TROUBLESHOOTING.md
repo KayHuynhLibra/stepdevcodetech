@@ -17,10 +17,12 @@ Tài liệu này ghi lại toàn bộ quá trình build và deploy dự án lên
 ## 📖 Tổng quan dự án
 
 - **Tên dự án**: StepDevCode.Tech - Portfolio Website
-- **Framework**: Next.js 14 với TypeScript
+- **Framework**: Next.js 16.0.7 với TypeScript 5.7.2
+- **React**: React 19.2.1
 - **Deployment target**: GitHub Pages với custom domain `stepdevcode.tech`
 - **Repository**: `KayHuynhLibra/stepdevcodetech`
 - **Ngày bắt đầu**: 2025-12-08
+- **Version hiện tại**: Next.js 16.0.7 (upgraded từ 14 → 15 → 16)
 
 ---
 
@@ -83,6 +85,42 @@ Tài liệu này ghi lại toàn bộ quá trình build và deploy dự án lên
 **Hành động**: 
 - Thêm bước copy CNAME vào workflow
 - Tách các bước build để dễ debug
+
+### Bước 7: Upgrade Next.js 15
+
+**Hành động**: 
+- Cập nhật Next.js từ 14 lên 15.5.7
+- Cập nhật React lên 19.2.1
+- Cập nhật các dependencies liên quan
+
+**Lỗi gặp phải**:
+- ESLint errors về unescaped entities (`'` trong JSX)
+
+**Cách khắc phục**:
+- Thay `'` bằng `&apos;` trong các components
+- Fix trong: `About.tsx`, `Contact.tsx`, `Hero.tsx`
+
+**Kết quả**:
+- Build thành công với Next.js 15.5.7
+- React 19 hoạt động tốt
+
+### Bước 8: Upgrade Next.js 16
+
+**Hành động**: 
+- Cập nhật Next.js từ 15.5.7 lên 16.0.7
+- Cập nhật `eslint-config-next` lên 16.0.7
+- Test build với Turbopack (mặc định trong Next.js 16)
+
+**Tính năng mới**:
+- Turbopack là bundler mặc định
+- Build time giảm từ ~4.7s xuống ~3.1s
+- TypeScript check nhanh hơn
+- Parallel workers (19 workers)
+
+**Kết quả**:
+- Build thành công với Next.js 16.0.7
+- Turbopack hoạt động tốt
+- Tất cả routes generate đúng
 
 ---
 
@@ -219,6 +257,72 @@ git push origin main
 
 ---
 
+### Lỗi 5: ESLint unescaped entities khi upgrade Next.js 15
+
+**Mô tả lỗi**:
+```
+Error: `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.  
+react/no-unescaped-entities
+
+./components/About.tsx
+41:16  Error: `'` can be escaped
+46:58  Error: `'` can be escaped
+
+./components/Contact.tsx
+49:40  Error: `'` can be escaped
+
+./components/Hero.tsx
+31:18  Error: `'` can be escaped
+45:46  Error: `'` can be escaped
+```
+
+**Nguyên nhân**:
+- Next.js 15 có ESLint rules nghiêm ngặt hơn
+- Không cho phép dấu nháy đơn (`'`) trực tiếp trong JSX text
+- Cần escape các ký tự đặc biệt
+
+**Cách khắc phục**:
+1. Thay tất cả `'` bằng `&apos;` trong JSX:
+   - `I'm` → `I&apos;m`
+   - `Let's` → `Let&apos;s`
+   - `I'm a` → `I&apos;m a`
+
+2. Files đã sửa:
+   - `components/About.tsx`: 2 lỗi
+   - `components/Contact.tsx`: 1 lỗi
+   - `components/Hero.tsx`: 2 lỗi
+
+**Bài học**: 
+- Next.js 15+ có ESLint rules nghiêm ngặt hơn
+- Luôn escape các ký tự đặc biệt trong JSX
+- Có thể disable rule này nếu cần: `"react/no-unescaped-entities": "off"`
+
+---
+
+### Lỗi 6: tsconfig.json jsx setting conflict
+
+**Mô tả lỗi**:
+- Khi upgrade Next.js 16, Next.js tự động thay đổi `jsx` từ `"preserve"` về `"react-jsx"`
+- Có thể gây confusion nếu manual set `"preserve"`
+
+**Nguyên nhân**:
+- Next.js 16 tự động cấu hình `tsconfig.json` khi build
+- Next.js sử dụng React automatic runtime, không cần `"preserve"`
+
+**Cách khắc phục**:
+- Để Next.js tự động cấu hình `tsconfig.json`
+- Hoặc set `jsx: "react-jsx"` trong `tsconfig.json`
+
+**Kết quả**:
+- Next.js tự động set `jsx: "react-jsx"` khi build
+- Không cần manual config
+
+**Bài học**: 
+- Tin tưởng Next.js auto-configuration
+- Không cần manual set `jsx: "preserve"` cho Next.js
+
+---
+
 ## 📁 Các file đã tạo/sửa
 
 ### Files mới tạo:
@@ -254,6 +358,19 @@ git push origin main
 4. **`package-lock.json`**
    - Cập nhật để đồng bộ với `package.json`
    - Fix conflict về `picomatch`
+
+5. **`components/About.tsx`, `components/Contact.tsx`, `components/Hero.tsx`**
+   - Fix ESLint errors về unescaped entities
+   - Thay `'` bằng `&apos;`
+
+6. **`tsconfig.json`**
+   - Cập nhật target lên `ES2022`
+   - Next.js tự động cấu hình `jsx: "react-jsx"`
+
+7. **`package.json`**
+   - Upgrade Next.js: 14 → 15.5.7 → 16.0.7
+   - Upgrade React: 18 → 19.2.1
+   - Cập nhật tất cả dependencies
 
 ### Files đã xóa:
 
@@ -341,6 +458,60 @@ trailingSlash: true
 - Tạm thời di chuyển routes không hỗ trợ khi build
 - Khôi phục lại sau khi build xong
 
+### 6. Upgrade Next.js từ 14 → 15 → 16
+
+**Quá trình upgrade**:
+
+1. **Next.js 14 → 15**:
+   - Cập nhật `next` và `eslint-config-next` lên 15.x
+   - Cập nhật React lên 19.x
+   - Fix ESLint errors về unescaped entities
+   - Test build và fix các breaking changes
+
+2. **Next.js 15 → 16**:
+   - Cập nhật `next` và `eslint-config-next` lên 16.x
+   - Turbopack tự động được enable
+   - Build time cải thiện đáng kể
+   - TypeScript config tự động được cập nhật
+
+**Breaking changes cần lưu ý**:
+- ESLint rules nghiêm ngặt hơn (unescaped entities)
+- TypeScript config tự động được cập nhật
+- Turbopack là bundler mặc định (Next.js 16)
+
+**Best practices khi upgrade**:
+- Đọc changelog trước khi upgrade
+- Test build local trước khi push
+- Fix ESLint errors ngay khi gặp
+- Commit từng bước upgrade để dễ rollback
+
+### 7. Next.js 16 Features
+
+**Tính năng mới trong Next.js 16**:
+
+1. **Turbopack mặc định**:
+   - Build nhanh hơn 2-5 lần
+   - Hot reload nhanh hơn 10 lần
+   - Tự động enable, không cần config
+
+2. **Cache Components**:
+   - Directive `"use cache"` để cache components
+   - Kiểm soát caching tốt hơn
+
+3. **Next.js DevTools MCP**:
+   - Debug thông minh với AI
+   - Thông tin về routing, caching, rendering
+
+4. **Improved Performance**:
+   - Parallel workers (19 workers)
+   - TypeScript check nhanh hơn
+   - Build optimization tốt hơn
+
+**So sánh hiệu suất**:
+- Next.js 15: Build time ~4.7s
+- Next.js 16: Build time ~3.1s (với Turbopack)
+- Cải thiện: ~34% nhanh hơn
+
 ---
 
 ## ✅ Checklist deploy GitHub Pages
@@ -413,11 +584,40 @@ trailingSlash: true
 ## 📝 Ghi chú
 
 - Ngày tạo: 2025-12-08
+- Ngày cập nhật cuối: 2025-12-08
 - Repository: `KayHuynhLibra/stepdevcodetech`
 - Domain: `stepdevcode.tech`
-- Framework: Next.js 14 + TypeScript
+- Framework: Next.js 16.0.7 + React 19.2.1 + TypeScript 5.7.2
+
+## 📊 Timeline Upgrade
+
+- **2025-12-08**: Bắt đầu dự án với Next.js 14
+- **2025-12-08**: Setup GitHub Pages deployment
+- **2025-12-08**: Fix các lỗi DNS và workflow
+- **2025-12-08**: Upgrade Next.js 14 → 15.5.7 + React 19
+- **2025-12-08**: Fix ESLint errors (unescaped entities)
+- **2025-12-08**: Upgrade Next.js 15 → 16.0.7 với Turbopack
+
+## 📦 Dependencies Timeline
+
+### Ban đầu (Next.js 14):
+- next: ^14.0.4
+- react: ^18.2.0
+- react-dom: ^18.2.0
+
+### Sau upgrade (Next.js 16):
+- next: ^16.0.7
+- react: ^19.2.1
+- react-dom: ^19.2.1
+- eslint-config-next: ^16.0.7
+- typescript: ^5.7.2
 
 ---
 
 **Lưu ý**: Tài liệu này được tạo để học hỏi và tham khảo. Các lỗi và cách khắc phục có thể khác nhau tùy vào môi trường và version của tools.
+
+**Version History**:
+- v1.0: Initial documentation với Next.js 14
+- v2.0: Updated với Next.js 15 và React 19
+- v3.0: Updated với Next.js 16 và Turbopack
 
