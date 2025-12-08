@@ -48,8 +48,9 @@ npm run dev
 │   ├── layout.tsx
 │   └── globals.css
 ├── components/                 # Components dùng chung (tĩnh + động)
-├── docs/                       # Tài liệu (tùy chọn giữ/deploy)
-└── package.json
+├── docs/                       # Tài liệu (deploy, static vs dynamic, git)
+├── scripts/                    # Script tiện ích (start.ps1/.bat)
+└── package.json + config       # next.config.js, tailwind, postcss, tsconfig
 ```
 
 ## 🎨 Tùy chỉnh
@@ -75,33 +76,17 @@ Tùy chỉnh tốc độ và hiệu ứng trong:
 - `npm run start`: Chạy production server
 - `npm run lint`: Kiểm tra lỗi code
 
-## 🚀 Deploy
+## 🚀 Deploy (gợi ý 2025)
 
-### ✅ Các Platform Deploy (Không bắt buộc Vercel)
+- **Vercel (khuyến nghị cho phần động):** giữ `next.config.js` hiện tại, connect repo, auto deploy.
+- **GitHub Pages / Static host (chỉ phần tĩnh):**
+  ```bash
+  npm run build:static
+  # Deploy thư mục out/ lên Pages hoặc bất kỳ static host
+  ```
+  Chỉ phục vụ trang tĩnh `/static`.
 
-#### 1. **Netlify** (Khuyến nghị - Dễ nhất)
-- Đăng ký: [netlify.com](https://netlify.com)
-- Connect GitHub → Auto deploy
-- Free tier rộng rãi, custom domain miễn phí
-
-#### 2. **Cloudflare Pages** (Unlimited free)
-- Đăng ký: [pages.cloudflare.com](https://pages.cloudflare.com)
-- Connect GitHub → Auto deploy
-- Unlimited bandwidth, không giới hạn
-
-#### 3. **Render**
-- Đăng ký: [render.com](https://render.com)
-- Free tier có sẵn, auto deploy
-
-#### 4. **Railway**
-- Đăng ký: [railway.app](https://railway.app)
-- $5 credit/tháng free
-
-#### 5. **Vercel** (Nếu muốn)
-- Đăng ký: [vercel.com](https://vercel.com)
-- Hỗ trợ Next.js tốt nhất
-
-📖 **Xem hướng dẫn chi tiết tất cả options**: [DEPLOYMENT_OPTIONS.md](./DEPLOYMENT_OPTIONS.md)
+📖 Chi tiết: `docs/STATIC_VS_DYNAMIC.md`, `docs/DEPLOYMENT_OPTIONS.md`
 
 ### 💻 Chạy Local (Development)
 
