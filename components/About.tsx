@@ -38,12 +38,12 @@ export default function About() {
           >
             <h3 className="text-3xl font-bold mb-6 text-white">Who I Am</h3>
             <p className="text-gray-300 text-lg leading-relaxed mb-4">
-              I'm a passionate developer and designer with a love for creating
+              I&apos;m a passionate developer and designer with a love for creating
               beautiful, functional, and user-friendly digital experiences.
             </p>
             <p className="text-gray-300 text-lg leading-relaxed">
               With expertise in modern web technologies, I bring ideas to life
-              through clean code and thoughtful design. I'm always learning and
+              through clean code and thoughtful design. I&apos;m always learning and
               exploring new technologies to stay at the forefront of web development.
             </p>
           </motion.div>
