@@ -122,6 +122,31 @@ Tài liệu này ghi lại toàn bộ quá trình build và deploy dự án lên
 - Turbopack hoạt động tốt
 - Tất cả routes generate đúng
 
+### Bước 9: Enable Static Generation cho Habit Routes
+
+**Vấn đề**: 
+- Habit routes (`/habit/[brandId]`, `/habit/[brandId]/[deckId]`) là dynamic routes
+- Không thể deploy lên GitHub Pages (static hosting)
+- Workflow đang di chuyển thư mục `habit` ra ngoài khi build static
+
+**Giải pháp**:
+1. Tạo layout files (server components) để generate static params:
+   - `app/habit/[brandId]/layout.tsx` - Generate 5 brand routes
+   - `app/habit/[brandId]/[deckId]/layout.tsx` - Generate 25 deck routes
+
+2. Cập nhật workflow để không di chuyển `habit` folder:
+   - Chỉ di chuyển `app/api` (API routes không hỗ trợ static export)
+   - Giữ lại `app/habit` để generate static pages
+
+3. Cập nhật `build:static` script:
+   - Loại bỏ phần di chuyển `app/habit`
+   - Chỉ di chuyển `app/api`
+
+**Kết quả**:
+- 36 static pages được generate (1 habit + 5 brands + 25 decks + 5 not-found)
+- Tất cả habit routes hoạt động trên GitHub Pages
+- Không cần server để chạy habit pages
+
 ---
 
 ## ❌ Các lỗi đã gặp và cách khắc phục
@@ -323,6 +348,48 @@ react/no-unescaped-entities
 
 ---
 
+### Lỗi 7: Không thể dùng generateStaticParams với 'use client'
+
+**Mô tả lỗi**:
+```
+Next.js can't recognize the exported `generateStaticParams` field in route. 
+App pages cannot use both "use client" and export function "generateStaticParams()".
+```
+
+**Nguyên nhân**:
+- `generateStaticParams()` chỉ có thể dùng trong Server Components
+- Các habit pages đang dùng `'use client'` (Client Components)
+- Không thể export `generateStaticParams` từ Client Component
+
+**Cách khắc phục**:
+1. Tạo layout files riêng (Server Components) để generate static params:
+   ```typescript
+   // app/habit/[brandId]/layout.tsx
+   export function generateStaticParams() {
+     return brandNames.map((brandId) => ({ brandId }));
+   }
+   ```
+
+2. Giữ nguyên Client Components trong page files:
+   - Pages vẫn dùng `'use client'` để có interactivity
+   - Layout files (server components) handle static generation
+
+3. Cập nhật workflow để không di chuyển habit folder:
+   - Chỉ di chuyển `app/api` khi build static
+   - Giữ lại `app/habit` để generate static pages
+
+**Kết quả**:
+- 36 static pages được generate thành công
+- Tất cả habit routes hoạt động trên GitHub Pages
+- Client-side interactivity vẫn hoạt động bình thường
+
+**Bài học**: 
+- `generateStaticParams` chỉ hoạt động trong Server Components
+- Dùng layout files để generate static params cho Client Component pages
+- Tách biệt concerns: Server Components cho generation, Client Components cho interactivity
+
+---
+
 ## 📁 Các file đã tạo/sửa
 
 ### Files mới tạo:
@@ -371,6 +438,19 @@ react/no-unescaped-entities
    - Upgrade Next.js: 14 → 15.5.7 → 16.0.7
    - Upgrade React: 18 → 19.2.1
    - Cập nhật tất cả dependencies
+   - Cập nhật `build:static` script để không di chuyển habit folder
+
+8. **`app/habit/[brandId]/layout.tsx`** (mới)
+   - Server component để generate static params cho brand routes
+   - Generate 5 brand routes: rider-waite, thoth, marseille, wild-unknown, everyday-witch
+
+9. **`app/habit/[brandId]/[deckId]/layout.tsx`** (mới)
+   - Server component để generate static params cho deck routes
+   - Generate 25 deck routes (5 brands × 5 decks)
+
+10. **`.github/workflows/pages.yml`**
+    - Cập nhật để không di chuyển habit folder khi build
+    - Chỉ di chuyển API routes
 
 ### Files đã xóa:
 
@@ -455,8 +535,15 @@ trailingSlash: true
 - Không hỗ trợ server-side rendering
 
 **Workaround cho dynamic routes**:
-- Tạm thời di chuyển routes không hỗ trợ khi build
-- Khôi phục lại sau khi build xong
+- Dùng `generateStaticParams()` trong layout files (Server Components)
+- Generate tất cả possible paths tại build time
+- Tạo static HTML cho mỗi route
+- Không cần di chuyển routes khi build static
+
+**Ví dụ với Habit routes**:
+- Tạo `layout.tsx` files để generate static params
+- Next.js sẽ generate tất cả routes thành static HTML
+- Deploy được lên GitHub Pages như static files
 
 ### 6. Upgrade Next.js từ 14 → 15 → 16
 
@@ -597,6 +684,7 @@ trailingSlash: true
 - **2025-12-08**: Upgrade Next.js 14 → 15.5.7 + React 19
 - **2025-12-08**: Fix ESLint errors (unescaped entities)
 - **2025-12-08**: Upgrade Next.js 15 → 16.0.7 với Turbopack
+- **2025-12-08**: Enable static generation cho habit routes
 
 ## 📦 Dependencies Timeline
 
@@ -620,4 +708,36 @@ trailingSlash: true
 - v1.0: Initial documentation với Next.js 14
 - v2.0: Updated với Next.js 15 và React 19
 - v3.0: Updated với Next.js 16 và Turbopack
+- v4.0: Added habit static generation solution
+
+## 🎯 Habit Routes Static Generation
+
+### Vấn đề ban đầu:
+- Habit routes là dynamic routes (`[brandId]`, `[deckId]`)
+- GitHub Pages chỉ hỗ trợ static files
+- Không thể deploy dynamic routes lên static hosting
+
+### Giải pháp:
+1. **Tạo layout files (Server Components)**:
+   - `app/habit/[brandId]/layout.tsx` - Generate brand routes
+   - `app/habit/[brandId]/[deckId]/layout.tsx` - Generate deck routes
+
+2. **generateStaticParams()**:
+   ```typescript
+   export function generateStaticParams() {
+     return brandNames.map((brandId) => ({ brandId }));
+   }
+   ```
+
+3. **Kết quả**:
+   - 36 static pages được generate
+   - Tất cả routes hoạt động trên GitHub Pages
+   - Client-side interactivity vẫn hoạt động
+
+### Routes được generate:
+- `/habit` (1 route)
+- `/habit/[brandId]` (5 routes: rider-waite, thoth, marseille, wild-unknown, everyday-witch)
+- `/habit/[brandId]/[deckId]` (25 routes: 5 brands × 5 decks)
+
+**Tổng cộng: 36 static pages**
 
