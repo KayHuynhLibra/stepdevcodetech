@@ -55,7 +55,7 @@ export default function Contact() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.8, delay: 0.2 }}
-          className="glass rounded-3xl p-8 md:p-12"
+          className="glass rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 lg:p-12"
         >
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
