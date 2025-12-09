@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 import Starfield from '@/components/Starfield';
 import ShootingStars from '@/components/ShootingStars';
@@ -87,12 +88,13 @@ export default function BrandDetailPage() {
           transition={{ duration: 0.8 }}
           className="mb-12"
         >
-          <button
-            onClick={() => router.push('/habit')}
-            className="mb-6 text-gray-400 hover:text-white transition-colors flex items-center gap-2"
-          >
-            ← Quay lại
-          </button>
+          <Link href="/habit">
+            <button
+              className="mb-6 text-gray-400 hover:text-white transition-colors flex items-center gap-2"
+            >
+              ← Quay lại
+            </button>
+          </Link>
           <h1 className="text-5xl md:text-6xl font-bold mb-4 bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
             {brandInfo.nameVi}
           </h1>

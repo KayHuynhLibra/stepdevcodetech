@@ -3,6 +3,7 @@
 import React from 'react';
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 import Starfield from '@/components/Starfield';
 import ShootingStars from '@/components/ShootingStars';
@@ -131,12 +132,13 @@ export default function DeckDetailPage() {
           transition={{ duration: 0.8 }}
           className="mb-12"
         >
-          <button
-            onClick={() => router.push(`/habit/${brandId}`)}
-            className="mb-6 text-gray-400 hover:text-white transition-colors flex items-center gap-2"
-          >
-            ← Quay lại {brandInfo.nameVi}
-          </button>
+          <Link href={`/habit/${brandId}`}>
+            <button
+              className="mb-6 text-gray-400 hover:text-white transition-colors flex items-center gap-2"
+            >
+              ← Quay lại {brandInfo.nameVi}
+            </button>
+          </Link>
           <div className="flex items-center gap-3 mb-4">
             <h1 className="text-5xl md:text-6xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
               {deckInfo.nameVi}
