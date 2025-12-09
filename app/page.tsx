@@ -28,7 +28,7 @@ export default function Home() {
       <ShootingStars />
       <Navbar />
       
-      <div className="container mx-auto px-6 py-20 pt-32">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20 pt-28 sm:pt-32">
         <div className="text-center max-w-4xl mx-auto">
           <h1 className="text-6xl md:text-7xl font-bold mb-6 bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
             Welcome to StepDevCode.Tech

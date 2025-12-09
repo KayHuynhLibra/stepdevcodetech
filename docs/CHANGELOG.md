@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.1.0] - 2025-12-08
+
+### 🧭 Mobile UX & Navigation
+- Added mobile menu (hamburger) with slide-down links in `Navbar.tsx`
+- Adjusted padding/spacing for mobile across main pages
+- Ensured buttons/links have larger hit areas on small screens
+
+### 🌐 Static Generation for Habit
+- Habit routes now pre-rendered (layouts with `generateStaticParams`)
+- GitHub Pages friendly: brand/deck pages exported as static HTML
+
+### 📚 Docs
+- Added `WEBSITE_STRUCTURE.md` (routing & hierarchy overview)
+- Updated troubleshooting with habit static generation notes
+
+---
+
 ## [1.0.0] - 2024-12-19
 
 ### ✨ Features

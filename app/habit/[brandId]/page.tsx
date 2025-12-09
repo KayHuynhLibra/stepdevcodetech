@@ -79,7 +79,7 @@ export default function BrandDetailPage() {
       <ShootingStars />
       <Navbar />
       
-      <div className="container mx-auto px-6 py-20 pt-32">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20 pt-28 sm:pt-32">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
