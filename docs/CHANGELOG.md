@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.3.0] - 2025-12-08
+
+### 📱 Enhanced Mobile & Desktop Responsiveness
+- ✅ Improved typography scaling: `text-4xl sm:text-5xl md:text-6xl lg:text-7xl` cho headings
+- ✅ Enhanced modal responsiveness: better padding và spacing trên mobile (`p-4 sm:p-6 md:p-8`)
+- ✅ Optimized search bar: responsive text size và padding
+- ✅ Improved card grids: better spacing và min-height cho mobile cards
+- ✅ Enhanced buttons: `min-h-[44px]` cho touch targets (Apple/Google guidelines)
+- ✅ Better form responsiveness: Contact form với responsive padding
+- ✅ Improved Quick Links: `flex-col sm:flex-row` layout
+- ✅ Enhanced back buttons: responsive text size và padding
+- ✅ Better modal close button: larger touch target (`w-10 h-10 sm:w-12 sm:h-12`)
+- ✅ Improved card detail modal: responsive text sizes và spacing
+
+### 🎨 UI/UX Improvements
+- ✅ Consistent responsive breakpoints across all pages
+- ✅ Better spacing system: `px-4 sm:px-6 lg:px-8`
+- ✅ Improved readability trên mobile với text size adjustments
+- ✅ Better visual hierarchy với responsive typography
+
+---
+
 ## [1.2.0] - 2025-12-08
 
 ### 🔧 Navigation Fixes
