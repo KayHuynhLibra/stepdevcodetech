@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.2.0] - 2025-12-08
+
+### 🔧 Navigation Fixes
+- ✅ Fixed Navbar syntax errors (removed extra closing brace)
+- ✅ Converted all `<a>` tags to Next.js `<Link>` components để tránh full page reload
+- ✅ Fixed "Get in Touch" button để link đến `/static#contact` thay vì `#contact`
+- ✅ Improved back buttons trong habit pages với Link wrapper
+- ✅ Fixed active state detection trong Navbar sử dụng `usePathname()` hook
+- ✅ All navigation links now use client-side routing (smooth transitions)
+
+### 📱 Mobile UX Improvements
+- ✅ Added hamburger menu cho mobile devices
+- ✅ Improved responsive spacing và typography
+- ✅ Better touch targets cho mobile buttons
+
+### 🌐 Static Generation for Habit
+- ✅ Habit routes now pre-rendered (layouts with `generateStaticParams`)
+- ✅ GitHub Pages friendly: brand/deck pages exported as static HTML
+- ✅ 36 static pages generated successfully
+
+### 📚 Documentation
+- ✅ Added comprehensive website structure documentation (WEBSITE_STRUCTURE.md)
+- ✅ Updated BUILD_TROUBLESHOOTING.md với habit static generation solution
+
+---
+
 ## [1.1.0] - 2025-12-08
 
 ### 🧭 Mobile UX & Navigation
