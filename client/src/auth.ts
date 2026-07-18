@@ -12,6 +12,7 @@ export interface AuthUser {
   guessesToday: number;
   stakeWeek?: number;
   weekKey?: string;
+  mustChangePassword?: boolean;
 }
 
 const TOKEN_KEY = "tarot_token";
@@ -70,8 +71,25 @@ export function saveSession(token: string, user: AuthUser) {
 }
 
 export function clearSession() {
+  const token = getToken();
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  if (token) {
+    void fetch("/api/auth/logout", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => {});
+  }
+}
+
+export async function changePassword(
+  currentPassword: string,
+  nextPassword: string,
+): Promise<{ ok: boolean; reason?: string }> {
+  return api("/api/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ currentPassword, nextPassword }),
+  });
 }
 
 export async function api<T>(

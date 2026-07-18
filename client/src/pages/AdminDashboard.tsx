@@ -21,6 +21,7 @@ import { uploadAvatarFromFile } from "../uploadAvatar";
 type TabId = "overview" | "users" | "vault" | "traffic" | "coupons" | "inter";
 type ForceCardMode = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8";
 type InterMode =
+  | "all"
   | "auto"
   | "small"
   | "big"
@@ -39,8 +40,19 @@ interface InterProb {
   houseProfit?: number;
 }
 
+interface InterAllRotation {
+  rotation: string[];
+  slotMs: number;
+  slotIndex: number;
+  effectiveMode: string;
+  nextMode: string;
+  remainingMs: number;
+  nextRotateAt: number;
+}
+
 interface InterSnapshot {
   mode: InterMode;
+  effectiveMode?: string;
   updatedAt: number;
   updatedBy: string;
   labels: Record<InterMode, string>;
@@ -51,6 +63,7 @@ interface InterSnapshot {
   authBetsRound?: number[];
   probabilities: InterProb[];
   probabilitiesByMode: Partial<Record<InterMode, InterProb[]>>;
+  all?: InterAllRotation;
 }
 
 interface BetRow {
@@ -235,6 +248,15 @@ export default function AdminDashboard() {
       });
   }, [nav, load, loc.pathname]);
 
+  // ALL mode: refresh countdown / effective slot
+  useEffect(() => {
+    if (tab !== "inter" || data?.inter?.mode !== "all") return;
+    const id = window.setInterval(() => {
+      void load();
+    }, 15_000);
+    return () => window.clearInterval(id);
+  }, [tab, data?.inter?.mode, load]);
+
   const logout = () => {
     clearSession();
     nav("/login", { replace: true });
@@ -348,6 +370,27 @@ export default function AdminDashboard() {
     }
   };
 
+  const interModeLabel = (mode: string) => {
+    switch (mode) {
+      case "all":
+        return "ALL (xoay 5 phút)";
+      case "auto":
+        return "Tự động";
+      case "small":
+        return "Small";
+      case "big":
+        return "Big";
+      case "app":
+        return "App (hút xu mềm)";
+      case "fed":
+        return "Fed (đọc cầu → app lời)";
+      case "user":
+        return "User (nhả xu)";
+      default:
+        return `Ép lá #${mode}`;
+    }
+  };
+
   const setInterMode = async (mode: InterMode) => {
     if (interBusy) return;
     setInterBusy(true);
@@ -356,21 +399,7 @@ export default function AdminDashboard() {
         method: "POST",
         body: JSON.stringify({ mode }),
       });
-      const label =
-        mode === "auto"
-          ? "Tự động"
-          : mode === "small"
-            ? "Small"
-            : mode === "big"
-              ? "Big"
-              : mode === "app"
-                ? "App (hút xu mềm)"
-                : mode === "fed"
-                  ? "Fed (đọc cầu → app lời)"
-                  : mode === "user"
-                    ? "User (nhả xu)"
-                    : `Ép lá #${mode}`;
-      setMsg(`Inter → ${label}`);
+      setMsg(`Inter → ${interModeLabel(mode)}`);
       await load();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Lỗi Inter");
@@ -933,27 +962,68 @@ export default function AdminDashboard() {
               <div>
                 <p className="play-heading text-sm">Inter — thuật toán lá thắng</p>
                 <p className="mt-1 text-[11px] text-[var(--play-muted)]">
-                  App/Fed/User đọc cầu user đăng nhập (không tính khách/bot).
-                  Fed chọn cứng lá app lời tối đa.
+                  ALL xoay các mode tác động mỗi 5 phút. App/Fed/User đọc cầu
+                  user đăng nhập.
                 </p>
               </div>
               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-900 ring-1 ring-amber-300/60">
                 Mode:{" "}
-                {data.inter.mode === "auto"
-                  ? "Tự động"
-                  : data.inter.mode === "small"
-                    ? "Small"
-                    : data.inter.mode === "big"
-                      ? "Big"
-                      : data.inter.mode === "app"
-                        ? "App"
-                        : data.inter.mode === "fed"
-                          ? "Fed"
-                          : data.inter.mode === "user"
-                            ? "User"
-                            : `Ép #${data.inter.mode}`}
+                {data.inter.mode === "all"
+                  ? `ALL→${(data.inter.effectiveMode ?? data.inter.all?.effectiveMode ?? "?").toUpperCase()}`
+                  : interModeLabel(data.inter.mode)}
               </span>
             </div>
+
+            {data.inter.mode === "all" && data.inter.all && (
+              <div className="rounded-xl bg-violet-50 px-3 py-2.5 ring-1 ring-violet-300/70">
+                <p className="text-xs font-bold text-violet-900">
+                  Đang chạy:{" "}
+                  <span className="uppercase">
+                    {data.inter.all.effectiveMode}
+                  </span>
+                  {" · "}
+                  tiếp theo{" "}
+                  <span className="uppercase">{data.inter.all.nextMode}</span>
+                  {" · "}
+                  còn{" "}
+                  {Math.floor(
+                    Math.max(0, data.inter.all.remainingMs) / 60000,
+                  )}
+                  :
+                  {String(
+                    Math.floor(
+                      (Math.max(0, data.inter.all.remainingMs) / 1000) % 60,
+                    ),
+                  ).padStart(2, "0")}
+                </p>
+                <p className="mt-1 text-[10px] text-violet-800/80">
+                  Chuỗi: {data.inter.all.rotation.join(" → ")} (mỗi{" "}
+                  {Math.round(data.inter.all.slotMs / 60000)} phút)
+                </p>
+              </div>
+            )}
+
+            <button
+              type="button"
+              disabled={interBusy}
+              onClick={() => setInterMode("all")}
+              className={`w-full rounded-xl px-3 py-3 text-left transition ring-1 ${
+                data.inter.mode === "all"
+                  ? "bg-violet-700 text-white ring-violet-800 shadow-sm"
+                  : "bg-white/90 text-[var(--play-ink)] ring-violet-300/50 hover:bg-violet-50"
+              } ${interBusy ? "opacity-60" : ""}`}
+            >
+              <p className="text-sm font-bold">ALL — xoay mode 5 phút</p>
+              <p
+                className={`mt-1 text-[10px] leading-snug ${
+                  data.inter.mode === "all"
+                    ? "text-white/80"
+                    : "text-[var(--play-muted)]"
+                }`}
+              >
+                auto → small → big → app → fed → user · lặp lại
+              </p>
+            </button>
 
             <div className="grid gap-2 sm:grid-cols-3">
               {(
@@ -1190,8 +1260,13 @@ export default function AdminDashboard() {
               })}
             </div>
             <p className="text-[10px] text-[var(--play-muted)]">
-              Fed = cứng max lời · App = mềm · User = nhả · Small/Big = nhóm · Ép
-              #1–#8 = 100%.
+              ALL = xoay 5 phút · Fed = cứng max lời · App = mềm · User = nhả ·
+              Small/Big = nhóm · Ép #1–#8 = 100%. Xác suất bên dưới theo mode
+              hiệu dụng hiện tại
+              {data.inter.effectiveMode
+                ? ` (${data.inter.effectiveMode})`
+                : ""}
+              .
             </p>
           </section>
         </>

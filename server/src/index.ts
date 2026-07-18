@@ -22,15 +22,55 @@ import { vaultStore } from "./vaultStore.js";
 const PORT = Number(process.env.PORT) || 3001;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST = join(__dirname, "..", "..", "client", "dist");
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 const app = express();
-app.use(cors({ origin: true }));
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (ALLOWED_ORIGINS.length === 0) return cb(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      return cb(null, false);
+    },
+  }),
+);
 app.use(express.json({ limit: "1.5mb" }));
 app.use("/uploads/avatars", express.static(UPLOADS_DIR));
 
+/** Simple sliding-window rate limit (in-memory). */
+const rateBuckets = new Map<string, { n: number; reset: number }>();
+function rateLimit(
+  key: string,
+  max: number,
+  windowMs: number,
+): boolean {
+  const now = Date.now();
+  let b = rateBuckets.get(key);
+  if (!b || now > b.reset) {
+    b = { n: 0, reset: now + windowMs };
+    rateBuckets.set(key, b);
+  }
+  b.n += 1;
+  return b.n <= max;
+}
+function clientIp(req: express.Request): string {
+  const xf = req.headers["x-forwarded-for"];
+  if (typeof xf === "string" && xf.length) return xf.split(",")[0]!.trim();
+  return req.socket.remoteAddress || "unknown";
+}
+
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  cors: { origin: true },
+  cors: {
+    origin:
+      ALLOWED_ORIGINS.length > 0
+        ? ALLOWED_ORIGINS
+        : true,
+  },
 });
 
 const engine = new GameEngine((state: PublicState, playerId?: string) => {
@@ -103,11 +143,12 @@ function requireMainAdmin(
 function buildInterPayload() {
   const inter = interStore.getSnapshot();
   const authBets = engine.getAuthBets();
+  const effective = inter.effectiveMode;
   return {
     ...inter,
     realBetsRound: engine.getRealBets(),
     authBetsRound: authBets,
-    probabilities: cardProbabilities(inter.mode, authBets),
+    probabilities: cardProbabilities(effective, authBets),
     probabilitiesByMode: {
       auto: cardProbabilities("auto"),
       small: cardProbabilities("small"),
@@ -134,6 +175,10 @@ app.get("/api/leaderboard", (_req, res) => {
 });
 
 app.post("/api/auth/register", (req, res) => {
+  const ip = clientIp(req);
+  if (!rateLimit(`reg:${ip}`, 10, 60_000)) {
+    return res.status(429).json({ ok: false, reason: "Quá nhiều lần thử" });
+  }
   const result = authStore.register(
     String(req.body?.username ?? ""),
     String(req.body?.password ?? ""),
@@ -143,12 +188,34 @@ app.post("/api/auth/register", (req, res) => {
 });
 
 app.post("/api/auth/login", (req, res) => {
+  const ip = clientIp(req);
+  if (!rateLimit(`login:${ip}`, 20, 60_000)) {
+    return res.status(429).json({ ok: false, reason: "Quá nhiều lần thử" });
+  }
   const result = authStore.login(
     String(req.body?.username ?? ""),
     String(req.body?.password ?? ""),
   );
   if (!result.ok) return res.status(401).json(result);
   res.json(result);
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  const token = bearer(req);
+  authStore.revokeToken(token);
+  res.json({ ok: true });
+});
+
+app.post("/api/auth/change-password", (req, res) => {
+  const user = requireAuth(req, res);
+  if (!user) return;
+  const result = authStore.changePassword(
+    user.id,
+    String(req.body?.currentPassword ?? ""),
+    String(req.body?.nextPassword ?? ""),
+  );
+  if (!result.ok) return res.status(400).json(result);
+  res.json({ ok: true });
 });
 
 app.get("/api/auth/me", (req, res) => {
@@ -218,6 +285,9 @@ app.post("/api/avatar/upload", (req, res) => {
 app.post("/api/auth/redeem-coupon", (req, res) => {
   const user = requireAuth(req, res);
   if (!user) return;
+  if (!rateLimit(`redeem:${user.id}`, 15, 60_000)) {
+    return res.status(429).json({ ok: false, reason: "Quá nhiều lần thử" });
+  }
   const code = String(req.body?.code ?? "");
   const preview = couponStore.previewRedeem(code, user.id);
   if (!preview.ok) return res.status(400).json(preview);
@@ -295,6 +365,7 @@ app.get("/api/admin/overview", (req, res) => {
       vaultNetHouse: vault.netHouse,
       houseEdgeXu: vault.totalStakeIn - vault.totalPayoutOut,
       interMode: interStore.getMode(),
+      interEffectiveMode: interStore.getEffectiveMode(),
     };
   }
   res.json(payload);
@@ -315,7 +386,7 @@ app.post("/api/mainadmin/inter", (req, res) => {
   if (!isInterMode(mode)) {
     return res.status(400).json({
       ok: false,
-      reason: "mode phải là auto | small | big | app | user | fed | 1…8",
+      reason: "mode phải là all | auto | small | big | app | user | fed | 1…8",
     });
   }
   interStore.setMode(mode, me.username);
@@ -431,11 +502,17 @@ io.on("connection", (socket) => {
     "join",
     (payload?: { name?: string; token?: string; avatar?: string }) => {
       const authUser = authStore.resolveToken(payload?.token);
-      const session = engine.join(socket.id, {
+      const { session, kickedSocketIds } = engine.join(socket.id, {
         name: payload?.name,
         userId: authUser?.id,
         avatar: payload?.avatar,
       });
+      for (const sid of kickedSocketIds) {
+        io.to(sid).emit("sessionReplaced", {
+          reason: "Đã đăng nhập ở tab khác",
+        });
+        io.sockets.sockets.get(sid)?.disconnect(true);
+      }
       socket.emit("joined", {
         id: session.id,
         name: session.name,
@@ -500,18 +577,36 @@ io.on("connection", (socket) => {
     socket.emit("tarotStarsData", engine.getTarotStars(socket.id));
   });
 
-  socket.on("setBotCount", (payload: { count: number }, ack?: (r: unknown) => void) => {
-    const result = engine.setBotCount(Number(payload?.count));
-    if (!result.ok) {
-      socket.emit("botConfigRejected", { reason: result.reason });
+  socket.on(
+    "setBotCount",
+    (
+      payload: { count: number; token?: string },
+      ack?: (r: unknown) => void,
+    ) => {
+      const user = authStore.resolveToken(payload?.token);
+      if (!user || !isStaff(user)) {
+        const result = { ok: false as const, reason: "Không có quyền" };
+        socket.emit("botConfigRejected", { reason: result.reason });
+        ack?.(result);
+        return;
+      }
+      const result = engine.setBotCount(Number(payload?.count));
+      if (!result.ok) {
+        socket.emit("botConfigRejected", { reason: result.reason });
+        ack?.(result);
+        return;
+      }
+      socket.emit("botConfigUpdated", result);
       ack?.(result);
+    },
+  );
+
+  socket.on("getBotPanel", (payload?: { token?: string }) => {
+    const user = authStore.resolveToken(payload?.token);
+    if (!user || !isStaff(user)) {
+      socket.emit("botPanelData", { error: "Không có quyền" });
       return;
     }
-    socket.emit("botConfigUpdated", result);
-    ack?.(result);
-  });
-
-  socket.on("getBotPanel", () => {
     socket.emit("botPanelData", engine.getBotPanel());
   });
 

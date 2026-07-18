@@ -9,6 +9,7 @@
     "demo": "concurrently -n server,client -c magenta,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w client",
     "start": "npm run start -w server",
+    "migrate:scale10": "node server/scripts/migrate-scale-div10.mjs",
     "install:all": "npm install"
   },
   "workspaces": [

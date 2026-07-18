@@ -119,10 +119,10 @@ export function policyWeights(
   }
 
   if (mode === "app") {
-    // Mềm hơn fed nhưng lệch mạnh về lá trả ít
-    return liab.map((L) => 1 / Math.pow(1 + L / 500, 3.5));
+    // Scale tiền ÷10: chia nhỏ hơn để vẫn lệch rõ
+    return liab.map((L) => 1 / Math.pow(1 + L / 50, 3.5));
   }
-  return liab.map((L) => Math.pow(1 + L / 500, 3.5));
+  return liab.map((L) => Math.pow(1 + L / 50, 3.5));
 }
 
 function resolveWeights(mode: InterMode, realBets?: number[]): number[] {

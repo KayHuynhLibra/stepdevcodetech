@@ -92,6 +92,8 @@ export class GameEngine {
   private history: RoundResult[] = [];
 
   private players = new Map<string, PlayerSession>();
+  /** User disconnect giữa revealing/payout — vẫn nhận thưởng */
+  private orphans = new Map<string, PlayerSession>();
   private realBets = new Array(8).fill(0) as number[];
   private realBettors = new Array(8).fill(0) as number[];
   private botBets = new Array(8).fill(0) as number[];
@@ -236,40 +238,92 @@ export class GameEngine {
   join(
     socketId: string,
     opts?: { name?: string; userId?: string; avatar?: string },
-  ): PlayerSession {
+  ): { session: PlayerSession; kickedSocketIds: string[] } {
     const existing = this.players.get(socketId);
-    if (existing) return existing;
+    if (existing) return { session: existing, kickedSocketIds: [] };
 
     const linked = opts?.userId ? authStore.getById(opts.userId) : undefined;
-    const session: PlayerSession = {
-      id: socketId,
-      userId: linked?.id,
-      name: (
-        linked?.username ||
-        opts?.name?.trim() ||
-        `Khach${Math.floor(Math.random() * 9000) + 1000}`
-      ).slice(0, 20),
-      avatar:
-        normalizeAvatar(linked?.avatar) ||
-        normalizeAvatar(opts?.avatar) ||
-        DEFAULT_AVATAR,
-      balance: linked?.balance ?? STARTING_BALANCE,
-      bets: new Map(),
-      guessesToday: linked?.guessesToday ?? 0,
-      winToday: linked?.winToday ?? 0,
-      dayKey: todayKey(),
-      stakeWeek: linked?.stakeWeek ?? 0,
-      weekKey: linked?.weekKey ?? weekKey(),
-    };
+    const kickedSocketIds: string[] = [];
+    let carried: PlayerSession | undefined;
+
+    // Một session / userId — kick tab cũ (leave → orphan nếu đang mid-round)
+    if (linked) {
+      for (const [sid, s] of this.players) {
+        if (s.userId === linked.id && sid !== socketId) {
+          kickedSocketIds.push(sid);
+          this.leave(sid, { replaced: true });
+        }
+      }
+      for (const [oid, o] of this.orphans) {
+        if (o.userId === linked.id) {
+          this.orphans.delete(oid);
+          carried = o;
+          break;
+        }
+      }
+    }
+
+    const session: PlayerSession = carried
+      ? {
+          ...carried,
+          id: socketId,
+          name: (
+            linked?.username ||
+            carried.name ||
+            opts?.name?.trim() ||
+            `Khach${Math.floor(Math.random() * 9000) + 1000}`
+          ).slice(0, 20),
+          avatar:
+            normalizeAvatar(linked?.avatar) ||
+            normalizeAvatar(carried.avatar) ||
+            normalizeAvatar(opts?.avatar) ||
+            DEFAULT_AVATAR,
+          bets: new Map(carried.bets),
+        }
+      : {
+          id: socketId,
+          userId: linked?.id,
+          name: (
+            linked?.username ||
+            opts?.name?.trim() ||
+            `Khach${Math.floor(Math.random() * 9000) + 1000}`
+          ).slice(0, 20),
+          avatar:
+            normalizeAvatar(linked?.avatar) ||
+            normalizeAvatar(opts?.avatar) ||
+            DEFAULT_AVATAR,
+          balance: linked?.balance ?? STARTING_BALANCE,
+          bets: new Map(),
+          guessesToday: linked?.guessesToday ?? 0,
+          winToday: linked?.winToday ?? 0,
+          dayKey: todayKey(),
+          stakeWeek: linked?.stakeWeek ?? 0,
+          weekKey: linked?.weekKey ?? weekKey(),
+        };
     this.ensureWeek(session);
     this.players.set(socketId, session);
     this.emitToAll();
-    return session;
+    return { session, kickedSocketIds };
   }
 
-  leave(socketId: string) {
+  /**
+   * Rời bàn:
+   * - betting + có cược → hoàn xu + hoàn vault + trừ realBets
+   * - revealing/payout + có cược → giữ orphan để nhận thưởng
+   */
+  leave(socketId: string, opts?: { replaced?: boolean }) {
     const session = this.players.get(socketId);
-    if (session?.userId) {
+    if (!session) return;
+
+    const hasBets = [...session.bets.values()].some((v) => v > 0);
+
+    if (hasBets && this.phase === "betting") {
+      this.refundSessionBets(session);
+    } else if (hasBets && this.phase !== "betting") {
+      this.orphans.set(session.id, session);
+    }
+
+    if (session.userId) {
       authStore.syncPlayStats(
         session.userId,
         session.balance,
@@ -279,8 +333,33 @@ export class GameEngine {
       );
     }
     this.players.delete(socketId);
-    this.scaleBots();
-    this.emitToAll();
+    if (!opts?.replaced) {
+      this.scaleBots();
+      this.emitToAll();
+    }
+  }
+
+  private refundSessionBets(session: PlayerSession) {
+    let refunded = 0;
+    for (const [cardId, amount] of session.bets.entries()) {
+      if (amount <= 0) continue;
+      const idx = cardId - 1;
+      session.balance += amount;
+      refunded += amount;
+      this.realBets[idx] = Math.max(0, this.realBets[idx]! - amount);
+      this.realBettors[idx] = Math.max(0, this.realBettors[idx]! - 1);
+      session.stakeWeek = Math.max(0, session.stakeWeek - amount);
+      if (session.guessesToday > 0) session.guessesToday -= 1;
+    }
+    session.bets.clear();
+    if (refunded > 0 && session.userId) {
+      vaultStore.recordStakeRefund(refunded, session.name, session.userId);
+    }
+    if (refunded > 0) {
+      console.log(
+        `[game] Refund ${refunded} xu → ${session.name} (leave betting)`,
+      );
+    }
   }
 
   /** Admin chỉnh xu auth → đồng bộ session đang online (trả socket ids đã cập nhật). */
@@ -367,13 +446,25 @@ export class GameEngine {
    */
   getAuthBets(): number[] {
     const bets = new Array(8).fill(0) as number[];
-    for (const p of this.players.values()) {
-      if (!p.userId) continue;
+    const add = (p: PlayerSession) => {
+      if (!p.userId) return;
       for (const [cardId, amt] of p.bets.entries()) {
         if (amt > 0) bets[cardId - 1]! += amt;
       }
-    }
+    };
+    for (const p of this.players.values()) add(p);
+    for (const p of this.orphans.values()) add(p);
     return bets;
+  }
+
+  private emptyBotPanel(): BotPanelState {
+    return {
+      targetCount: this.targetBotCount,
+      activeCount: this.activeBots.length,
+      bots: [],
+      logs: [],
+      botBetsTotal: new Array(8).fill(0),
+    };
   }
 
   /** Lưu lượng bàn hiện tại (mainadmin). */
@@ -652,7 +743,8 @@ export class GameEngine {
       roundTopWinners: this.getRoundTopWinners(playerId),
       tarotStars: this.getTarotStars(playerId),
       vipPool: Math.round(this.vipPool),
-      botPanel: this.getBotPanel(),
+      // Không lộ bot panel cho client thường — staff lấy qua socket getBotPanel
+      botPanel: this.emptyBotPanel(),
     };
 
     if (playerId) {
@@ -784,6 +876,7 @@ export class GameEngine {
 
   private tick() {
     const now = Date.now();
+    interStore.tickRotation();
 
     if (now - this.lastBotScaleAt > 30_000) {
       this.scaleBots();
@@ -823,7 +916,8 @@ export class GameEngine {
     if (this.phase === "betting") {
       this.phase = "revealing";
       this.phaseEndsAt = Date.now() + PHASE_MS.revealing;
-      const interMode = interStore.getMode();
+      const storedMode = interStore.getMode();
+      const interMode = interStore.getEffectiveMode();
       const authBets = this.getAuthBets();
       const policyBets = isPolicyMode(interMode) ? authBets : this.realBets;
       this.winningCard = pickWinningCard(interMode, policyBets);
@@ -832,6 +926,8 @@ export class GameEngine {
       const expectedHouse = profits[winIdx] ?? 0;
       const authStake = authBets.reduce((a, b) => a + b, 0);
       this.snapshotRoundTopWinners();
+      const modeLabel =
+        storedMode === "all" ? `ALL→${interMode}` : interMode;
       this.pushLog({
         botId: "system",
         botName: "System",
@@ -839,15 +935,15 @@ export class GameEngine {
         amount: 0,
         action: "round_reset",
         message:
-          `Khóa cược — lá thắng #${this.winningCard} (Inter: ${interMode}` +
+          `Khóa cược — lá thắng #${this.winningCard} (Inter: ${modeLabel}` +
           (isPolicyMode(interMode)
             ? ` · authStake ${authStake} · appProfit ~${Math.round(expectedHouse)}`
             : "") +
           `)`,
       });
-      if (isPolicyMode(interMode)) {
+      if (isPolicyMode(interMode) || storedMode === "all") {
         console.log(
-          `[inter:${interMode}] win=#${this.winningCard} authBets=[${authBets.join(",")}] profits=[${profits.map((p) => Math.round(p)).join(",")}] → house~${Math.round(expectedHouse)}`,
+          `[inter:${modeLabel}] win=#${this.winningCard} authBets=[${authBets.join(",")}] profits=[${profits.map((p) => Math.round(p)).join(",")}] → house~${Math.round(expectedHouse)}`,
         );
       }
       this.emitToAll();
@@ -925,36 +1021,45 @@ export class GameEngine {
 
     const winners: typeof this.lastRoundWinners = [];
 
-    for (const player of this.players.values()) {
+    const payHuman = (player: PlayerSession) => {
       this.ensureDay(player);
-      const stake = player.bets.get(this.winningCard) ?? 0;
-      if (stake > 0) {
-        const payout = stake * card.multiplier;
-        const profit = payout - stake;
-        player.balance += payout;
-        player.winToday += profit;
+      const stake = player.bets.get(this.winningCard!) ?? 0;
+      if (stake <= 0) return;
+      const payout = stake * card!.multiplier;
+      const profit = payout - stake;
+      player.balance += payout;
+      player.winToday += profit;
 
-        const chosenCards: { cardId: number; amount: number }[] = [];
-        for (const [cardId, amount] of player.bets.entries()) {
-          if (amount > 0) chosenCards.push({ cardId, amount });
-        }
-        chosenCards.sort((a, b) => a.cardId - b.cardId);
-
-        winners.push({
-          playerId: player.id,
-          name: player.name,
-          profit,
-          payout,
-          stake,
-          winningCardId: this.winningCard,
-          round: this.roundNumber,
-          chosenCards,
-        });
-        if (player.userId) {
-          vaultStore.recordPayoutOut(payout, player.name, player.userId);
-        }
+      const chosenCards: { cardId: number; amount: number }[] = [];
+      for (const [cardId, amount] of player.bets.entries()) {
+        if (amount > 0) chosenCards.push({ cardId, amount });
       }
-    }
+      chosenCards.sort((a, b) => a.cardId - b.cardId);
+
+      winners.push({
+        playerId: player.id,
+        name: player.name,
+        profit,
+        payout,
+        stake,
+        winningCardId: this.winningCard!,
+        round: this.roundNumber,
+        chosenCards,
+      });
+      if (player.userId) {
+        vaultStore.recordPayoutOut(payout, player.name, player.userId);
+        authStore.syncPlayStats(
+          player.userId,
+          player.balance,
+          player.winToday,
+          player.guessesToday,
+          player.stakeWeek,
+        );
+      }
+    };
+
+    for (const player of this.players.values()) payHuman(player);
+    for (const player of this.orphans.values()) payHuman(player);
 
     for (const bot of this.activeBots) {
       this.ensureBotDay(bot);
@@ -988,8 +1093,8 @@ export class GameEngine {
     this.lastRoundWinners = winners.slice(0, 3);
 
     const betRows: Parameters<typeof betStore.recordRoundBets>[0] = [];
-    for (const player of this.players.values()) {
-      if (!player.userId) continue;
+    const recordBets = (player: PlayerSession) => {
+      if (!player.userId) return;
       for (const [cardId, amount] of player.bets.entries()) {
         if (amount <= 0) continue;
         const isWin = cardId === this.winningCard;
@@ -1003,10 +1108,12 @@ export class GameEngine {
           result: isWin ? "win" : "lose",
           payout,
           profit: isWin ? payout - amount : -amount,
-          winningCardId: this.winningCard,
+          winningCardId: this.winningCard!,
         });
       }
-    }
+    };
+    for (const player of this.players.values()) recordBets(player);
+    for (const player of this.orphans.values()) recordBets(player);
     if (betRows.length > 0) {
       betStore.recordRoundBets(betRows);
     }
@@ -1025,6 +1132,7 @@ export class GameEngine {
     this.botBets = new Array(8).fill(0);
     this.botBettors = new Array(8).fill(0);
     this.botRoundBets.clear();
+    this.orphans.clear();
     for (const p of this.players.values()) {
       p.bets.clear();
     }

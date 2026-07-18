@@ -35,32 +35,46 @@ const PATH = join(DATA_DIR, "coupons.json");
 const TMP = join(DATA_DIR, "coupons.json.tmp");
 const REDEEM_CAP = 500;
 
-const SEED: CouponDef[] = [
-  {
-    code: "SangNhung",
-    amount: 100_000,
-    secret: true,
-    label: "Nạp cố định 100.000 xu",
-    enabled: true,
-    oncePerUser: true,
-  },
-  {
-    code: "TEPTHEMSOFIA",
-    amount: 200_000,
-    secret: true,
-    label: "Nạp 200.000 xu — dùng nhiều lần",
-    enabled: true,
-    oncePerUser: false,
-  },
-  {
-    code: "TrueVibe",
-    amount: 50_000,
-    secret: true,
-    label: "Nạp 50.000 xu — không giới hạn",
-    enabled: true,
-    oncePerUser: false,
-  },
-];
+const IS_PROD = process.env.NODE_ENV === "production";
+
+function buildSeedCoupons(): CouponDef[] {
+  const seeds: CouponDef[] = [];
+  // Dev: seed cố định. Prod: chỉ thêm khi có env (không hardcode mã public).
+  const tvCode =
+    process.env.SEED_COUPON_TRUEVIBE?.trim() ||
+    (IS_PROD ? "" : "TrueVibe");
+  if (tvCode) {
+    seeds.push({
+      code: tvCode,
+      amount: Number(process.env.SEED_COUPON_TRUEVIBE_AMOUNT) || 50_000,
+      secret: true,
+      label: "Nạp xu — không giới hạn",
+      enabled: true,
+      oncePerUser: false,
+    });
+  }
+  if (!IS_PROD) {
+    seeds.push(
+      {
+        code: "SangNhung",
+        amount: 100_000,
+        secret: true,
+        label: "Nạp cố định 100.000 xu",
+        enabled: true,
+        oncePerUser: true,
+      },
+      {
+        code: "TEPTHEMSOFIA",
+        amount: 200_000,
+        secret: true,
+        label: "Nạp 200.000 xu — dùng nhiều lần",
+        enabled: true,
+        oncePerUser: false,
+      },
+    );
+  }
+  return seeds;
+}
 
 export class CouponStore {
   private coupons: CouponDef[] = [];
@@ -105,20 +119,11 @@ export class CouponStore {
   }
 
   private ensureSeed() {
-    for (const seed of SEED) {
+    // Chỉ thêm mã seed lần đầu — không ghi đè cấu hình admin đã chỉnh
+    for (const seed of buildSeedCoupons()) {
       const key = seed.code.toLowerCase();
       const idx = this.coupons.findIndex((c) => c.code.toLowerCase() === key);
-      if (idx < 0) {
-        this.coupons.push({ ...seed });
-        continue;
-      }
-      // Đồng bộ mệnh giá / oncePerUser từ seed (không ghi đè enabled nếu admin đã tắt)
-      const cur = this.coupons[idx]!;
-      cur.amount = seed.amount;
-      cur.oncePerUser = seed.oncePerUser;
-      cur.secret = seed.secret;
-      cur.label = seed.label;
-      if (cur.enabled === undefined) cur.enabled = seed.enabled;
+      if (idx < 0) this.coupons.push({ ...seed });
     }
   }
 

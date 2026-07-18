@@ -5,6 +5,7 @@ import { randomBytes } from "crypto";
 
 export type VaultLedgerType =
   | "stake_in"
+  | "stake_refund"
   | "payout_out"
   | "mint"
   | "burn"
@@ -148,12 +149,29 @@ export class VaultStore {
     });
   }
 
-  /** Trả thưởng user thật → trừ kho */
+  /** Hoàn cược (disconnect lúc betting) — trừ lại stake_in. */
+  recordStakeRefund(amount: number, username: string, userId: string) {
+    const amt = Math.floor(amount);
+    if (amt <= 0) return;
+    this.balance -= amt;
+    this.totalStakeIn = Math.max(0, this.totalStakeIn - amt);
+    this.push("stake_refund", -amt, "system", `Hoàn cược (thoát bàn)`, {
+      userId,
+      username,
+    });
+  }
+
+  /** Trả thưởng user thật → trừ kho (cho phép âm — nợ nhà cái). */
   recordPayoutOut(amount: number, username: string, userId: string) {
     const amt = Math.floor(amount);
     if (amt <= 0) return;
     this.balance -= amt;
     this.totalPayoutOut += amt;
+    if (this.balance < 0) {
+      console.warn(
+        `[vault] Kho âm ${this.balance} sau trả ${amt} cho ${username}`,
+      );
+    }
     this.push("payout_out", -amt, "system", `Trả thưởng từ kho`, {
       userId,
       username,

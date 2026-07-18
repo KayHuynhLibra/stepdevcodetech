@@ -27,6 +27,8 @@ export interface UserRecord {
   stakeWeek: number;
   weekKey: string;
   createdAt: number;
+  /** Bắt đổi mật khẩu (seed mainadmin lần đầu) */
+  mustChangePassword?: boolean;
 }
 
 export interface PublicUser {
@@ -40,6 +42,7 @@ export interface PublicUser {
   guessesToday: number;
   stakeWeek: number;
   weekKey: string;
+  mustChangePassword?: boolean;
 }
 
 interface UsersFile {
@@ -52,6 +55,13 @@ const DATA_DIR = join(__dirname, "..", "data");
 const USERS_PATH = join(DATA_DIR, "users.json");
 const USERS_TMP = join(DATA_DIR, "users.json.tmp");
 const SAVE_DEBOUNCE_MS = 300;
+const TOKEN_TTL_MS = Number(process.env.TOKEN_TTL_MS) || 7 * 24 * 60 * 60 * 1000;
+const IS_PROD = process.env.NODE_ENV === "production";
+
+interface TokenEntry {
+  userId: string;
+  exp: number;
+}
 
 function todayKey(d = new Date()): string {
   return d.toISOString().slice(0, 10);
@@ -91,6 +101,7 @@ function toPublic(u: UserRecord): PublicUser {
     guessesToday: u.guessesToday,
     stakeWeek: u.stakeWeek,
     weekKey: u.weekKey,
+    mustChangePassword: !!u.mustChangePassword,
   };
 }
 
@@ -132,14 +143,25 @@ export class AuthStore {
   private users = new Map<string, UserRecord>(); // username lower -> user
   private byId = new Map<string, UserRecord>();
   private byCode = new Map<string, UserRecord>(); // code upper -> user
-  private tokens = new Map<string, string>(); // token -> userId
+  private tokens = new Map<string, TokenEntry>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.loadFromDisk();
     this.ensureUserCodes();
     this.ensureSeedAccounts();
+    this.ensureMainAdminMustChangePassword();
     this.saveNow();
+  }
+
+  /** Mainadmin seed / chưa đổi MK → bắt đổi lần đầu. */
+  private ensureMainAdminMustChangePassword() {
+    for (const u of this.byId.values()) {
+      if (u.role !== "mainadmin") continue;
+      if (u.mustChangePassword === undefined) {
+        u.mustChangePassword = true;
+      }
+    }
   }
 
   private allocateCode(): string {
@@ -204,14 +226,41 @@ export class AuthStore {
   }
 
   private ensureSeedAccounts() {
-    if (!this.users.has("mainadmin")) {
-      this.seed("mainadmin", "mainadmin123", "mainadmin");
-    }
-    if (!this.users.has("admin")) {
-      this.seed("admin", "admin123", "admin");
-    }
-    if (!this.users.has("demo")) {
-      this.seed("demo", "demo123", "user");
+    const seeds: { user: string; env: string; fallback: string; role: UserRole }[] =
+      [
+        {
+          user: "mainadmin",
+          env: "SEED_MAINADMIN_PASSWORD",
+          fallback: "mainadmin123",
+          role: "mainadmin",
+        },
+        {
+          user: "admin",
+          env: "SEED_ADMIN_PASSWORD",
+          fallback: "admin123",
+          role: "admin",
+        },
+        {
+          user: "demo",
+          env: "SEED_DEMO_PASSWORD",
+          fallback: "demo123",
+          role: "user",
+        },
+      ];
+    for (const s of seeds) {
+      if (this.users.has(s.user)) continue;
+      const fromEnv = process.env[s.env]?.trim();
+      const password = fromEnv || (IS_PROD ? "" : s.fallback);
+      if (!password) {
+        console.warn(
+          `[auth] Skip seed ${s.user}: set ${s.env} in production`,
+        );
+        continue;
+      }
+      this.seed(s.user, password, s.role);
+      if (IS_PROD && fromEnv) {
+        console.log(`[auth] Seeded ${s.user} from ${s.env}`);
+      }
     }
   }
 
@@ -233,6 +282,7 @@ export class AuthStore {
       stakeWeek: 0,
       weekKey: weekKey(),
       createdAt: Date.now(),
+      mustChangePassword: role === "mainadmin",
     };
     this.indexUser(user);
   }
@@ -271,8 +321,8 @@ export class AuthStore {
     if (!/^[a-zA-Z0-9_]+$/.test(name)) {
       return { ok: false, reason: "Chỉ chữ, số, gạch dưới" };
     }
-    if (password.length < 4) {
-      return { ok: false, reason: "Mật khẩu tối thiểu 4 ký tự" };
+    if (password.length < 6) {
+      return { ok: false, reason: "Mật khẩu tối thiểu 6 ký tự" };
     }
     if (this.users.has(name.toLowerCase())) {
       return { ok: false, reason: "Username đã tồn tại" };
@@ -320,17 +370,57 @@ export class AuthStore {
 
   private issueToken(userId: string): string {
     const token = randomBytes(24).toString("hex");
-    this.tokens.set(token, userId);
+    this.tokens.set(token, {
+      userId,
+      exp: Date.now() + TOKEN_TTL_MS,
+    });
     return token;
   }
 
   resolveToken(token?: string | null): PublicUser | null {
     if (!token) return null;
-    const userId = this.tokens.get(token);
-    if (!userId) return null;
-    const user = this.byId.get(userId);
+    const entry = this.tokens.get(token);
+    if (!entry) return null;
+    if (Date.now() > entry.exp) {
+      this.tokens.delete(token);
+      return null;
+    }
+    const user = this.byId.get(entry.userId);
     if (!user) return null;
     return toPublic(user);
+  }
+
+  revokeToken(token?: string | null): boolean {
+    if (!token) return false;
+    return this.tokens.delete(token);
+  }
+
+  /** Đổi mật khẩu (user đã login). */
+  changePassword(
+    userId: string,
+    currentPassword: string,
+    nextPassword: string,
+  ): { ok: true } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    if (nextPassword.length < 6) {
+      return { ok: false, reason: "Mật khẩu mới tối thiểu 6 ký tự" };
+    }
+    const hash = hashPassword(currentPassword, user.salt);
+    const a = Buffer.from(hash, "hex");
+    const b = Buffer.from(user.passwordHash, "hex");
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      return { ok: false, reason: "Mật khẩu hiện tại sai" };
+    }
+    user.salt = randomBytes(16).toString("hex");
+    user.passwordHash = hashPassword(nextPassword, user.salt);
+    user.mustChangePassword = false;
+    this.scheduleSave();
+    // Thu hồi mọi token của user
+    for (const [tok, entry] of this.tokens) {
+      if (entry.userId === userId) this.tokens.delete(tok);
+    }
+    return { ok: true };
   }
 
   getById(id: string): UserRecord | undefined {

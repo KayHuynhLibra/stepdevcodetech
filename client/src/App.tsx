@@ -24,6 +24,7 @@ function RequireAuth({
   const token = getToken();
   const user = getStoredUser();
   if (!token || !user) return <Navigate to="/login" replace />;
+  if (user.mustChangePassword) return <Navigate to="/login" replace />;
 
   if (role === "mainadmin" && user.role !== "mainadmin") {
     return <Navigate to={homePath(user)} replace />;
@@ -54,6 +55,9 @@ function RequireOwnCode({
   const user = getStoredUser();
 
   if (!token || !user) {
+    return <Navigate to="/login" replace />;
+  }
+  if (user.mustChangePassword) {
     return <Navigate to="/login" replace />;
   }
 

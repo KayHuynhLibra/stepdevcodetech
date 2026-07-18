@@ -11,53 +11,55 @@ npm run demo
 
 - Client: http://localhost:5173  
 - Server: http://localhost:3001  
-- Seed accounts: `admin` / `admin123`, `demo` / `demo123`
+- Dev seed accounts (not created in production without env): `mainadmin` / `mainadmin123`, `admin` / `admin123`, `demo` / `demo123`
+
+Static assets live only under `client/public/` (Vite). Do not add a root `public/` folder.
 
 ## Production (Railway)
 
 This app runs as **one Node service**: Express serves `/api`, Socket.io, and the built client from `client/dist`.
 
-### 1. Deploy from GitHub
+### Environment variables
 
-1. Open [Railway](https://railway.app) → **New Project** → **Deploy from GitHub repo**
-2. Select `KayHuynhLibra/stepdevcodetech`
-3. Railway uses [`railway.toml`](railway.toml):
-   - Build: `npm ci && npm run build`
-   - Start: `npm start`
-4. Confirm the service listens on `PORT` (Railway sets this automatically)
+| Variable | Purpose |
+|----------|---------|
+| `SEED_MAINADMIN_PASSWORD` | Create `mainadmin` on first boot (required in prod if account missing) |
+| `SEED_ADMIN_PASSWORD` | Create `admin` |
+| `SEED_DEMO_PASSWORD` | Create `demo` |
+| `SEED_COUPON_TRUEVIBE` | Optional coupon code to seed (prod has no hardcoded coupon codes) |
+| `SEED_COUPON_TRUEVIBE_AMOUNT` | Amount for that coupon (default 50000) |
+| `TOKEN_TTL_MS` | Auth token lifetime (default 7 days) |
+| `ALLOWED_ORIGINS` | Comma-separated CORS origins (empty = reflect request origin / same-origin deploy) |
 
-### 2. Persist user data
+Mainadmin is prompted to **change password on first login**.
 
-`server/data/` is gitignored. Auth seeds `admin` / `demo` on first boot if `users.json` is missing.
+### Persist user data
 
-To keep balances across redeploys:
+Mount a volume at `/app/server/data`.
 
-1. Railway service → **Volumes** → add a volume
-2. Mount path: `/app/server/data` (adjust if Railway’s app root differs; it should be the repo root)
+### Scale migrate (÷10) — one-shot
 
-### 3. Custom domain `stepdevcode.tech`
+If Railway volume still has pre-scale balances:
 
-1. Service → **Settings** → **Networking** → **Custom Domain**
-2. Add `stepdevcode.tech` (and `www.stepdevcode.tech` if needed)
-3. Copy the DNS records Railway shows (usually a CNAME)
+```bash
+# Railway shell / one-off
+npm run migrate:scale10
+# or: node server/scripts/migrate-scale-div10.mjs
+```
 
-At your DNS provider (currently pointed at **GitHub Pages**):
+Writes marker `server/data/migrate-scale-div10.done`. Use `--force` only if you intentionally re-scale.
 
-1. **Remove** GitHub Pages A records for `@`:
-   - `185.199.108.153`
-   - `185.199.109.153`
-   - `185.199.110.153`
-   - `185.199.111.153`
-2. **Remove** the old `www` CNAME to `*.github.io` if present
-3. **Add** the records Railway provides for the custom domain
-4. Wait for DNS + Railway TLS to become active
+### Custom domain `stepdevcode.tech`
 
-Optional: in the GitHub repo → **Settings** → **Pages**, disable Pages so the old portfolio is no longer published on `*.github.io`.
+Railway custom domain should already be attached. At your DNS host (Orderbox / registrar):
 
-### 4. Verify
+1. **Remove** GitHub Pages A records for `@` (`185.199.108.153` … `185.199.111.153`) and any `www` → `*.github.io` CNAME.
+2. **Add** Railway records (check dashboard → Domains):
+   - CNAME/ALIAS for `@` / `www` → `jvqxrffr.up.railway.app` (or the target Railway shows)
+   - TXT `_railway-verify` with the value Railway shows (run `railway domain` / check Domains UI)
+3. Wait for DNS + TLS. Verify: `https://stepdevcode.tech/health` → `{"ok":true,...}`
 
-- `https://stepdevcode.tech/health` → `{"ok":true,...}`
-- Open the site, log in, place a bet (Socket.io same-origin)
+Optional: disable GitHub Pages on the repo so the old portfolio is not published.
 
 ## Scripts
 
@@ -66,3 +68,4 @@ Optional: in the GitHub repo → **Settings** → **Pages**, disable Pages so th
 | `npm run demo` | Dev: server + Vite client |
 | `npm run build` | Build client to `client/dist` |
 | `npm start` | Production server (serves API + `client/dist`) |
+| `npm run migrate:scale10` | One-shot ÷10 money migrate on `server/data` |
