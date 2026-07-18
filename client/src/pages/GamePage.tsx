@@ -814,7 +814,7 @@ export default function GamePage() {
               ? ({ card, amount: s.amount, pending: true } satisfies Row)
               : null;
           })
-          .filter((x): x is Row => !!x);
+          .filter((x): x is Exclude<typeof x, null> => x != null);
       }
       const liveIds = new Set(live.map((r) => r.card.id));
       const pending = autoBet.slots
@@ -825,7 +825,7 @@ export default function GamePage() {
             ? ({ card, amount: s.amount, pending: true } satisfies Row)
             : null;
         })
-        .filter((x): x is Row => !!x);
+        .filter((x): x is Exclude<typeof x, null> => x != null);
       return [...live, ...pending].slice(0, 5);
     }
 
