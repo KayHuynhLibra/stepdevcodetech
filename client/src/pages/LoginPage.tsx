@@ -190,7 +190,7 @@ export default function LoginPage() {
 
         <aside className="login-dedication mx-auto mt-4 max-w-[16rem]">
           <p className="login-dedication-text">
-            Chúc bé Sofia chọt đỡ ghiền
+            Chúc Bé Sofia và các bạn chọt đỡ ghiền
           </p>
         </aside>
       </div>
