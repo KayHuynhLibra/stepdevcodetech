@@ -18,7 +18,8 @@ import { getToken, getStoredUser } from "../auth";
 import { Link } from "react-router-dom";
 
 const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_URL ?? "http://localhost:3001";
+  import.meta.env.VITE_SOCKET_URL ??
+  (import.meta.env.DEV ? "http://localhost:3001" : undefined);
 
 function useServerCountdown(phaseEndsAt: number, serverTime: number) {
   const offsetRef = useRef(0);

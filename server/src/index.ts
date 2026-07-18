@@ -1,12 +1,17 @@
 import cors from "cors";
 import express from "express";
+import { existsSync } from "fs";
 import { createServer } from "http";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 import { Server } from "socket.io";
 import { authStore } from "./auth.js";
 import { CARDS, GameEngine } from "./game.js";
 import type { PublicState } from "./types.js";
 
 const PORT = Number(process.env.PORT) || 3001;
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const CLIENT_DIST = join(__dirname, "..", "..", "client", "dist");
 
 const app = express();
 app.use(cors({ origin: true }));
@@ -210,9 +215,19 @@ io.on("connection", (socket) => {
   });
 });
 
+if (existsSync(CLIENT_DIST)) {
+  app.use(express.static(CLIENT_DIST));
+  app.get("*", (_req, res) => {
+    res.sendFile(join(CLIENT_DIST, "index.html"));
+  });
+}
+
 engine.start();
 
 httpServer.listen(PORT, () => {
   console.log(`[server] Tarot demo listening on http://localhost:${PORT}`);
   console.log(`[server] Seed: admin/admin123 · demo/demo123`);
+  if (existsSync(CLIENT_DIST)) {
+    console.log(`[server] Serving client from ${CLIENT_DIST}`);
+  }
 });
