@@ -11,6 +11,9 @@ import { STARTING_BALANCE, weekKey } from "./types.js";
 
 export type UserRole = "user" | "admin" | "mainadmin";
 
+/** Đủ số ván lifetime → VIP tự động */
+export const VIP_ROUNDS_REQUIRED = 10_000;
+
 export interface UserRecord {
   id: string;
   /** Mã user công khai, duy nhất (vd U7K2M9AB) — dùng trong URL */
@@ -29,7 +32,20 @@ export interface UserRecord {
   createdAt: number;
   /** Bắt đổi mật khẩu (seed mainadmin lần đầu) */
   mustChangePassword?: boolean;
+  /**
+   * Điều khiển kết quả riêng (admin):
+   * normal = theo Inter phòng · win = ưu tiên thắng · lose = ưu tiên thua
+   */
+  outcomeMode?: UserOutcomeMode;
+  /** Số ván đã chơi (lifetime — có đặt cược khi settle) */
+  roundsPlayed?: number;
+  /** Admin cấp VIP thủ công */
+  vipGranted?: boolean;
+  /** Legacy — migrate sang vipGranted khi load */
+  isVip?: boolean;
 }
+
+export type UserOutcomeMode = "normal" | "win" | "lose";
 
 export interface PublicUser {
   id: string;
@@ -43,6 +59,11 @@ export interface PublicUser {
   stakeWeek: number;
   weekKey: string;
   mustChangePassword?: boolean;
+  outcomeMode: UserOutcomeMode;
+  roundsPlayed: number;
+  vipGranted: boolean;
+  /** vipGranted || roundsPlayed >= VIP_ROUNDS_REQUIRED */
+  isVip: boolean;
 }
 
 interface UsersFile {
@@ -50,10 +71,17 @@ interface UsersFile {
   users: UserRecord[];
 }
 
+interface TokensFile {
+  version: 1;
+  tokens: { token: string; userId: string; exp: number }[];
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, "..", "data");
 const USERS_PATH = join(DATA_DIR, "users.json");
 const USERS_TMP = join(DATA_DIR, "users.json.tmp");
+const TOKENS_PATH = join(DATA_DIR, "tokens.json");
+const TOKENS_TMP = join(DATA_DIR, "tokens.json.tmp");
 const SAVE_DEBOUNCE_MS = 300;
 const TOKEN_TTL_MS = Number(process.env.TOKEN_TTL_MS) || 7 * 24 * 60 * 60 * 1000;
 const IS_PROD = process.env.NODE_ENV === "production";
@@ -85,11 +113,26 @@ function ensureDay(u: UserRecord) {
   }
   if (typeof u.stakeWeek !== "number") u.stakeWeek = 0;
   if (typeof u.weekKey !== "string") u.weekKey = wk;
+  if (typeof u.roundsPlayed !== "number" || !Number.isFinite(u.roundsPlayed)) {
+    u.roundsPlayed = 0;
+  }
+  // Legacy isVip → vipGranted (một lần)
+  if (u.isVip && !u.vipGranted) {
+    u.vipGranted = true;
+  }
+  if (u.isVip) delete u.isVip;
+}
+
+function computeIsVip(u: UserRecord): boolean {
+  const rounds = Math.max(0, Math.floor(u.roundsPlayed ?? 0));
+  return !!u.vipGranted || rounds >= VIP_ROUNDS_REQUIRED;
 }
 
 function toPublic(u: UserRecord): PublicUser {
   ensureDay(u);
   u.avatar = normalizeAvatar(u.avatar);
+  const roundsPlayed = Math.max(0, Math.floor(u.roundsPlayed ?? 0));
+  const vipGranted = !!u.vipGranted;
   return {
     id: u.id,
     code: u.code,
@@ -102,18 +145,25 @@ function toPublic(u: UserRecord): PublicUser {
     stakeWeek: u.stakeWeek,
     weekKey: u.weekKey,
     mustChangePassword: !!u.mustChangePassword,
+    outcomeMode: normalizeOutcomeMode(u.outcomeMode),
+    roundsPlayed,
+    vipGranted,
+    isVip: computeIsVip(u),
   };
 }
 
-/** Mã user 8 ký tự (A-Z0-9), tránh nhầm I/O/0/1. */
+export function isUserOutcomeMode(v: unknown): v is UserOutcomeMode {
+  return v === "normal" || v === "win" || v === "lose";
+}
+
+function normalizeOutcomeMode(v: unknown): UserOutcomeMode {
+  return isUserOutcomeMode(v) ? v : "normal";
+}
+
+/** Mã ID 5 số (10000–99999). */
 function makeUserCode(): string {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let out = "U";
-  const bytes = randomBytes(7);
-  for (let i = 0; i < 7; i++) {
-    out += alphabet[bytes[i]! % alphabet.length];
-  }
-  return out;
+  const n = 10000 + (randomBytes(2).readUInt16BE(0) % 90000);
+  return String(n);
 }
 
 function isStaffRole(role: UserRole): boolean {
@@ -145,9 +195,11 @@ export class AuthStore {
   private byCode = new Map<string, UserRecord>(); // code upper -> user
   private tokens = new Map<string, TokenEntry>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private tokenSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.loadFromDisk();
+    this.loadTokensFromDisk();
     this.ensureUserCodes();
     this.ensureSeedAccounts();
     this.ensureMainAdminMustChangePassword();
@@ -165,11 +217,16 @@ export class AuthStore {
   }
 
   private allocateCode(): string {
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 80; i++) {
       const code = makeUserCode();
       if (!this.byCode.has(code)) return code;
     }
-    return `U${randomBytes(6).toString("hex").toUpperCase()}`;
+    // fallback tuần tự từ 10000
+    for (let n = 10000; n <= 99999; n++) {
+      const code = String(n);
+      if (!this.byCode.has(code)) return code;
+    }
+    return String(10000 + (Date.now() % 90000));
   }
 
   private indexUser(u: UserRecord) {
@@ -178,13 +235,12 @@ export class AuthStore {
     this.byCode.set(u.code.toUpperCase(), u);
   }
 
-  /** Gán mã cho user cũ chưa có code. */
+  /** Gán / migrate mã ID 5 số cho mọi user. */
   private ensureUserCodes() {
     this.byCode.clear();
     let changed = false;
     for (const u of this.byId.values()) {
-      if (typeof u.code === "string" && /^U[A-Z0-9]{7,}$/i.test(u.code)) {
-        u.code = u.code.toUpperCase();
+      if (typeof u.code === "string" && /^\d{5}$/.test(u.code)) {
         this.byCode.set(u.code, u);
         continue;
       }
@@ -192,7 +248,9 @@ export class AuthStore {
       this.byCode.set(u.code, u);
       changed = true;
     }
-    if (changed) console.log(`[auth] Assigned user codes to ${this.byId.size} accounts`);
+    if (changed) {
+      console.log(`[auth] Migrated/assigned 5-digit IDs for users`);
+    }
   }
 
   private loadFromDisk() {
@@ -217,6 +275,14 @@ export class AuthStore {
         if (typeof (u as UserRecord).weekKey !== "string") {
           (u as UserRecord).weekKey = weekKey();
         }
+        const rec = u as UserRecord;
+        if (typeof rec.roundsPlayed !== "number" || !Number.isFinite(rec.roundsPlayed)) {
+          rec.roundsPlayed = 0;
+        }
+        if (rec.isVip && !rec.vipGranted) {
+          rec.vipGranted = true;
+        }
+        if (rec.isVip) delete rec.isVip;
         this.indexUser(u);
       }
       console.log(`[auth] Loaded ${this.byId.size} users from disk`);
@@ -282,6 +348,7 @@ export class AuthStore {
       stakeWeek: 0,
       weekKey: weekKey(),
       createdAt: Date.now(),
+      roundsPlayed: 0,
       mustChangePassword: role === "mainadmin",
     };
     this.indexUser(user);
@@ -293,6 +360,54 @@ export class AuthStore {
       this.saveTimer = null;
       this.saveNow();
     }, SAVE_DEBOUNCE_MS);
+  }
+
+  private scheduleTokenSave() {
+    if (this.tokenSaveTimer) clearTimeout(this.tokenSaveTimer);
+    this.tokenSaveTimer = setTimeout(() => {
+      this.tokenSaveTimer = null;
+      this.saveTokensNow();
+    }, SAVE_DEBOUNCE_MS);
+  }
+
+  private loadTokensFromDisk() {
+    try {
+      if (!existsSync(TOKENS_PATH)) return;
+      const parsed = JSON.parse(readFileSync(TOKENS_PATH, "utf8")) as TokensFile;
+      if (parsed?.version !== 1 || !Array.isArray(parsed.tokens)) return;
+      const now = Date.now();
+      let n = 0;
+      for (const t of parsed.tokens) {
+        if (!t?.token || !t.userId || typeof t.exp !== "number") continue;
+        if (t.exp <= now) continue;
+        if (!this.byId.has(t.userId)) continue;
+        this.tokens.set(t.token, { userId: t.userId, exp: t.exp });
+        n += 1;
+      }
+      console.log(`[auth] Loaded ${n} session tokens from disk`);
+    } catch (err) {
+      console.warn("[auth] Failed to load tokens.json:", err);
+    }
+  }
+
+  private saveTokensNow() {
+    try {
+      if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+      const now = Date.now();
+      const tokens: TokensFile["tokens"] = [];
+      for (const [token, entry] of this.tokens) {
+        if (entry.exp <= now) {
+          this.tokens.delete(token);
+          continue;
+        }
+        tokens.push({ token, userId: entry.userId, exp: entry.exp });
+      }
+      const payload: TokensFile = { version: 1, tokens };
+      writeFileSync(TOKENS_TMP, JSON.stringify(payload, null, 2), "utf8");
+      renameSync(TOKENS_TMP, TOKENS_PATH);
+    } catch (err) {
+      console.warn("[auth] Failed to save tokens.json:", err);
+    }
   }
 
   /** Flush immediately (boot / tests). */
@@ -345,6 +460,7 @@ export class AuthStore {
       stakeWeek: 0,
       weekKey: weekKey(),
       createdAt: Date.now(),
+      roundsPlayed: 0,
     };
     this.indexUser(user);
     this.scheduleSave();
@@ -374,6 +490,7 @@ export class AuthStore {
       userId,
       exp: Date.now() + TOKEN_TTL_MS,
     });
+    this.scheduleTokenSave();
     return token;
   }
 
@@ -383,6 +500,7 @@ export class AuthStore {
     if (!entry) return null;
     if (Date.now() > entry.exp) {
       this.tokens.delete(token);
+      this.scheduleTokenSave();
       return null;
     }
     const user = this.byId.get(entry.userId);
@@ -392,7 +510,61 @@ export class AuthStore {
 
   revokeToken(token?: string | null): boolean {
     if (!token) return false;
-    return this.tokens.delete(token);
+    const ok = this.tokens.delete(token);
+    if (ok) this.scheduleTokenSave();
+    return ok;
+  }
+
+  setOutcomeMode(
+    userId: string,
+    mode: UserOutcomeMode,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    if (!isUserOutcomeMode(mode)) {
+      return { ok: false, reason: "Mode không hợp lệ (normal|win|lose)" };
+    }
+    user.outcomeMode = mode;
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  getOutcomeMode(userId: string): UserOutcomeMode {
+    const user = this.byId.get(userId);
+    return normalizeOutcomeMode(user?.outcomeMode);
+  }
+
+  setVip(
+    userId: string,
+    isVip: boolean,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    user.vipGranted = !!isVip;
+    if (user.isVip) delete user.isVip;
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  isVipUser(userId: string): boolean {
+    const user = this.byId.get(userId);
+    if (!user) return false;
+    return computeIsVip(user);
+  }
+
+  /** +1 ván lifetime khi user có đặt cược và round settle. */
+  recordRoundPlayed(userId: string): PublicUser | null {
+    const user = this.byId.get(userId);
+    if (!user) return null;
+    ensureDay(user);
+    user.roundsPlayed = Math.max(0, Math.floor(user.roundsPlayed ?? 0)) + 1;
+    this.scheduleSave();
+    return toPublic(user);
+  }
+
+  getRoundsPlayed(userId: string): number {
+    const user = this.byId.get(userId);
+    return Math.max(0, Math.floor(user?.roundsPlayed ?? 0));
   }
 
   /** Đổi mật khẩu (user đã login). */
@@ -420,6 +592,7 @@ export class AuthStore {
     for (const [tok, entry] of this.tokens) {
       if (entry.userId === userId) this.tokens.delete(tok);
     }
+    this.scheduleTokenSave();
     return { ok: true };
   }
 

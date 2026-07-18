@@ -153,6 +153,92 @@ export function pickWinningCard(
   return CARDS[CARDS.length - 1]!.id;
 }
 
+export type UserRoundBias = {
+  /** Stake theo 8 lá (index 0 = lá 1) */
+  bets: number[];
+  mode: "win" | "lose";
+};
+
+/**
+ * Ưu tiên mode win/lose từng user (admin) trước Inter phòng.
+ * win → chọn lá user đó đã cược; lose → tránh lá họ cược.
+ */
+export function pickWinningCardWithUserBias(
+  mode: InterMode,
+  policyBets: number[],
+  biases: UserRoundBias[],
+): number {
+  const winBiases = biases.filter(
+    (b) => b.mode === "win" && b.bets.some((x) => x > 0),
+  );
+  const loseBiases = biases.filter(
+    (b) => b.mode === "lose" && b.bets.some((x) => x > 0),
+  );
+
+  if (winBiases.length > 0) {
+    const winStake = new Array(CARDS.length).fill(0) as number[];
+    const loseLiab = new Array(CARDS.length).fill(0) as number[];
+    for (const b of winBiases) {
+      for (let i = 0; i < CARDS.length; i++) {
+        winStake[i]! += b.bets[i] ?? 0;
+      }
+    }
+    for (const b of loseBiases) {
+      for (let i = 0; i < CARDS.length; i++) {
+        const amt = b.bets[i] ?? 0;
+        if (amt > 0) loseLiab[i]! += amt * CARDS[i]!.multiplier;
+      }
+    }
+    let best = -1;
+    let bestScore = -Infinity;
+    for (let i = 0; i < CARDS.length; i++) {
+      if (winStake[i]! <= 0) continue;
+      const score = winStake[i]! * 1e9 - loseLiab[i]!;
+      if (score > bestScore) {
+        bestScore = score;
+        best = i;
+      }
+    }
+    if (best >= 0) return CARDS[best]!.id;
+  }
+
+  if (loseBiases.length > 0) {
+    const loseStake = new Array(CARDS.length).fill(0) as number[];
+    for (const b of loseBiases) {
+      for (let i = 0; i < CARDS.length; i++) {
+        loseStake[i]! += b.bets[i] ?? 0;
+      }
+    }
+    const base = resolveWeights(mode, policyBets);
+    const safeWeights = base.map((w, i) => (loseStake[i]! <= 0 ? w : 0));
+    const safeTotal = safeWeights.reduce((a, b) => a + b, 0);
+    if (safeTotal > 0) {
+      let roll = Math.random() * safeTotal;
+      for (let i = 0; i < CARDS.length; i++) {
+        roll -= safeWeights[i]!;
+        if (roll <= 0) return CARDS[i]!.id;
+      }
+      return CARDS[0]!.id;
+    }
+    let best = 0;
+    let bestLiab = Infinity;
+    for (let i = 0; i < CARDS.length; i++) {
+      let liab = 0;
+      for (const b of loseBiases) {
+        const amt = b.bets[i] ?? 0;
+        if (amt > 0) liab += amt * CARDS[i]!.multiplier;
+      }
+      if (liab < bestLiab) {
+        bestLiab = liab;
+        best = i;
+      }
+    }
+    return CARDS[best]!.id;
+  }
+
+  return pickWinningCard(mode, policyBets);
+}
+
 /** Xác suất hiển thị cho tab Inter (%). Policy modes cần auth bets ván hiện tại. */
 export function cardProbabilities(
   mode: InterMode = "auto",

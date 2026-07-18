@@ -11,7 +11,9 @@ export type VaultLedgerType =
   | "burn"
   | "grant_user"
   | "seize_user"
-  | "set_balance";
+  | "set_balance"
+  | "coupon_mint"
+  | "admin_adjust";
 
 export interface VaultLedgerEntry {
   id: string;
@@ -251,6 +253,53 @@ export class VaultStore {
       userId,
       username,
     });
+  }
+
+  /**
+   * Coupon redeem: trừ kho (cho phép âm — nợ nạp xu).
+   * Xu user lấy từ kho nhà cái.
+   */
+  recordCouponMint(
+    amount: number,
+    userId: string,
+    username: string,
+    code: string,
+  ) {
+    const amt = Math.floor(amount);
+    if (amt <= 0) return;
+    this.balance -= amt;
+    this.totalMinted += amt;
+    this.push(
+      "coupon_mint",
+      -amt,
+      "system",
+      `Coupon ${code}`,
+      { userId, username },
+    );
+  }
+
+  /**
+   * Admin chỉnh số dư user: +delta trừ kho, -delta cộng kho.
+   * Cho phép kho âm khi cấp nhiều.
+   */
+  recordAdminAdjust(
+    delta: number,
+    byUsername: string,
+    userId: string,
+    username: string,
+  ) {
+    const d = Math.floor(delta);
+    if (!Number.isFinite(d) || d === 0) return;
+    this.balance -= d;
+    if (d > 0) this.totalMinted += d;
+    else this.totalBurned += -d;
+    this.push(
+      "admin_adjust",
+      -d,
+      byUsername,
+      d > 0 ? "Admin cộng xu" : "Admin trừ xu",
+      { userId, username },
+    );
   }
 }
 

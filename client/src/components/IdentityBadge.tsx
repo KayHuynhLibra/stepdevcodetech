@@ -32,7 +32,7 @@ export function IdentityBadge({
 }: IdentityBadgeProps) {
   const isGuest = !user;
   const name = user?.username || guestName || "Khách";
-  const code = (user?.code || guestCode || "").toUpperCase();
+  const code = user?.code || (guestCode ? guestCode.toUpperCase() : "");
   const role = isGuest ? "guest" : user!.role;
   const avatar = user
     ? normalizeAvatar(user.avatar)
@@ -41,7 +41,7 @@ export function IdentityBadge({
   const play = user ? playPath(user) : guestCode ? `/guest/${guestCode}/play` : "/play";
 
   const className = `flex w-full items-center gap-2 text-left ${
-    compact ? "" : "rounded-xl bg-white/70 px-2.5 py-2 ring-1 ring-[#1e3a6e]/12"
+    compact ? "" : "rounded-xl bg-white/70 px-2.5 py-2 ring-1 ring-[#0f3d6e]/12"
   } ${onAvatarClick ? "cursor-pointer active:scale-[0.99]" : ""}`;
 
   const body = (
@@ -55,7 +55,7 @@ export function IdentityBadge({
           }`}
         />
         {onAvatarClick && (
-          <span className="absolute -bottom-0.5 -right-0.5 rounded-full bg-[#1e3a6e] px-1 text-[8px] font-bold leading-tight text-white ring-1 ring-white">
+          <span className="absolute -bottom-0.5 -right-0.5 rounded-full bg-[#0f3d6e] px-1 text-[8px] font-bold leading-tight text-white ring-1 ring-white">
             Đổi
           </span>
         )}
@@ -73,8 +73,8 @@ export function IdentityBadge({
             {roleLabel(role)}
           </span>
           {code && (
-            <span className="identity-chip identity-chip--code" title="Mã riêng">
-              {code}
+            <span className="identity-chip identity-chip--code" title="ID">
+              ID {code}
             </span>
           )}
         </div>

@@ -36,7 +36,7 @@ export function BettingBoard({
           className={`font-play px-6 py-1 text-center text-sm font-bold tracking-wide text-white shadow-md tabular-nums transition-colors ${
             canBet && remaining > 0 && remaining <= 5
               ? "bg-rose-600 animate-pulse"
-              : "bg-[#1e3a6e]"
+              : "bg-[#0f3d6e]"
           }`}
           style={{
             clipPath:
@@ -66,7 +66,7 @@ export function BettingBoard({
                 lockedOut ? "opacity-40" : "disabled:opacity-95"
               } ${canBet && !lockedOut ? "active:scale-[0.96]" : ""}`}
             >
-              <span className="font-play mb-0.5 text-base font-bold text-[#1e3a6e] tabular-nums">
+              <span className="font-play mb-0.5 text-base font-bold text-[#0f3d6e] tabular-nums">
                 {card.id}
               </span>
 
@@ -103,7 +103,7 @@ export function BettingBoard({
                 x{card.multiplier}
               </div>
 
-              <p className="mt-0.5 text-[11px] font-semibold text-[#1e3a6e] tabular-nums">
+              <p className="mt-0.5 text-[11px] font-semibold text-[#0f3d6e] tabular-nums">
                 {people} người
               </p>
             </button>

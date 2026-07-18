@@ -5,7 +5,12 @@ import { createServer } from "http";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { Server } from "socket.io";
-import { authStore, isMainAdmin, isStaff } from "./auth.js";
+import {
+  authStore,
+  isMainAdmin,
+  isStaff,
+  isUserOutcomeMode,
+} from "./auth.js";
 import {
   AVATARS,
   saveUploadedAvatar,
@@ -88,10 +93,12 @@ const engine = new GameEngine((state: PublicState, playerId?: string) => {
       history: state.history,
       winningCard: state.winningCard,
       onlineDisplay: state.onlineDisplay,
+      onlinePlayers: state.onlinePlayers,
       topAces: state.topAces,
       roundTopWinners: state.roundTopWinners,
       tarotStars: state.tarotStars,
       vipPool: state.vipPool,
+      chatLines: state.chatLines,
     });
   }
 });
@@ -296,6 +303,12 @@ app.post("/api/auth/redeem-coupon", (req, res) => {
   if (!adj.ok) {
     return res.status(400).json({ ok: false, reason: adj.reason });
   }
+  vaultStore.recordCouponMint(
+    preview.amount,
+    user.id,
+    user.username,
+    preview.code,
+  );
   couponStore.commitRedeem(
     preview.code,
     preview.amount,
@@ -312,6 +325,40 @@ app.post("/api/auth/redeem-coupon", (req, res) => {
     amount: preview.amount,
     user: adj.user,
     message: `Đã nạp +${preview.amount.toLocaleString("vi-VN")} xu`,
+  });
+});
+
+/** Admin: tạo / cập nhật coupon. */
+app.post("/api/admin/coupons", (req, res) => {
+  const me = requireAdmin(req, res);
+  if (!me) return;
+  const result = couponStore.upsert({
+    code: String(req.body?.code ?? ""),
+    amount: Number(req.body?.amount),
+    label: req.body?.label != null ? String(req.body.label) : undefined,
+    enabled: req.body?.enabled,
+    oncePerUser: req.body?.oncePerUser,
+    secret: req.body?.secret,
+  });
+  if (!result.ok) return res.status(400).json(result);
+  res.json({
+    ok: true,
+    coupon: result.coupon,
+    coupons: couponStore.listForAdmin(),
+  });
+});
+
+/** Admin: bật/tắt coupon. */
+app.post("/api/admin/coupons/toggle", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const code = String(req.body?.code ?? "");
+  const enabled = !!req.body?.enabled;
+  const result = couponStore.setEnabled(code, enabled);
+  if (!result.ok) return res.status(400).json(result);
+  res.json({
+    ok: true,
+    coupon: result.coupon,
+    coupons: couponStore.listForAdmin(),
   });
 });
 
@@ -475,7 +522,8 @@ app.post("/api/mainadmin/vault/seize", (req, res) => {
 });
 
 app.post("/api/admin/adjust-balance", (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  const me = requireAdmin(req, res);
+  if (!me) return;
   const userId = String(req.body?.userId ?? "");
   const delta = Number(req.body?.delta);
   if (!userId || !Number.isFinite(delta)) {
@@ -483,6 +531,12 @@ app.post("/api/admin/adjust-balance", (req, res) => {
   }
   const result = authStore.adjustBalance(userId, delta);
   if (!result.ok) return res.status(400).json(result);
+  vaultStore.recordAdminAdjust(
+    Math.floor(delta),
+    me.username,
+    userId,
+    result.user.username,
+  );
   const live = engine.applyAuthBalance(userId, result.user.balance);
   for (const sid of live.socketIds) {
     io.to(sid).emit("balanceUpdate", { balance: live.balance });
@@ -494,6 +548,35 @@ app.post("/api/admin/bots", (req, res) => {
   if (!requireAdmin(req, res)) return;
   const result = engine.setBotCount(Number(req.body?.count));
   if (!result.ok) return res.status(400).json(result);
+  res.json(result);
+});
+
+/** Admin: mode kết quả riêng cho 1 user (lose | normal | win). */
+app.post("/api/admin/user-outcome", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const userId = String(req.body?.userId ?? "");
+  const mode = req.body?.mode;
+  if (!userId || !isUserOutcomeMode(mode)) {
+    return res
+      .status(400)
+      .json({ ok: false, reason: "Thiếu userId hoặc mode (normal|win|lose)" });
+  }
+  const result = authStore.setOutcomeMode(userId, mode);
+  if (!result.ok) return res.status(400).json(result);
+  res.json(result);
+});
+
+/** Admin: bật/tắt VIP (chat bay màn hình). */
+app.post("/api/admin/user-vip", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const userId = String(req.body?.userId ?? "");
+  const isVip = !!req.body?.isVip;
+  if (!userId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId" });
+  }
+  const result = authStore.setVip(userId, isVip);
+  if (!result.ok) return res.status(400).json(result);
+  engine.refreshAllClients();
   res.json(result);
 });
 
@@ -544,6 +627,25 @@ io.on("connection", (socket) => {
   );
 
   socket.on(
+    "setName",
+    (
+      payload?: { name?: string },
+      ack?: (r: { ok: boolean; name?: string; reason?: string }) => void,
+    ) => {
+      const result = engine.setSessionName(
+        socket.id,
+        String(payload?.name ?? ""),
+      );
+      if (!result.ok) {
+        ack?.(result);
+        return;
+      }
+      socket.emit("state", engine.getStateFor(socket.id));
+      ack?.(result);
+    },
+  );
+
+  socket.on(
     "placeBet",
     (
       payload: { cardId: number; amount: number; roundId?: number },
@@ -553,6 +655,7 @@ io.on("connection", (socket) => {
         socket.id,
         Number(payload?.cardId),
         Number(payload?.amount),
+        payload?.roundId != null ? Number(payload.roundId) : undefined,
       );
       if (!result.ok) {
         socket.emit("betRejected", { reason: result.reason });
@@ -562,6 +665,36 @@ io.on("connection", (socket) => {
       socket.emit("balanceUpdate", { balance: result.balance });
       socket.emit("state", engine.getStateFor(socket.id));
       ack?.(result);
+    },
+  );
+
+  socket.on(
+    "sendShout",
+    (
+      payload: {
+        id?: string;
+        text?: string;
+        token?: string;
+        mode?: string;
+        vipFly?: boolean;
+      },
+      ack?: (r: { ok: boolean; reason?: string; balance?: number }) => void,
+    ) => {
+      const authUser = authStore.resolveToken(payload?.token);
+      const result = engine.sendShout(socket.id, {
+        id: payload?.id,
+        text: payload?.text,
+        userId: authUser?.id,
+        mode: payload?.mode as "no" | "vip" | "saint" | undefined,
+        vipFly: !!payload?.vipFly,
+      });
+      if (!result.ok) {
+        ack?.(result);
+        return;
+      }
+      socket.emit("balanceUpdate", { balance: result.balance });
+      io.emit("shout", result.event);
+      ack?.({ ok: true, balance: result.balance });
     },
   );
 

@@ -10,6 +10,7 @@ import {
   isStaff,
   playPath,
   saveSession,
+  VIP_ROUNDS_REQUIRED,
   type AuthUser,
 } from "../auth";
 import { AVATARS, isCustomAvatar, normalizeAvatar } from "../avatars";
@@ -210,6 +211,14 @@ export default function AdminDashboard() {
     amount: "1000",
   });
   const [interBusy, setInterBusy] = useState(false);
+  const [couponForm, setCouponForm] = useState({
+    code: "",
+    amount: "10000",
+    label: "",
+    oncePerUser: true,
+    enabled: true,
+  });
+  const [couponBusy, setCouponBusy] = useState(false);
 
   const load = useCallback(async () => {
     const overview = await api<Overview>("/api/admin/overview");
@@ -320,6 +329,82 @@ export default function AdminDashboard() {
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi");
+    }
+  };
+
+  const setUserOutcome = async (
+    userId: string,
+    mode: "normal" | "win" | "lose",
+  ) => {
+    try {
+      await api("/api/admin/user-outcome", {
+        method: "POST",
+        body: JSON.stringify({ userId, mode }),
+      });
+      setMsg(
+        mode === "normal"
+          ? "Đã về Normal"
+          : mode === "win"
+            ? "User: ưu tiên WIN"
+            : "User: ưu tiên LOSE",
+      );
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi");
+    }
+  };
+
+  const setUserVip = async (userId: string, isVip: boolean) => {
+    try {
+      await api("/api/admin/user-vip", {
+        method: "POST",
+        body: JSON.stringify({ userId, isVip }),
+      });
+      setMsg(isVip ? "Đã cấp VIP admin" : "Đã tắt VIP admin");
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi");
+    }
+  };
+
+  const createCoupon = async (e: FormEvent) => {
+    e.preventDefault();
+    setCouponBusy(true);
+    try {
+      await api("/api/admin/coupons", {
+        method: "POST",
+        body: JSON.stringify({
+          code: couponForm.code.trim(),
+          amount: Number(couponForm.amount),
+          label: couponForm.label.trim() || undefined,
+          oncePerUser: couponForm.oncePerUser,
+          enabled: couponForm.enabled,
+          secret: true,
+        }),
+      });
+      setMsg("Đã lưu coupon");
+      setCouponForm((f) => ({ ...f, code: "", label: "" }));
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi coupon");
+    } finally {
+      setCouponBusy(false);
+    }
+  };
+
+  const toggleCoupon = async (code: string, enabled: boolean) => {
+    setCouponBusy(true);
+    try {
+      await api("/api/admin/coupons/toggle", {
+        method: "POST",
+        body: JSON.stringify({ code, enabled }),
+      });
+      setMsg(enabled ? `Đã bật ${code}` : `Đã tắt ${code}`);
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi");
+    } finally {
+      setCouponBusy(false);
     }
   };
 
@@ -473,8 +558,8 @@ export default function AdminDashboard() {
               onClick={() => setTab(t.id)}
               className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold transition ${
                 tab === t.id
-                  ? "bg-[#1e3a6e] text-white shadow-sm"
-                  : "bg-white/80 text-[var(--play-ink)] ring-1 ring-[#1e3a6e]/15"
+                  ? "bg-[#0f3d6e] text-white shadow-sm"
+                  : "bg-white/80 text-[var(--play-ink)] ring-1 ring-[#0f3d6e]/15"
               }`}
             >
               {t.label}
@@ -486,7 +571,7 @@ export default function AdminDashboard() {
         <p className="mb-2 text-[11px] font-semibold text-[var(--play-muted)]">
           Avatar của bạn
         </p>
-        <label className="mb-2 flex cursor-pointer items-center justify-center rounded-lg bg-teal-50 px-2 py-1.5 text-[11px] font-bold text-teal-900 ring-1 ring-teal-300/60">
+        <label className="mb-2 flex cursor-pointer items-center justify-center rounded-lg bg-[#d6f0ff]/80 px-2 py-1.5 text-[11px] font-bold text-[#0f3d6e] ring-1 ring-[#1a8fd4]/40">
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp,image/*"
@@ -503,7 +588,7 @@ export default function AdminDashboard() {
           {isCustomAvatar(me.avatar) && (
             <button
               type="button"
-              className="rounded-full p-0.5 ring-2 ring-teal-500"
+              className="rounded-full p-0.5 ring-2 ring-[#1a8fd4]"
               title="Avatar từ máy"
             >
               <img
@@ -521,7 +606,7 @@ export default function AdminDashboard() {
                 type="button"
                 onClick={() => pickAvatar(src)}
                 className={`rounded-full p-0.5 ${
-                  selected ? "ring-2 ring-teal-500" : "opacity-80"
+                  selected ? "ring-2 ring-[#1a8fd4]" : "opacity-80"
                 }`}
               >
                 <img
@@ -536,7 +621,7 @@ export default function AdminDashboard() {
       </section>
 
       {msg && (
-        <p className="mt-3 text-center text-xs font-semibold text-teal-800">
+        <p className="mt-3 text-center text-xs font-semibold text-[#0f3d6e]">
           {msg}
         </p>
       )}
@@ -564,7 +649,7 @@ export default function AdminDashboard() {
               <button
                 type="button"
                 onClick={() => setTab("traffic")}
-                className="mt-2 text-[11px] font-semibold text-teal-800 underline-offset-2 hover:underline"
+                className="mt-2 text-[11px] font-semibold text-[#0f3d6e] underline-offset-2 hover:underline"
               >
                 Xem đầy đủ lưu lượng ›
               </button>
@@ -623,7 +708,7 @@ export default function AdminDashboard() {
                 data.history.map((h) => (
                   <li
                     key={h.round}
-                    className="rounded-md bg-white/80 px-2 py-1 text-[11px] font-semibold text-[var(--play-ink)] ring-1 ring-[#1e3a6e]/10"
+                    className="rounded-md bg-white/80 px-2 py-1 text-[11px] font-semibold text-[var(--play-ink)] ring-1 ring-[#0f3d6e]/10"
                     title={cardName(h.win)}
                   >
                     #{h.round} · {h.win}
@@ -646,14 +731,14 @@ export default function AdminDashboard() {
                 data.recentBets.map((b) => (
                   <li
                     key={b.id}
-                    className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[#1e3a6e]/10"
+                    className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[#0f3d6e]/10"
                   >
                     <span className="min-w-0 truncate font-semibold">
                       {b.username} · #{b.round} · {cardName(b.cardId)}
                     </span>
                     <span
                       className={`shrink-0 font-play font-bold tabular-nums ${
-                        b.result === "win" ? "text-teal-700" : "text-rose-600"
+                        b.result === "win" ? "text-[#0f3d6e]" : "text-rose-600"
                       }`}
                     >
                       {b.result === "win" ? "+" : ""}
@@ -776,7 +861,7 @@ export default function AdminDashboard() {
                 max={50}
                 value={botCount}
                 onChange={(e) => setBotCount(Number(e.target.value))}
-                className="flex-1 accent-teal-600"
+                className="flex-1 accent-[#1a8fd4]"
               />
               <input
                 type="number"
@@ -789,7 +874,7 @@ export default function AdminDashboard() {
               <button
                 type="button"
                 onClick={applyBots}
-                className="rounded-full bg-[#1e3a6e] px-3 py-1.5 text-xs font-bold text-white"
+                className="rounded-full bg-[#0f3d6e] px-3 py-1.5 text-xs font-bold text-white"
               >
                 Áp dụng
               </button>
@@ -810,7 +895,8 @@ export default function AdminDashboard() {
                 <option value="">Chọn user…</option>
                 {data.users.map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.username} ({formatXu(u.balance)} xu) — {u.role}
+                    {u.username} · ID {u.code || "—"} ({formatXu(u.balance)} xu)
+                    — {u.role}
                   </option>
                 ))}
               </select>
@@ -825,7 +911,7 @@ export default function AdminDashboard() {
                 />
                 <button
                   type="submit"
-                  className="rounded-xl bg-[#1e3a6e] px-4 text-xs font-bold text-white"
+                  className="rounded-xl bg-[#0f3d6e] px-4 text-xs font-bold text-white"
                 >
                   Cập nhật
                 </button>
@@ -851,34 +937,94 @@ export default function AdminDashboard() {
             <p className="play-heading mb-2 text-sm">
               Danh sách user ({data.users.length})
             </p>
-            <ul className="max-h-56 space-y-1.5 overflow-y-auto">
-              {data.users.map((u) => (
-                <li
-                  key={u.id}
-                  className="flex items-center justify-between rounded-lg bg-white/70 px-2 py-2 text-xs ring-1 ring-[#1e3a6e]/10"
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    <img
-                      src={u.avatar || "/assets/ui/avatar-default.png"}
-                      alt=""
-                      className="h-8 w-8 rounded-full object-cover"
-                    />
-                    <div>
-                      <p className="font-semibold text-[var(--play-ink)]">
-                        {u.username}{" "}
-                        <span className="text-teal-700">{u.role}</span>
-                      </p>
-                      <p className="text-[10px] text-[var(--play-muted)]">
-                        Mã {u.code || u.id} · Thưởng: {formatXu(u.winToday)} ·
-                        Đoán: {u.guessesToday}
+            <p className="mb-2 text-[11px] text-[var(--play-muted)]">
+              Mode riêng: Lose / Normal / Win — chỉ áp khi user đó có đặt cược
+              ván hiện tại (ưu tiên hơn Inter phòng).
+            </p>
+            <ul className="max-h-80 space-y-2 overflow-y-auto">
+              {data.users.map((u) => {
+                const om = u.outcomeMode ?? "normal";
+                const granted = !!u.vipGranted;
+                const rounds = u.roundsPlayed ?? 0;
+                const vip = !!u.isVip;
+                const vipLabel = granted
+                  ? "Admin"
+                  : rounds >= VIP_ROUNDS_REQUIRED
+                    ? "10k ván"
+                    : null;
+                return (
+                  <li
+                    key={u.id}
+                    className="rounded-lg bg-white/70 px-2 py-2 text-xs ring-1 ring-[#0f3d6e]/10"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <img
+                          src={u.avatar || "/assets/ui/avatar-default.png"}
+                          alt=""
+                          className="h-8 w-8 rounded-full object-cover"
+                        />
+                        <div className="min-w-0">
+                          <p className="font-semibold text-[var(--play-ink)]">
+                            {u.username}{" "}
+                            <span className="text-[#0f3d6e]">{u.role}</span>
+                            {vip && (
+                              <span className="ml-1 text-amber-700">
+                                VIP{vipLabel ? ` · ${vipLabel}` : ""}
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-[10px] text-[var(--play-muted)]">
+                            ID {u.code || "—"} ·{" "}
+                            {rounds.toLocaleString("vi-VN")} ván · Thưởng:{" "}
+                            {formatXu(u.winToday)} · Đoán: {u.guessesToday}
+                          </p>
+                        </div>
+                      </div>
+                      <p className="shrink-0 font-play font-bold text-amber-700 tabular-nums">
+                        {formatXu(u.balance)}
                       </p>
                     </div>
-                  </div>
-                  <p className="font-play font-bold text-amber-700 tabular-nums">
-                    {formatXu(u.balance)}
-                  </p>
-                </li>
-              ))}
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {(
+                        [
+                          ["lose", "Lose"],
+                          ["normal", "Normal"],
+                          ["win", "Win"],
+                        ] as const
+                      ).map(([mode, label]) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setUserOutcome(u.id, mode)}
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                            om === mode
+                              ? mode === "win"
+                                ? "bg-emerald-600 text-white"
+                                : mode === "lose"
+                                  ? "bg-rose-600 text-white"
+                                  : "bg-[#0f3d6e] text-white"
+                              : "bg-white text-[var(--play-ink)] ring-1 ring-[#0f3d6e]/20"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setUserVip(u.id, !granted)}
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                          granted
+                            ? "bg-amber-500 text-[#1a1208]"
+                            : "bg-white text-[var(--play-ink)] ring-1 ring-[#0f3d6e]/20"
+                        }`}
+                      >
+                        {granted ? "VIP admin ✓" : "VIP admin"}
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         </>
@@ -886,6 +1032,80 @@ export default function AdminDashboard() {
 
       {tab === "coupons" && (
         <>
+          <section className="app-panel mt-4 p-3">
+            <p className="play-heading text-sm">Tạo / cập nhật coupon</p>
+            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+              Mã trùng sẽ cập nhật số xu &amp; cấu hình. Redeem trừ kho xu.
+            </p>
+            <form onSubmit={createCoupon} className="mt-3 space-y-2">
+              <div className="flex flex-wrap gap-2">
+                <input
+                  value={couponForm.code}
+                  onChange={(e) =>
+                    setCouponForm((f) => ({ ...f, code: e.target.value }))
+                  }
+                  placeholder="Mã (vd NAP50K)"
+                  className="app-input !py-1.5 text-xs"
+                  required
+                />
+                <input
+                  value={couponForm.amount}
+                  onChange={(e) =>
+                    setCouponForm((f) => ({ ...f, amount: e.target.value }))
+                  }
+                  placeholder="Số xu"
+                  type="number"
+                  min={10}
+                  className="app-input !w-28 !py-1.5 text-xs"
+                  required
+                />
+              </div>
+              <input
+                value={couponForm.label}
+                onChange={(e) =>
+                  setCouponForm((f) => ({ ...f, label: e.target.value }))
+                }
+                placeholder="Nhãn (tuỳ chọn)"
+                className="app-input !py-1.5 text-xs"
+              />
+              <div className="flex flex-wrap items-center gap-3 text-[11px]">
+                <label className="flex items-center gap-1.5 font-semibold text-[var(--play-ink)]">
+                  <input
+                    type="checkbox"
+                    checked={couponForm.oncePerUser}
+                    onChange={(e) =>
+                      setCouponForm((f) => ({
+                        ...f,
+                        oncePerUser: e.target.checked,
+                      }))
+                    }
+                  />
+                  1 lần / user
+                </label>
+                <label className="flex items-center gap-1.5 font-semibold text-[var(--play-ink)]">
+                  <input
+                    type="checkbox"
+                    checked={couponForm.enabled}
+                    onChange={(e) =>
+                      setCouponForm((f) => ({
+                        ...f,
+                        enabled: e.target.checked,
+                      }))
+                    }
+                  />
+                  Bật ngay
+                </label>
+                <button
+                  type="submit"
+                  disabled={couponBusy || !couponForm.code.trim()}
+                  className="rounded-full bg-[#0f3d6e] px-3 py-1.5 text-xs font-bold text-white disabled:opacity-45"
+                >
+                  Lưu mã
+                </button>
+              </div>
+            </form>
+          </section>
+
           <section className="app-panel mt-4 p-3">
             <p className="play-heading text-sm">Coupon ẩn (chỉ admin biết)</p>
             <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
@@ -898,13 +1118,13 @@ export default function AdminDashboard() {
                 (data.coupons ?? []).map((c) => (
                   <li
                     key={c.code}
-                    className="rounded-lg bg-white/80 px-3 py-2 text-xs ring-1 ring-[#1e3a6e]/10"
+                    className="rounded-lg bg-white/80 px-3 py-2 text-xs ring-1 ring-[#0f3d6e]/10"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-play text-sm font-bold text-amber-800">
                         {c.code}
                       </span>
-                      <span className="font-play font-bold tabular-nums text-teal-800">
+                      <span className="font-play font-bold tabular-nums text-[#0f3d6e]">
                         {formatXu(c.amount)} xu
                       </span>
                     </div>
@@ -915,6 +1135,36 @@ export default function AdminDashboard() {
                       {c.enabled ? "" : " · tắt"}
                       {" · "}đã đổi {c.redeemCount} lần
                     </p>
+                    <div className="mt-1.5 flex gap-1">
+                      <button
+                        type="button"
+                        disabled={couponBusy}
+                        onClick={() => toggleCoupon(c.code, !c.enabled)}
+                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold disabled:opacity-45 ${
+                          c.enabled
+                            ? "bg-rose-100 text-rose-800 ring-1 ring-rose-300/60"
+                            : "bg-[#1a8fd4] text-white"
+                        }`}
+                      >
+                        {c.enabled ? "Tắt mã" : "Bật mã"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={couponBusy}
+                        onClick={() =>
+                          setCouponForm({
+                            code: c.code,
+                            amount: String(c.amount),
+                            label: c.label,
+                            oncePerUser: c.oncePerUser,
+                            enabled: c.enabled,
+                          })
+                        }
+                        className="rounded-full bg-white px-2.5 py-0.5 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[#0f3d6e]/20"
+                      >
+                        Sửa form
+                      </button>
+                    </div>
                   </li>
                 ))
               )}
@@ -934,13 +1184,13 @@ export default function AdminDashboard() {
                 (data.couponRedemptions ?? []).map((r) => (
                   <li
                     key={r.id}
-                    className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[#1e3a6e]/10"
+                    className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[#0f3d6e]/10"
                   >
                     <span className="min-w-0 truncate font-semibold">
                       {r.username} · {r.code}
                     </span>
                     <span className="shrink-0 text-right">
-                      <span className="font-play font-bold text-teal-700 tabular-nums">
+                      <span className="font-play font-bold text-[#0f3d6e] tabular-nums">
                         +{formatXu(r.amount)}
                       </span>
                       <span className="ml-2 text-[10px] text-[var(--play-muted)]">
@@ -1061,7 +1311,7 @@ export default function AdminDashboard() {
                     className={`rounded-xl px-3 py-3 text-left transition ring-1 ${
                       active
                         ? m.activeClass
-                        : "bg-white/90 text-[var(--play-ink)] ring-[#1e3a6e]/15 hover:bg-white"
+                        : "bg-white/90 text-[var(--play-ink)] ring-[#0f3d6e]/15 hover:bg-white"
                     } ${interBusy ? "opacity-60" : ""}`}
                   >
                     <p className="text-sm font-bold">{m.title}</p>
@@ -1106,8 +1356,8 @@ export default function AdminDashboard() {
                     onClick={() => setInterMode(m.id)}
                     className={`rounded-xl px-3 py-3 text-left transition ring-1 ${
                       active
-                        ? "bg-[#1e3a6e] text-white ring-[#1e3a6e] shadow-sm"
-                        : "bg-white/90 text-[var(--play-ink)] ring-[#1e3a6e]/15 hover:bg-white"
+                        ? "bg-[#0f3d6e] text-white ring-[#0f3d6e] shadow-sm"
+                        : "bg-white/90 text-[var(--play-ink)] ring-[#0f3d6e]/15 hover:bg-white"
                     } ${interBusy ? "opacity-60" : ""}`}
                   >
                     <p className="text-sm font-bold">{m.title}</p>
@@ -1140,7 +1390,7 @@ export default function AdminDashboard() {
                       className={`rounded-xl px-2 py-2.5 text-left transition ring-1 ${
                         active
                           ? "bg-amber-500 text-white ring-amber-600 shadow-sm"
-                          : "bg-white/90 text-[var(--play-ink)] ring-[#1e3a6e]/15 hover:bg-white"
+                          : "bg-white/90 text-[var(--play-ink)] ring-[#0f3d6e]/15 hover:bg-white"
                       } ${interBusy ? "opacity-60" : ""}`}
                     >
                       <div className="flex items-center gap-1.5">
@@ -1226,7 +1476,7 @@ export default function AdminDashboard() {
                             ? "bg-emerald-50 ring-emerald-300/70"
                             : hot
                               ? "bg-amber-50 ring-amber-300/70"
-                              : "bg-white/80 ring-[#1e3a6e]/10"
+                              : "bg-white/80 ring-[#0f3d6e]/10"
                     }`}
                   >
                     <div className="flex items-center gap-1.5">
@@ -1241,7 +1491,7 @@ export default function AdminDashboard() {
                         <p className="truncate text-[10px] font-semibold">
                           #{p.cardId} {p.nameVi}
                         </p>
-                        <p className="font-play text-sm font-bold tabular-nums text-[#1e3a6e]">
+                        <p className="font-play text-sm font-bold tabular-nums text-[#0f3d6e]">
                           {p.percent}%
                         </p>
                       </div>
@@ -1322,7 +1572,7 @@ export default function AdminDashboard() {
               <button
                 type="button"
                 onClick={() => vaultAdjust(Math.abs(Number(vaultDelta) || 0))}
-                className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-bold text-white"
+                className="rounded-full bg-[#0f3d6e] px-3 py-1.5 text-xs font-bold text-white"
               >
                 Bơm kho
               </button>
@@ -1343,7 +1593,7 @@ export default function AdminDashboard() {
               />
               <button
                 type="submit"
-                className="rounded-full bg-[#1e3a6e] px-3 py-1.5 text-xs font-bold text-white"
+                className="rounded-full bg-[#0f3d6e] px-3 py-1.5 text-xs font-bold text-white"
               >
                 Đặt số dư kho
               </button>
@@ -1378,7 +1628,7 @@ export default function AdminDashboard() {
               <button
                 type="button"
                 onClick={vaultGrant}
-                className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-bold text-white"
+                className="rounded-full bg-[#0f3d6e] px-3 py-1.5 text-xs font-bold text-white"
               >
                 Cấp từ kho
               </button>
@@ -1401,7 +1651,7 @@ export default function AdminDashboard() {
                 data.vault.ledger.map((row) => (
                   <li
                     key={row.id}
-                    className="rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[#1e3a6e]/10"
+                    className="rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[#0f3d6e]/10"
                   >
                     <div className="flex justify-between gap-2">
                       <span className="font-semibold">
@@ -1410,7 +1660,7 @@ export default function AdminDashboard() {
                       </span>
                       <span
                         className={`font-play font-bold tabular-nums ${
-                          row.amount >= 0 ? "text-teal-700" : "text-rose-600"
+                          row.amount >= 0 ? "text-[#0f3d6e]" : "text-rose-600"
                         }`}
                       >
                         {row.amount >= 0 ? "+" : ""}

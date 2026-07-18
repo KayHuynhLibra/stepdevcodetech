@@ -61,8 +61,8 @@ function RequireOwnCode({
     return <Navigate to="/login" replace />;
   }
 
-  const mine = (user.code || user.id).toUpperCase();
-  const param = (userCode || "").toUpperCase();
+  const mine = String(user.code || user.id);
+  const param = String(userCode || "");
   const onPlay = loc.pathname.endsWith("/play");
   const ownHome = homePath(user);
   const ownPlay = playPath(user);

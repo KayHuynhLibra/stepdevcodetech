@@ -14,13 +14,24 @@ import { HistorySheet } from "../components/HistorySheet";
 import { LeaderboardSheet } from "../components/LeaderboardSheet";
 import { RevealPopup } from "../components/RevealPopup";
 import { ResultSummaryPopup } from "../components/ResultSummaryPopup";
+import { PlayersSheet } from "../components/PlayersSheet";
+import { PlayerInfoSheet, type PlayerInfoView } from "../components/PlayerInfoSheet";
+import { CouponSheet } from "../components/CouponSheet";
+import { ShoutBar } from "../components/ShoutBar";
+import { ShoutMarquee } from "../components/ShoutMarquee";
+import { SaintOverlay } from "../components/SaintOverlay";
 import { TarotStarsSheet } from "../components/TarotStarsSheet";
+import type { ChatMode, ShoutEvent } from "../shouts";
+import { SAINT_DISPLAY_MS } from "../shouts";
+import type { OnlinePlayerPublic } from "../cards";
 import { useSfx } from "../hooks/useSfx";
 import {
   api,
+  clearSession,
   getToken,
   getStoredUser,
   homePath,
+  isStaff,
   saveSession,
   type AuthUser,
 } from "../auth";
@@ -36,7 +47,7 @@ import {
 import { AvatarPickerSheet } from "../components/AvatarPickerSheet";
 import { IdentityBadge } from "../components/IdentityBadge";
 import { uploadAvatarFromFile } from "../uploadAvatar";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 const SOCKET_URL =
   import.meta.env.VITE_SOCKET_URL ??
@@ -63,9 +74,19 @@ function useServerCountdown(phaseEndsAt: number, serverTime: number) {
   return remaining;
 }
 
-type Sheet = "bet" | "history" | "leaderboard" | "tarotStars" | "avatar" | null;
+type Sheet =
+  | "bet"
+  | "history"
+  | "leaderboard"
+  | "tarotStars"
+  | "avatar"
+  | "players"
+  | "coupon"
+  | "playerInfo"
+  | null;
 
 export default function GamePage() {
+  const nav = useNavigate();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [name, setName] = useState("");
@@ -83,8 +104,22 @@ export default function GamePage() {
     [],
   );
   const [tarotStarRows, setTarotStarRows] = useState<TarotStarEntry[]>([]);
+  const [shouts, setShouts] = useState<(ShoutEvent & { key: string })[]>([]);
+  const [saintItem, setSaintItem] = useState<
+    (ShoutEvent & { key: string }) | null
+  >(null);
+  const [chatLines, setChatLines] = useState<ShoutEvent[]>([]);
+  const [shoutBusy, setShoutBusy] = useState(false);
+  /** Mode chat: no | vip | saint */
+  const [chatMode, setChatMode] = useState<ChatMode>("no");
+  const [couponBusy, setCouponBusy] = useState(false);
+  const [profile, setProfile] = useState<PlayerInfoView | null>(null);
+  const [adminBusy, setAdminBusy] = useState(false);
+  /** Session socket đã gắn userId (tin cậy hơn localStorage) */
+  const [sessionAuthed, setSessionAuthed] = useState(false);
   const { play, muted, toggleMute } = useSfx();
   const lastTickSec = useRef<number | null>(null);
+  const shoutKeyRef = useRef(0);
 
   const prevBalance = useRef<number | null>(null);
   const prevPhase = useRef<string | null>(null);
@@ -126,12 +161,27 @@ export default function GamePage() {
       });
     });
 
-    s.on("disconnect", () => setConnected(false));
-
-    s.on("joined", (payload: { name: string; balance: number }) => {
-      setName(payload.name);
-      prevBalance.current = payload.balance;
+    s.on("disconnect", () => {
+      setConnected(false);
+      setSessionAuthed(false);
     });
+
+    s.on(
+      "joined",
+      (payload: {
+        name: string;
+        balance: number;
+        userId?: string;
+      }) => {
+        setName(payload.name);
+        prevBalance.current = payload.balance;
+        setSessionAuthed(!!payload.userId);
+        // Token hết hạn phía server nhưng localStorage còn → nhắc đăng nhập lại
+        if (getToken() && getStoredUser() && !payload.userId) {
+          showToast("Phiên hết hạn — đăng nhập lại để chat");
+        }
+      },
+    );
 
     s.on("state", (payload: GameState) => {
       setState(payload);
@@ -159,10 +209,63 @@ export default function GamePage() {
       setTarotStarRows(rows);
     });
 
+    s.on("shout", (payload: ShoutEvent) => {
+      setChatLines((prev) => [...prev, payload].slice(-24));
+      const isVipFly = !!(payload.fly || payload.mode === "vip");
+      const isSaint = !!(payload.saint || payload.mode === "saint");
+      if (isSaint) {
+        const key = `saint${++shoutKeyRef.current}`;
+        setSaintItem({ ...payload, key });
+        window.setTimeout(() => {
+          setSaintItem((prev) => (prev?.key === key ? null : prev));
+        }, SAINT_DISPLAY_MS);
+        return;
+      }
+      if (!isVipFly) return;
+      const key = `s${++shoutKeyRef.current}`;
+      setShouts((prev) => [...prev, { ...payload, key }].slice(-3));
+      window.setTimeout(() => {
+        setShouts((prev) => prev.filter((x) => x.key !== key));
+      }, 4800);
+    });
+
     return () => {
       s.disconnect();
     };
   }, [showToast]);
+
+  useEffect(() => {
+    if (state?.chatLines) {
+      setChatLines(state.chatLines);
+    }
+  }, [state?.chatLines]);
+
+  // Đồng bộ VIP / số ván từ phòng (admin cấp hoặc vừa đủ 10k ván)
+  useEffect(() => {
+    if (!me?.id || !state?.onlinePlayers) return;
+    const self = state.onlinePlayers.find((p) => p.userId === me.id);
+    if (!self || self.isVip == null) return;
+    const nextVip = !!self.isVip;
+    const nextRounds = self.roundsPlayed ?? me.roundsPlayed ?? 0;
+    const nextGranted = self.vipGranted ?? me.vipGranted ?? false;
+    if (
+      nextVip === !!me.isVip &&
+      nextRounds === (me.roundsPlayed ?? 0) &&
+      nextGranted === !!me.vipGranted
+    ) {
+      return;
+    }
+    const next = {
+      ...me,
+      isVip: nextVip,
+      roundsPlayed: nextRounds,
+      vipGranted: nextGranted,
+    };
+    setMe(next);
+    const token = getToken();
+    if (token) saveSession(token, next);
+    if (!next.isVip) setChatMode((m) => (m === "vip" ? "no" : m));
+  }, [me, state?.onlinePlayers]);
 
   useEffect(() => {
     if (!state) return;
@@ -212,6 +315,212 @@ export default function GamePage() {
     }
     setBetCardId(cardId);
     setSheet("bet");
+  };
+
+  const openCoupon = () => {
+    if (!me) {
+      showToast("Đăng nhập để nạp");
+      return;
+    }
+    setSheet("coupon");
+  };
+
+  const redeemCoupon = async (code: string) => {
+    setCouponBusy(true);
+    try {
+      const r = await api<{
+        ok: true;
+        amount: number;
+        user: AuthUser;
+        message: string;
+      }>("/api/auth/redeem-coupon", {
+        method: "POST",
+        body: JSON.stringify({ code }),
+      });
+      const token = getToken();
+      if (token) saveSession(token, r.user);
+      setMe(r.user);
+      setState((prev) =>
+        prev ? { ...prev, yourBalance: r.user.balance } : prev,
+      );
+      showToast(r.message || `Đã nạp +${formatXu(r.amount)} xu`);
+      setSheet(null);
+    } finally {
+      setCouponBusy(false);
+    }
+  };
+
+  const openPlayerInfo = (info: PlayerInfoView) => {
+    setProfile(info);
+    setSheet("playerInfo");
+  };
+
+  const openOnlinePlayer = (p: OnlinePlayerPublic) => {
+    openPlayerInfo({
+      name: p.name,
+      avatar: p.avatar,
+      isBot: p.isBot,
+      code: p.code,
+      winToday: p.winToday,
+      guessesToday: p.guessesToday,
+      isGuest: !p.isBot && !p.code && !p.userId,
+      userId: p.userId,
+      balance: p.balance,
+      outcomeMode: p.outcomeMode,
+      isVip: p.isVip,
+      roundsPlayed: p.roundsPlayed,
+      vipGranted: p.vipGranted,
+    });
+  };
+
+  const openChatPlayer = (line: ShoutEvent) => {
+    const match = (state?.onlinePlayers ?? []).find(
+      (p) => p.name === line.name && p.avatar === line.avatar,
+    );
+    if (match) {
+      openOnlinePlayer(match);
+      return;
+    }
+    openPlayerInfo({
+      name: line.name,
+      avatar: line.avatar,
+      isGuest: true,
+    });
+  };
+
+  const adminSetOutcome = async (
+    userId: string,
+    mode: "normal" | "win" | "lose",
+  ) => {
+    setAdminBusy(true);
+    try {
+      const r = await api<{
+        ok: true;
+        user: AuthUser & { outcomeMode?: "normal" | "win" | "lose" };
+      }>("/api/admin/user-outcome", {
+        method: "POST",
+        body: JSON.stringify({ userId, mode }),
+      });
+      setProfile((prev) =>
+        prev && prev.userId === userId
+          ? { ...prev, outcomeMode: r.user.outcomeMode ?? mode }
+          : prev,
+      );
+      showToast(
+        mode === "win"
+          ? "Đã set WIN"
+          : mode === "lose"
+            ? "Đã set LOSE"
+            : "Đã về Normal",
+      );
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Lỗi");
+    } finally {
+      setAdminBusy(false);
+    }
+  };
+
+  const adminSetVip = async (userId: string, isVip: boolean) => {
+    setAdminBusy(true);
+    try {
+      const r = await api<{ ok: true; user: AuthUser }>("/api/admin/user-vip", {
+        method: "POST",
+        body: JSON.stringify({ userId, isVip }),
+      });
+      setProfile((prev) =>
+        prev && prev.userId === userId
+          ? {
+              ...prev,
+              isVip: !!r.user.isVip,
+              vipGranted: !!r.user.vipGranted,
+              roundsPlayed: r.user.roundsPlayed ?? prev.roundsPlayed,
+            }
+          : prev,
+      );
+      if (me?.id === userId) {
+        setMe(r.user);
+        const token = getToken();
+        if (token) saveSession(token, r.user);
+        if (!r.user.isVip) setChatMode((m) => (m === "vip" ? "no" : m));
+      }
+      showToast(
+        r.user.vipGranted
+          ? "Đã cấp VIP (admin)"
+          : r.user.isVip
+            ? "Đã tắt cấp admin — vẫn VIP do đủ ván"
+            : "Đã tắt VIP admin",
+      );
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Lỗi");
+    } finally {
+      setAdminBusy(false);
+    }
+  };
+
+  const adminAdjustBalance = async (userId: string, delta: number) => {
+    setAdminBusy(true);
+    try {
+      const r = await api<{ ok: true; user: AuthUser }>(
+        "/api/admin/adjust-balance",
+        {
+          method: "POST",
+          body: JSON.stringify({ userId, delta }),
+        },
+      );
+      setProfile((prev) =>
+        prev && prev.userId === userId
+          ? { ...prev, balance: r.user.balance }
+          : prev,
+      );
+      if (me?.id === userId) {
+        setMe(r.user);
+        const token = getToken();
+        if (token) saveSession(token, r.user);
+        setState((prev) =>
+          prev ? { ...prev, yourBalance: r.user.balance } : prev,
+        );
+      }
+      showToast(
+        `${delta > 0 ? "+" : ""}${formatXu(delta)} → ${formatXu(r.user.balance)} xu`,
+      );
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Lỗi");
+    } finally {
+      setAdminBusy(false);
+    }
+  };
+
+  const sendChat = (payload: { id?: string; text?: string }) => {
+    if (!socket || !connected) return;
+    const token = getToken();
+    if (!me || !token) {
+      showToast("Cần đăng nhập để chat");
+      return;
+    }
+    let mode: ChatMode = chatMode;
+    if (mode === "vip" && !me.isVip) {
+      showToast("Cần VIP để chat bay");
+      mode = "no";
+      setChatMode("no");
+    }
+    setShoutBusy(true);
+    socket.emit(
+      "sendShout",
+      { ...payload, token, mode },
+      (r?: { ok: boolean; reason?: string; balance?: number }) => {
+        setShoutBusy(false);
+        if (!r?.ok) {
+          showToast(r?.reason || "Không gửi được");
+          return;
+        }
+        setSessionAuthed(true);
+        if (r.balance != null) {
+          setState((prev) =>
+            prev ? { ...prev, yourBalance: r.balance } : prev,
+          );
+        }
+      },
+    );
   };
 
   const confirmBet = (cardId: number, amount: number) => {
@@ -336,6 +645,8 @@ export default function GamePage() {
   return (
     <div className="app-shell play-screen relative h-dvh overflow-y-auto overflow-x-hidden">
       <div className="app-shell-deco" aria-hidden />
+      <ShoutMarquee items={shouts} />
+      <SaintOverlay item={saintItem} />
       <div className="relative z-[1] mx-auto flex w-full max-w-md flex-col px-3 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))]">
         {/* ===== ZONE 1: Hồ sơ & số dư (per-user) ===== */}
         <header className="game-task flex flex-col gap-2 px-2.5 py-2.5">
@@ -344,7 +655,7 @@ export default function GamePage() {
               to={
                 getStoredUser() ? homePath(getStoredUser()) : "/login"
               }
-              className="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] shadow-sm ring-1 ring-[#1e3a6e]/15"
+              className="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] shadow-sm ring-1 ring-[#0f3d6e]/15"
             >
               ← Menu
             </Link>
@@ -361,7 +672,7 @@ export default function GamePage() {
             <button
               type="button"
               onClick={toggleMute}
-              className="shrink-0 rounded-full bg-white/80 px-2 py-1 text-[10px] font-bold text-[var(--play-ink)] shadow-sm ring-1 ring-[#1e3a6e]/15"
+              className="shrink-0 rounded-full bg-white/80 px-2 py-1 text-[10px] font-bold text-[var(--play-ink)] shadow-sm ring-1 ring-[#0f3d6e]/15"
               title={muted ? "Bật tiếng" : "Tắt tiếng"}
             >
               {muted ? "Tắt" : "Âm"}
@@ -376,6 +687,50 @@ export default function GamePage() {
             showPath={false}
             onAvatarClick={openAvatarPicker}
           />
+          {!me && (
+            <form
+              className="flex gap-1"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const raw = name.trim().slice(0, 16);
+                if (raw.length < 2) {
+                  showToast("Tên 2–16 ký tự");
+                  return;
+                }
+                setGuestName(raw);
+                setName(raw);
+                socket?.emit(
+                  "setName",
+                  { name: raw },
+                  (r?: { ok?: boolean; reason?: string; name?: string }) => {
+                    if (!r?.ok) {
+                      showToast(r?.reason || "Không đổi tên được");
+                      return;
+                    }
+                    if (r.name) {
+                      setName(r.name);
+                      setGuestName(r.name);
+                    }
+                    showToast("Đã đổi tên");
+                  },
+                );
+              }}
+            >
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value.slice(0, 16))}
+                maxLength={16}
+                placeholder="Tên khách…"
+                className="app-input !px-2 !py-1 text-[11px]"
+              />
+              <button
+                type="submit"
+                className="shrink-0 rounded-lg bg-[#0f3d6e] px-2.5 text-[10px] font-bold text-white"
+              >
+                Đổi
+              </button>
+            </form>
+          )}
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
@@ -395,7 +750,29 @@ export default function GamePage() {
                   {formatXu(balance)}
                 </span>
               </div>
-              <div className="flex items-center gap-1 rounded-full bg-[#1e3a6e] px-2 py-1 shadow-sm ring-1 ring-amber-300/60">
+              <button
+                type="button"
+                onClick={openCoupon}
+                className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide shadow-sm ring-1 ${
+                  balance <= 0
+                    ? "animate-pulse bg-rose-500 text-white ring-rose-300"
+                    : "bg-[#1a8fd4] text-white ring-[#d6f0ff]/80"
+                }`}
+              >
+                Nạp!
+              </button>
+              <button
+                type="button"
+                title="VIP pool chỉ hiển thị trang trí — không phải quỹ thưởng. VIP chat = admin cấp hoặc đủ 10.000 ván."
+                onClick={() =>
+                  showToast(
+                    me?.isVip
+                      ? "Bạn là VIP — chat bay (mode VIP). Pool chỉ trang trí."
+                      : "VIP: admin cấp hoặc 10.000 ván. Pool chỉ trang trí, không chia thưởng.",
+                  )
+                }
+                className="flex items-center gap-1 rounded-full bg-[#0f3d6e] px-2 py-1 shadow-sm ring-1 ring-amber-300/60"
+              >
                 <img
                   src="/assets/ui/icon-vip.png"
                   alt=""
@@ -404,17 +781,33 @@ export default function GamePage() {
                 <span className="font-play text-[9px] font-semibold text-amber-200 tabular-nums">
                   VIP {formatXu(state?.vipPool ?? 0)}
                 </span>
-              </div>
+              </button>
             </div>
           </div>
         </header>
 
-        {/* ===== ZONE 2: Đồng bộ phòng (shared realtime) ===== */}
-        <div className="game-task mt-2 px-3 py-1.5 text-[10px] text-[var(--play-muted)]">
-          {connected
-            ? `${state?.onlineDisplay ?? 0} trong phòng`
-            : "Mất kết nối"}
-        </div>
+        {/* ===== ZONE 2: Đồng bộ phòng — bấm mở list người chơi ===== */}
+        <button
+          type="button"
+          onClick={() => connected && setSheet("players")}
+          disabled={!connected}
+          className="game-task mt-2 flex w-full items-center gap-2 px-3 py-1.5 text-left text-[10px] text-[var(--play-muted)] disabled:opacity-60"
+        >
+          <span
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+              connected ? "bg-[#1a8fd4]" : "bg-rose-400"
+            }`}
+            aria-hidden
+          />
+          <span className="flex-1 font-semibold text-[var(--play-ink)]">
+            {connected
+              ? `${state?.onlineDisplay ?? 0} online`
+              : "Mất kết nối"}
+          </span>
+          {connected && (
+            <span className="text-[10px] font-semibold text-[#0f3d6e]">›</span>
+          )}
+        </button>
 
         {/* ===== ZONE 3: Lịch sử nhanh (strip) ===== */}
         <button
@@ -436,7 +829,7 @@ export default function GamePage() {
               return (
                 <span
                   key={`${row.round}-${i}`}
-                  className="relative h-12 w-9 shrink-0 overflow-hidden rounded shadow ring-1 ring-[#1e3a6e]/20"
+                  className="relative h-12 w-9 shrink-0 overflow-hidden rounded shadow ring-1 ring-[#0f3d6e]/20"
                   title={card ? `#${card.id} ${card.nameVi}` : `#${row.win}`}
                 >
                   <img
@@ -444,7 +837,7 @@ export default function GamePage() {
                     alt={card?.nameVi ?? `#${row.win}`}
                     className="h-full w-full object-cover"
                   />
-                  <span className="font-play absolute left-0.5 top-0.5 z-[1] rounded bg-[#1e3a6e]/92 px-1 text-[9px] font-bold leading-tight text-white tabular-nums shadow-sm">
+                  <span className="font-play absolute left-0.5 top-0.5 z-[1] rounded bg-[#0f3d6e]/92 px-1 text-[9px] font-bold leading-tight text-white tabular-nums shadow-sm">
                     {row.win}
                   </span>
                 </span>
@@ -453,14 +846,25 @@ export default function GamePage() {
           </div>
         </button>
 
-        {/* ===== ZONE 5: Lá bài đã chọn (cược của bạn) ===== */}
+        {/* ===== ZONE 4+6: Form bàn cược (deck) ===== */}
+        <BettingBoard
+          remaining={remaining}
+          canBet={canBet}
+          playerCounts={state?.playerCounts ?? []}
+          yourBets={state?.yourBets ?? []}
+          winningCardId={winning}
+          phase={state?.phase ?? null}
+          onPick={openBet}
+        />
+
+        {/* ===== ZONE 5: Lá bài đã chọn — dưới deck ===== */}
         <section className="game-task mt-3 px-3 py-2">
           <p className="play-section-title mb-1.5">
             Lá bài bạn đã chọn
           </p>
           {selectedCards.length === 0 ? (
             <p className="text-xs text-[var(--play-muted)]">
-              Chưa đặt — chạm 1 lá bên dưới để mở bảng chọn xu
+              Chưa đặt — chạm 1 lá ở bàn trên để mở bảng chọn xu
             </p>
           ) : (
             <div className="flex gap-2 overflow-x-auto">
@@ -483,158 +887,184 @@ export default function GamePage() {
           )}
         </section>
 
-        {/* ===== ZONE 4+6: Form bàn cược (giống ảnh mẫu) ===== */}
-        <BettingBoard
-          remaining={remaining}
-          canBet={canBet}
-          playerCounts={state?.playerCounts ?? []}
-          yourBets={state?.yourBets ?? []}
-          winningCardId={winning}
-          phase={state?.phase ?? null}
-          onPick={openBet}
+        <ShoutBar
+          disabled={!connected || !sessionAuthed}
+          busy={shoutBusy}
+          lines={chatLines}
+          selfAvatar={
+            me
+              ? normalizeAvatar(me.avatar)
+              : normalizeAvatar(guestAvatar)
+          }
+          chatLive={connected && sessionAuthed}
+          isVip={!!me?.isVip}
+          mode={chatMode}
+          onModeChange={(m) => {
+            if (m === "vip" && !me?.isVip) {
+              showToast("Cần VIP để chat bay");
+              return;
+            }
+            setChatMode(m);
+          }}
+          needRelogin={!!(getToken() && getStoredUser() && !sessionAuthed)}
+          onRelogin={() => {
+            clearSession();
+            nav("/login");
+          }}
+          onSendSlang={(id) => sendChat({ id })}
+          onSendText={(text) => sendChat({ text })}
+          onAvatarClick={openChatPlayer}
         />
 
-        <p className="mt-3 text-center text-[11px] text-[var(--play-muted)]">
-          {canBet
-            ? "Chạm lá bài → chọn số xu → Xác nhận"
-            : state?.phase === "revealing"
-              ? "Đang mở kết quả…"
-              : "Đang trả thưởng & chuẩn bị ván mới…"}
-        </p>
-
-        {/* ===== ZONE 7: Cao thủ — khung lớn nhất ===== */}
-        <section className="game-task game-task-aces mt-5">
+        {/* ===== ZONE 7: Cao thủ — gọn, đủ thông tin ===== */}
+        <section className="game-task game-task-aces mt-3">
           <button
             type="button"
             onClick={openLeaderboard}
             className="flex w-full items-center justify-between text-left"
           >
-            <p className="play-heading text-xl sm:text-2xl">
+            <p className="play-heading text-sm sm:text-base">
               Cao thủ dự đoán ›
             </p>
-            <span className="text-xs font-medium text-white/50">
-              Thắng vòng trước
+            <span className="text-[10px] font-medium text-white/45">
+              Vòng trước
             </span>
           </button>
 
-          <ul className="mt-3 space-y-2.5">
+          <ul className="mt-1.5 space-y-1">
             {(state?.topAces ?? []).length === 0 && (
-              <li className="py-6 text-center text-sm text-white/45">
+              <li className="py-3 text-center text-[11px] text-white/40">
                 Chưa có ai thắng vòng trước
               </li>
             )}
             {(state?.topAces ?? []).slice(0, 3).map((ace) => (
               <li
                 key={`${ace.rank}-${ace.name}`}
-                className={`rounded-xl px-3 py-3 ring-1 ${
+                className={`flex items-center gap-1.5 rounded-lg px-1.5 py-1 ring-1 ${
                   ace.isYou
-                    ? "bg-[var(--gold)]/15 ring-[var(--gold)]/45"
-                    : "bg-white/5 ring-white/10"
+                    ? "bg-[var(--gold)]/15 ring-[var(--gold)]/40"
+                    : "bg-white/5 ring-white/8"
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <span className="font-play w-7 text-center text-base font-bold text-[var(--gold-soft)] tabular-nums">
-                    {ace.rank}
-                  </span>
+                <span className="font-play w-4 shrink-0 text-center text-xs font-bold text-[var(--gold-soft)] tabular-nums">
+                  {ace.rank}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    openPlayerInfo({
+                      name: ace.name,
+                      avatar: ace.avatar,
+                      winToday: ace.winToday,
+                    })
+                  }
+                  className="shrink-0"
+                  title="Xem thông tin"
+                >
                   <img
                     src={ace.avatar}
                     alt=""
-                    className="h-12 w-12 rounded-full object-cover ring-2 ring-white/20 shadow-md"
+                    className="h-7 w-7 rounded-full object-cover ring-1 ring-white/25"
                   />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-bold text-white">
-                      {ace.name}
-                      {ace.isYou ? " (Bạn)" : ""}
-                    </p>
-                    <p className="mt-0.5 text-xs font-semibold text-amber-300/90 tabular-nums">
-                      Thưởng vòng trước: {formatXu(ace.winToday)} xu
-                    </p>
-                  </div>
-                </div>
-                {ace.chosenCards.length > 0 ? (
-                  <div className="mt-2.5 flex items-center gap-2 pl-10">
-                    <span className="shrink-0 text-[11px] font-medium text-white/45">
-                      Lá chọn:
-                    </span>
-                    <div className="flex gap-1.5 overflow-x-auto">
-                      {ace.chosenCards.map((pick) => {
-                        const card = CARDS.find((c) => c.id === pick.cardId);
-                        if (!card) return null;
-                        return (
-                          <div
-                            key={pick.cardId}
-                            className="relative shrink-0"
-                            title={`${card.nameVi}: ${formatXu(pick.amount)} xu`}
-                          >
-                            <img
-                              src={card.image}
-                              alt={card.nameVi}
-                              className="h-12 w-8 rounded-md object-cover shadow ring-1 ring-white/20"
-                            />
-                            <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 rounded bg-[#1a2234] px-1 text-[8px] font-bold text-amber-200 ring-1 ring-white/15">
-                              x{card.multiplier}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <p className="mt-2 pl-10 text-[11px] text-white/40">
-                    Đợt này chưa đoán
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[11px] font-bold leading-tight text-white">
+                    {ace.name}
+                    {ace.isYou ? " ·Bạn" : ""}
                   </p>
-                )}
+                  <p className="text-[10px] font-semibold leading-tight text-amber-300/90 tabular-nums">
+                    +{formatXu(ace.winToday)}
+                  </p>
+                </div>
+                <div className="flex max-w-[42%] shrink-0 gap-0.5 overflow-x-auto">
+                  {ace.chosenCards.length === 0 ? (
+                    <span className="px-1 text-[9px] text-white/35">—</span>
+                  ) : (
+                    ace.chosenCards.map((pick) => {
+                      const card = CARDS.find((c) => c.id === pick.cardId);
+                      if (!card) return null;
+                      return (
+                        <div
+                          key={pick.cardId}
+                          className="relative shrink-0"
+                          title={`${card.nameVi}: ${formatXu(pick.amount)} xu`}
+                        >
+                          <img
+                            src={card.image}
+                            alt={card.nameVi}
+                            className="h-8 w-[1.35rem] rounded object-cover ring-1 ring-white/15"
+                          />
+                          <span className="font-play absolute inset-0 flex items-center justify-center rounded bg-black/35 text-[11px] font-extrabold leading-none text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)] tabular-nums">
+                            {card.id}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               </li>
             ))}
           </ul>
         </section>
 
         {/* ===== ZONE 8: Sao bài Tarot — xu dùng dự đoán tuần ===== */}
-        <section className="game-task mt-4">
+        <section className="game-task game-task-stars mt-4">
           <button
             type="button"
             onClick={openTarotStars}
             className="flex w-full flex-col text-left"
           >
-            <p className="play-heading text-xl sm:text-2xl">Sao bài Tarot ›</p>
-            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+            <p className="play-heading text-base sm:text-lg">Sao bài Tarot ›</p>
+            <p className="mt-0.5 text-[11px] text-[#d6f0ff]/55">
               Xếp hạng theo số xu dùng dự đoán mỗi tuần
             </p>
           </button>
 
-          <ul className="mt-3 space-y-2.5">
+          <ul className="mt-2 space-y-1.5">
             {(state?.tarotStars ?? []).length === 0 && (
-              <li className="py-5 text-center text-sm text-[var(--play-muted)]">
+              <li className="py-4 text-center text-[11px] text-[#d6f0ff]/40">
                 Chưa có xu dự đoán tuần này
               </li>
             )}
             {(state?.tarotStars ?? []).slice(0, 3).map((star) => (
               <li
                 key={`${star.rank}-${star.name}`}
-                className={`flex items-center gap-3 rounded-xl px-3 py-3 ring-2 ${
+                className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ring-1 ${
                   star.isYou
-                    ? "bg-amber-100/90 ring-amber-400/60"
-                    : "bg-white/85 ring-[#1e3a6e]/12"
+                    ? "bg-[#1a8fd4]/25 ring-[#1a8fd4]/55"
+                    : "bg-white/5 ring-white/10"
                 }`}
               >
-                <span className="font-play w-7 text-center text-base font-bold text-[var(--play-ink)] tabular-nums">
+                <span className="font-play w-5 shrink-0 text-center text-sm font-bold text-[#d6f0ff] tabular-nums">
                   {star.rank}
                 </span>
-                <img
-                  src={star.avatar}
-                  alt=""
-                  className="h-12 w-12 rounded-full object-cover shadow-md ring-2 ring-white"
-                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    openPlayerInfo({
+                      name: star.name,
+                      avatar: star.avatar,
+                    })
+                  }
+                  className="shrink-0"
+                  title="Xem thông tin"
+                >
+                  <img
+                    src={star.avatar}
+                    alt=""
+                    className="h-9 w-9 rounded-full object-cover ring-1 ring-[#1a8fd4]/40"
+                  />
+                </button>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-[var(--play-ink)]">
+                  <p className="truncate text-[12px] font-bold text-white">
                     {star.name}
-                    {star.isYou ? " (Bạn)" : ""}
+                    {star.isYou ? " ·Bạn" : ""}
                   </p>
-                  <p className="mt-0.5 flex items-center gap-1 text-xs font-semibold text-amber-700 tabular-nums">
+                  <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-amber-300/90 tabular-nums">
                     <img
                       src="/assets/ui/icon-coin-xu.png"
                       alt=""
-                      className="h-4 w-4 rounded-full object-cover"
+                      className="h-3.5 w-3.5 rounded-full object-cover"
                     />
                     {formatXu(star.stakeWeek)}
                   </p>
@@ -679,6 +1109,35 @@ export default function GamePage() {
         }}
         onConfirm={confirmBet}
       />
+      <PlayersSheet
+        open={sheet === "players"}
+        players={state?.onlinePlayers ?? []}
+        onClose={() => setSheet(null)}
+        onSelectPlayer={(p) => {
+          setSheet(null);
+          openOnlinePlayer(p);
+        }}
+      />
+      <CouponSheet
+        open={sheet === "coupon"}
+        busy={couponBusy}
+        onClose={() => setSheet(null)}
+        onRedeem={redeemCoupon}
+      />
+      <PlayerInfoSheet
+        open={sheet === "playerInfo"}
+        player={profile}
+        staff={isStaff(me)}
+        busy={adminBusy}
+        onClose={() => {
+          setProfile(null);
+          setSheet(null);
+        }}
+        onSetOutcome={adminSetOutcome}
+        onSetVip={adminSetVip}
+        onAdjustBalance={adminAdjustBalance}
+      />
+
       <HistorySheet
         open={sheet === "history"}
         rows={historyRows}

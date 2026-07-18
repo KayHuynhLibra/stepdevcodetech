@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CARDS, formatXu, type CardDef } from "../cards";
+import { CARD_BACK, CARDS, formatXu, type CardDef } from "../cards";
 
 type RevealStage = "gather" | "shuffle" | "question" | "flip" | "done";
 
@@ -119,11 +119,9 @@ export function RevealPopup({
                 const angle = (i / CARDS.length) * Math.PI * 2;
                 const r = stage === "gather" ? 70 : 18 + (i % 3) * 6;
                 return (
-                  <motion.img
+                  <motion.div
                     key={`face-${card.id}`}
-                    src={card.image}
-                    alt=""
-                    className="absolute left-1/2 top-1/2 h-20 w-[3.75rem] -translate-x-1/2 -translate-y-1/2 rounded-[0.45rem] object-cover object-center shadow-lg"
+                    className="absolute left-1/2 top-1/2 h-20 w-[3.75rem] -translate-x-1/2 -translate-y-1/2"
                     initial={{
                       x: Math.cos(angle) * 120,
                       y: Math.sin(angle) * 120,
@@ -153,7 +151,16 @@ export function RevealPopup({
                         ? { duration: 1.2, ease: "easeInOut" }
                         : { duration: 0.55, delay: i * 0.03 }
                     }
-                  />
+                  >
+                    <img
+                      src={card.image}
+                      alt={card.nameVi}
+                      className="h-full w-full rounded-[0.45rem] object-cover object-center shadow-lg ring-1 ring-white/20"
+                    />
+                    <span className="font-play absolute -left-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--gold)] px-1 text-[10px] font-bold text-[#1a1208] tabular-nums shadow ring-1 ring-black/20">
+                      {card.id}
+                    </span>
+                  </motion.div>
                 );
               })}
 
@@ -161,13 +168,16 @@ export function RevealPopup({
               <motion.div
                 key="q"
                 className="absolute inset-0 flex items-center justify-center"
-                initial={{ scale: 0.4, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
+                initial={{ scale: 0.4, opacity: 0, rotateY: 0 }}
+                animate={{ scale: 1, opacity: 1, rotateY: [0, 8, -8, 0] }}
                 exit={{ scale: 0.5, opacity: 0 }}
+                transition={{ duration: 0.7 }}
               >
-                <div className="flex h-36 w-[6.5rem] items-center justify-center rounded-xl bg-[#1a2234] text-5xl font-bold text-[var(--gold-soft)] ring-2 ring-[var(--gold)]/50">
-                  ?
-                </div>
+                <img
+                  src={CARD_BACK}
+                  alt=""
+                  className="h-36 w-[6.5rem] rounded-xl object-cover object-center shadow-[0_0_36px_rgba(212,168,75,0.45)] ring-2 ring-[var(--gold)]/50"
+                />
               </motion.div>
             )}
 
@@ -198,7 +208,7 @@ export function RevealPopup({
                     }}
                     transition={{ repeat: Infinity, duration: 0.7 }}
                   >
-                    #{winner.id} · x{winner.multiplier}
+                    x{winner.multiplier}
                   </motion.span>
                 </div>
               </motion.div>

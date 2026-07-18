@@ -9,6 +9,19 @@
   }
 }
 
+@keyframes shout-marquee {
+  0% {
+    transform: translateX(12%);
+  }
+  100% {
+    transform: translateX(-12%);
+  }
+}
+
+.animate-shout-marquee {
+  animation: shout-marquee 4.5s linear forwards;
+}
+
 :root {
   --ink: #0c1220;
   --gold: #d4a84b;
@@ -16,14 +29,17 @@
   --crimson: #7a1f2b;
   --cream: #f3e6c8;
   --panel: rgba(12, 18, 32, 0.72);
-  --play-ink: #1e3a6e;
-  --play-muted: #3d5a80;
+  --play-ink: #0f3d6e;
+  --play-muted: #3d6a8f;
   --play-panel: rgba(255, 255, 255, 0.72);
-  --app-sky: #6ecfe8;
+  --app-sky: #4eb8e8;
+  --app-sea: #1a8fd4;
+  --app-foam: #d6f0ff;
+  /* Legacy — không dùng làm chủ đạo */
   --app-mint: #7fd9a0;
   --app-lime: #9ed85a;
-  --app-frame: #2bb8a0;
-  --app-frame-deep: #1e3a6e;
+  --app-frame: #1a8fd4;
+  --app-frame-deep: #0f3d6e;
 }
 
 /* ===== Unified bright shell (toàn app) ===== */
@@ -33,23 +49,16 @@
   color: var(--play-ink);
   background-color: var(--app-sky);
   background-image:
-    radial-gradient(
-      ellipse 120% 60% at 50% -10%,
-      rgba(255, 255, 255, 0.8) 0%,
-      transparent 55%
-    ),
-    repeating-radial-gradient(
-      circle at 0 0,
-      rgba(255, 220, 80, 0.12) 0 1.5px,
-      transparent 1.5px 11px
-    ),
     linear-gradient(
-      165deg,
-      var(--app-sky) 0%,
-      #5fc4bc 28%,
-      var(--app-mint) 58%,
-      var(--app-lime) 100%
-    );
+      180deg,
+      rgba(8, 32, 64, 0.58) 0%,
+      rgba(26, 100, 168, 0.38) 42%,
+      rgba(15, 61, 110, 0.5) 100%
+    ),
+    url("/assets/background/bg-main.png?v=4");
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
   background-attachment: local;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
@@ -66,11 +75,11 @@
   inset: 0;
   background:
     radial-gradient(circle at 10% 12%, rgba(255, 255, 255, 0.55) 0 2px, transparent 3px),
-    radial-gradient(circle at 88% 10%, rgba(255, 236, 120, 0.55) 0 1.5px, transparent 2.5px),
+    radial-gradient(circle at 88% 10%, rgba(214, 240, 255, 0.65) 0 1.5px, transparent 2.5px),
     radial-gradient(circle at 72% 38%, rgba(255, 255, 255, 0.4) 0 1.5px, transparent 2.5px),
-    radial-gradient(circle at 16% 58%, rgba(255, 236, 120, 0.4) 0 2px, transparent 3px),
+    radial-gradient(circle at 16% 58%, rgba(26, 143, 212, 0.35) 0 2px, transparent 3px),
     radial-gradient(circle at 92% 72%, rgba(255, 255, 255, 0.35) 0 1.5px, transparent 2.5px),
-    radial-gradient(ellipse 80% 40% at 50% 100%, rgba(255, 255, 255, 0.2), transparent 70%);
+    radial-gradient(ellipse 80% 40% at 50% 100%, rgba(214, 240, 255, 0.22), transparent 70%);
   opacity: 0.95;
 }
 
@@ -84,26 +93,26 @@
   background: rgba(255, 255, 255, 0.72);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.65) inset,
-    0 8px 24px rgba(30, 58, 110, 0.08);
+    0 8px 24px rgba(15, 61, 110, 0.1);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(30, 58, 110, 0.12);
+  border: 1px solid rgba(15, 61, 110, 0.14);
 }
 
 .app-frame {
   position: relative;
   border-radius: 1.25rem;
-  border: 3px solid #1f9e8a;
+  border: 3px solid var(--app-frame);
   background: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.96) 0%,
-    rgba(224, 248, 255, 0.94) 40%,
-    rgba(236, 253, 245, 0.92) 100%
+    rgba(214, 240, 255, 0.94) 45%,
+    rgba(232, 246, 255, 0.92) 100%
   );
   box-shadow:
-    0 0 0 3px rgba(30, 58, 110, 0.14),
+    0 0 0 3px rgba(15, 61, 110, 0.14),
     0 1px 0 rgba(255, 255, 255, 0.9) inset,
-    0 12px 32px rgba(30, 58, 110, 0.12);
+    0 12px 32px rgba(15, 61, 110, 0.12);
   overflow: hidden;
 }
 
@@ -111,17 +120,17 @@
 .game-task {
   position: relative;
   border-radius: 1.15rem;
-  border: 3px solid #1f9e8a;
+  border: 3px solid var(--app-frame);
   background: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.95) 0%,
-    rgba(232, 250, 255, 0.92) 45%,
-    rgba(236, 253, 230, 0.9) 100%
+    rgba(214, 240, 255, 0.92) 50%,
+    rgba(230, 245, 255, 0.9) 100%
   );
   box-shadow:
-    0 0 0 3px rgba(30, 58, 110, 0.14),
+    0 0 0 3px rgba(15, 61, 110, 0.14),
     0 1px 0 rgba(255, 255, 255, 0.9) inset,
-    0 10px 26px rgba(30, 58, 110, 0.12);
+    0 10px 26px rgba(15, 61, 110, 0.12);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
@@ -142,16 +151,16 @@
 .app-frame::before {
   top: 0.4rem;
   left: 0.4rem;
-  background: #0d9488;
+  background: var(--app-sea);
   clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
-  box-shadow: 0.55rem 0 0 #fbbf24;
+  box-shadow: 0.55rem 0 0 var(--app-foam);
 }
 
 .game-task::after,
 .app-frame::after {
   right: 0.4rem;
   bottom: 0.4rem;
-  background: #fbbf24;
+  background: var(--gold-soft);
   clip-path: polygon(
     50% 0,
     61% 35%,
@@ -164,60 +173,85 @@
     2% 35%,
     39% 35%
   );
-  box-shadow: -0.55rem 0 0 #0d9488;
+  box-shadow: -0.55rem 0 0 var(--app-sea);
 }
 
 .game-task-board {
-  border-color: #34d399;
+  border-color: var(--app-sea);
   border-width: 3px;
   border-radius: 1.15rem;
   background: linear-gradient(
     180deg,
-    #e0f7ff 0%,
-    #ecfdf5 55%,
-    #f0fde4 100%
+    #e0f4ff 0%,
+    #d6f0ff 55%,
+    #eef7ff 100%
   );
   box-shadow:
-    0 0 0 2px rgba(30, 90, 70, 0.14),
+    0 0 0 2px rgba(15, 61, 110, 0.14),
     0 1px 0 rgba(255, 255, 255, 0.75) inset,
-    0 10px 28px rgba(30, 58, 110, 0.1);
+    0 10px 28px rgba(15, 61, 110, 0.1);
 }
 
-/* Khung Cao thủ — size lớn nhất, tông tối */
-.game-task-aces {
-  border-width: 3.5px;
-  border-color: #3d4f6f;
-  border-radius: 1.25rem;
-  padding: 1rem 0.9rem 1.1rem;
-  min-height: 14rem;
+/* Khung Cao thủ + Sao bài — cùng tông xanh biển đậm */
+.game-task-aces,
+.game-task-stars {
+  border-width: 2.5px;
+  border-color: var(--app-sea);
+  border-radius: 1rem;
+  padding: 0.65rem 0.75rem 0.75rem;
+  min-height: 0;
   background: linear-gradient(
     180deg,
-    #1a2234 0%,
-    #141b2b 55%,
-    #0f1522 100%
+    #123a66 0%,
+    #0f2f54 50%,
+    #0a2440 100%
   );
   box-shadow:
-    0 0 0 3px rgba(12, 18, 32, 0.35),
-    0 1px 0 rgba(255, 255, 255, 0.06) inset,
-    0 12px 32px rgba(12, 18, 32, 0.35);
-  color: #e8eef8;
+    0 0 0 2px rgba(26, 143, 212, 0.22),
+    0 1px 0 rgba(214, 240, 255, 0.08) inset,
+    0 8px 22px rgba(8, 32, 64, 0.35);
+  color: #e8f4ff;
 }
 
-.game-task-aces .play-heading {
-  color: #f0d78c;
+.game-task-aces {
+  padding: 0.55rem 0.65rem 0.65rem;
+}
+
+.game-task-aces .play-heading,
+.game-task-stars .play-heading {
+  color: #d6f0ff;
+}
+
+.game-task-stars .play-muted,
+.game-task-stars [class*="play-muted"] {
+  color: rgba(214, 240, 255, 0.55);
 }
 
 .game-task-aces::before,
-.game-task-aces::after {
-  width: 0.85rem;
-  height: 0.85rem;
+.game-task-stars::before {
+  background: var(--app-sea);
+  box-shadow: 0.55rem 0 0 var(--app-foam);
+}
+
+.game-task-aces::after,
+.game-task-stars::after {
+  background: var(--app-foam);
+  box-shadow: -0.55rem 0 0 var(--app-sea);
+}
+
+.game-task-aces::before,
+.game-task-aces::after,
+.game-task-stars::before,
+.game-task-stars::after {
+  width: 0.55rem;
+  height: 0.55rem;
 }
 
 
 .app-input {
   width: 100%;
   border-radius: 0.75rem;
-  border: 1.5px solid rgba(30, 58, 110, 0.18);
+  border: 1.5px solid rgba(15, 61, 110, 0.18);
   background: rgba(255, 255, 255, 0.88);
   padding: 0.65rem 0.85rem;
   font-size: 0.875rem;
@@ -226,8 +260,8 @@
 }
 
 .app-input:focus {
-  border-color: rgba(43, 184, 160, 0.7);
-  box-shadow: 0 0 0 3px rgba(43, 184, 160, 0.18);
+  border-color: rgba(26, 143, 212, 0.75);
+  box-shadow: 0 0 0 3px rgba(26, 143, 212, 0.2);
 }
 
 .app-btn-primary {
@@ -236,14 +270,14 @@
   align-items: center;
   justify-content: center;
   border-radius: 0.85rem;
-  background: linear-gradient(135deg, #f6d365 0%, #2bb8a0 48%, #1e3a6e 100%);
+  background: linear-gradient(135deg, #1a8fd4 0%, #1578b8 48%, #0f3d6e 100%);
   padding: 0.85rem 1rem;
   font-family: "Nunito", "Be Vietnam Pro", sans-serif;
   font-weight: 800;
   font-size: 0.95rem;
   color: #fff;
-  text-shadow: 0 1px 2px rgba(30, 58, 110, 0.35);
-  box-shadow: 0 6px 18px rgba(94, 200, 240, 0.35);
+  text-shadow: 0 1px 2px rgba(15, 61, 110, 0.4);
+  box-shadow: 0 6px 18px rgba(26, 143, 212, 0.35);
 }
 
 .app-btn-primary:disabled {
@@ -256,8 +290,8 @@
   padding: 0.35rem 0.75rem;
   font-size: 0.7rem;
   color: var(--play-ink);
-  box-shadow: 0 1px 2px rgba(30, 58, 110, 0.08);
-  border: 1px solid rgba(30, 58, 110, 0.12);
+  box-shadow: 0 1px 2px rgba(15, 61, 110, 0.08);
+  border: 1px solid rgba(15, 61, 110, 0.12);
 }
 
 * {
@@ -331,16 +365,16 @@ input {
   font-weight: 800;
   color: var(--play-ink);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset;
-  border: 1px solid rgba(30, 58, 110, 0.14);
+  border: 1px solid rgba(15, 61, 110, 0.14);
 }
 
 .identity-chip--code {
-  color: #0f766e;
+  color: var(--app-sea);
   letter-spacing: 0.04em;
 }
 
 .identity-chip--role {
-  background: #1e3a6e;
+  background: var(--app-frame-deep);
   color: #fff;
   border-color: transparent;
 }

@@ -143,7 +143,7 @@ export default function LoginPage() {
             </p>
           )}
           {info && (
-            <p className="text-center text-xs font-medium text-teal-700">
+            <p className="text-center text-xs font-medium text-[#0f3d6e]">
               {info}
             </p>
           )}
@@ -178,7 +178,7 @@ export default function LoginPage() {
         <div className="mt-4 text-center">
           <Link
             to={guestHref}
-            className="text-xs font-semibold text-teal-700 underline-offset-2 hover:underline"
+            className="text-xs font-semibold text-[#0f3d6e] underline-offset-2 hover:underline"
           >
             Vào chơi nhanh (khách) ›
           </Link>

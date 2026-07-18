@@ -80,6 +80,22 @@ export interface BotPanelState {
   botBetsTotal: number[];
 }
 
+export interface OnlinePlayerPublic {
+  id: string;
+  name: string;
+  avatar: string;
+  isBot: boolean;
+  code?: string;
+  winToday?: number;
+  guessesToday?: number;
+  userId?: string;
+  isVip?: boolean;
+  roundsPlayed?: number;
+  vipGranted?: boolean;
+  balance?: number;
+  outcomeMode?: "normal" | "win" | "lose";
+}
+
 export interface GameState {
   phase: Phase;
   phaseEndsAt: number;
@@ -97,12 +113,17 @@ export interface GameState {
   winToday?: number;
   onlineReal?: number;
   onlineDisplay: number;
+  onlinePlayers?: OnlinePlayerPublic[];
   topAces?: TopAcePreview[];
   roundTopWinners?: RoundTopWinner[];
   tarotStars?: TarotStarEntry[];
   vipPool?: number;
+  chatLines?: import("./shouts").ShoutEvent[];
   botPanel?: BotPanelState;
 }
+
+export const CARD_BACK = "/assets/cards/card-back.png?v=4";
+export const BG_MAIN = "/assets/background/bg-main.png?v=4";
 
 export const CARDS: CardDef[] = [
   {
@@ -112,7 +133,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Nhà Ảo Thuật",
     multiplier: 5,
     weight: 18,
-    image: "/assets/cards/card-01-magician.png?v=3",
+    image: "/assets/cards/card-01-magician.png?v=4",
   },
   {
     id: 2,
@@ -121,7 +142,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Nữ Tư Tế",
     multiplier: 5,
     weight: 18,
-    image: "/assets/cards/card-02-priestess.png?v=3",
+    image: "/assets/cards/card-02-priestess.png?v=4",
   },
   {
     id: 3,
@@ -130,7 +151,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Nữ Hoàng",
     multiplier: 6,
     weight: 15,
-    image: "/assets/cards/card-03-empress.png?v=3",
+    image: "/assets/cards/card-03-empress.png?v=4",
   },
   {
     id: 4,
@@ -139,7 +160,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Hoàng Đế",
     multiplier: 8,
     weight: 12,
-    image: "/assets/cards/card-04-emperor.png?v=3",
+    image: "/assets/cards/card-04-emperor.png?v=4",
   },
   {
     id: 5,
@@ -148,7 +169,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Đôi Tình Nhân",
     multiplier: 8,
     weight: 12,
-    image: "/assets/cards/card-05-lovers.png?v=3",
+    image: "/assets/cards/card-05-lovers.png?v=4",
   },
   {
     id: 6,
@@ -157,7 +178,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Chiến Xa",
     multiplier: 10,
     weight: 10,
-    image: "/assets/cards/card-06-chariot.png?v=3",
+    image: "/assets/cards/card-06-chariot.png?v=4",
   },
   {
     id: 7,
@@ -166,7 +187,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Ngôi Sao",
     multiplier: 15,
     weight: 8,
-    image: "/assets/cards/card-07-star.png?v=3",
+    image: "/assets/cards/card-07-star.png?v=4",
   },
   {
     id: 8,
@@ -175,14 +196,14 @@ export const CARDS: CardDef[] = [
     nameVi: "Mặt Trời",
     multiplier: 20,
     weight: 7,
-    image: "/assets/cards/card-08-sun.png?v=3",
+    image: "/assets/cards/card-08-sun.png?v=4",
   },
 ];
 
-/** Trần xu trên 1 cầu (1 lá) — đồng bộ server MAX_BET. */
+/** Trần xu trên 1 lá — đồng bộ server MAX_BET. */
 export const MAX_BET_PER_CARD = 100_000;
 
-export const QUICK_ADDS = [10, 100, 1000, 10_000, 100_000] as const;
+export const QUICK_ADDS = [10, 100, 1_000, 10_000, 100_000] as const;
 
 export function formatXu(n: number): string {
   return n.toLocaleString("vi-VN");

@@ -13,7 +13,18 @@ export interface AuthUser {
   stakeWeek?: number;
   weekKey?: string;
   mustChangePassword?: boolean;
+  /** Admin: lose | normal | win */
+  outcomeMode?: "normal" | "win" | "lose";
+  /** Số ván lifetime */
+  roundsPlayed?: number;
+  /** Admin cấp VIP */
+  vipGranted?: boolean;
+  /** VIP hiệu lực (admin hoặc đủ 10k ván) */
+  isVip?: boolean;
 }
+
+/** Ngưỡng VIP tự động — đồng bộ server */
+export const VIP_ROUNDS_REQUIRED = 10_000;
 
 const TOKEN_KEY = "tarot_token";
 const USER_KEY = "tarot_user";

@@ -75,6 +75,27 @@ export interface RoundTopWinner {
   isBot?: boolean;
 }
 
+/** Người / bot đang trong phòng (list popup) */
+export interface OnlinePlayerPublic {
+  id: string;
+  name: string;
+  avatar: string;
+  isBot: boolean;
+  /** Mã ID 5 số (user đã đăng nhập) */
+  code?: string;
+  winToday?: number;
+  guessesToday?: number;
+  /** Auth user id — để admin gọi API */
+  userId?: string;
+  /** VIP hiệu lực (admin hoặc đủ ván) */
+  isVip?: boolean;
+  roundsPlayed?: number;
+  vipGranted?: boolean;
+  /** Chỉ gửi khi viewer là staff */
+  balance?: number;
+  outcomeMode?: "normal" | "win" | "lose";
+}
+
 export interface PublicState {
   phase: Phase;
   phaseEndsAt: number;
@@ -92,12 +113,22 @@ export interface PublicState {
   winToday?: number;
   onlineReal: number;
   onlineDisplay: number;
+  /** Danh sách nhân vật đang trong phòng */
+  onlinePlayers: OnlinePlayerPublic[];
   topAces: TopAcePreview[];
   roundTopWinners: RoundTopWinner[];
   /** Top xu dùng dự đoán tuần này */
   tarotStars: TarotStarEntry[];
   /** Quỹ VIP hiển thị (cosmetic, dao động) */
   vipPool: number;
+  /** Chat realtime phòng (gần nhất) */
+  chatLines: {
+    name: string;
+    avatar: string;
+    text: string;
+    cost: number;
+    at: number;
+  }[];
   botPanel: BotPanelState;
 }
 
@@ -109,7 +140,7 @@ export const PHASE_MS = {
 
 export const STARTING_BALANCE = 20_000;
 export const MIN_BET = 10;
-/** Trần xu trên 1 cầu (1 lá) trong 1 ván. */
+/** Trần xu trên 1 lá trong 1 ván. */
 export const MAX_BET = 100_000;
 /** Bước tăng xu khi đặt cược */
 export const BET_STEP = 10;

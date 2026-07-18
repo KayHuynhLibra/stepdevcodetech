@@ -1,14 +1,15 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { authStore } from "./auth.js";
+import { authStore, isStaff } from "./auth.js";
 import { DEFAULT_AVATAR, normalizeAvatar } from "./avatars.js";
 import { betStore } from "./betStore.js";
 import {
   CARDS,
   getCard,
   houseProfitByCard,
-  pickWinningCard,
+  pickWinningCardWithUserBias,
+  type UserRoundBias,
 } from "./cards.js";
 import { interStore, isPolicyMode } from "./interStore.js";
 import {
@@ -20,6 +21,17 @@ import {
   type BotIdentity,
 } from "./bots.js";
 import { vaultStore } from "./vaultStore.js";
+import {
+  CHAT_COOLDOWN_MS,
+  CHAT_HISTORY_LIMIT,
+  SAINT_COOLDOWN_MS,
+  chatCost,
+  getShout,
+  isChatMode,
+  sanitizeChatText,
+  type ChatMode,
+  type ShoutEvent,
+} from "./shouts.js";
 import {
   BOT_LOG_LIMIT,
   HISTORY_LIMIT,
@@ -39,6 +51,7 @@ import {
   type BotPanelState,
   type BotPublic,
   type LeaderboardEntry,
+  type OnlinePlayerPublic,
   type Phase,
   type PlayerSession,
   type PublicState,
@@ -138,10 +151,20 @@ export class GameEngine {
 
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private broadcast: BroadcastFn;
+  /** Rate-limit chat: socketId -> last at */
+  private shoutCooldown = new Map<string, number>();
+  /** Saint cooldown theo userId */
+  private saintCooldown = new Map<string, number>();
+  /** Chat realtime trong phòng (không ghi disk) */
+  private chatLines: ShoutEvent[] = [];
 
   constructor(broadcast: BroadcastFn) {
     this.broadcast = broadcast;
     this.loadHistoryFromDisk();
+  }
+
+  getChatLines(): ShoutEvent[] {
+    return [...this.chatLines];
   }
 
   start() {
@@ -235,12 +258,41 @@ export class GameEngine {
     if (this.tickTimer) clearInterval(this.tickTimer);
   }
 
+  /** Gắn / cập nhật userId cho session đang chơi (token hợp lệ). */
+  linkAuth(
+    socketId: string,
+    userId: string,
+  ): PlayerSession | null {
+    const session = this.players.get(socketId);
+    const linked = authStore.getById(userId);
+    if (!session || !linked) return null;
+    if (session.userId && session.userId !== linked.id) {
+      // Đã gắn user khác — không ghi đè
+      return session;
+    }
+    this.ensureDay(session);
+    session.userId = linked.id;
+    session.name = linked.username.slice(0, 20);
+    session.avatar = normalizeAvatar(linked.avatar) || session.avatar;
+    session.balance = linked.balance;
+    session.winToday = linked.winToday;
+    session.guessesToday = linked.guessesToday;
+    session.stakeWeek = linked.stakeWeek ?? session.stakeWeek;
+    return session;
+  }
+
   join(
     socketId: string,
     opts?: { name?: string; userId?: string; avatar?: string },
   ): { session: PlayerSession; kickedSocketIds: string[] } {
     const existing = this.players.get(socketId);
-    if (existing) return { session: existing, kickedSocketIds: [] };
+    if (existing) {
+      // Re-join cùng socket: gắn auth nếu trước đó vào như khách
+      if (opts?.userId && !existing.userId) {
+        this.linkAuth(socketId, opts.userId);
+      }
+      return { session: existing, kickedSocketIds: [] };
+    }
 
     const linked = opts?.userId ? authStore.getById(opts.userId) : undefined;
     const kickedSocketIds: string[] = [];
@@ -410,6 +462,29 @@ export class GameEngine {
     return { ok: true, avatar: next };
   }
 
+  /** Đổi tên hiển thị — chỉ khách (user login giữ username). */
+  setSessionName(
+    socketId: string,
+    name: string,
+  ): { ok: true; name: string } | { ok: false; reason: string } {
+    const session = this.players.get(socketId);
+    if (!session) return { ok: false, reason: "Chưa vào bàn" };
+    if (session.userId) {
+      return { ok: false, reason: "Tài khoản dùng username cố định" };
+    }
+    const next = String(name ?? "")
+      .replace(/[\u0000-\u001f\u007f]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 16);
+    if (next.length < 2) {
+      return { ok: false, reason: "Tên 2–16 ký tự" };
+    }
+    session.name = next;
+    this.emitToAll();
+    return { ok: true, name: next };
+  }
+
   private resolveAvatar(playerId: string, userId?: string): string {
     const live = this.players.get(playerId);
     if (live?.avatar) return normalizeAvatar(live.avatar);
@@ -537,9 +612,17 @@ export class GameEngine {
     socketId: string,
     cardId: number,
     amount: number,
+    roundId?: number,
   ): { ok: true; balance: number } | { ok: false; reason: string } {
     if (this.phase !== "betting") {
       return { ok: false, reason: "Đã hết giờ đặt cược" };
+    }
+    if (
+      roundId != null &&
+      Number.isFinite(roundId) &&
+      Math.floor(roundId) !== this.roundNumber
+    ) {
+      return { ok: false, reason: "Ván đã đổi — đặt lại cược" };
     }
     if (!getCard(cardId)) {
       return { ok: false, reason: "Lá bài không hợp lệ" };
@@ -554,7 +637,7 @@ export class GameEngine {
     ) {
       return {
         ok: false,
-        reason: `Số xu không hợp lệ (tối đa ${MAX_BET.toLocaleString("vi-VN")} / 1 cầu)`,
+        reason: `Số xu không hợp lệ (tối đa ${MAX_BET.toLocaleString("vi-VN")} / 1 lá)`,
       };
     }
 
@@ -572,7 +655,7 @@ export class GameEngine {
     if (prev + amt > MAX_BET) {
       return {
         ok: false,
-        reason: `Mỗi cầu tối đa ${MAX_BET.toLocaleString("vi-VN")} xu (đã đặt ${prev.toLocaleString("vi-VN")})`,
+        reason: `Mỗi lá tối đa ${MAX_BET.toLocaleString("vi-VN")} xu (đã đặt ${prev.toLocaleString("vi-VN")})`,
       };
     }
     if (prev <= 0) {
@@ -603,6 +686,98 @@ export class GameEngine {
     this.syncUser(player);
     this.emitToAll();
     return { ok: true, balance: player.balance };
+  }
+
+  /**
+   * Chat / slang phòng.
+   * mode: no (10) | vip (50, cần VIP) | saint (10000, toàn màn)
+   */
+  sendShout(
+    socketId: string,
+    opts: {
+      id?: string;
+      text?: string;
+      userId?: string;
+      mode?: ChatMode;
+      /** Legacy */
+      vipFly?: boolean;
+    },
+  ):
+    | { ok: true; balance: number; event: ShoutEvent }
+    | { ok: false; reason: string } {
+    let player = this.players.get(socketId);
+    if (!player) return { ok: false, reason: "Chưa vào phòng" };
+    if (!player.userId && opts.userId) {
+      player = this.linkAuth(socketId, opts.userId) ?? player;
+    }
+    if (!player.userId) {
+      return { ok: false, reason: "Cần đăng nhập lại để chat" };
+    }
+
+    let mode: ChatMode = "no";
+    if (isChatMode(opts.mode)) mode = opts.mode;
+    else if (opts.vipFly) mode = "vip";
+
+    if (mode === "vip" && !authStore.isVipUser(player.userId)) {
+      return { ok: false, reason: "Cần VIP để chat bay màn hình" };
+    }
+    const cost = chatCost(mode);
+
+    let text: string | null = null;
+    const sid = String(opts.id ?? "").trim();
+    if (sid) {
+      const def = getShout(sid);
+      if (!def) return { ok: false, reason: "Slang không hợp lệ" };
+      text = def.text;
+    } else {
+      text = sanitizeChatText(opts.text ?? "");
+      if (!text) return { ok: false, reason: "Nhập nội dung chat" };
+    }
+
+    const now = Date.now();
+    const last = this.shoutCooldown.get(socketId) ?? 0;
+    if (now - last < CHAT_COOLDOWN_MS) {
+      return { ok: false, reason: "Chờ giây lát rồi gửi tiếp" };
+    }
+    if (mode === "saint") {
+      const lastSaint = this.saintCooldown.get(player.userId) ?? 0;
+      const wait = SAINT_COOLDOWN_MS - (now - lastSaint);
+      if (wait > 0) {
+        const sec = Math.ceil(wait / 1000);
+        return {
+          ok: false,
+          reason: `Saint chờ ${sec}s nữa`,
+        };
+      }
+    }
+
+    if (player.balance < cost) {
+      return { ok: false, reason: `Cần ${cost.toLocaleString("vi-VN")} xu để chat` };
+    }
+
+    player.balance -= cost;
+    this.shoutCooldown.set(socketId, now);
+    if (mode === "saint") {
+      this.saintCooldown.set(player.userId, now);
+    }
+    this.syncUser(player);
+    this.broadcast(this.getStateFor(socketId), socketId);
+
+    const event: ShoutEvent = {
+      name: player.name,
+      avatar: normalizeAvatar(player.avatar),
+      text,
+      cost,
+      at: now,
+      mode,
+      fly: mode === "vip",
+      saint: mode === "saint",
+    };
+    this.chatLines.push(event);
+    if (this.chatLines.length > CHAT_HISTORY_LIMIT) {
+      this.chatLines = this.chatLines.slice(-CHAT_HISTORY_LIMIT);
+    }
+    return { ok: true, balance: player.balance, event };
   }
 
   getHistory(limit = HISTORY_LIMIT): RoundResult[] {
@@ -721,11 +896,69 @@ export class GameEngine {
     }));
   }
 
+  getOnlinePlayers(opts?: { forStaff?: boolean }): OnlinePlayerPublic[] {
+    const forStaff = !!opts?.forStaff;
+    const humans: OnlinePlayerPublic[] = [];
+    for (const p of this.players.values()) {
+      this.ensureDay(p);
+      const linked = p.userId ? authStore.getById(p.userId) : undefined;
+      const row: OnlinePlayerPublic = {
+        id: p.id,
+        name: p.name,
+        avatar: normalizeAvatar(p.avatar),
+        isBot: false,
+        code: linked?.code,
+        winToday: p.winToday,
+        guessesToday: p.guessesToday,
+        userId: linked?.id,
+        isVip: linked ? authStore.isVipUser(linked.id) : undefined,
+        roundsPlayed: linked
+          ? authStore.getRoundsPlayed(linked.id)
+          : undefined,
+        vipGranted: linked ? !!linked.vipGranted : undefined,
+      };
+      if (forStaff && linked) {
+        row.balance = linked.balance;
+        row.outcomeMode = authStore.getOutcomeMode(linked.id);
+      }
+      humans.push(row);
+    }
+    humans.sort((a, b) => a.name.localeCompare(b.name, "vi"));
+    // Không hiện bot trong list online
+    return humans;
+  }
+
+  /** Bias win/lose từ user đăng nhập đang có cược (kèm orphan). */
+  private collectUserBiases(): UserRoundBias[] {
+    const biases: UserRoundBias[] = [];
+    const consider = (p: PlayerSession) => {
+      if (!p.userId) return;
+      const mode = authStore.getOutcomeMode(p.userId);
+      if (mode === "normal") return;
+      const bets = CARDS.map((c) => p.bets.get(c.id) ?? 0);
+      if (!bets.some((x) => x > 0)) return;
+      biases.push({ bets, mode });
+    };
+    for (const p of this.players.values()) consider(p);
+    for (const p of this.orphans.values()) consider(p);
+    return biases;
+  }
+
   getStateFor(playerId?: string): PublicState {
     const displayBets = this.realBets.map((v, i) => v + this.botBets[i]);
     const playerCounts = this.realBettors.map((v, i) => v + this.botBettors[i]);
     const onlineReal = this.players.size;
-    const onlineDisplay = onlineReal + this.activeBots.length;
+    /** Chỉ đếm người thật — không cộng bot */
+    const onlineDisplay = onlineReal;
+
+    let forStaff = false;
+    if (playerId) {
+      const viewer = this.players.get(playerId);
+      if (viewer?.userId) {
+        const vu = authStore.getById(viewer.userId);
+        if (vu && isStaff(vu)) forStaff = true;
+      }
+    }
 
     const base: PublicState = {
       phase: this.phase,
@@ -739,10 +972,12 @@ export class GameEngine {
       winningCard: this.phase === "betting" ? null : this.winningCard,
       onlineReal,
       onlineDisplay,
+      onlinePlayers: this.getOnlinePlayers({ forStaff }),
       topAces: this.getTopAces(playerId),
       roundTopWinners: this.getRoundTopWinners(playerId),
       tarotStars: this.getTarotStars(playerId),
       vipPool: Math.round(this.vipPool),
+      chatLines: this.getChatLines(),
       // Không lộ bot panel cho client thường — staff lấy qua socket getBotPanel
       botPanel: this.emptyBotPanel(),
     };
@@ -867,6 +1102,11 @@ export class GameEngine {
     return chosen;
   }
 
+  /** Đẩy lại state (vd. sau khi admin đổi VIP). */
+  refreshAllClients() {
+    this.emitToAll();
+  }
+
   private emitToAll() {
     for (const id of this.players.keys()) {
       this.broadcast(this.getStateFor(id), id);
@@ -920,7 +1160,12 @@ export class GameEngine {
       const interMode = interStore.getEffectiveMode();
       const authBets = this.getAuthBets();
       const policyBets = isPolicyMode(interMode) ? authBets : this.realBets;
-      this.winningCard = pickWinningCard(interMode, policyBets);
+      const userBiases = this.collectUserBiases();
+      this.winningCard = pickWinningCardWithUserBias(
+        interMode,
+        policyBets,
+        userBiases,
+      );
       const winIdx = (this.winningCard ?? 1) - 1;
       const profits = houseProfitByCard(authBets);
       const expectedHouse = profits[winIdx] ?? 0;
@@ -928,6 +1173,10 @@ export class GameEngine {
       this.snapshotRoundTopWinners();
       const modeLabel =
         storedMode === "all" ? `ALL→${interMode}` : interMode;
+      const biasNote =
+        userBiases.length > 0
+          ? ` · userBias[${userBiases.map((b) => b.mode).join(",")}]`
+          : "";
       this.pushLog({
         botId: "system",
         botName: "System",
@@ -939,11 +1188,11 @@ export class GameEngine {
           (isPolicyMode(interMode)
             ? ` · authStake ${authStake} · appProfit ~${Math.round(expectedHouse)}`
             : "") +
-          `)`,
+          `${biasNote})`,
       });
-      if (isPolicyMode(interMode) || storedMode === "all") {
+      if (isPolicyMode(interMode) || storedMode === "all" || userBiases.length) {
         console.log(
-          `[inter:${modeLabel}] win=#${this.winningCard} authBets=[${authBets.join(",")}] profits=[${profits.map((p) => Math.round(p)).join(",")}] → house~${Math.round(expectedHouse)}`,
+          `[inter:${modeLabel}] win=#${this.winningCard} authBets=[${authBets.join(",")}] profits=[${profits.map((p) => Math.round(p)).join(",")}] → house~${Math.round(expectedHouse)}${biasNote}`,
         );
       }
       this.emitToAll();
@@ -1117,6 +1366,24 @@ export class GameEngine {
     if (betRows.length > 0) {
       betStore.recordRoundBets(betRows);
     }
+
+    // +1 ván lifetime nếu user đã đặt ít nhất 1 lá trong round
+    const counted = new Set<string>();
+    const countRound = (player: PlayerSession) => {
+      if (!player.userId || counted.has(player.userId)) return;
+      let hasBet = false;
+      for (const amount of player.bets.values()) {
+        if (amount > 0) {
+          hasBet = true;
+          break;
+        }
+      }
+      if (!hasBet) return;
+      counted.add(player.userId);
+      authStore.recordRoundPlayed(player.userId);
+    };
+    for (const player of this.players.values()) countRound(player);
+    for (const player of this.orphans.values()) countRound(player);
 
     for (const player of this.players.values()) {
       this.syncUser(player);

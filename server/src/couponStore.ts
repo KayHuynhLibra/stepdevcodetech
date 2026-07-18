@@ -193,6 +193,64 @@ export class CouponStore {
   recentRedemptions(limit = 40): CouponRedeem[] {
     return this.redemptions.slice(0, Math.min(limit, 100));
   }
+
+  upsert(input: {
+    code: string;
+    amount: number;
+    label?: string;
+    enabled?: boolean;
+    oncePerUser?: boolean;
+    secret?: boolean;
+  }): { ok: true; coupon: CouponDef } | { ok: false; reason: string } {
+    const code = String(input.code ?? "").trim();
+    if (code.length < 3 || code.length > 32) {
+      return { ok: false, reason: "Mã 3–32 ký tự" };
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(code)) {
+      return { ok: false, reason: "Mã chỉ gồm chữ, số, _ hoặc -" };
+    }
+    const amount = Math.floor(Number(input.amount));
+    if (!Number.isFinite(amount) || amount < 10 || amount > 10_000_000) {
+      return { ok: false, reason: "Số xu 10 – 10.000.000" };
+    }
+    const key = code.toLowerCase();
+    const existing = this.coupons.find((c) => c.code.toLowerCase() === key);
+    if (existing) {
+      existing.amount = amount;
+      if (typeof input.label === "string") {
+        existing.label = input.label.trim().slice(0, 80) || existing.label;
+      }
+      if (typeof input.enabled === "boolean") existing.enabled = input.enabled;
+      if (typeof input.oncePerUser === "boolean") {
+        existing.oncePerUser = input.oncePerUser;
+      }
+      if (typeof input.secret === "boolean") existing.secret = input.secret;
+      this.save();
+      return { ok: true, coupon: { ...existing } };
+    }
+    const coupon: CouponDef = {
+      code,
+      amount,
+      secret: input.secret !== false,
+      label: (input.label ?? "").trim().slice(0, 80) || `Nạp ${amount} xu`,
+      enabled: input.enabled !== false,
+      oncePerUser: !!input.oncePerUser,
+    };
+    this.coupons.push(coupon);
+    this.save();
+    return { ok: true, coupon: { ...coupon } };
+  }
+
+  setEnabled(
+    code: string,
+    enabled: boolean,
+  ): { ok: true; coupon: CouponDef } | { ok: false; reason: string } {
+    const coupon = this.find(code);
+    if (!coupon) return { ok: false, reason: "Không tìm thấy mã" };
+    coupon.enabled = !!enabled;
+    this.save();
+    return { ok: true, coupon: { ...coupon } };
+  }
 }
 
 export const couponStore = new CouponStore();

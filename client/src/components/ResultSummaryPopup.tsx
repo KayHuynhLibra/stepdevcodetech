@@ -167,7 +167,7 @@ export function ResultSummaryPopup({
                 aria-hidden
               />
               <p className="font-play relative text-[10px] font-semibold uppercase tracking-[0.22em] text-[#f0d78c]/90">
-                Lá thắng #{winner.id}
+                Lá thắng
               </p>
               <div className="relative mt-1.5">
                 <motion.img
@@ -183,7 +183,7 @@ export function ResultSummaryPopup({
                 </span>
               </div>
               <p className="font-play relative mt-1.5 rounded-full bg-[#f0c14b]/15 px-2.5 py-0.5 text-sm font-bold text-[#ffe7a0] ring-1 ring-[#f0c14b]/35">
-                #{winner.id} · x{winner.multiplier}
+                x{winner.multiplier}
               </p>
             </div>
 
