@@ -1,0 +1,109 @@
+{
+  "version": "1.0.0-placeholder",
+  "note": "Ảnh mặc định tạm thời — thay file PNG cùng tên khi có design chính thức, không cần đổi path trong code nếu giữ nguyên tên file.",
+  "background": {
+    "main": "/assets/background/bg-main.png"
+  },
+  "logo": {
+    "main": "/assets/logo/logo-tarot.png"
+  },
+  "cards": {
+    "back": "/assets/cards/card-back.png",
+    "faces": [
+      {
+        "id": 1,
+        "key": "magician",
+        "name": "The Magician",
+        "nameVi": "Nhà Ảo Thuật",
+        "multiplier": 5,
+        "weight": 18,
+        "image": "/assets/cards/card-01-magician.png"
+      },
+      {
+        "id": 2,
+        "key": "priestess",
+        "name": "The High Priestess",
+        "nameVi": "Nữ Tư Tế",
+        "multiplier": 5,
+        "weight": 18,
+        "image": "/assets/cards/card-02-priestess.png"
+      },
+      {
+        "id": 3,
+        "key": "empress",
+        "name": "The Empress",
+        "nameVi": "Nữ Hoàng",
+        "multiplier": 6,
+        "weight": 15,
+        "image": "/assets/cards/card-03-empress.png"
+      },
+      {
+        "id": 4,
+        "key": "emperor",
+        "name": "The Emperor",
+        "nameVi": "Hoàng Đế",
+        "multiplier": 8,
+        "weight": 12,
+        "image": "/assets/cards/card-04-emperor.png"
+      },
+      {
+        "id": 5,
+        "key": "lovers",
+        "name": "The Lovers",
+        "nameVi": "Đôi Tình Nhân",
+        "multiplier": 8,
+        "weight": 12,
+        "image": "/assets/cards/card-05-lovers.png"
+      },
+      {
+        "id": 6,
+        "key": "chariot",
+        "name": "The Chariot",
+        "nameVi": "Chiến Xa",
+        "multiplier": 10,
+        "weight": 10,
+        "image": "/assets/cards/card-06-chariot.png"
+      },
+      {
+        "id": 7,
+        "key": "star",
+        "name": "The Star",
+        "nameVi": "Ngôi Sao",
+        "multiplier": 15,
+        "weight": 8,
+        "image": "/assets/cards/card-07-star.png"
+      },
+      {
+        "id": 8,
+        "key": "sun",
+        "name": "The Sun",
+        "nameVi": "Mặt Trời",
+        "multiplier": 20,
+        "weight": 7,
+        "image": "/assets/cards/card-08-sun.png"
+      }
+    ]
+  },
+  "ui": {
+    "coinXu": "/assets/ui/icon-coin-xu.png",
+    "avatarDefault": "/assets/ui/avatar-default.png",
+    "vipBadge": "/assets/ui/icon-vip.png",
+    "headerBanner": "/assets/ui/ui-header-banner.png",
+    "timerFrame": "/assets/ui/ui-timer-frame.png",
+    "historyPanel": "/assets/ui/ui-history-panel.png"
+  },
+  "replaceGuide": {
+    "howToUpdate": "Thay file PNG cùng tên trong thư mục tương ứng. Giữ kích thước tỷ lệ gần giống để UI không bị méo.",
+    "recommendedSizes": {
+      "bg-main.png": "1080x1920 (9:16)",
+      "card-*.png": "600x840 (3:4)",
+      "card-back.png": "600x840 (3:4)",
+      "logo-tarot.png": "512x512",
+      "icon-*.png": "256x256",
+      "avatar-default.png": "256x256",
+      "ui-header-banner.png": "1080x400",
+      "ui-timer-frame.png": "512x512",
+      "ui-history-panel.png": "1080x240"
+    }
+  }
+}

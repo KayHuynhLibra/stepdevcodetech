@@ -1,0 +1,16 @@
+{
+  "name": "tarot-bet-demo",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "demo": "concurrently -n server,client -c magenta,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
+    "install:all": "npm install"
+  },
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
