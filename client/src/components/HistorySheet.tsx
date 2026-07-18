@@ -17,9 +17,9 @@ export function HistorySheet({ open, rows, onClose }: HistorySheetProps) {
     >
       <div className="overflow-x-auto pb-4">
         <table className="w-full min-w-[340px] border-collapse text-center text-[11px]">
-          <thead className="sticky top-0 z-20 bg-[#121826]">
+          <thead className="sticky top-0 z-20 bg-[var(--sheet-mid)]">
             <tr>
-              <th className="sticky left-0 z-30 bg-[#121826] px-1 py-2 text-white/50">
+              <th className="sticky left-0 z-30 bg-[var(--sheet-mid)] px-1 py-2 text-white/50">
                 Ván
               </th>
               {CARDS.map((c) => (
@@ -51,7 +51,7 @@ export function HistorySheet({ open, rows, onClose }: HistorySheetProps) {
             )}
             {rows.map((row) => (
               <tr key={row.round} className="border-t border-white/5">
-                <td className="sticky left-0 bg-[#121826] px-1 py-2.5 font-semibold text-[var(--gold-soft)]">
+                <td className="sticky left-0 bg-[var(--sheet-mid)] px-1 py-2.5 font-semibold text-[var(--gold-soft)]">
                   {row.round}
                 </td>
                 {CARDS.map((c) => (

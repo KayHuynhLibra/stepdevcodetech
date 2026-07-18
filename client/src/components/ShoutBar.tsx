@@ -97,7 +97,7 @@ export function ShoutBar({
 
   return (
     <section className="game-task mt-2 overflow-hidden px-0 py-0">
-      <div className="flex items-center justify-between gap-2 border-b border-[#0f3d6e]/12 px-2.5 py-1">
+      <div className="flex items-center justify-between gap-2 border-b border-[var(--wood-deep)]/12 px-2.5 py-1">
         <div className="flex min-w-0 items-center gap-1.5">
           <span
             className="relative shrink-0"
@@ -112,13 +112,13 @@ export function ShoutBar({
               alt=""
               className={`h-5 w-5 rounded-full object-cover ring-1 transition ${
                 chatLive
-                  ? "opacity-100 ring-[#1a8fd4]/70"
+                  ? "opacity-100 ring-[var(--jade)]/70"
                   : "opacity-35 grayscale ring-black/20"
               }`}
             />
             <span
               className={`absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ring-1 ring-white ${
-                chatLive ? "bg-[#1a8fd4]" : "bg-zinc-400"
+                chatLive ? "ui-live-dot" : "bg-zinc-400"
               }`}
               aria-hidden
             />
@@ -140,11 +140,11 @@ export function ShoutBar({
                   className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wide disabled:opacity-40 ${
                     active
                       ? m.id === "saint"
-                        ? "bg-[#1a8fd4] text-white ring-1 ring-[#0f3d6e]/40"
+                        ? "bg-[var(--jade)] text-[#06241e] ring-1 ring-[var(--jade-soft)]/55 shadow-sm"
                         : m.id === "vip"
-                          ? "bg-amber-500 text-[#1a1208] ring-1 ring-amber-600/40"
-                          : "bg-[#0f3d6e] text-white ring-1 ring-[#0f3d6e]/40"
-                      : "bg-[#0f3d6e]/8 text-[var(--play-ink)] ring-1 ring-[#0f3d6e]/12"
+                          ? "bg-amber-400 text-[#1a1208] ring-1 ring-amber-500/50 shadow-sm"
+                          : "bg-[var(--wood-deep)] text-[var(--cream)] ring-1 ring-[var(--gold)]/35"
+                      : "bg-[var(--wood-deep)]/[0.06] text-[var(--play-muted)] ring-1 ring-[var(--wood-deep)]/10"
                   }`}
                 >
                   {m.label}
@@ -184,7 +184,7 @@ export function ShoutBar({
 
       <div
         ref={listRef}
-        className="h-16 space-y-0.5 overflow-y-auto bg-[#0f1728]/6 px-2 py-1"
+        className="h-16 space-y-0.5 overflow-y-auto bg-[var(--night)]/8 px-2 py-1"
       >
         {lines.length === 0 ? (
           <p className="py-2 text-center text-[10px] text-[var(--play-muted)]">
@@ -209,14 +209,14 @@ export function ShoutBar({
                 />
               </button>
               <p className="min-w-0 flex-1 truncate text-[10px] text-[var(--play-ink)]">
-                <span className="font-bold text-[#0f3d6e]">{m.name}</span>
+                <span className="font-bold text-[var(--wood-deep)]">{m.name}</span>
                 {(m.mode === "vip" || m.fly) && (
                   <span className="ml-1 text-[9px] font-bold text-amber-700">
                     VIP
                   </span>
                 )}
                 {(m.mode === "saint" || m.saint) && (
-                  <span className="ml-1 text-[9px] font-bold text-[#1a8fd4]">
+                  <span className="ml-1 text-[9px] font-bold text-[var(--jade)]">
                     Saint
                   </span>
                 )}
@@ -228,14 +228,14 @@ export function ShoutBar({
         )}
       </div>
 
-      <div className="flex gap-1 overflow-x-auto border-t border-[#0f3d6e]/10 px-1.5 py-1">
+      <div className="flex gap-1 overflow-x-auto border-t border-[var(--wood-deep)]/10 px-1.5 py-1">
         {SHOUTS.map((s) => (
           <button
             key={s.id}
             type="button"
             disabled={disabled || busy}
             onClick={() => onSendSlang(s.id)}
-            className="shrink-0 rounded-full bg-[#0f3d6e]/10 px-2 py-0.5 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[#0f3d6e]/15 disabled:opacity-45"
+            className="app-btn-soft shrink-0 !px-2 !py-0.5 !text-[10px] disabled:opacity-45"
           >
             {s.text}
           </button>
@@ -244,7 +244,7 @@ export function ShoutBar({
 
       <form
         onSubmit={submit}
-        className="flex gap-1 border-t border-[#0f3d6e]/12 px-1.5 py-1"
+        className="flex gap-1 border-t border-[var(--wood-deep)]/12 px-1.5 py-1"
       >
         <input
           value={text}
@@ -276,7 +276,7 @@ export function ShoutBar({
           <button
             type="submit"
             disabled={disabled || busy || !text.trim()}
-            className="shrink-0 rounded-lg bg-[#0f3d6e] px-2.5 text-[11px] font-bold text-white disabled:opacity-45"
+            className="app-btn-primary !w-auto shrink-0 !rounded-lg !px-2.5 !py-1.5 !text-[11px]"
           >
             Gửi
           </button>

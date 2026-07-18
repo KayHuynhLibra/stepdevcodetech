@@ -16,7 +16,7 @@ export function ShoutMarquee({ items }: ShoutMarqueeProps) {
             animate={{ opacity: 1, y: 0, x: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.35 }}
-            className="overflow-hidden rounded-full bg-[#0f1728]/88 py-1.5 shadow-lg ring-1 ring-[var(--gold)]/35 backdrop-blur-sm"
+            className="overflow-hidden rounded-full bg-[var(--wood-deep)]/90 py-1.5 shadow-lg shadow-[0_0_16px_rgba(255,176,64,0.22)] ring-1 ring-[var(--gold)]/45 backdrop-blur-sm"
           >
             <div className="flex items-center gap-2 whitespace-nowrap px-3">
               <img

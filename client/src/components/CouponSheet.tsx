@@ -42,18 +42,18 @@ export function CouponSheet({
         aria-label="Đóng"
         onClick={onClose}
       />
-      <div className="relative z-10 mb-0 w-full max-w-md rounded-t-2xl bg-white px-4 pb-5 pt-4 shadow-xl ring-1 ring-[#0f3d6e]/15 sm:mb-0 sm:rounded-2xl">
+      <div className="sheet-shell-light relative z-10 mb-0 w-full max-w-md rounded-t-2xl px-4 pb-5 pt-4 shadow-xl ring-1 ring-[var(--jade)]/45 sm:mb-0 sm:rounded-2xl">
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <p className="play-heading text-base">Nạp xu</p>
-            <p className="text-[11px] text-[var(--play-muted)]">
+            <p className="play-heading text-base !text-[var(--jade-deep)]">Nạp xu</p>
+            <p className="text-[11px] text-[var(--jade-deep)]/65">
               Nhập mã coupon để cộng xu
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full bg-[#0f3d6e]/10 px-3 py-1 text-xs font-semibold text-[var(--play-ink)]"
+            className="app-btn-ghost px-3 py-1 text-xs"
           >
             Đóng
           </button>

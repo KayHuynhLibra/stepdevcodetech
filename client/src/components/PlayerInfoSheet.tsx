@@ -91,9 +91,9 @@ export function PlayerInfoSheet({
         aria-label="Đóng"
         onClick={onClose}
       />
-      <div className="relative z-10 max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-t-2xl bg-[#0f1728] px-5 pb-6 pt-5 text-white shadow-xl ring-1 ring-white/10 sm:rounded-2xl">
+      <div className="sheet-shell relative z-10 max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-t-2xl px-5 pb-6 pt-5 shadow-xl ring-1 ring-[var(--jade)]/40 sm:rounded-2xl">
         <div className="mb-4 flex items-start justify-between gap-2">
-          <p className="font-display text-sm tracking-wide text-[var(--gold-soft)]">
+          <p className="font-display text-sm tracking-wide text-[var(--jade-soft)]">
             Thông tin
           </p>
           <button
@@ -147,7 +147,7 @@ export function PlayerInfoSheet({
             </div>
             <div className="rounded-xl bg-white/5 px-3 py-2.5 ring-1 ring-white/10">
               <p className="text-[10px] text-white/45">Lần đoán hôm nay</p>
-              <p className="font-play mt-0.5 text-sm font-bold text-[#d6f0ff] tabular-nums">
+              <p className="font-play mt-0.5 text-sm font-bold text-[var(--gold-soft)] tabular-nums">
                 {player.guessesToday ?? 0}
               </p>
             </div>
@@ -201,7 +201,7 @@ export function PlayerInfoSheet({
                           ? "bg-emerald-600 text-white"
                           : mode === "lose"
                             ? "bg-rose-600 text-white"
-                            : "bg-[#3b82f6] text-white"
+                            : "bg-[var(--wood)] text-white"
                         : "bg-white/10 text-white/80 ring-1 ring-white/15"
                     }`}
                   >

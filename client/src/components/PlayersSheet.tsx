@@ -25,10 +25,10 @@ export function PlayersSheet({
         aria-label="Đóng"
         onClick={onClose}
       />
-      <div className="relative z-10 mb-0 flex max-h-[75vh] w-full max-w-md flex-col rounded-t-2xl bg-[#0f1728] px-4 pb-5 pt-4 text-white shadow-xl ring-1 ring-white/10 sm:mb-0 sm:rounded-2xl">
+      <div className="sheet-shell relative z-10 mb-0 flex max-h-[75vh] w-full max-w-md flex-col rounded-t-2xl px-4 pb-5 pt-4 shadow-xl ring-1 ring-[var(--jade)]/40 sm:mb-0 sm:rounded-2xl">
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <p className="font-display text-base text-[var(--gold-soft)]">
+            <p className="font-display text-base text-[var(--jade-soft)]">
               Đang trong phòng
             </p>
             <p className="text-[11px] text-white/50">
@@ -38,7 +38,7 @@ export function PlayersSheet({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/80"
+            className="rounded-full bg-white/8 px-3 py-1 text-xs font-semibold text-[var(--cream)]/55 ring-1 ring-white/10"
           >
             Đóng
           </button>
@@ -70,7 +70,7 @@ export function PlayersSheet({
                     {p.code ? `ID ${p.code}` : "Khách"}
                   </p>
                 </div>
-                <span className="rounded-full bg-[#1a8fd4]/25 px-2 py-0.5 text-[10px] font-bold text-[#d6f0ff]">
+                <span className="rounded-full bg-[var(--jade)]/25 px-2 py-0.5 text-[10px] font-bold text-[var(--jade-soft)]">
                   USER
                 </span>
               </button>

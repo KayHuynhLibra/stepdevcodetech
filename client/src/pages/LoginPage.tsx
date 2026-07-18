@@ -77,112 +77,122 @@ export default function LoginPage() {
 
   return (
     <AppShell center maxWidth="sm">
-      <div className="app-frame w-full px-4 pb-5 pt-8">
-        <div className="mb-4 flex items-center gap-3">
-          <img
-            src="/assets/logo/logo-tarot.png"
-            alt=""
-            className="h-12 w-12 rounded-full object-cover shadow-md ring-2 ring-white/90"
-          />
-          <div>
-            <h1 className="play-heading text-xl">Đoán bài Tarot</h1>
-            <p className="text-xs text-[var(--play-muted)]">
-              {mode === "changePw"
-                ? "Đổi mật khẩu bắt buộc"
-                : mode === "login"
-                  ? "Đăng nhập"
-                  : "Đăng ký tài khoản"}
-            </p>
+      <div className="w-full">
+        <div className="app-frame w-full px-4 pb-5 pt-8">
+          <div className="mb-4 flex items-center gap-3">
+            <img
+              src="/assets/logo/logo-tarot.png"
+              alt=""
+              className="h-12 w-12 rounded-full object-cover shadow-md ring-2 ring-white/90"
+            />
+            <div>
+              <h1 className="play-heading text-xl tracking-wide">
+                SOFIAORE-TAROT
+              </h1>
+              <p className="text-xs text-[var(--play-muted)]">
+                {mode === "changePw"
+                  ? "Đổi mật khẩu bắt buộc"
+                  : mode === "login"
+                    ? "Đăng nhập"
+                    : "Đăng ký tài khoản"}
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={submit} className="space-y-3">
+            {mode !== "changePw" && (
+              <label className="block text-xs font-semibold text-[var(--play-muted)]">
+                Username
+                <input
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  autoComplete="username"
+                  className="app-input mt-1"
+                  required
+                />
+              </label>
+            )}
+            <label className="block text-xs font-semibold text-[var(--play-muted)]">
+              {mode === "changePw" ? "Mật khẩu hiện tại" : "Mật khẩu"}
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete={
+                  mode === "login" ? "current-password" : "new-password"
+                }
+                className="app-input mt-1"
+                required
+              />
+            </label>
+            {mode === "changePw" && (
+              <label className="block text-xs font-semibold text-[var(--play-muted)]">
+                Mật khẩu mới
+                <input
+                  type="password"
+                  value={nextPassword}
+                  onChange={(e) => setNextPassword(e.target.value)}
+                  autoComplete="new-password"
+                  className="app-input mt-1"
+                  minLength={6}
+                  required
+                />
+              </label>
+            )}
+
+            {error && (
+              <p className="text-center text-xs font-medium text-red-600">
+                {error}
+              </p>
+            )}
+            {info && (
+              <p className="text-center text-xs font-medium text-[var(--wood-deep)]">
+                {info}
+              </p>
+            )}
+
+            <button type="submit" disabled={loading} className="app-btn-primary">
+              {loading
+                ? "Đang xử lý…"
+                : mode === "changePw"
+                  ? "Đổi mật khẩu"
+                  : mode === "login"
+                    ? "Đăng nhập"
+                    : "Tạo tài khoản"}
+            </button>
+          </form>
+
+          {mode !== "changePw" && (
+            <button
+              type="button"
+              onClick={() => {
+                setMode(mode === "login" ? "register" : "login");
+                setError(null);
+                setInfo(null);
+              }}
+              className="mt-3 w-full text-center text-xs font-semibold text-[var(--play-ink)] underline-offset-2 hover:underline"
+            >
+              {mode === "login"
+                ? "Chưa có tài khoản? Đăng ký"
+                : "Đã có tài khoản? Đăng nhập"}
+            </button>
+          )}
+
+          <div className="mt-4 text-center">
+            <Link
+              to={guestHref}
+              className="text-xs font-semibold text-[var(--wood-deep)] underline-offset-2 hover:underline"
+            >
+              Vào chơi nhanh (khách) ›
+            </Link>
           </div>
         </div>
 
-        <form onSubmit={submit} className="space-y-3">
-          {mode !== "changePw" && (
-            <label className="block text-xs font-semibold text-[var(--play-muted)]">
-              Username
-              <input
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                autoComplete="username"
-                className="app-input mt-1"
-                required
-              />
-            </label>
-          )}
-          <label className="block text-xs font-semibold text-[var(--play-muted)]">
-            {mode === "changePw" ? "Mật khẩu hiện tại" : "Mật khẩu"}
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete={
-                mode === "login" ? "current-password" : "new-password"
-              }
-              className="app-input mt-1"
-              required
-            />
-          </label>
-          {mode === "changePw" && (
-            <label className="block text-xs font-semibold text-[var(--play-muted)]">
-              Mật khẩu mới
-              <input
-                type="password"
-                value={nextPassword}
-                onChange={(e) => setNextPassword(e.target.value)}
-                autoComplete="new-password"
-                className="app-input mt-1"
-                minLength={6}
-                required
-              />
-            </label>
-          )}
-
-          {error && (
-            <p className="text-center text-xs font-medium text-red-600">
-              {error}
-            </p>
-          )}
-          {info && (
-            <p className="text-center text-xs font-medium text-[#0f3d6e]">
-              {info}
-            </p>
-          )}
-
-          <button type="submit" disabled={loading} className="app-btn-primary">
-            {loading
-              ? "Đang xử lý…"
-              : mode === "changePw"
-                ? "Đổi mật khẩu"
-                : mode === "login"
-                  ? "Đăng nhập"
-                  : "Tạo tài khoản"}
-          </button>
-        </form>
-
-        {mode !== "changePw" && (
-          <button
-            type="button"
-            onClick={() => {
-              setMode(mode === "login" ? "register" : "login");
-              setError(null);
-              setInfo(null);
-            }}
-            className="mt-3 w-full text-center text-xs font-semibold text-[var(--play-ink)] underline-offset-2 hover:underline"
-          >
-            {mode === "login"
-              ? "Chưa có tài khoản? Đăng ký"
-              : "Đã có tài khoản? Đăng nhập"}
-          </button>
-        )}
-
-        <div className="mt-4 text-center">
-          <Link
-            to={guestHref}
-            className="text-xs font-semibold text-[#0f3d6e] underline-offset-2 hover:underline"
-          >
-            Vào chơi nhanh (khách) ›
-          </Link>
-        </div>
+        <aside className="login-dedication mx-auto mt-4 max-w-[16rem]">
+          <p className="login-dedication-text">
+            Chúc bé Sofia chọt đỡ ghiền
+          </p>
+        </aside>
       </div>
     </AppShell>
   );

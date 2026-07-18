@@ -18,26 +18,26 @@ export function SaintOverlay({ item }: SaintOverlayProps) {
           transition={{ duration: 0.35 }}
           className="pointer-events-none fixed inset-0 z-[80] flex items-center justify-center px-4"
         >
-          <div className="absolute inset-0 bg-[#041018]/72 backdrop-blur-[2px]" />
+          <div className="absolute inset-0 bg-[var(--night)]/78 backdrop-blur-[2px]" />
           <motion.div
             initial={{ scale: 0.82, y: 24 }}
             animate={{ scale: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0 }}
             transition={{ type: "spring", stiffness: 280, damping: 22 }}
-            className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl bg-gradient-to-b from-[#0f3d6e] via-[#123a66] to-[#0a2440] px-6 py-8 text-center shadow-2xl ring-2 ring-[#1a8fd4]/50"
+            className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl bg-gradient-to-b from-[#2a6b5e] via-[#163832] to-[#0a1c18] px-6 py-8 text-center shadow-2xl shadow-[0_0_48px_rgba(61,184,160,0.4)] ring-2 ring-[var(--jade-soft)]/65"
           >
-            <p className="mb-3 text-[10px] font-extrabold uppercase tracking-[0.2em] text-[#d6f0ff]/80">
+            <p className="mb-3 text-[10px] font-extrabold uppercase tracking-[0.2em] text-[var(--jade-soft)]/90">
               Saint
             </p>
             <img
               src={item.avatar || "/assets/ui/avatar-default.png"}
               alt=""
-              className="mx-auto h-16 w-16 rounded-full object-cover ring-2 ring-[#1a8fd4]/70 shadow-lg"
+              className="mx-auto h-16 w-16 rounded-full object-cover ring-2 ring-[var(--jade)]/80 shadow-lg"
             />
-            <p className="mt-3 font-play text-lg font-bold text-white">
+            <p className="mt-3 font-play text-lg font-bold text-[var(--cream)]">
               {item.name}
             </p>
-            <p className="mt-3 text-base font-semibold leading-snug text-[#d6f0ff]">
+            <p className="mt-3 text-base font-semibold leading-snug text-[var(--jade-soft)]">
               {item.text}
             </p>
           </motion.div>

@@ -136,77 +136,127 @@ export function ResultSummaryPopup({
   const byRank = (rank: number) =>
     topWinners.find((w) => w.rank === rank) ?? topWinners[rank - 1];
 
+  const theme = didWin
+    ? {
+        scrim: "bg-[#0c1412]/55",
+        panelRing: "ring-[var(--jade-soft)]/30",
+        panelBg:
+          "radial-gradient(ellipse 90% 55% at 50% -10%, rgba(126,217,198,0.18), transparent 55%), linear-gradient(180deg, #2a3d38 0%, #1e2c28 45%, #16201d 100%)",
+        handle: "via-[var(--jade-soft)]/70",
+        glow: "bg-[var(--jade-soft)]/12",
+        label: "text-[var(--jade-soft)]/75",
+        cardRing:
+          "ring-[var(--jade-soft)]/45 shadow-[0_6px_20px_rgba(61,184,160,0.18)]",
+        badge: "bg-[var(--jade-soft)]/85 text-[#14352e] ring-white/15",
+        mult: "bg-white/8 text-[var(--jade-soft)]/90 ring-[var(--jade-soft)]/25",
+        resultBox:
+          "bg-[var(--jade-soft)]/10 ring-[var(--jade-soft)]/28 text-[#d8f5ee]",
+        resultSub: "text-[var(--jade-soft)]/80",
+        resultMuted: "text-white/40",
+        podiumRing: "ring-white/10",
+        podiumTitle: "text-[var(--jade-soft)]/65",
+        title: "Chúc mừng!",
+        podiumBg:
+          "linear-gradient(180deg, rgba(126,217,198,0.06) 0%, rgba(20,32,28,0.4) 100%)",
+      }
+    : {
+        scrim: "bg-[#141012]/55",
+        panelRing: "ring-rose-200/25",
+        panelBg:
+          "radial-gradient(ellipse 90% 55% at 50% -10%, rgba(251,182,182,0.14), transparent 55%), linear-gradient(180deg, #3d2a30 0%, #2c1e24 45%, #1c1418 100%)",
+        handle: "via-rose-200/60",
+        glow: "bg-rose-200/10",
+        label: "text-rose-100/70",
+        cardRing:
+          "ring-rose-200/40 shadow-[0_6px_20px_rgba(190,120,130,0.16)]",
+        badge: "bg-rose-200/80 text-[#3a2026] ring-white/15",
+        mult: "bg-white/8 text-rose-100/85 ring-rose-200/25",
+        resultBox: "bg-rose-200/10 ring-rose-200/25 text-[#f3e4e6]",
+        resultSub: "text-rose-100/75",
+        resultMuted: "text-white/40",
+        podiumRing: "ring-white/10",
+        podiumTitle: "text-rose-100/60",
+        title: "Rất tiếc!",
+        podiumBg:
+          "linear-gradient(180deg, rgba(251,182,182,0.06) 0%, rgba(28,20,24,0.4) 100%)",
+      };
+
   return (
     <AnimatePresence>
       {open && winner && (
         <div className="fixed inset-0 z-[75] flex items-end justify-center">
           <motion.div
-            className="absolute inset-0 bg-[#0a1628]/70 backdrop-blur-[2px]"
+            className={`absolute inset-0 backdrop-blur-[2px] ${theme.scrim}`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           />
           <motion.div
-            className="relative z-10 w-full max-w-md overflow-hidden rounded-t-3xl px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-12px_48px_rgba(0,0,0,0.45)] ring-1 ring-[#f0c14b]/35"
+            className={`relative z-10 w-full max-w-md overflow-hidden rounded-t-3xl px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-12px_48px_rgba(0,0,0,0.45)] ring-1 ${theme.panelRing}`}
             style={{
               maxHeight: "72vh",
-              background:
-                "radial-gradient(ellipse 90% 55% at 50% -10%, rgba(240,193,75,0.28), transparent 55%), linear-gradient(180deg, #2a3348 0%, #1a2234 42%, #121826 100%)",
+              background: theme.panelBg,
             }}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", stiffness: 320, damping: 28 }}
           >
-            <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-gradient-to-r from-transparent via-[#f0d78c] to-transparent" />
+            <div
+              className={`mx-auto mb-2 h-1 w-10 rounded-full bg-gradient-to-r from-transparent ${theme.handle} to-transparent`}
+            />
 
-            {/* Lá thắng */}
+            {/* Lá mở thưởng */}
             <div className="relative flex flex-col items-center">
               <div
-                className="pointer-events-none absolute top-8 h-24 w-24 rounded-full bg-[#f0c14b]/20 blur-2xl"
+                className={`pointer-events-none absolute top-8 h-24 w-24 rounded-full blur-2xl ${theme.glow}`}
                 aria-hidden
               />
-              <p className="font-play relative text-[10px] font-semibold uppercase tracking-[0.22em] text-[#f0d78c]/90">
+              <p
+                className={`font-play relative text-[10px] font-semibold uppercase tracking-[0.22em] ${theme.label}`}
+              >
                 Lá thắng
               </p>
               <div className="relative mt-1.5">
                 <motion.img
                   src={winner.image}
                   alt={`#${winner.id} ${winner.nameVi}`}
-                  className="relative h-28 w-[5.25rem] rounded-[0.65rem] object-cover object-center shadow-[0_8px_32px_rgba(240,193,75,0.35)] ring-2 ring-[#f0c14b]/80"
+                  className={`relative h-28 w-[5.25rem] rounded-[0.65rem] object-cover object-center ring-2 ${theme.cardRing}`}
                   initial={{ scale: 0.7, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ type: "spring", stiffness: 260, damping: 18 }}
                 />
-                <span className="font-play absolute -left-1.5 -top-1.5 z-[1] flex h-7 min-w-7 items-center justify-center rounded-full bg-[#f0c14b] px-1.5 text-sm font-bold text-[#1a1208] tabular-nums shadow ring-2 ring-[#1a2234]/40">
+                <span
+                  className={`font-play absolute -left-1.5 -top-1.5 z-[1] flex h-7 min-w-7 items-center justify-center rounded-full px-1.5 text-sm font-bold tabular-nums shadow ring-2 ${theme.badge}`}
+                >
                   {winner.id}
                 </span>
               </div>
-              <p className="font-play relative mt-1.5 rounded-full bg-[#f0c14b]/15 px-2.5 py-0.5 text-sm font-bold text-[#ffe7a0] ring-1 ring-[#f0c14b]/35">
+              <p
+                className={`font-play relative mt-1.5 rounded-full px-2.5 py-0.5 text-sm font-bold ring-1 ${theme.mult}`}
+              >
                 x{winner.multiplier}
               </p>
             </div>
 
-            {/* Kết quả cá nhân */}
-            <div className="mt-2.5 text-center">
+            {/* Kết quả cá nhân — thắng / thua khác màu */}
+            <div
+              className={`mt-2.5 rounded-xl px-3 py-2.5 text-center ring-1 ${theme.resultBox}`}
+            >
               {didWin ? (
                 <>
-                  <p className="font-play text-base font-bold text-[#ffe7a0]">
-                    Chúc mừng!
-                  </p>
-                  <p className="mt-0.5 text-xs font-semibold text-[#ffd76a]">
+                  <p className="font-play text-base font-bold">{theme.title}</p>
+                  <p className={`mt-0.5 text-xs font-semibold ${theme.resultSub}`}>
                     +{formatXu(profit)} xu{" "}
-                    <span className="font-normal text-[#c8b89a]/70">
+                    <span className={`font-normal ${theme.resultMuted}`}>
                       (nhận {formatXu(payout)})
                     </span>
                   </p>
                 </>
               ) : (
                 <>
-                  <p className="font-play text-base font-bold text-[#e8e4dc]">
-                    Rất tiếc!
-                  </p>
-                  <p className="mt-0.5 text-xs text-[#a8b0c0]">
+                  <p className="font-play text-base font-bold">{theme.title}</p>
+                  <p className={`mt-0.5 text-xs ${theme.resultSub}`}>
                     Bạn không trúng lá này
                   </p>
                 </>
@@ -215,13 +265,12 @@ export function ResultSummaryPopup({
 
             {/* Podium Top 3 */}
             <div
-              className="mt-3 rounded-2xl px-2 pb-1 pt-3 ring-1 ring-[#f0c14b]/20"
-              style={{
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.07) 0%, rgba(15,20,32,0.55) 100%)",
-              }}
+              className={`mt-3 rounded-2xl px-2 pb-1 pt-3 ring-1 ${theme.podiumRing}`}
+              style={{ background: theme.podiumBg }}
             >
-              <p className="font-play mb-1 text-center text-[10px] font-semibold uppercase tracking-[0.2em] text-[#f0d78c]/75">
+              <p
+                className={`font-play mb-1 text-center text-[10px] font-semibold uppercase tracking-[0.2em] ${theme.podiumTitle}`}
+              >
                 Bục vinh danh
               </p>
               <div className="flex items-end justify-center gap-1 px-1">
@@ -230,7 +279,7 @@ export function ResultSummaryPopup({
                 ))}
               </div>
               {topWinners.length === 0 && (
-                <p className="pb-3 text-center text-xs text-[#a8b0c0]/80">
+                <p className={`pb-3 text-center text-xs ${theme.resultMuted}`}>
                   Chưa có ai trúng ván này
                 </p>
               )}

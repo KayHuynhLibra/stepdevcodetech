@@ -85,13 +85,13 @@ export function BetSheet({
       {/* Floating selected card (như ảnh mẫu) */}
       <div className="pointer-events-none relative z-10 mx-auto mb-[-1.5rem] flex justify-center">
         <div className="relative">
-          <div className="absolute inset-[-12px] rounded-2xl bg-[#1a8fd4]/30 blur-xl" />
+          <div className="absolute inset-[-12px] rounded-2xl bg-[var(--jade)]/40 blur-xl" />
           <img
             src={card.image}
             alt={card.nameVi}
-            className="relative h-36 w-[6.75rem] rounded-[0.7rem] object-cover object-center shadow-[0_8px_28px_rgba(0,0,0,0.35)] ring-2 ring-white/70"
+            className="relative h-36 w-[6.75rem] rounded-[0.7rem] object-cover object-center shadow-[0_8px_28px_rgba(0,0,0,0.35)] ring-2 ring-[var(--jade-soft)]/70"
           />
-          <span className="absolute -left-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#0f3d6e] text-xs font-bold text-white">
+          <span className="absolute -left-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--jade-deep)] text-xs font-bold text-[var(--jade-soft)]">
             {card.id}
           </span>
         </div>
@@ -99,9 +99,9 @@ export function BetSheet({
 
       {/* Form panel */}
       <div className="relative z-20 mx-auto w-full max-w-md animate-[sheet-up_0.2s_ease-out]">
-        <div className="relative rounded-t-2xl border-[3px] border-[#1a8fd4]/90 border-b-0 bg-gradient-to-b from-[#d6f0ff] via-[#e8f6ff] to-white px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-8 shadow-2xl">
+        <div className="sheet-shell-light relative rounded-t-2xl border-[3px] border-[var(--jade)]/80 border-b-0 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-8 shadow-2xl">
           <svg
-            className="absolute left-2 top-2 h-4 w-4 text-[#1a8fd4]"
+            className="absolute left-2 top-2 h-4 w-4 text-[var(--jade)]"
             viewBox="0 0 24 24"
             fill="currentColor"
             aria-hidden
@@ -109,7 +109,7 @@ export function BetSheet({
             <path d="M13 2L4 14h7l-1 8 10-14h-7l0-6z" />
           </svg>
           <svg
-            className="absolute right-2 top-2 h-4 w-4 text-[#1a8fd4]"
+            className="absolute right-2 top-2 h-4 w-4 text-[var(--jade)]"
             viewBox="0 0 24 24"
             fill="currentColor"
             aria-hidden
@@ -120,7 +120,7 @@ export function BetSheet({
           {/* Title ribbon */}
           <div className="absolute -top-3 left-1/2 z-10 w-[92%] -translate-x-1/2">
             <div
-              className="bg-[#0f3d6e] px-3 py-1.5 text-center text-[12px] font-bold leading-tight text-white shadow-md"
+              className="bg-[var(--jade-deep)] px-3 py-1.5 text-center text-[12px] font-bold leading-tight text-[var(--jade-soft)] shadow-md"
               style={{
                 clipPath:
                   "polygon(3% 0, 97% 0, 100% 50%, 97% 100%, 3% 100%, 0 50%)",
@@ -130,7 +130,7 @@ export function BetSheet({
             </div>
           </div>
 
-          <p className="mb-2 text-center text-[11px] font-semibold text-[#0f3d6e]/80">
+          <p className="mb-2 text-center text-[11px] font-semibold text-[var(--jade-deep)]/80">
             Lá {card.id} · x{card.multiplier} · Số dư {formatXu(balance)} · Max{" "}
             {formatXu(MAX_BET_PER_CARD)}/lá
           </p>
@@ -165,7 +165,7 @@ export function BetSheet({
                 className={`rounded-md border-2 py-2.5 text-base font-bold shadow-sm active:scale-[0.97] ${
                   roomLeft <= 0
                     ? "cursor-not-allowed border-slate-300 bg-slate-100 text-slate-400"
-                    : "border-[#1a8fd4]/70 bg-white text-[#0f3d6e]"
+                    : "border-[var(--jade)]/55 bg-white/85 text-[var(--jade-deep)]"
                 }`}
               >
                 +{n >= 1000 ? n.toLocaleString("en-US").replace(/,/g, "") : n}
@@ -178,10 +178,10 @@ export function BetSheet({
             type="button"
             disabled={insufficient}
             onClick={confirm}
-            className={`relative mx-auto mt-4 flex w-[90%] items-center justify-center rounded-xl py-3 text-lg font-extrabold tracking-wide text-white shadow-lg transition ${
+            className={`relative mx-auto mt-4 flex w-[90%] items-center justify-center rounded-xl py-3 text-lg font-extrabold tracking-wide text-[#e8fff8] shadow-lg transition ${
               insufficient
                 ? "cursor-not-allowed bg-slate-300 text-slate-500"
-                : "bg-gradient-to-r from-amber-400 via-[#1a8fd4] to-[#0f3d6e] active:scale-[0.98]"
+                : "bg-gradient-to-r from-[var(--jade-soft)] via-[var(--jade)] to-[var(--jade-deep)] active:scale-[0.98]"
             }`}
           >
             {!insufficient && (

@@ -28,11 +28,11 @@ export function LeaderboardSheet({
             key={`${row.rank}-${row.name}`}
             className={`flex items-center gap-3 rounded-xl px-3 py-2.5 ring-1 ${
               row.isYou
-                ? "bg-[var(--gold)]/15 ring-[var(--gold)]/40"
+                ? "bg-[var(--jade)]/22 ring-[var(--jade-soft)]/45"
                 : "bg-white/5 ring-white/10"
             }`}
           >
-            <span className="w-6 text-center font-display text-sm font-bold text-[var(--gold-soft)]">
+            <span className="w-6 text-center font-display text-sm font-bold text-[var(--jade-soft)]">
               {row.rank}
             </span>
             <img

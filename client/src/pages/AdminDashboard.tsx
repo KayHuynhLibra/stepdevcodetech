@@ -558,8 +558,8 @@ export default function AdminDashboard() {
               onClick={() => setTab(t.id)}
               className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold transition ${
                 tab === t.id
-                  ? "bg-[#0f3d6e] text-white shadow-sm"
-                  : "bg-white/80 text-[var(--play-ink)] ring-1 ring-[#0f3d6e]/15"
+                  ? "bg-[var(--wood-deep)] text-white shadow-sm"
+                  : "bg-white/80 text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
               }`}
             >
               {t.label}
@@ -571,7 +571,7 @@ export default function AdminDashboard() {
         <p className="mb-2 text-[11px] font-semibold text-[var(--play-muted)]">
           Avatar của bạn
         </p>
-        <label className="mb-2 flex cursor-pointer items-center justify-center rounded-lg bg-[#d6f0ff]/80 px-2 py-1.5 text-[11px] font-bold text-[#0f3d6e] ring-1 ring-[#1a8fd4]/40">
+        <label className="mb-2 flex cursor-pointer items-center justify-center rounded-lg bg-[var(--cream)]/80 px-2 py-1.5 text-[11px] font-bold text-[var(--wood-deep)] ring-1 ring-[var(--amber)]/40">
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp,image/*"
@@ -588,7 +588,7 @@ export default function AdminDashboard() {
           {isCustomAvatar(me.avatar) && (
             <button
               type="button"
-              className="rounded-full p-0.5 ring-2 ring-[#1a8fd4]"
+              className="rounded-full p-0.5 ring-2 ring-[var(--amber)]"
               title="Avatar từ máy"
             >
               <img
@@ -606,7 +606,7 @@ export default function AdminDashboard() {
                 type="button"
                 onClick={() => pickAvatar(src)}
                 className={`rounded-full p-0.5 ${
-                  selected ? "ring-2 ring-[#1a8fd4]" : "opacity-80"
+                  selected ? "ring-2 ring-[var(--amber)]" : "opacity-80"
                 }`}
               >
                 <img
@@ -621,7 +621,7 @@ export default function AdminDashboard() {
       </section>
 
       {msg && (
-        <p className="mt-3 text-center text-xs font-semibold text-[#0f3d6e]">
+        <p className="mt-3 text-center text-xs font-semibold text-[var(--wood-deep)]">
           {msg}
         </p>
       )}
@@ -649,7 +649,7 @@ export default function AdminDashboard() {
               <button
                 type="button"
                 onClick={() => setTab("traffic")}
-                className="mt-2 text-[11px] font-semibold text-[#0f3d6e] underline-offset-2 hover:underline"
+                className="mt-2 text-[11px] font-semibold text-[var(--wood-deep)] underline-offset-2 hover:underline"
               >
                 Xem đầy đủ lưu lượng ›
               </button>
@@ -708,7 +708,7 @@ export default function AdminDashboard() {
                 data.history.map((h) => (
                   <li
                     key={h.round}
-                    className="rounded-md bg-white/80 px-2 py-1 text-[11px] font-semibold text-[var(--play-ink)] ring-1 ring-[#0f3d6e]/10"
+                    className="rounded-md bg-white/80 px-2 py-1 text-[11px] font-semibold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/10"
                     title={cardName(h.win)}
                   >
                     #{h.round} · {h.win}
@@ -731,14 +731,14 @@ export default function AdminDashboard() {
                 data.recentBets.map((b) => (
                   <li
                     key={b.id}
-                    className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[#0f3d6e]/10"
+                    className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
                   >
                     <span className="min-w-0 truncate font-semibold">
                       {b.username} · #{b.round} · {cardName(b.cardId)}
                     </span>
                     <span
                       className={`shrink-0 font-play font-bold tabular-nums ${
-                        b.result === "win" ? "text-[#0f3d6e]" : "text-rose-600"
+                        b.result === "win" ? "text-[var(--wood-deep)]" : "text-rose-600"
                       }`}
                     >
                       {b.result === "win" ? "+" : ""}
@@ -861,7 +861,7 @@ export default function AdminDashboard() {
                 max={50}
                 value={botCount}
                 onChange={(e) => setBotCount(Number(e.target.value))}
-                className="flex-1 accent-[#1a8fd4]"
+                className="flex-1 accent-[var(--amber)]"
               />
               <input
                 type="number"
@@ -874,7 +874,7 @@ export default function AdminDashboard() {
               <button
                 type="button"
                 onClick={applyBots}
-                className="rounded-full bg-[#0f3d6e] px-3 py-1.5 text-xs font-bold text-white"
+                className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white"
               >
                 Áp dụng
               </button>
@@ -911,7 +911,7 @@ export default function AdminDashboard() {
                 />
                 <button
                   type="submit"
-                  className="rounded-xl bg-[#0f3d6e] px-4 text-xs font-bold text-white"
+                  className="rounded-xl bg-[var(--wood-deep)] px-4 text-xs font-bold text-white"
                 >
                   Cập nhật
                 </button>
@@ -955,7 +955,7 @@ export default function AdminDashboard() {
                 return (
                   <li
                     key={u.id}
-                    className="rounded-lg bg-white/70 px-2 py-2 text-xs ring-1 ring-[#0f3d6e]/10"
+                    className="rounded-lg bg-white/70 px-2 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex min-w-0 items-center gap-2">
@@ -967,7 +967,7 @@ export default function AdminDashboard() {
                         <div className="min-w-0">
                           <p className="font-semibold text-[var(--play-ink)]">
                             {u.username}{" "}
-                            <span className="text-[#0f3d6e]">{u.role}</span>
+                            <span className="text-[var(--wood-deep)]">{u.role}</span>
                             {vip && (
                               <span className="ml-1 text-amber-700">
                                 VIP{vipLabel ? ` · ${vipLabel}` : ""}
@@ -1003,8 +1003,8 @@ export default function AdminDashboard() {
                                 ? "bg-emerald-600 text-white"
                                 : mode === "lose"
                                   ? "bg-rose-600 text-white"
-                                  : "bg-[#0f3d6e] text-white"
-                              : "bg-white text-[var(--play-ink)] ring-1 ring-[#0f3d6e]/20"
+                                  : "bg-[var(--wood-deep)] text-white"
+                              : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
                           }`}
                         >
                           {label}
@@ -1016,7 +1016,7 @@ export default function AdminDashboard() {
                         className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
                           granted
                             ? "bg-amber-500 text-[#1a1208]"
-                            : "bg-white text-[var(--play-ink)] ring-1 ring-[#0f3d6e]/20"
+                            : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
                         }`}
                       >
                         {granted ? "VIP admin ✓" : "VIP admin"}
@@ -1098,7 +1098,7 @@ export default function AdminDashboard() {
                 <button
                   type="submit"
                   disabled={couponBusy || !couponForm.code.trim()}
-                  className="rounded-full bg-[#0f3d6e] px-3 py-1.5 text-xs font-bold text-white disabled:opacity-45"
+                  className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white disabled:opacity-45"
                 >
                   Lưu mã
                 </button>
@@ -1118,13 +1118,13 @@ export default function AdminDashboard() {
                 (data.coupons ?? []).map((c) => (
                   <li
                     key={c.code}
-                    className="rounded-lg bg-white/80 px-3 py-2 text-xs ring-1 ring-[#0f3d6e]/10"
+                    className="rounded-lg bg-white/80 px-3 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-play text-sm font-bold text-amber-800">
                         {c.code}
                       </span>
-                      <span className="font-play font-bold tabular-nums text-[#0f3d6e]">
+                      <span className="font-play font-bold tabular-nums text-[var(--wood-deep)]">
                         {formatXu(c.amount)} xu
                       </span>
                     </div>
@@ -1143,7 +1143,7 @@ export default function AdminDashboard() {
                         className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold disabled:opacity-45 ${
                           c.enabled
                             ? "bg-rose-100 text-rose-800 ring-1 ring-rose-300/60"
-                            : "bg-[#1a8fd4] text-white"
+                            : "bg-[var(--amber)] text-white"
                         }`}
                       >
                         {c.enabled ? "Tắt mã" : "Bật mã"}
@@ -1160,7 +1160,7 @@ export default function AdminDashboard() {
                             enabled: c.enabled,
                           })
                         }
-                        className="rounded-full bg-white px-2.5 py-0.5 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[#0f3d6e]/20"
+                        className="rounded-full bg-white px-2.5 py-0.5 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
                       >
                         Sửa form
                       </button>
@@ -1184,13 +1184,13 @@ export default function AdminDashboard() {
                 (data.couponRedemptions ?? []).map((r) => (
                   <li
                     key={r.id}
-                    className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[#0f3d6e]/10"
+                    className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
                   >
                     <span className="min-w-0 truncate font-semibold">
                       {r.username} · {r.code}
                     </span>
                     <span className="shrink-0 text-right">
-                      <span className="font-play font-bold text-[#0f3d6e] tabular-nums">
+                      <span className="font-play font-bold text-[var(--wood-deep)] tabular-nums">
                         +{formatXu(r.amount)}
                       </span>
                       <span className="ml-2 text-[10px] text-[var(--play-muted)]">
@@ -1225,8 +1225,8 @@ export default function AdminDashboard() {
             </div>
 
             {data.inter.mode === "all" && data.inter.all && (
-              <div className="rounded-xl bg-violet-50 px-3 py-2.5 ring-1 ring-violet-300/70">
-                <p className="text-xs font-bold text-violet-900">
+              <div className="rounded-xl bg-amber-50 px-3 py-2.5 ring-1 ring-amber-300/70">
+                <p className="text-xs font-bold text-amber-950">
                   Đang chạy:{" "}
                   <span className="uppercase">
                     {data.inter.all.effectiveMode}
@@ -1246,7 +1246,7 @@ export default function AdminDashboard() {
                     ),
                   ).padStart(2, "0")}
                 </p>
-                <p className="mt-1 text-[10px] text-violet-800/80">
+                <p className="mt-1 text-[10px] text-amber-900/80">
                   Chuỗi: {data.inter.all.rotation.join(" → ")} (mỗi{" "}
                   {Math.round(data.inter.all.slotMs / 60000)} phút)
                 </p>
@@ -1259,8 +1259,8 @@ export default function AdminDashboard() {
               onClick={() => setInterMode("all")}
               className={`w-full rounded-xl px-3 py-3 text-left transition ring-1 ${
                 data.inter.mode === "all"
-                  ? "bg-violet-700 text-white ring-violet-800 shadow-sm"
-                  : "bg-white/90 text-[var(--play-ink)] ring-violet-300/50 hover:bg-violet-50"
+                  ? "bg-[var(--wood-deep)] text-white ring-[var(--wood)] shadow-sm"
+                  : "bg-white/90 text-[var(--play-ink)] ring-amber-300/50 hover:bg-amber-50"
               } ${interBusy ? "opacity-60" : ""}`}
             >
               <p className="text-sm font-bold">ALL — xoay mode 5 phút</p>
@@ -1311,7 +1311,7 @@ export default function AdminDashboard() {
                     className={`rounded-xl px-3 py-3 text-left transition ring-1 ${
                       active
                         ? m.activeClass
-                        : "bg-white/90 text-[var(--play-ink)] ring-[#0f3d6e]/15 hover:bg-white"
+                        : "bg-white/90 text-[var(--play-ink)] ring-[var(--wood-deep)]/15 hover:bg-white"
                     } ${interBusy ? "opacity-60" : ""}`}
                   >
                     <p className="text-sm font-bold">{m.title}</p>
@@ -1356,8 +1356,8 @@ export default function AdminDashboard() {
                     onClick={() => setInterMode(m.id)}
                     className={`rounded-xl px-3 py-3 text-left transition ring-1 ${
                       active
-                        ? "bg-[#0f3d6e] text-white ring-[#0f3d6e] shadow-sm"
-                        : "bg-white/90 text-[var(--play-ink)] ring-[#0f3d6e]/15 hover:bg-white"
+                        ? "bg-[var(--wood-deep)] text-white ring-[var(--wood-deep)] shadow-sm"
+                        : "bg-white/90 text-[var(--play-ink)] ring-[var(--wood-deep)]/15 hover:bg-white"
                     } ${interBusy ? "opacity-60" : ""}`}
                   >
                     <p className="text-sm font-bold">{m.title}</p>
@@ -1390,7 +1390,7 @@ export default function AdminDashboard() {
                       className={`rounded-xl px-2 py-2.5 text-left transition ring-1 ${
                         active
                           ? "bg-amber-500 text-white ring-amber-600 shadow-sm"
-                          : "bg-white/90 text-[var(--play-ink)] ring-[#0f3d6e]/15 hover:bg-white"
+                          : "bg-white/90 text-[var(--play-ink)] ring-[var(--wood-deep)]/15 hover:bg-white"
                       } ${interBusy ? "opacity-60" : ""}`}
                     >
                       <div className="flex items-center gap-1.5">
@@ -1476,7 +1476,7 @@ export default function AdminDashboard() {
                             ? "bg-emerald-50 ring-emerald-300/70"
                             : hot
                               ? "bg-amber-50 ring-amber-300/70"
-                              : "bg-white/80 ring-[#0f3d6e]/10"
+                              : "bg-white/80 ring-[var(--wood-deep)]/10"
                     }`}
                   >
                     <div className="flex items-center gap-1.5">
@@ -1491,7 +1491,7 @@ export default function AdminDashboard() {
                         <p className="truncate text-[10px] font-semibold">
                           #{p.cardId} {p.nameVi}
                         </p>
-                        <p className="font-play text-sm font-bold tabular-nums text-[#0f3d6e]">
+                        <p className="font-play text-sm font-bold tabular-nums text-[var(--wood-deep)]">
                           {p.percent}%
                         </p>
                       </div>
@@ -1572,7 +1572,7 @@ export default function AdminDashboard() {
               <button
                 type="button"
                 onClick={() => vaultAdjust(Math.abs(Number(vaultDelta) || 0))}
-                className="rounded-full bg-[#0f3d6e] px-3 py-1.5 text-xs font-bold text-white"
+                className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white"
               >
                 Bơm kho
               </button>
@@ -1593,7 +1593,7 @@ export default function AdminDashboard() {
               />
               <button
                 type="submit"
-                className="rounded-full bg-[#0f3d6e] px-3 py-1.5 text-xs font-bold text-white"
+                className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white"
               >
                 Đặt số dư kho
               </button>
@@ -1628,7 +1628,7 @@ export default function AdminDashboard() {
               <button
                 type="button"
                 onClick={vaultGrant}
-                className="rounded-full bg-[#0f3d6e] px-3 py-1.5 text-xs font-bold text-white"
+                className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white"
               >
                 Cấp từ kho
               </button>
@@ -1651,7 +1651,7 @@ export default function AdminDashboard() {
                 data.vault.ledger.map((row) => (
                   <li
                     key={row.id}
-                    className="rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[#0f3d6e]/10"
+                    className="rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
                   >
                     <div className="flex justify-between gap-2">
                       <span className="font-semibold">
@@ -1660,7 +1660,7 @@ export default function AdminDashboard() {
                       </span>
                       <span
                         className={`font-play font-bold tabular-nums ${
-                          row.amount >= 0 ? "text-[#0f3d6e]" : "text-rose-600"
+                          row.amount >= 0 ? "text-[var(--wood-deep)]" : "text-rose-600"
                         }`}
                       >
                         {row.amount >= 0 ? "+" : ""}

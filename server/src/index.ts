@@ -13,6 +13,7 @@ import {
 } from "./auth.js";
 import {
   AVATARS,
+  normalizeAvatar,
   saveUploadedAvatar,
   UPLOADS_DIR,
 } from "./avatars.js";
@@ -286,6 +287,28 @@ app.post("/api/avatar/upload", (req, res) => {
   }
 
   res.json({ ok: true, avatar: saved.avatar });
+});
+
+/** Danh sách người đã nạp xu (tổng theo user — không lộ mã coupon). */
+app.get("/api/topups", (_req, res) => {
+  if (!rateLimit("topups:public", 60, 60_000)) {
+    return res.status(429).json({ ok: false, reason: "Thử lại sau" });
+  }
+  const rows = couponStore.topDepositors(50).map((row, i) => {
+    const u = authStore.getById(row.userId);
+    return {
+      rank: i + 1,
+      userId: row.userId,
+      name: u?.username || row.username,
+      avatar: normalizeAvatar(u?.avatar),
+      code: u?.code ?? null,
+      totalAmount: row.totalAmount,
+      redeemCount: row.redeemCount,
+      lastAt: row.lastAt,
+    };
+  });
+  const totalXu = rows.reduce((s, r) => s + r.totalAmount, 0);
+  res.json({ ok: true, totalXu, rows });
 });
 
 /** User đổi mã nạp xu — không trả danh sách coupon. */

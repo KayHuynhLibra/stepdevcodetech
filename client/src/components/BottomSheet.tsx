@@ -26,19 +26,19 @@ export function BottomSheet({
         onClick={onClose}
       />
       <div
-        className={`relative w-full max-w-md ${heightClass} animate-[sheet-up_0.18s_ease-out] overflow-hidden rounded-t-2xl bg-[#121826] ring-1 ring-[var(--gold)]/30`}
+        className={`sheet-shell relative w-full max-w-md ${heightClass} animate-[sheet-up_0.18s_ease-out] overflow-hidden rounded-t-2xl ring-1 ring-[var(--jade)]/45`}
         role="dialog"
         aria-modal="true"
       >
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-          <div className="mx-auto h-1 w-10 rounded-full bg-white/25 absolute left-1/2 top-2 -translate-x-1/2" />
-          <h2 className="font-display text-base font-bold text-[var(--gold-soft)]">
+        <div className="flex items-center justify-between border-b border-[var(--jade)]/25 px-4 py-3">
+          <div className="mx-auto h-1 w-10 rounded-full bg-[var(--jade-soft)]/50 absolute left-1/2 top-2 -translate-x-1/2" />
+          <h2 className="font-display text-base font-bold text-[var(--jade-soft)]">
             {title}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full px-2 py-1 text-sm text-white/60 hover:text-white"
+            className="rounded-full px-2 py-1 text-sm text-[var(--jade-soft)]/65 hover:text-[var(--jade-soft)]"
           >
             Đóng
           </button>

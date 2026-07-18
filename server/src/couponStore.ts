@@ -194,6 +194,48 @@ export class CouponStore {
     return this.redemptions.slice(0, Math.min(limit, 100));
   }
 
+  /** Tổng xu đã nạp theo user (public — không lộ mã coupon). */
+  topDepositors(limit = 50): {
+    userId: string;
+    username: string;
+    totalAmount: number;
+    redeemCount: number;
+    lastAt: number;
+  }[] {
+    const map = new Map<
+      string,
+      {
+        userId: string;
+        username: string;
+        totalAmount: number;
+        redeemCount: number;
+        lastAt: number;
+      }
+    >();
+    for (const r of this.redemptions) {
+      const cur = map.get(r.userId);
+      if (!cur) {
+        map.set(r.userId, {
+          userId: r.userId,
+          username: r.username,
+          totalAmount: r.amount,
+          redeemCount: 1,
+          lastAt: r.at,
+        });
+      } else {
+        cur.totalAmount += r.amount;
+        cur.redeemCount += 1;
+        if (r.at > cur.lastAt) {
+          cur.lastAt = r.at;
+          cur.username = r.username;
+        }
+      }
+    }
+    return [...map.values()]
+      .sort((a, b) => b.totalAmount - a.totalAmount || b.lastAt - a.lastAt)
+      .slice(0, Math.min(limit, 100));
+  }
+
   upsert(input: {
     code: string;
     amount: number;

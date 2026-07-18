@@ -22,44 +22,104 @@
   animation: shout-marquee 4.5s linear forwards;
 }
 
-:root {
-  --ink: #0c1220;
-  --gold: #d4a84b;
-  --gold-soft: #f0d78c;
-  --crimson: #7a1f2b;
-  --cream: #f3e6c8;
-  --panel: rgba(12, 18, 32, 0.72);
-  --play-ink: #0f3d6e;
-  --play-muted: #3d6a8f;
-  --play-panel: rgba(255, 255, 255, 0.72);
-  --app-sky: #4eb8e8;
-  --app-sea: #1a8fd4;
-  --app-foam: #d6f0ff;
-  /* Legacy — không dùng làm chủ đạo */
-  --app-mint: #7fd9a0;
-  --app-lime: #9ed85a;
-  --app-frame: #1a8fd4;
-  --app-frame-deep: #0f3d6e;
+@keyframes night-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.04);
+  }
 }
 
-/* ===== Unified bright shell (toàn app) ===== */
+@keyframes gold-rim {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(232, 176, 80, 0.4),
+      0 0 18px rgba(255, 176, 64, 0.28),
+      0 10px 28px rgba(24, 12, 4, 0.5);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(255, 210, 120, 0.65),
+      0 0 28px rgba(255, 176, 64, 0.42),
+      0 12px 32px rgba(24, 12, 4, 0.55);
+  }
+}
+
+:root {
+  --ink: #1a1208;
+  --gold: #e8b050;
+  --gold-soft: #ffd27a;
+  --gold-bright: #ffe6a8;
+  --amber: #ffb040;
+  --wood: #8b5a2b;
+  --wood-deep: #3a2210;
+  --night: #14100c;
+  --sheet: #0f221e;
+  --sheet-mid: #163832;
+  --sheet-top: #1f4f47;
+  --crimson: #7a1f2b;
+  --cream: #fff4e0;
+  /* Accent phụ — xanh ngọc ấm (hỗ trợ, không át gold) */
+  --jade: #3db8a0;
+  --jade-soft: #7ed9c6;
+  --jade-deep: #1a6b5c;
+  --panel: rgba(28, 18, 10, 0.72);
+  --play-ink: #3a2210;
+  --play-muted: #7a5a38;
+  --play-panel: rgba(255, 248, 232, 0.78);
+  /* Accent aliases */
+  --app-sky: #1c140e;
+  --app-sea: #c4892e;
+  --app-foam: #ffe6a8;
+  --app-amber-glow: #ffb040;
+  --app-frame: #e8b050;
+  --app-frame-deep: #3a2210;
+  /* Legacy */
+  --app-mint: #7ed9c6;
+  --app-lime: #3db8a0;
+  --app-violet: #8b5a2b;
+  --app-violet-deep: #14100c;
+  --app-violet-glow: #ffb040;
+}
+
+/* ===== Shell đêm vàng hổ phách (vườn Nhật) ===== */
 .app-shell,
 .play-screen {
   font-family: "Be Vietnam Pro", "Segoe UI", sans-serif;
   color: var(--play-ink);
-  background-color: var(--app-sky);
+  background-color: var(--night);
   background-image:
+    radial-gradient(
+      ellipse 55% 40% at 78% 14%,
+      rgba(255, 176, 64, 0.32),
+      transparent 58%
+    ),
+    radial-gradient(
+      ellipse 45% 35% at 12% 78%,
+      rgba(61, 184, 160, 0.12),
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse 70% 50% at 40% 70%,
+      rgba(180, 100, 30, 0.2),
+      transparent 60%
+    ),
     linear-gradient(
       180deg,
-      rgba(8, 32, 64, 0.58) 0%,
-      rgba(26, 100, 168, 0.38) 42%,
-      rgba(15, 61, 110, 0.5) 100%
+      rgba(12, 8, 6, 0.45) 0%,
+      rgba(40, 24, 12, 0.35) 40%,
+      rgba(10, 8, 6, 0.62) 100%
     ),
-    url("/assets/background/bg-main.png?v=4");
-  background-size: cover;
-  background-position: center top;
+    url("/assets/background/bg-main.png?v=8");
+  background-size: cover, cover, cover, cover, cover;
+  background-position: center, center, center, center, center top;
   background-repeat: no-repeat;
-  background-attachment: local;
+  background-attachment: fixed;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
 }
@@ -71,66 +131,112 @@
 .app-shell-deco,
 .play-screen::before {
   pointer-events: none;
-  position: absolute;
+  position: fixed;
   inset: 0;
+  z-index: 0;
   background:
-    radial-gradient(circle at 10% 12%, rgba(255, 255, 255, 0.55) 0 2px, transparent 3px),
-    radial-gradient(circle at 88% 10%, rgba(214, 240, 255, 0.65) 0 1.5px, transparent 2.5px),
-    radial-gradient(circle at 72% 38%, rgba(255, 255, 255, 0.4) 0 1.5px, transparent 2.5px),
-    radial-gradient(circle at 16% 58%, rgba(26, 143, 212, 0.35) 0 2px, transparent 3px),
-    radial-gradient(circle at 92% 72%, rgba(255, 255, 255, 0.35) 0 1.5px, transparent 2.5px),
-    radial-gradient(ellipse 80% 40% at 50% 100%, rgba(214, 240, 255, 0.22), transparent 70%);
-  opacity: 0.95;
+    radial-gradient(circle at 14% 12%, rgba(255, 255, 255, 0.75) 0 1.4px, transparent 2.4px),
+    radial-gradient(circle at 72% 10%, rgba(255, 210, 120, 0.85) 0 1.6px, transparent 2.8px),
+    radial-gradient(circle at 88% 28%, rgba(255, 176, 64, 0.55) 0 1.2px, transparent 2.2px),
+    radial-gradient(circle at 28% 48%, rgba(255, 230, 170, 0.4) 0 1px, transparent 2px),
+    radial-gradient(circle at 60% 78%, rgba(255, 176, 64, 0.35) 0 1.4px, transparent 2.5px),
+    radial-gradient(circle at 8% 72%, rgba(126, 217, 198, 0.45) 0 1.2px, transparent 2.2px),
+    radial-gradient(ellipse 80% 45% at 75% 8%, rgba(255, 176, 64, 0.22), transparent 55%),
+    radial-gradient(ellipse 50% 35% at 8% 85%, rgba(61, 184, 160, 0.1), transparent 60%),
+    radial-gradient(ellipse 90% 40% at 50% 100%, rgba(80, 40, 12, 0.4), transparent 70%);
+  opacity: 0.72;
+  /* Tĩnh — không pulse / scale */
+  animation: none;
+  transform: none;
 }
 
 .play-screen::before {
   content: "";
 }
 
+@media (max-width: 768px) {
+  .app-shell,
+  .play-screen {
+    /* iOS: fixed bg dễ giật — giữ scroll nhưng ảnh không pulse */
+    background-attachment: scroll;
+  }
+}
+
 /* Glass / framed panels */
 .app-panel {
   border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 248, 232, 0.78);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.65) inset,
-    0 8px 24px rgba(15, 61, 110, 0.1);
+    0 8px 24px rgba(58, 34, 16, 0.12);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(15, 61, 110, 0.14);
+  border: 1px solid rgba(232, 176, 80, 0.35);
 }
 
 .app-frame {
   position: relative;
   border-radius: 1.25rem;
-  border: 3px solid var(--app-frame);
+  border: 3px solid var(--gold);
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.96) 0%,
-    rgba(214, 240, 255, 0.94) 45%,
-    rgba(232, 246, 255, 0.92) 100%
+    rgba(255, 252, 245, 0.96) 0%,
+    rgba(255, 240, 210, 0.94) 45%,
+    rgba(255, 228, 180, 0.92) 100%
   );
   box-shadow:
-    0 0 0 3px rgba(15, 61, 110, 0.14),
+    0 0 0 2px rgba(232, 176, 80, 0.32),
+    0 0 20px rgba(255, 176, 64, 0.2),
     0 1px 0 rgba(255, 255, 255, 0.9) inset,
-    0 12px 32px rgba(15, 61, 110, 0.12);
+    0 12px 32px rgba(40, 20, 8, 0.18);
   overflow: hidden;
 }
 
-/* Viền khung task trên màn chơi */
+/* Bảng nhỏ ngoài màn đăng nhập */
+.login-dedication {
+  position: relative;
+  padding: 0.55rem 0.85rem 0.65rem;
+  border-radius: 0.65rem;
+  border: 2px solid rgba(232, 176, 80, 0.75);
+  background: linear-gradient(
+    165deg,
+    rgba(90, 52, 24, 0.92) 0%,
+    rgba(58, 34, 16, 0.94) 55%,
+    rgba(42, 24, 10, 0.96) 100%
+  );
+  box-shadow:
+    0 0 0 1px rgba(255, 220, 150, 0.18) inset,
+    0 6px 16px rgba(20, 10, 4, 0.35);
+  text-align: center;
+}
+
+.login-dedication-text {
+  margin: 0;
+  font-family: Nunito, "Be Vietnam Pro", sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  color: var(--cream);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+/* Viền khung task trên màn chơi — vàng hổ phách */
 .game-task {
   position: relative;
   border-radius: 1.15rem;
-  border: 3px solid var(--app-frame);
+  border: 3px solid var(--gold);
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.95) 0%,
-    rgba(214, 240, 255, 0.92) 50%,
-    rgba(230, 245, 255, 0.9) 100%
+    rgba(255, 252, 245, 0.95) 0%,
+    rgba(255, 240, 210, 0.92) 50%,
+    rgba(255, 228, 180, 0.9) 100%
   );
   box-shadow:
-    0 0 0 3px rgba(15, 61, 110, 0.14),
+    0 0 0 2px rgba(232, 176, 80, 0.32),
+    0 0 18px rgba(255, 176, 64, 0.18),
     0 1px 0 rgba(255, 255, 255, 0.9) inset,
-    0 10px 26px rgba(15, 61, 110, 0.12);
+    0 10px 26px rgba(40, 20, 8, 0.16);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
@@ -151,9 +257,9 @@
 .app-frame::before {
   top: 0.4rem;
   left: 0.4rem;
-  background: var(--app-sea);
+  background: var(--gold);
   clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
-  box-shadow: 0.55rem 0 0 var(--app-foam);
+  box-shadow: 0.55rem 0 0 var(--gold-soft);
 }
 
 .game-task::after,
@@ -173,70 +279,338 @@
     2% 35%,
     39% 35%
   );
-  box-shadow: -0.55rem 0 0 var(--app-sea);
+  box-shadow: -0.55rem 0 0 var(--gold);
 }
 
+/* Stack: timer riêng phía trên bàn */
+.board-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.45rem;
+}
+
+.board-timer-frame {
+  --timer-pct: 100%;
+  align-self: center;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  min-width: 9.5rem;
+  max-width: 12rem;
+  width: 42%;
+  padding: 0.45rem 0.85rem 0.5rem;
+  border-radius: 1.15rem;
+  border: 1px solid rgba(126, 217, 198, 0.35);
+  background:
+    radial-gradient(
+      ellipse 90% 80% at 50% 0%,
+      rgba(255, 176, 64, 0.16),
+      transparent 65%
+    ),
+    linear-gradient(
+      165deg,
+      rgba(31, 79, 71, 0.55) 0%,
+      rgba(20, 40, 36, 0.42) 100%
+    );
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 6px 18px rgba(6, 20, 18, 0.28);
+  color: #e8fff8;
+}
+
+.board-timer-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.board-timer-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(232, 255, 248, 0.55);
+}
+
+.board-timer-value {
+  font-size: 1.55rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: #fff8e7;
+  text-shadow: 0 0 12px rgba(61, 184, 160, 0.35);
+}
+
+.board-timer-track {
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.board-timer-bar {
+  height: 100%;
+  width: var(--timer-pct);
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    var(--jade) 0%,
+    var(--amber) 100%
+  );
+  transition: width 0.35s linear;
+}
+
+.board-timer-frame--urgent {
+  border-color: rgba(251, 113, 133, 0.55);
+  background:
+    radial-gradient(
+      ellipse 90% 80% at 50% 0%,
+      rgba(251, 113, 133, 0.28),
+      transparent 65%
+    ),
+    linear-gradient(
+      165deg,
+      rgba(127, 29, 53, 0.55) 0%,
+      rgba(76, 5, 25, 0.45) 100%
+    );
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 6px 18px rgba(76, 5, 25, 0.35);
+}
+
+.board-timer-frame--urgent .board-timer-label {
+  color: rgba(254, 205, 211, 0.7);
+}
+
+.board-timer-frame--urgent .board-timer-value {
+  color: #ffe4e6;
+  text-shadow: 0 0 14px rgba(251, 113, 133, 0.55);
+  animation: timer-pulse 0.8s ease-in-out infinite;
+}
+
+.board-timer-frame--urgent .board-timer-bar {
+  background: linear-gradient(90deg, #fb7185 0%, #f43f5e 100%);
+}
+
+@keyframes timer-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.88;
+  }
+}
+
+/* Bàn lá bài — nâu hổ phách ấm + ánh trăng kem (xu hướng sample) */
 .game-task-board {
-  border-color: var(--app-sea);
+  border-color: var(--gold);
   border-width: 3px;
   border-radius: 1.15rem;
-  background: linear-gradient(
-    180deg,
-    #e0f4ff 0%,
-    #d6f0ff 55%,
-    #eef7ff 100%
-  );
+  overflow: hidden;
+  isolation: isolate;
+  margin-top: 0;
+  background-color: #5d3a1a;
+  background-image:
+    radial-gradient(circle at 12% 16%, rgba(238, 220, 190, 0.65) 0 1.15px, transparent 2.3px),
+    radial-gradient(circle at 68% 38%, rgba(255, 244, 224, 0.45) 0 1px, transparent 2px),
+    radial-gradient(circle at 42% 72%, rgba(238, 220, 190, 0.4) 0 1.2px, transparent 2.4px),
+    radial-gradient(circle at 86% 64%, rgba(255, 244, 224, 0.35) 0 0.9px, transparent 1.9px),
+    radial-gradient(circle at 28% 48%, rgba(255, 236, 200, 0.3) 0 1px, transparent 2px),
+    radial-gradient(
+      ellipse 48% 42% at 92% 4%,
+      rgba(238, 220, 190, 0.5),
+      transparent 60%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(93, 58, 26, 0.55) 0%,
+      rgba(74, 44, 20, 0.72) 55%,
+      rgba(58, 34, 16, 0.82) 100%
+    ),
+    url("/assets/background/bg-deck.png?v=1");
+  background-size: auto, auto, auto, auto, auto, cover, cover, cover;
+  background-position: center, center, center, center, center, right top, center, center;
+  background-repeat: no-repeat;
   box-shadow:
-    0 0 0 2px rgba(15, 61, 110, 0.14),
-    0 1px 0 rgba(255, 255, 255, 0.75) inset,
-    0 10px 28px rgba(15, 61, 110, 0.1);
+    0 0 0 1px rgba(232, 176, 80, 0.42),
+    0 0 18px rgba(93, 58, 26, 0.4),
+    0 1px 0 rgba(238, 220, 190, 0.12) inset,
+    0 14px 36px rgba(24, 12, 4, 0.5);
+  animation: gold-rim 4.5s ease-in-out infinite;
+  color: #fff4e0;
 }
 
-/* Khung Cao thủ + Sao bài — cùng tông xanh biển đậm */
+.game-task-board::before {
+  top: 0.45rem;
+  left: 0.45rem;
+  background: var(--gold-bright);
+  box-shadow:
+    0.55rem 0 0 var(--gold),
+    0 0 10px rgba(255, 224, 138, 0.7);
+}
+
+.game-task-board::after {
+  right: 0.45rem;
+  bottom: 0.45rem;
+  background: var(--gold);
+  box-shadow:
+    -0.55rem 0 0 var(--gold-soft),
+    0 0 10px rgba(240, 215, 140, 0.55);
+}
+
+.game-task-board .board-meta {
+  color: var(--gold-soft);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+/* x-number: chữ sáng + khung mờ ẩn (palette hổ phách) */
+.board-mult {
+  min-width: 2.4rem;
+  padding: 0.2rem 0.65rem;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #fff8e7;
+  text-shadow:
+    0 0 6px rgba(255, 230, 170, 0.85),
+    0 0 14px rgba(255, 176, 64, 0.55);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 176, 64, 0.38) 0%,
+    rgba(180, 100, 30, 0.22) 50%,
+    rgba(255, 176, 64, 0.32) 100%
+  );
+  border-radius: 0.35rem;
+  box-shadow:
+    0 0 10px rgba(255, 176, 64, 0.25),
+    inset 0 0 8px rgba(255, 210, 120, 0.12);
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    #000 18%,
+    #000 82%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    #000 18%,
+    #000 82%,
+    transparent 100%
+  );
+}
+
+/* Khung Cao thủ + Sao bài — gỗ đêm + viền vàng */
 .game-task-aces,
 .game-task-stars {
   border-width: 2.5px;
-  border-color: var(--app-sea);
+  border-color: var(--gold);
   border-radius: 1rem;
   padding: 0.65rem 0.75rem 0.75rem;
   min-height: 0;
-  background: linear-gradient(
-    180deg,
-    #123a66 0%,
-    #0f2f54 50%,
-    #0a2440 100%
-  );
+  background:
+    radial-gradient(
+      ellipse 90% 60% at 50% 0%,
+      rgba(255, 176, 64, 0.32),
+      transparent 55%
+    ),
+    linear-gradient(
+      180deg,
+      #4a2e16 0%,
+      #2e1c10 50%,
+      #1a1008 100%
+    );
   box-shadow:
-    0 0 0 2px rgba(26, 143, 212, 0.22),
-    0 1px 0 rgba(214, 240, 255, 0.08) inset,
-    0 8px 22px rgba(8, 32, 64, 0.35);
-  color: #e8f4ff;
+    0 0 0 1px rgba(232, 176, 80, 0.4),
+    0 0 16px rgba(255, 176, 64, 0.2),
+    0 1px 0 rgba(255, 230, 170, 0.14) inset,
+    0 8px 22px rgba(12, 6, 2, 0.4);
+  color: #fff4e0;
 }
 
 .game-task-aces {
   padding: 0.55rem 0.65rem 0.65rem;
 }
 
+/* Số lá bài cao thủ — hổ phách + ánh kim */
+.ace-card-num {
+  background-image: linear-gradient(
+    165deg,
+    #fff8e7 0%,
+    #ffd27a 32%,
+    #ffb040 52%,
+    #ffe08a 72%,
+    #c4892e 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 4px rgba(255, 176, 64, 0.9))
+    drop-shadow(0 0 8px rgba(255, 210, 120, 0.45))
+    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.9));
+}
+
 .game-task-aces .play-heading,
 .game-task-stars .play-heading {
-  color: #d6f0ff;
+  color: var(--gold-soft);
 }
 
 .game-task-stars .play-muted,
 .game-task-stars [class*="play-muted"] {
-  color: rgba(214, 240, 255, 0.55);
+  color: rgba(255, 244, 224, 0.55);
+}
+
+/* Hàng / ô bên trong Cao thủ & Sao bài — viền nhỏ đều */
+.game-task-aces .rank-row,
+.game-task-stars .rank-row {
+  border: 1px solid rgba(232, 176, 80, 0.32);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18) inset;
+}
+
+.game-task-aces .rank-row--you,
+.game-task-stars .rank-row--you {
+  border-color: rgba(255, 176, 64, 0.55);
+  background: rgba(255, 176, 64, 0.14);
+  box-shadow:
+    0 0 0 1px rgba(255, 210, 120, 0.12) inset,
+    0 0 10px rgba(255, 176, 64, 0.12);
+}
+
+.game-task-aces .rank-row--empty,
+.game-task-stars .rank-row--empty {
+  border: 1px dashed rgba(232, 176, 80, 0.22);
+  border-radius: 0.55rem;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.game-task-aces .rank-thumb {
+  border: 1px solid rgba(232, 176, 80, 0.4);
+  border-radius: 0.25rem;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
 }
 
 .game-task-aces::before,
 .game-task-stars::before {
-  background: var(--app-sea);
-  box-shadow: 0.55rem 0 0 var(--app-foam);
+  background: var(--gold);
+  box-shadow: 0.55rem 0 0 var(--gold-soft);
 }
 
 .game-task-aces::after,
 .game-task-stars::after {
-  background: var(--app-foam);
-  box-shadow: -0.55rem 0 0 var(--app-sea);
+  background: var(--gold-soft);
+  box-shadow: -0.55rem 0 0 var(--gold);
 }
 
 .game-task-aces::before,
@@ -251,8 +625,8 @@
 .app-input {
   width: 100%;
   border-radius: 0.75rem;
-  border: 1.5px solid rgba(15, 61, 110, 0.18);
-  background: rgba(255, 255, 255, 0.88);
+  border: 1.5px solid rgba(232, 176, 80, 0.35);
+  background: rgba(255, 252, 245, 0.92);
   padding: 0.65rem 0.85rem;
   font-size: 0.875rem;
   color: var(--play-ink);
@@ -260,38 +634,183 @@
 }
 
 .app-input:focus {
-  border-color: rgba(26, 143, 212, 0.75);
-  box-shadow: 0 0 0 3px rgba(26, 143, 212, 0.2);
+  border-color: rgba(255, 176, 64, 0.85);
+  box-shadow: 0 0 0 3px rgba(255, 176, 64, 0.22);
 }
 
+/* Nút — 3 cấp đậm → nhạt */
 .app-btn-primary {
-  display: flex;
+  display: inline-flex;
   width: 100%;
   align-items: center;
   justify-content: center;
   border-radius: 0.85rem;
-  background: linear-gradient(135deg, #1a8fd4 0%, #1578b8 48%, #0f3d6e 100%);
+  border: 1px solid rgba(255, 210, 120, 0.35);
+  background: linear-gradient(145deg, #5a3418 0%, #3a2210 55%, #1c120a 100%);
   padding: 0.85rem 1rem;
   font-family: "Nunito", "Be Vietnam Pro", sans-serif;
   font-weight: 800;
   font-size: 0.95rem;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(15, 61, 110, 0.4);
-  box-shadow: 0 6px 18px rgba(26, 143, 212, 0.35);
+  color: #fff8e7;
+  text-shadow: 0 1px 2px rgba(10, 4, 0, 0.55);
+  box-shadow:
+    0 1px 0 rgba(255, 210, 120, 0.2) inset,
+    0 6px 18px rgba(24, 12, 4, 0.4);
+}
+
+.app-btn-primary:active:not(:disabled) {
+  filter: brightness(1.08);
 }
 
 .app-btn-primary:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
 }
 
+/* Trung bình — amber đặc, CTA phụ */
+.app-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 210, 120, 0.55);
+  background: linear-gradient(145deg, #ffc45c 0%, #ffb040 45%, #e09830 100%);
+  padding: 0.55rem 0.9rem;
+  font-family: "Nunito", "Be Vietnam Pro", sans-serif;
+  font-weight: 800;
+  font-size: 0.8rem;
+  color: #1a1208;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.35) inset,
+    0 4px 12px rgba(255, 176, 64, 0.28);
+}
+
+.app-btn-secondary:active:not(:disabled) {
+  filter: brightness(0.96);
+}
+
+.app-btn-secondary:disabled {
+  opacity: 0.45;
+}
+
+/* Nhạt — kem trong suốt */
 .app-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 248, 232, 0.55);
   padding: 0.35rem 0.75rem;
+  font-family: "Nunito", "Be Vietnam Pro", sans-serif;
   font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--play-muted);
+  box-shadow: none;
+  border: 1px solid rgba(232, 176, 80, 0.22);
+}
+
+.app-btn-ghost:active:not(:disabled) {
+  background: rgba(255, 248, 232, 0.78);
   color: var(--play-ink);
-  box-shadow: 0 1px 2px rgba(15, 61, 110, 0.08);
-  border: 1px solid rgba(15, 61, 110, 0.12);
+}
+
+.app-btn-ghost:disabled {
+  opacity: 0.4;
+}
+
+/* Soft — wash jade rất nhạt (chip phụ / slang) */
+.app-btn-soft {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(61, 184, 160, 0.12);
+  padding: 0.3rem 0.7rem;
+  font-family: "Nunito", "Be Vietnam Pro", sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--jade-deep);
+  border: 1px solid rgba(61, 184, 160, 0.28);
+  box-shadow: none;
+}
+
+.app-btn-soft:active:not(:disabled) {
+  background: rgba(61, 184, 160, 0.22);
+}
+
+/* Dot trạng thái online / live */
+.ui-live-dot {
+  background: var(--jade);
+  box-shadow: 0 0 6px rgba(61, 184, 160, 0.65);
+}
+
+/* Sheet / overlay shell — jade đêm + nhấn gold nhẹ */
+.sheet-shell {
+  background:
+    radial-gradient(
+      ellipse 90% 50% at 50% -5%,
+      rgba(61, 184, 160, 0.28),
+      transparent 55%
+    ),
+    linear-gradient(
+      180deg,
+      var(--sheet-top) 0%,
+      var(--sheet-mid) 42%,
+      var(--sheet) 100%
+    );
+  box-shadow:
+    0 0 0 1px rgba(126, 217, 198, 0.35),
+    0 0 28px rgba(61, 184, 160, 0.18),
+    0 -8px 32px rgba(6, 20, 18, 0.55);
+  color: #e8fff8;
+}
+
+.sheet-shell-light {
+  background:
+    radial-gradient(
+      ellipse 80% 45% at 50% 0%,
+      rgba(126, 217, 198, 0.35),
+      transparent 55%
+    ),
+    linear-gradient(180deg, #e8faf5 0%, #d4f0e8 48%, #c5e8de 100%);
+  box-shadow:
+    0 0 0 1px rgba(61, 184, 160, 0.45),
+    0 -8px 28px rgba(26, 107, 92, 0.2);
+  color: var(--jade-deep);
+}
+
+.ui-pill {
+  border-radius: 999px;
+  background: rgba(255, 248, 232, 0.62);
+  color: var(--play-muted);
+  box-shadow: none;
+  border: 1px solid rgba(232, 176, 80, 0.28);
+  font-weight: 700;
+}
+
+.ui-pill--strong {
+  background: linear-gradient(145deg, #ffc45c 0%, #ffb040 50%, #e09830 100%);
+  color: #1a1208;
+  border-color: rgba(255, 210, 120, 0.55);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.3) inset,
+    0 3px 10px rgba(255, 176, 64, 0.25);
+  font-weight: 800;
+}
+
+.ui-pill--deep {
+  background: linear-gradient(145deg, #4a2e16 0%, #3a2210 100%);
+  color: var(--gold-soft);
+  border-color: rgba(232, 176, 80, 0.4);
+  box-shadow: 0 1px 0 rgba(255, 210, 120, 0.12) inset;
+  font-weight: 800;
+}
+
+.ui-chip {
+  border-radius: 0.5rem;
+  background: rgba(255, 248, 232, 0.92);
+  color: var(--play-ink);
+  box-shadow: 0 1px 2px rgba(58, 34, 16, 0.08);
+  border: 1px solid rgba(232, 176, 80, 0.35);
 }
 
 * {
@@ -310,7 +829,7 @@ body,
 body {
   font-family: "Be Vietnam Pro", "Segoe UI", sans-serif;
   color: var(--play-ink);
-  background: var(--app-sky);
+  background: var(--night);
   overflow-x: hidden;
   overscroll-behavior: none;
   -webkit-user-select: none;
@@ -358,25 +877,25 @@ input {
   align-items: center;
   gap: 0.35rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 248, 232, 0.95);
   padding: 0.2rem 0.55rem;
   font-family: "Nunito", "Be Vietnam Pro", sans-serif;
   font-size: 0.65rem;
   font-weight: 800;
   color: var(--play-ink);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset;
-  border: 1px solid rgba(15, 61, 110, 0.14);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.75) inset;
+  border: 1px solid rgba(232, 176, 80, 0.4);
 }
 
 .identity-chip--code {
-  color: var(--app-sea);
+  color: var(--wood-deep);
   letter-spacing: 0.04em;
 }
 
 .identity-chip--role {
-  background: var(--app-frame-deep);
-  color: #fff;
-  border-color: transparent;
+  background: var(--wood-deep);
+  color: var(--cream);
+  border-color: rgba(232, 176, 80, 0.35);
 }
 
 @keyframes flip-in {

@@ -17,6 +17,16 @@ import { ResultSummaryPopup } from "../components/ResultSummaryPopup";
 import { PlayersSheet } from "../components/PlayersSheet";
 import { PlayerInfoSheet, type PlayerInfoView } from "../components/PlayerInfoSheet";
 import { CouponSheet } from "../components/CouponSheet";
+import {
+  VipTopupSheet,
+  type TopupRow,
+} from "../components/VipTopupSheet";
+import {
+  AutoBetSheet,
+  loadAutoBet,
+  saveAutoBet,
+  type AutoBetConfig,
+} from "../components/AutoBetSheet";
 import { ShoutBar } from "../components/ShoutBar";
 import { ShoutMarquee } from "../components/ShoutMarquee";
 import { SaintOverlay } from "../components/SaintOverlay";
@@ -83,6 +93,8 @@ type Sheet =
   | "players"
   | "coupon"
   | "playerInfo"
+  | "vipTopups"
+  | "autoBet"
   | null;
 
 export default function GamePage() {
@@ -90,6 +102,9 @@ export default function GamePage() {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [name, setName] = useState("");
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const renameRef = useRef<HTMLDivElement>(null);
   const [me, setMe] = useState<AuthUser | null>(() => getStoredUser());
   const [guestAvatar, setGuestAvatarState] = useState(() => getGuestAvatar());
   const [avatarBusy, setAvatarBusy] = useState(false);
@@ -113,6 +128,11 @@ export default function GamePage() {
   /** Mode chat: no | vip | saint */
   const [chatMode, setChatMode] = useState<ChatMode>("no");
   const [couponBusy, setCouponBusy] = useState(false);
+  const [topupRows, setTopupRows] = useState<TopupRow[]>([]);
+  const [topupTotalXu, setTopupTotalXu] = useState(0);
+  const [topupBusy, setTopupBusy] = useState(false);
+  const [autoBet, setAutoBet] = useState<AutoBetConfig>(() => loadAutoBet());
+  const autoRoundRef = useRef<number | null>(null);
   const [profile, setProfile] = useState<PlayerInfoView | null>(null);
   const [adminBusy, setAdminBusy] = useState(false);
   /** Session socket đã gắn userId (tin cậy hơn localStorage) */
@@ -123,6 +143,10 @@ export default function GamePage() {
 
   const prevBalance = useRef<number | null>(null);
   const prevPhase = useRef<string | null>(null);
+  /** Snapshot lá đã chọn — giữ khung khi reveal/payout */
+  const [pickedSnapshot, setPickedSnapshot] = useState<
+    { cardId: number; amount: number }[]
+  >([]);
 
   const remaining = useServerCountdown(
     state?.phaseEndsAt ?? 0,
@@ -133,6 +157,24 @@ export default function GamePage() {
     setToast(msg);
     window.setTimeout(() => setToast(null), 1600);
   }, []);
+
+  useEffect(() => {
+    if (!renameOpen) return;
+    const onPointer = (e: PointerEvent) => {
+      if (!renameRef.current?.contains(e.target as Node)) {
+        setRenameOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setRenameOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [renameOpen]);
 
   useEffect(() => {
     const s = io(SOCKET_URL, { transports: ["websocket", "polling"] });
@@ -302,6 +344,80 @@ export default function GamePage() {
     }
   }, [remaining, state?.phase, play]);
 
+  const runAutoPlace = useCallback(
+    async (cfg: AutoBetConfig, roundId: number) => {
+      if (!socket || !connected || !state) return;
+      if (state.phase !== "betting") return;
+      if (!cfg.enabled || cfg.slots.length === 0) return;
+      if (autoRoundRef.current === roundId) return;
+      if (state.yourBalance == null || !Number.isFinite(state.yourBalance)) {
+        return;
+      }
+
+      // Khóa ngay để tránh double-fire khi state cập nhật
+      autoRoundRef.current = roundId;
+
+      const bets = [...(state.yourBets ?? [])];
+      let balance = state.yourBalance;
+      let placed = 0;
+      let lastError: string | null = null;
+
+      for (const slot of cfg.slots) {
+        const idx = slot.cardId - 1;
+        const current = bets[idx] ?? 0;
+        const need = Math.max(0, slot.amount - current);
+        if (need <= 0) continue;
+        if (balance < need) {
+          lastError = "Số dư không đủ";
+          continue;
+        }
+
+        const result = await new Promise<{
+          ok?: boolean;
+          reason?: string;
+          balance?: number;
+        }>((resolve) => {
+          socket.emit(
+            "placeBet",
+            { cardId: slot.cardId, amount: need, roundId },
+            (r?: { ok?: boolean; reason?: string; balance?: number }) => {
+              resolve(r ?? { ok: false, reason: "Không phản hồi" });
+            },
+          );
+        });
+
+        if (!result.ok) {
+          lastError = result.reason || "Đặt thất bại";
+          continue;
+        }
+        placed += 1;
+        bets[idx] = current + need;
+        if (typeof result.balance === "number") balance = result.balance;
+        else balance -= need;
+      }
+
+      if (placed > 0) {
+        showToast(`Auto: đã đặt ${placed} lá`);
+      } else if (lastError) {
+        showToast(`Auto: ${lastError}`);
+        // Không clear ref — tránh spam toast; bật lại Auto (Lưu) để thử lại
+      }
+    },
+    [socket, connected, state, showToast],
+  );
+
+  // Auto đặt khi vào betting / khi bật Auto giữa ván
+  useEffect(() => {
+    if (!state || state.phase !== "betting") return;
+    void runAutoPlace(autoBet, state.roundId);
+  }, [
+    state?.phase,
+    state?.roundId,
+    state?.yourBalance,
+    autoBet,
+    runAutoPlace,
+  ]);
+
   const openBet = (cardId: number) => {
     if (!state || state.phase !== "betting") return;
     const bets = state.yourBets ?? [];
@@ -323,6 +439,26 @@ export default function GamePage() {
       return;
     }
     setSheet("coupon");
+  };
+
+  const openVipTopups = async () => {
+    setSheet("vipTopups");
+    setTopupBusy(true);
+    try {
+      const r = await api<{
+        ok: true;
+        totalXu: number;
+        rows: TopupRow[];
+      }>("/api/topups");
+      setTopupRows(r.rows ?? []);
+      setTopupTotalXu(r.totalXu ?? 0);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Không tải được danh sách nạp");
+      setTopupRows([]);
+      setTopupTotalXu(0);
+    } finally {
+      setTopupBusy(false);
+    }
   };
 
   const redeemCoupon = async (code: string) => {
@@ -634,13 +770,73 @@ export default function GamePage() {
   const profitAmount = payoutAmount - myStakeOnWinner;
   const topWinners = state?.roundTopWinners ?? [];
 
-  const selectedCards = useMemo(() => {
-    const bets = state?.yourBets ?? [];
-    return CARDS.filter((c) => (bets[c.id - 1] ?? 0) > 0).map((c) => ({
-      card: c,
+  // Cập nhật snapshot trong lúc betting; giữ khi mở bài / trả thưởng
+  useEffect(() => {
+    if (!state || state.phase !== "betting") return;
+    const bets = state.yourBets ?? [];
+    const next = CARDS.filter((c) => (bets[c.id - 1] ?? 0) > 0).map((c) => ({
+      cardId: c.id,
       amount: bets[c.id - 1] ?? 0,
     }));
-  }, [state?.yourBets]);
+    setPickedSnapshot(next);
+  }, [state?.phase, state?.yourBets, state?.roundId]);
+
+  const displayPicked = useMemo(() => {
+    type Row = {
+      card: (typeof CARDS)[number];
+      amount: number;
+      pending?: boolean;
+    };
+    const phase = state?.phase;
+    if (phase !== "betting") {
+      return pickedSnapshot
+        .map(({ cardId, amount }) => {
+          const card = CARDS.find((c) => c.id === cardId);
+          return card ? ({ card, amount } satisfies Row) : null;
+        })
+        .filter((x): x is Row => !!x);
+    }
+
+    const bets = state?.yourBets ?? [];
+    const live = CARDS.filter((c) => (bets[c.id - 1] ?? 0) > 0).map((c) => ({
+      card: c,
+      amount: bets[c.id - 1] ?? 0,
+      pending: false as boolean,
+    }));
+
+    // Auto ON: hiện preset nếu chưa có cược live (hoặc bổ sung slot pending)
+    if (autoBet.enabled && autoBet.slots.length > 0) {
+      if (live.length === 0) {
+        return autoBet.slots
+          .map((s) => {
+            const card = CARDS.find((c) => c.id === s.cardId);
+            return card
+              ? ({ card, amount: s.amount, pending: true } satisfies Row)
+              : null;
+          })
+          .filter((x): x is Row => !!x);
+      }
+      const liveIds = new Set(live.map((r) => r.card.id));
+      const pending = autoBet.slots
+        .filter((s) => !liveIds.has(s.cardId))
+        .map((s) => {
+          const card = CARDS.find((c) => c.id === s.cardId);
+          return card
+            ? ({ card, amount: s.amount, pending: true } satisfies Row)
+            : null;
+        })
+        .filter((x): x is Row => !!x);
+      return [...live, ...pending].slice(0, 5);
+    }
+
+    return live;
+  }, [
+    state?.phase,
+    state?.yourBets,
+    pickedSnapshot,
+    autoBet.enabled,
+    autoBet.slots,
+  ]);
 
   return (
     <div className="app-shell play-screen relative h-dvh overflow-y-auto overflow-x-hidden">
@@ -655,82 +851,95 @@ export default function GamePage() {
               to={
                 getStoredUser() ? homePath(getStoredUser()) : "/login"
               }
-              className="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] shadow-sm ring-1 ring-[#0f3d6e]/15"
+              className="app-btn-ghost shrink-0 px-2.5 py-1 text-[10px]"
             >
               ← Menu
             </Link>
             <img
               src="/assets/logo/logo-tarot.png"
-              alt="Tarot"
+              alt="SOFIAORE-TAROT"
               className="h-10 w-10 shrink-0 rounded-full object-cover ring-2 ring-white/80 shadow-md"
             />
             <div className="min-w-0 flex-1">
-              <h1 className="play-heading truncate text-base leading-tight sm:text-lg">
-                Đoán bài Tarot
+              <h1 className="play-heading truncate text-base leading-tight tracking-wide sm:text-lg">
+                SOFIAORE-TAROT
               </h1>
             </div>
             <button
               type="button"
               onClick={toggleMute}
-              className="shrink-0 rounded-full bg-white/80 px-2 py-1 text-[10px] font-bold text-[var(--play-ink)] shadow-sm ring-1 ring-[#0f3d6e]/15"
+              className="app-btn-ghost shrink-0 px-2 py-1 text-[10px]"
               title={muted ? "Bật tiếng" : "Tắt tiếng"}
             >
               {muted ? "Tắt" : "Âm"}
             </button>
           </div>
-          <IdentityBadge
-            user={me}
-            guestCode={me ? null : getGuestCode() || ensureGuestCode()}
-            guestName={me ? null : name}
-            guestAvatar={me ? null : guestAvatar}
-            compact
-            showPath={false}
-            onAvatarClick={openAvatarPicker}
-          />
-          {!me && (
-            <form
-              className="flex gap-1"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const raw = name.trim().slice(0, 16);
-                if (raw.length < 2) {
-                  showToast("Tên 2–16 ký tự");
-                  return;
-                }
-                setGuestName(raw);
-                setName(raw);
-                socket?.emit(
-                  "setName",
-                  { name: raw },
-                  (r?: { ok?: boolean; reason?: string; name?: string }) => {
-                    if (!r?.ok) {
-                      showToast(r?.reason || "Không đổi tên được");
-                      return;
+          <div className="relative" ref={renameRef}>
+            <IdentityBadge
+              user={me}
+              guestCode={me ? null : getGuestCode() || ensureGuestCode()}
+              guestName={me ? null : name}
+              guestAvatar={me ? null : guestAvatar}
+              compact
+              showPath={false}
+              onAvatarClick={openAvatarPicker}
+              onNameClick={
+                me
+                  ? undefined
+                  : () => {
+                      setRenameDraft(name);
+                      setRenameOpen((v) => !v);
                     }
-                    if (r.name) {
-                      setName(r.name);
-                      setGuestName(r.name);
-                    }
-                    showToast("Đã đổi tên");
-                  },
-                );
-              }}
-            >
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value.slice(0, 16))}
-                maxLength={16}
-                placeholder="Tên khách…"
-                className="app-input !px-2 !py-1 text-[11px]"
-              />
-              <button
-                type="submit"
-                className="shrink-0 rounded-lg bg-[#0f3d6e] px-2.5 text-[10px] font-bold text-white"
+              }
+            />
+            {!me && renameOpen && (
+              <form
+                className="absolute left-10 right-0 top-[calc(100%-0.15rem)] z-30 flex gap-1 rounded-xl bg-[rgba(232,250,245,0.97)] p-1.5 shadow-lg ring-1 ring-[var(--jade)]/45 backdrop-blur-sm"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const raw = renameDraft.trim().slice(0, 16);
+                  if (raw.length < 2) {
+                    showToast("Tên 2–16 ký tự");
+                    return;
+                  }
+                  setGuestName(raw);
+                  setName(raw);
+                  socket?.emit(
+                    "setName",
+                    { name: raw },
+                    (r?: { ok?: boolean; reason?: string; name?: string }) => {
+                      if (!r?.ok) {
+                        showToast(r?.reason || "Không đổi tên được");
+                        return;
+                      }
+                      if (r.name) {
+                        setName(r.name);
+                        setGuestName(r.name);
+                        setRenameDraft(r.name);
+                      }
+                      setRenameOpen(false);
+                      showToast("Đã đổi tên");
+                    },
+                  );
+                }}
               >
-                Đổi
-              </button>
-            </form>
-          )}
+                <input
+                  autoFocus
+                  value={renameDraft}
+                  onChange={(e) => setRenameDraft(e.target.value.slice(0, 16))}
+                  maxLength={16}
+                  placeholder="Tên khách…"
+                  className="app-input !px-2 !py-1.5 text-[11px]"
+                />
+                <button
+                  type="submit"
+                  className="app-btn-secondary shrink-0 !rounded-lg !px-2.5 !py-1.5 !text-[10px]"
+                >
+                  Đổi
+                </button>
+              </form>
+            )}
+          </div>
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
@@ -740,38 +949,32 @@ export default function GamePage() {
               Hôm nay đã đoán: {guessesToday} lần ›
             </button>
             <div className="flex shrink-0 items-center gap-1.5">
-              <div className="flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 shadow-sm ring-1 ring-amber-400/50">
+              <div className="ui-pill flex items-center gap-1 px-2.5 py-1 !text-[var(--play-ink)]">
                 <img
                   src="/assets/ui/icon-coin-xu.png"
                   alt=""
                   className="h-5 w-5 rounded-full object-cover"
                 />
-                <span className="font-play text-xs font-bold text-amber-700 tabular-nums">
+                <span className="font-play text-xs font-bold text-amber-800 tabular-nums">
                   {formatXu(balance)}
                 </span>
               </div>
               <button
                 type="button"
                 onClick={openCoupon}
-                className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide shadow-sm ring-1 ${
+                className={`px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide ${
                   balance <= 0
-                    ? "animate-pulse bg-rose-500 text-white ring-rose-300"
-                    : "bg-[#1a8fd4] text-white ring-[#d6f0ff]/80"
+                    ? "animate-pulse rounded-full bg-rose-500 text-white ring-1 ring-rose-300"
+                    : "ui-pill ui-pill--strong"
                 }`}
               >
                 Nạp!
               </button>
               <button
                 type="button"
-                title="VIP pool chỉ hiển thị trang trí — không phải quỹ thưởng. VIP chat = admin cấp hoặc đủ 10.000 ván."
-                onClick={() =>
-                  showToast(
-                    me?.isVip
-                      ? "Bạn là VIP — chat bay (mode VIP). Pool chỉ trang trí."
-                      : "VIP: admin cấp hoặc 10.000 ván. Pool chỉ trang trí, không chia thưởng.",
-                  )
-                }
-                className="flex items-center gap-1 rounded-full bg-[#0f3d6e] px-2 py-1 shadow-sm ring-1 ring-amber-300/60"
+                title="Danh sách người đã nạp xu"
+                onClick={() => void openVipTopups()}
+                className="ui-pill ui-pill--deep flex items-center gap-1 px-2 py-1"
               >
                 <img
                   src="/assets/ui/icon-vip.png"
@@ -795,7 +998,7 @@ export default function GamePage() {
         >
           <span
             className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-              connected ? "bg-[#1a8fd4]" : "bg-rose-400"
+              connected ? "ui-live-dot" : "bg-rose-400"
             }`}
             aria-hidden
           />
@@ -805,7 +1008,7 @@ export default function GamePage() {
               : "Mất kết nối"}
           </span>
           {connected && (
-            <span className="text-[10px] font-semibold text-[#0f3d6e]">›</span>
+            <span className="text-[10px] font-semibold text-[var(--wood-deep)]">›</span>
           )}
         </button>
 
@@ -829,7 +1032,7 @@ export default function GamePage() {
               return (
                 <span
                   key={`${row.round}-${i}`}
-                  className="relative h-12 w-9 shrink-0 overflow-hidden rounded shadow ring-1 ring-[#0f3d6e]/20"
+                  className="relative h-12 w-9 shrink-0 overflow-hidden rounded shadow ring-1 ring-[var(--gold)]/35"
                   title={card ? `#${card.id} ${card.nameVi}` : `#${row.win}`}
                 >
                   <img
@@ -837,7 +1040,7 @@ export default function GamePage() {
                     alt={card?.nameVi ?? `#${row.win}`}
                     className="h-full w-full object-cover"
                   />
-                  <span className="font-play absolute left-0.5 top-0.5 z-[1] rounded bg-[#0f3d6e]/92 px-1 text-[9px] font-bold leading-tight text-white tabular-nums shadow-sm">
+                  <span className="font-play absolute left-0.5 top-0.5 z-[1] rounded bg-[var(--wood-deep)]/92 px-1 text-[9px] font-bold leading-tight text-[var(--gold-soft)] tabular-nums shadow-sm">
                     {row.win}
                   </span>
                 </span>
@@ -857,34 +1060,76 @@ export default function GamePage() {
           onPick={openBet}
         />
 
-        {/* ===== ZONE 5: Lá bài đã chọn — dưới deck ===== */}
+        {/* ===== ZONE 5: Lá bài đã chọn — khung cứng cố định ===== */}
         <section className="game-task mt-3 px-3 py-2">
-          <p className="play-section-title mb-1.5">
-            Lá bài bạn đã chọn
-          </p>
-          {selectedCards.length === 0 ? (
-            <p className="text-xs text-[var(--play-muted)]">
-              Chưa đặt — chạm 1 lá ở bàn trên để mở bảng chọn xu
-            </p>
-          ) : (
-            <div className="flex gap-2 overflow-x-auto">
-              {selectedCards.map(({ card, amount }) => (
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <p className="play-section-title">Lá bài bạn đã chọn</p>
+            <button
+              type="button"
+              onClick={() => setSheet("autoBet")}
+              className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${
+                autoBet.enabled
+                  ? "ui-pill ui-pill--strong"
+                  : "app-btn-soft !px-2.5 !py-0.5 !text-[10px]"
+              }`}
+              title="Cấu hình tự động đặt lá"
+            >
+              Auto{autoBet.enabled ? " · ON" : ""}
+            </button>
+          </div>
+          <div className="grid h-[4.75rem] grid-cols-5 gap-1.5">
+            {Array.from({ length: 5 }, (_, i) => {
+              const item = displayPicked[i];
+              if (!item) {
+                return (
+                  <div
+                    key={`slot-${i}`}
+                    className="flex flex-col items-center justify-center rounded-lg bg-[var(--wood-deep)]/6 ring-1 ring-dashed ring-[var(--wood-deep)]/18"
+                  >
+                    <span className="text-[9px] font-semibold text-[var(--play-muted)]/45">
+                      {i + 1}
+                    </span>
+                  </div>
+                );
+              }
+              const isWin =
+                (state?.phase === "revealing" || state?.phase === "payout") &&
+                winning != null &&
+                item.card.id === winning;
+              const pending = !!(item as { pending?: boolean }).pending;
+              return (
                 <div
-                  key={card.id}
-                  className="flex shrink-0 flex-col items-center gap-1 rounded-lg bg-white/90 px-1.5 py-1.5 shadow-sm ring-1 ring-amber-400/40"
+                  key={item.card.id}
+                  className={`ui-chip flex min-w-0 flex-col items-center gap-0.5 !px-1 !py-1 ${
+                    isWin
+                      ? "ring-2 ring-[var(--jade)]/70"
+                      : pending
+                        ? "ring-dashed ring-[var(--jade)]/45 opacity-80"
+                        : "ring-amber-400/40"
+                  }`}
                 >
                   <img
-                    src={card.image}
+                    src={item.card.image}
                     alt=""
-                    className="h-12 w-9 rounded object-cover"
+                    className="h-10 w-[1.85rem] rounded object-cover"
                   />
-                  <p className="font-play text-[10px] font-semibold text-amber-700 tabular-nums">
-                    {formatXu(amount)}
+                  <p className="font-play max-w-full truncate text-[9px] font-semibold text-amber-700 tabular-nums">
+                    {pending ? "~" : ""}
+                    {formatXu(item.amount)}
                   </p>
                 </div>
-              ))}
-            </div>
-          )}
+              );
+            })}
+          </div>
+          <p className="mt-1 h-4 text-center text-[10px] text-[var(--play-muted)]">
+            {displayPicked.length === 0
+              ? autoBet.enabled
+                ? `Auto ON · ${autoBet.slots.length} lá preset`
+                : "Chạm lá trên bàn để đặt"
+              : state?.phase === "betting"
+                ? `${displayPicked.length}/5 lá`
+                : "Giữ nguyên tới ván sau"}
+          </p>
         </section>
 
         <ShoutBar
@@ -933,17 +1178,15 @@ export default function GamePage() {
 
           <ul className="mt-1.5 space-y-1">
             {(state?.topAces ?? []).length === 0 && (
-              <li className="py-3 text-center text-[11px] text-white/40">
+              <li className="rank-row--empty py-3 text-center text-[11px] text-white/40">
                 Chưa có ai thắng vòng trước
               </li>
             )}
             {(state?.topAces ?? []).slice(0, 3).map((ace) => (
               <li
                 key={`${ace.rank}-${ace.name}`}
-                className={`flex items-center gap-1.5 rounded-lg px-1.5 py-1 ring-1 ${
-                  ace.isYou
-                    ? "bg-[var(--gold)]/15 ring-[var(--gold)]/40"
-                    : "bg-white/5 ring-white/8"
+                className={`rank-row flex items-center gap-1.5 px-1.5 py-1 ${
+                  ace.isYou ? "rank-row--you" : ""
                 }`}
               >
                 <span className="font-play w-4 shrink-0 text-center text-xs font-bold text-[var(--gold-soft)] tabular-nums">
@@ -986,15 +1229,19 @@ export default function GamePage() {
                       return (
                         <div
                           key={pick.cardId}
-                          className="relative shrink-0"
+                          className="rank-thumb relative shrink-0 overflow-hidden"
                           title={`${card.nameVi}: ${formatXu(pick.amount)} xu`}
                         >
                           <img
                             src={card.image}
                             alt={card.nameVi}
-                            className="h-8 w-[1.35rem] rounded object-cover ring-1 ring-white/15"
+                            className="h-8 w-[1.35rem] object-cover"
                           />
-                          <span className="font-play absolute inset-0 flex items-center justify-center rounded bg-black/35 text-[11px] font-extrabold leading-none text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)] tabular-nums">
+                          <span
+                            className="pointer-events-none absolute inset-0 bg-black/35"
+                            aria-hidden
+                          />
+                          <span className="ace-card-num font-play absolute inset-0 flex items-center justify-center text-[11px] font-extrabold leading-none tabular-nums">
                             {card.id}
                           </span>
                         </div>
@@ -1015,27 +1262,25 @@ export default function GamePage() {
             className="flex w-full flex-col text-left"
           >
             <p className="play-heading text-base sm:text-lg">Sao bài Tarot ›</p>
-            <p className="mt-0.5 text-[11px] text-[#d6f0ff]/55">
+            <p className="mt-0.5 text-[11px] text-[var(--cream)]/55">
               Xếp hạng theo số xu dùng dự đoán mỗi tuần
             </p>
           </button>
 
           <ul className="mt-2 space-y-1.5">
             {(state?.tarotStars ?? []).length === 0 && (
-              <li className="py-4 text-center text-[11px] text-[#d6f0ff]/40">
+              <li className="rank-row--empty py-4 text-center text-[11px] text-[var(--cream)]/40">
                 Chưa có xu dự đoán tuần này
               </li>
             )}
             {(state?.tarotStars ?? []).slice(0, 3).map((star) => (
               <li
                 key={`${star.rank}-${star.name}`}
-                className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ring-1 ${
-                  star.isYou
-                    ? "bg-[#1a8fd4]/25 ring-[#1a8fd4]/55"
-                    : "bg-white/5 ring-white/10"
+                className={`rank-row flex items-center gap-2 px-2 py-1.5 ${
+                  star.isYou ? "rank-row--you" : ""
                 }`}
               >
-                <span className="font-play w-5 shrink-0 text-center text-sm font-bold text-[#d6f0ff] tabular-nums">
+                <span className="font-play w-5 shrink-0 text-center text-sm font-bold text-[var(--gold-soft)] tabular-nums">
                   {star.rank}
                 </span>
                 <button
@@ -1052,7 +1297,7 @@ export default function GamePage() {
                   <img
                     src={star.avatar}
                     alt=""
-                    className="h-9 w-9 rounded-full object-cover ring-1 ring-[#1a8fd4]/40"
+                    className="h-9 w-9 rounded-full object-cover ring-1 ring-[var(--gold)]/40"
                   />
                 </button>
                 <div className="min-w-0 flex-1">
@@ -1123,6 +1368,42 @@ export default function GamePage() {
         busy={couponBusy}
         onClose={() => setSheet(null)}
         onRedeem={redeemCoupon}
+      />
+      <VipTopupSheet
+        open={sheet === "vipTopups"}
+        loading={topupBusy}
+        totalXu={topupTotalXu}
+        rows={topupRows}
+        onClose={() => setSheet(null)}
+        onSelect={(row) => {
+          setSheet(null);
+          openPlayerInfo({
+            name: row.name,
+            avatar: row.avatar,
+            userId: row.userId,
+            code: row.code ?? undefined,
+          });
+        }}
+      />
+      <AutoBetSheet
+        open={sheet === "autoBet"}
+        initial={autoBet}
+        onClose={() => setSheet(null)}
+        onSave={(cfg) => {
+          // Cho phép đặt lại ngay trong ván betting hiện tại khi bật/đổi preset
+          if (cfg.enabled && state?.phase === "betting") {
+            autoRoundRef.current = null;
+          }
+          setAutoBet(cfg);
+          saveAutoBet(cfg);
+          showToast(
+            cfg.enabled
+              ? state?.phase === "betting"
+                ? `Auto ON · đang đặt ${cfg.slots.length} lá…`
+                : `Auto ON · ${cfg.slots.length} lá (ván sau)`
+              : "Đã tắt Auto",
+          );
+        }}
       />
       <PlayerInfoSheet
         open={sheet === "playerInfo"}
