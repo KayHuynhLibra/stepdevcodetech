@@ -52,6 +52,14 @@ const SEED: CouponDef[] = [
     enabled: true,
     oncePerUser: false,
   },
+  {
+    code: "TrueVibe",
+    amount: 500_000,
+    secret: true,
+    label: "Nạp 500.000 xu — không giới hạn",
+    enabled: true,
+    oncePerUser: false,
+  },
 ];
 
 export class CouponStore {
