@@ -24,13 +24,18 @@ export function HistorySheet({ open, rows, onClose }: HistorySheetProps) {
               </th>
               {CARDS.map((c) => (
                 <th key={c.id} className="px-0.5 py-1">
-                  <img
-                    src={c.image}
-                    alt={c.nameVi}
-                    className="mx-auto h-9 w-7 rounded object-cover ring-1 ring-white/15"
-                  />
+                  <div className="relative mx-auto h-9 w-7">
+                    <img
+                      src={c.image}
+                      alt={`#${c.id} ${c.nameVi}`}
+                      className="h-full w-full rounded object-cover ring-1 ring-white/15"
+                    />
+                    <span className="font-play absolute -left-0.5 -top-0.5 rounded bg-[var(--gold)] px-1 text-[9px] font-bold leading-tight text-[#1a1208] tabular-nums shadow">
+                      {c.id}
+                    </span>
+                  </div>
                   <div className="mt-0.5 text-[9px] text-[var(--gold)]/80">
-                    {c.id} · x{c.multiplier}
+                    x{c.multiplier}
                   </div>
                 </th>
               ))}
@@ -53,10 +58,10 @@ export function HistorySheet({ open, rows, onClose }: HistorySheetProps) {
                   <td key={c.id} className="py-2.5">
                     {row.win === c.id ? (
                       <span
-                        className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[var(--gold)] text-[11px] font-bold text-[#1a1208] shadow-[0_0_10px_rgba(212,168,75,0.55)]"
-                        title="Lá thắng"
+                        className="font-play inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-[var(--gold)] px-1 text-[11px] font-bold text-[#1a1208] tabular-nums shadow-[0_0_10px_rgba(212,168,75,0.55)]"
+                        title={`Lá thắng #${c.id}`}
                       >
-                        ★
+                        {c.id}
                       </span>
                     ) : (
                       <span className="text-white/12">·</span>
@@ -69,7 +74,7 @@ export function HistorySheet({ open, rows, onClose }: HistorySheetProps) {
         </table>
       </div>
       <p className="pb-2 text-center text-[10px] text-white/35">
-        Tối đa 30 ván gần nhất — soi cầu theo cột ★
+        Tối đa 30 ván gần nhất — số trên badge = lá thắng
       </p>
     </BottomSheet>
   );

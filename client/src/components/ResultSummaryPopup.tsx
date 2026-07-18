@@ -167,18 +167,23 @@ export function ResultSummaryPopup({
                 aria-hidden
               />
               <p className="font-play relative text-[10px] font-semibold uppercase tracking-[0.22em] text-[#f0d78c]/90">
-                Lá thắng
+                Lá thắng #{winner.id}
               </p>
-              <motion.img
-                src={winner.image}
-                alt=""
-                className="relative mt-1.5 h-28 w-[5.25rem] rounded-[0.65rem] object-cover object-center shadow-[0_8px_32px_rgba(240,193,75,0.35)] ring-2 ring-[#f0c14b]/80"
-                initial={{ scale: 0.7, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: "spring", stiffness: 260, damping: 18 }}
-              />
+              <div className="relative mt-1.5">
+                <motion.img
+                  src={winner.image}
+                  alt={`#${winner.id} ${winner.nameVi}`}
+                  className="relative h-28 w-[5.25rem] rounded-[0.65rem] object-cover object-center shadow-[0_8px_32px_rgba(240,193,75,0.35)] ring-2 ring-[#f0c14b]/80"
+                  initial={{ scale: 0.7, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: "spring", stiffness: 260, damping: 18 }}
+                />
+                <span className="font-play absolute -left-1.5 -top-1.5 z-[1] flex h-7 min-w-7 items-center justify-center rounded-full bg-[#f0c14b] px-1.5 text-sm font-bold text-[#1a1208] tabular-nums shadow ring-2 ring-[#1a2234]/40">
+                  {winner.id}
+                </span>
+              </div>
               <p className="font-play relative mt-1.5 rounded-full bg-[#f0c14b]/15 px-2.5 py-0.5 text-sm font-bold text-[#ffe7a0] ring-1 ring-[#f0c14b]/35">
-                x{winner.multiplier}
+                #{winner.id} · x{winner.multiplier}
               </p>
             </div>
 

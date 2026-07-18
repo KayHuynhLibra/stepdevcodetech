@@ -4,8 +4,13 @@ import { fileURLToPath } from "url";
 import { authStore } from "./auth.js";
 import { DEFAULT_AVATAR, normalizeAvatar } from "./avatars.js";
 import { betStore } from "./betStore.js";
-import { CARDS, getCard, pickWinningCard } from "./cards.js";
-import { interStore } from "./interStore.js";
+import {
+  CARDS,
+  getCard,
+  houseProfitByCard,
+  pickWinningCard,
+} from "./cards.js";
+import { interStore, isPolicyMode } from "./interStore.js";
 import {
   CHASER_BOT_COUNT,
   createIdentityPool,
@@ -19,6 +24,7 @@ import {
   BOT_LOG_LIMIT,
   HISTORY_LIMIT,
   LEADERBOARD_LIMIT,
+  BET_STEP,
   MAX_BET,
   MAX_BOTS,
   MAX_CARDS_PER_ROUND,
@@ -69,15 +75,6 @@ interface HistoryFile {
   lastRoundWinners?: PersistedWinner[];
 }
 
-/** Che tên ngắn tiếng Việt (theo grapheme, giữ dấu). */
-function maskName(name: string): string {
-  const chars = [...name.trim()];
-  if (chars.length === 0) return "***";
-  if (chars.length <= 2) return `${chars[0]}*`;
-  if (chars.length <= 4) return `${chars[0]}${chars[1]}*`;
-  return `${chars[0]}${chars[1]}···`;
-}
-
 interface BotJob {
   at: number;
   botId: string;
@@ -113,8 +110,8 @@ export class GameEngine {
   private lastBroadcastAt = 0;
   private lastVipJitterAt = 0;
   /** Quỹ VIP cosmetic */
-  private vipPool = 126_938;
-  private vipBase = 126_938;
+  private vipPool = 12_694;
+  private vipBase = 12_694;
   /** Người thắng vòng trước (snapshot lúc payout) */
   private lastRoundWinners: {
     playerId: string;
@@ -238,7 +235,7 @@ export class GameEngine {
 
   join(
     socketId: string,
-    opts?: { name?: string; userId?: string },
+    opts?: { name?: string; userId?: string; avatar?: string },
   ): PlayerSession {
     const existing = this.players.get(socketId);
     if (existing) return existing;
@@ -252,7 +249,10 @@ export class GameEngine {
         opts?.name?.trim() ||
         `Khach${Math.floor(Math.random() * 9000) + 1000}`
       ).slice(0, 20),
-      avatar: normalizeAvatar(linked?.avatar) || DEFAULT_AVATAR,
+      avatar:
+        normalizeAvatar(linked?.avatar) ||
+        normalizeAvatar(opts?.avatar) ||
+        DEFAULT_AVATAR,
       balance: linked?.balance ?? STARTING_BALANCE,
       bets: new Map(),
       guessesToday: linked?.guessesToday ?? 0,
@@ -315,6 +315,22 @@ export class GameEngine {
     return { socketIds, avatar: next };
   }
 
+  /** Đổi avatar phiên hiện tại (khách hoặc đã login trên socket). */
+  setSessionAvatar(
+    socketId: string,
+    avatar: string,
+  ): { ok: true; avatar: string } | { ok: false; reason: string } {
+    const session = this.players.get(socketId);
+    if (!session) return { ok: false, reason: "Chưa vào bàn" };
+    const next = normalizeAvatar(avatar);
+    session.avatar = next;
+    if (session.userId) {
+      authStore.setAvatar(session.userId, next);
+    }
+    this.emitToAll();
+    return { ok: true, avatar: next };
+  }
+
   private resolveAvatar(playerId: string, userId?: string): string {
     const live = this.players.get(playerId);
     if (live?.avatar) return normalizeAvatar(live.avatar);
@@ -338,6 +354,26 @@ export class GameEngine {
       botActive: this.activeBots.length,
       vipPool: Math.round(this.vipPool),
     };
+  }
+
+  /** Stake mọi người chơi (kể cả khách) theo lá. */
+  getRealBets(): number[] {
+    return [...this.realBets];
+  }
+
+  /**
+   * Stake chỉ user đăng nhập (có userId) — vào kho / Inter App·Fed·User.
+   * Khách không tính vì không ghi vault.
+   */
+  getAuthBets(): number[] {
+    const bets = new Array(8).fill(0) as number[];
+    for (const p of this.players.values()) {
+      if (!p.userId) continue;
+      for (const [cardId, amt] of p.bets.entries()) {
+        if (amt > 0) bets[cardId - 1]! += amt;
+      }
+    }
+    return bets;
   }
 
   /** Lưu lượng bàn hiện tại (mainadmin). */
@@ -419,8 +455,16 @@ export class GameEngine {
     }
 
     const amt = Math.floor(Number(amount));
-    if (!Number.isFinite(amt) || amt < MIN_BET || amt > MAX_BET || amt % 100 !== 0) {
-      return { ok: false, reason: "Số xu không hợp lệ" };
+    if (
+      !Number.isFinite(amt) ||
+      amt < MIN_BET ||
+      amt > MAX_BET ||
+      amt % BET_STEP !== 0
+    ) {
+      return {
+        ok: false,
+        reason: `Số xu không hợp lệ (tối đa ${MAX_BET.toLocaleString("vi-VN")} / 1 cầu)`,
+      };
     }
 
     const player = this.players.get(socketId);
@@ -434,6 +478,12 @@ export class GameEngine {
     }
 
     const prev = player.bets.get(cardId) ?? 0;
+    if (prev + amt > MAX_BET) {
+      return {
+        ok: false,
+        reason: `Mỗi cầu tối đa ${MAX_BET.toLocaleString("vi-VN")} xu (đã đặt ${prev.toLocaleString("vi-VN")})`,
+      };
+    }
     if (prev <= 0) {
       let distinct = 0;
       for (const v of player.bets.values()) {
@@ -498,7 +548,7 @@ export class GameEngine {
 
     return rows.map((p, i) => ({
       rank: i + 1,
-      name: p.id === viewerId ? p.name : maskName(p.name),
+      name: p.name,
       avatar: p.avatar,
       winToday: p.winToday,
       isYou: p.id === viewerId,
@@ -527,7 +577,7 @@ export class GameEngine {
 
       return {
         rank: i + 1,
-        name: w.playerId === viewerId ? w.name : maskName(w.name),
+        name: w.name,
         avatar: this.resolveAvatar(w.playerId),
         // Thưởng vòng trước = số xu nhận từ lá thắng (stake × hệ số)
         winToday: w.payout,
@@ -569,7 +619,7 @@ export class GameEngine {
   getRoundTopWinners(viewerId?: string): RoundTopWinner[] {
     return this.roundTopWinnersRaw.map((w, i) => ({
       rank: i + 1,
-      name: w.playerId === viewerId ? w.name : maskName(w.name),
+      name: w.name,
       avatar: this.resolveAvatar(w.playerId),
       profit: w.profit,
       stake: w.stake,
@@ -703,10 +753,7 @@ export class GameEngine {
       .slice(0, LEADERBOARD_LIMIT)
       .map((row, i) => ({
         rank: i + 1,
-        name:
-          row.socketId === viewerId || row.key === viewerId
-            ? row.name
-            : maskName(row.name),
+        name: row.name,
         avatar: row.avatar,
         stakeWeek: row.stakeWeek,
         isYou: row.socketId === viewerId,
@@ -767,9 +814,9 @@ export class GameEngine {
     const displaySum = this.realBets.reduce((a, b) => a + b, 0)
       + this.botBets.reduce((a, b) => a + b, 0);
     // Drift nhẹ theo tổng cược hiển thị + jitter ngẫu nhiên
-    const target = this.vipBase + displaySum * 0.35 + this.activeBots.length * 120;
-    const delta = (target - this.vipPool) * 0.08 + (Math.random() - 0.45) * 900;
-    this.vipPool = Math.max(80_000, Math.min(2_500_000, this.vipPool + delta));
+    const target = this.vipBase + displaySum * 0.35 + this.activeBots.length * 12;
+    const delta = (target - this.vipPool) * 0.08 + (Math.random() - 0.45) * 90;
+    this.vipPool = Math.max(8_000, Math.min(250_000, this.vipPool + delta));
   }
 
   private advancePhase() {
@@ -777,7 +824,13 @@ export class GameEngine {
       this.phase = "revealing";
       this.phaseEndsAt = Date.now() + PHASE_MS.revealing;
       const interMode = interStore.getMode();
-      this.winningCard = pickWinningCard(interMode);
+      const authBets = this.getAuthBets();
+      const policyBets = isPolicyMode(interMode) ? authBets : this.realBets;
+      this.winningCard = pickWinningCard(interMode, policyBets);
+      const winIdx = (this.winningCard ?? 1) - 1;
+      const profits = houseProfitByCard(authBets);
+      const expectedHouse = profits[winIdx] ?? 0;
+      const authStake = authBets.reduce((a, b) => a + b, 0);
       this.snapshotRoundTopWinners();
       this.pushLog({
         botId: "system",
@@ -785,8 +838,18 @@ export class GameEngine {
         cardId: this.winningCard,
         amount: 0,
         action: "round_reset",
-        message: `Khóa cược — lá thắng #${this.winningCard} (Inter: ${interMode})`,
+        message:
+          `Khóa cược — lá thắng #${this.winningCard} (Inter: ${interMode}` +
+          (isPolicyMode(interMode)
+            ? ` · authStake ${authStake} · appProfit ~${Math.round(expectedHouse)}`
+            : "") +
+          `)`,
       });
+      if (isPolicyMode(interMode)) {
+        console.log(
+          `[inter:${interMode}] win=#${this.winningCard} authBets=[${authBets.join(",")}] profits=[${profits.map((p) => Math.round(p)).join(",")}] → house~${Math.round(expectedHouse)}`,
+        );
+      }
       this.emitToAll();
       return;
     }
@@ -1090,27 +1153,32 @@ export class GameEngine {
         }
       }
 
+      const prev = map.get(cardId) ?? 0;
+      const room = MAX_BET - prev;
+      if (room < MIN_BET) continue;
+      const betAmt = Math.min(job.amount, room);
+      if (betAmt < MIN_BET) continue;
+
       const idx = cardId - 1;
-      this.botBets[idx]! += job.amount;
+      this.botBets[idx]! += betAmt;
       this.botBettors[idx]! += 1;
 
-      const prev = map.get(cardId) ?? 0;
-      map.set(cardId, prev + job.amount);
+      map.set(cardId, prev + betAmt);
       this.ensureBotDay(bot);
       this.ensureBotWeek(bot);
       bot.guessesToday += 1;
-      bot.stakeWeek += job.amount;
+      bot.stakeWeek += betAmt;
 
       const card = getCard(cardId);
       this.pushLog({
         botId: bot.id,
         botName: bot.name,
         cardId,
-        amount: job.amount,
+        amount: betAmt,
         action: "bet",
         message: job.chase
-          ? `${bot.name} dí cầu lớn ${job.amount} xu → ${card?.nameVi ?? `#${cardId}`}`
-          : `${bot.name} đặt ${job.amount} xu → ${card?.nameVi ?? `#${cardId}`}`,
+          ? `${bot.name} dí cầu lớn ${betAmt} xu → ${card?.nameVi ?? `#${cardId}`}`
+          : `${bot.name} đặt ${betAmt} xu → ${card?.nameVi ?? `#${cardId}`}`,
       });
     }
   }

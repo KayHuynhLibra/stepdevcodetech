@@ -13,8 +13,11 @@ interface IdentityBadgeProps {
   /** Phiên khách */
   guestCode?: string | null;
   guestName?: string | null;
+  guestAvatar?: string | null;
   compact?: boolean;
   showPath?: boolean;
+  /** Mở chọn avatar khi chạm */
+  onAvatarClick?: () => void;
 }
 
 /** Hiện rõ username + mã + loại tài khoản (đã login / khách). */
@@ -22,8 +25,10 @@ export function IdentityBadge({
   user,
   guestCode,
   guestName,
+  guestAvatar,
   compact = false,
   showPath = true,
+  onAvatarClick,
 }: IdentityBadgeProps) {
   const isGuest = !user;
   const name = user?.username || guestName || "Khách";
@@ -31,21 +36,30 @@ export function IdentityBadge({
   const role = isGuest ? "guest" : user!.role;
   const avatar = user
     ? normalizeAvatar(user.avatar)
-    : DEFAULT_AVATAR;
+    : normalizeAvatar(guestAvatar) || DEFAULT_AVATAR;
   const path = user ? homePath(user) : guestCode ? `/guest/${guestCode}` : "/play";
   const play = user ? playPath(user) : guestCode ? `/guest/${guestCode}/play` : "/play";
 
-  return (
-    <div
-      className={`flex items-center gap-2 ${compact ? "" : "rounded-xl bg-white/70 px-2.5 py-2 ring-1 ring-[#1e3a6e]/12"}`}
-    >
-      <img
-        src={avatar}
-        alt=""
-        className={`shrink-0 rounded-full object-cover ring-2 ring-white shadow ${
-          compact ? "h-8 w-8" : "h-11 w-11"
-        }`}
-      />
+  const className = `flex w-full items-center gap-2 text-left ${
+    compact ? "" : "rounded-xl bg-white/70 px-2.5 py-2 ring-1 ring-[#1e3a6e]/12"
+  } ${onAvatarClick ? "cursor-pointer active:scale-[0.99]" : ""}`;
+
+  const body = (
+    <>
+      <span className="relative shrink-0">
+        <img
+          src={avatar}
+          alt=""
+          className={`rounded-full object-cover ring-2 ring-white shadow ${
+            compact ? "h-8 w-8" : "h-11 w-11"
+          }`}
+        />
+        {onAvatarClick && (
+          <span className="absolute -bottom-0.5 -right-0.5 rounded-full bg-[#1e3a6e] px-1 text-[8px] font-bold leading-tight text-white ring-1 ring-white">
+            Đổi
+          </span>
+        )}
+      </span>
       <div className="min-w-0 flex-1">
         <p
           className={`truncate font-play text-[var(--play-ink)] ${
@@ -74,6 +88,21 @@ export function IdentityBadge({
           </p>
         )}
       </div>
-    </div>
+    </>
   );
+
+  if (onAvatarClick) {
+    return (
+      <button
+        type="button"
+        onClick={onAvatarClick}
+        className={className}
+        title="Đổi avatar"
+      >
+        {body}
+      </button>
+    );
+  }
+
+  return <div className={className}>{body}</div>;
 }

@@ -107,9 +107,12 @@ export const PHASE_MS = {
   payout: 4_000,
 } as const;
 
-export const STARTING_BALANCE = 200_000;
-export const MIN_BET = 100;
-export const MAX_BET = 1_000_000;
+export const STARTING_BALANCE = 20_000;
+export const MIN_BET = 10;
+/** Trần xu trên 1 cầu (1 lá) trong 1 ván. */
+export const MAX_BET = 100_000;
+/** Bước tăng xu khi đặt cược */
+export const BET_STEP = 10;
 /** Tối đa số lá khác nhau mỗi người được đặt trong 1 ván */
 export const MAX_CARDS_PER_ROUND = 5;
 export const TARGET_DISPLAY_CCU = 25;

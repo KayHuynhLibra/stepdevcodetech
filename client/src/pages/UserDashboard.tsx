@@ -11,10 +11,16 @@ import {
   saveSession,
   type AuthUser,
 } from "../auth";
-import { AVATARS, DEFAULT_AVATAR, normalizeAvatar } from "../avatars";
+import {
+  AVATARS,
+  DEFAULT_AVATAR,
+  isCustomAvatar,
+  normalizeAvatar,
+} from "../avatars";
 import { CARDS, formatXu } from "../cards";
 import { AppShell } from "../components/AppShell";
 import { IdentityBadge } from "../components/IdentityBadge";
+import { uploadAvatarFromFile } from "../uploadAvatar";
 
 interface BetRow {
   id: string;
@@ -120,6 +126,26 @@ export default function UserDashboard() {
     }
   };
 
+  const uploadFromDevice = async (file: File) => {
+    if (!user || savingAvatar) return;
+    setSavingAvatar(true);
+    setMsg(null);
+    setError(null);
+    try {
+      const r = await uploadAvatarFromFile(file);
+      if (r.user) {
+        setUser(r.user);
+        const token = getToken();
+        if (token) saveSession(token, r.user);
+      }
+      setMsg("Đã đổi avatar từ máy");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload avatar thất bại");
+    } finally {
+      setSavingAvatar(false);
+    }
+  };
+
   if (!user) {
     return (
       <AppShell center>
@@ -134,7 +160,15 @@ export default function UserDashboard() {
     <AppShell maxWidth="md">
       <header className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <IdentityBadge user={user} showPath={false} />
+          <IdentityBadge
+            user={user}
+            showPath={false}
+            onAvatarClick={() => {
+              document
+                .getElementById("avatar-picker")
+                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          />
         </div>
         <button type="button" onClick={logout} className="app-btn-ghost shrink-0">
           Thoát
@@ -150,12 +184,40 @@ export default function UserDashboard() {
         </p>
       )}
 
-      <section className="app-panel mt-4 p-3">
+      <section id="avatar-picker" className="app-panel mt-4 p-3">
         <p className="play-heading text-sm">Đổi avatar</p>
         <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-          Chạm để chọn — hiện trên bàn chơi & bảng xếp hạng
+          Chọn mẫu hoặc tải ảnh từ máy — hiện trên bàn chơi & bảng xếp hạng
         </p>
+        <label className="mt-2 flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-teal-50 px-3 py-2.5 text-sm font-bold text-teal-900 ring-1 ring-teal-300/70">
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/*"
+            className="hidden"
+            disabled={savingAvatar}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void uploadFromDevice(file);
+            }}
+          />
+          {savingAvatar ? "Đang tải…" : "Chọn ảnh từ máy"}
+        </label>
         <div className="mt-3 grid grid-cols-5 gap-2 sm:grid-cols-9">
+          {isCustomAvatar(currentAvatar) && (
+            <button
+              type="button"
+              disabled={savingAvatar}
+              className="rounded-full p-0.5 ring-2 ring-teal-500 ring-offset-2"
+              title="Avatar từ máy"
+            >
+              <img
+                src={currentAvatar}
+                alt=""
+                className="h-11 w-11 rounded-full object-cover"
+              />
+            </button>
+          )}
           {AVATARS.map((src) => {
             const selected = src === currentAvatar;
             return (

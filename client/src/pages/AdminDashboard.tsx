@@ -12,13 +12,22 @@ import {
   saveSession,
   type AuthUser,
 } from "../auth";
-import { AVATARS, normalizeAvatar } from "../avatars";
+import { AVATARS, isCustomAvatar, normalizeAvatar } from "../avatars";
 import { CARDS, formatXu } from "../cards";
 import { AppShell } from "../components/AppShell";
 import { IdentityBadge } from "../components/IdentityBadge";
+import { uploadAvatarFromFile } from "../uploadAvatar";
 
 type TabId = "overview" | "users" | "vault" | "traffic" | "coupons" | "inter";
-type InterMode = "auto" | "small" | "big";
+type ForceCardMode = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8";
+type InterMode =
+  | "auto"
+  | "small"
+  | "big"
+  | "app"
+  | "user"
+  | "fed"
+  | ForceCardMode;
 
 interface InterProb {
   cardId: number;
@@ -26,6 +35,8 @@ interface InterProb {
   weight: number;
   percent: number;
   group: "small" | "big";
+  liability?: number;
+  houseProfit?: number;
 }
 
 interface InterSnapshot {
@@ -36,8 +47,10 @@ interface InterSnapshot {
   groups: { small: number[]; big: number[] };
   prefShare: number;
   otherShare: number;
+  realBetsRound?: number[];
+  authBetsRound?: number[];
   probabilities: InterProb[];
-  probabilitiesByMode: Record<InterMode, InterProb[]>;
+  probabilitiesByMode: Partial<Record<InterMode, InterProb[]>>;
 }
 
 interface BetRow {
@@ -174,14 +187,14 @@ export default function AdminDashboard() {
   const [msg, setMsg] = useState<string | null>(null);
   const [adjust, setAdjust] = useState<{ userId: string; delta: string }>({
     userId: "",
-    delta: "1000",
+    delta: "100",
   });
-  const [vaultDelta, setVaultDelta] = useState("100000");
+  const [vaultDelta, setVaultDelta] = useState("10000");
   const [vaultSet, setVaultSet] = useState("");
   const [vaultNote, setVaultNote] = useState("");
   const [vaultUser, setVaultUser] = useState({
     userId: "",
-    amount: "10000",
+    amount: "1000",
   });
   const [interBusy, setInterBusy] = useState(false);
 
@@ -240,6 +253,21 @@ export default function AdminDashboard() {
       setMsg("Đã đổi avatar");
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Lỗi avatar");
+    }
+  };
+
+  const uploadFromDevice = async (file: File) => {
+    if (!me) return;
+    try {
+      const r = await uploadAvatarFromFile(file);
+      if (r.user) {
+        setMe(r.user);
+        const token = getToken();
+        if (token) saveSession(token, r.user);
+      }
+      setMsg("Đã đổi avatar từ máy");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Upload avatar thất bại");
     }
   };
 
@@ -329,7 +357,19 @@ export default function AdminDashboard() {
         body: JSON.stringify({ mode }),
       });
       const label =
-        mode === "auto" ? "Tự động" : mode === "small" ? "Small" : "Big";
+        mode === "auto"
+          ? "Tự động"
+          : mode === "small"
+            ? "Small"
+            : mode === "big"
+              ? "Big"
+              : mode === "app"
+                ? "App (hút xu mềm)"
+                : mode === "fed"
+                  ? "Fed (đọc cầu → app lời)"
+                  : mode === "user"
+                    ? "User (nhả xu)"
+                    : `Ép lá #${mode}`;
       setMsg(`Inter → ${label}`);
       await load();
     } catch (e) {
@@ -379,7 +419,15 @@ export default function AdminDashboard() {
     <AppShell maxWidth="lg">
       <header className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <IdentityBadge user={me} showPath={false} />
+          <IdentityBadge
+            user={me}
+            showPath={false}
+            onAvatarClick={() => {
+              document
+                .getElementById("avatar-picker")
+                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          />
         </div>
         <button type="button" onClick={logout} className="app-btn-ghost shrink-0">
           Thoát
@@ -405,11 +453,37 @@ export default function AdminDashboard() {
           ))}
       </nav>
 
-      <section className="app-panel mt-3 p-2.5">
+      <section id="avatar-picker" className="app-panel mt-3 p-2.5">
         <p className="mb-2 text-[11px] font-semibold text-[var(--play-muted)]">
           Avatar của bạn
         </p>
+        <label className="mb-2 flex cursor-pointer items-center justify-center rounded-lg bg-teal-50 px-2 py-1.5 text-[11px] font-bold text-teal-900 ring-1 ring-teal-300/60">
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void uploadFromDevice(file);
+            }}
+          />
+          Chọn ảnh từ máy
+        </label>
         <div className="flex flex-wrap gap-1.5">
+          {isCustomAvatar(me.avatar) && (
+            <button
+              type="button"
+              className="rounded-full p-0.5 ring-2 ring-teal-500"
+              title="Avatar từ máy"
+            >
+              <img
+                src={normalizeAvatar(me.avatar)}
+                alt=""
+                className="h-8 w-8 rounded-full object-cover"
+              />
+            </button>
+          )}
           {AVATARS.map((src) => {
             const selected = src === normalizeAvatar(me.avatar);
             return (
@@ -728,7 +802,7 @@ export default function AdminDashboard() {
                 </button>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {[1000, 10000, -1000, -10000].map((n) => (
+                {[100, 1000, -100, -1000].map((n) => (
                   <button
                     key={n}
                     type="button"
@@ -859,8 +933,8 @@ export default function AdminDashboard() {
               <div>
                 <p className="play-heading text-sm">Inter — thuật toán lá thắng</p>
                 <p className="mt-1 text-[11px] text-[var(--play-muted)]">
-                  Chỉ mainadmin. Can thiệp xác suất theo nhóm; không nhìn stake
-                  từng ván.
+                  App/Fed/User đọc cầu user đăng nhập (không tính khách/bot).
+                  Fed chọn cứng lá app lời tối đa.
                 </p>
               </div>
               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-900 ring-1 ring-amber-300/60">
@@ -869,8 +943,68 @@ export default function AdminDashboard() {
                   ? "Tự động"
                   : data.inter.mode === "small"
                     ? "Small"
-                    : "Big"}
+                    : data.inter.mode === "big"
+                      ? "Big"
+                      : data.inter.mode === "app"
+                        ? "App"
+                        : data.inter.mode === "fed"
+                          ? "Fed"
+                          : data.inter.mode === "user"
+                            ? "User"
+                            : `Ép #${data.inter.mode}`}
               </span>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-3">
+              {(
+                [
+                  {
+                    id: "fed" as const,
+                    title: "Fed — đọc cầu",
+                    desc: "Cứng: chọn lá app lời max (thường lá ít ai đánh)",
+                    activeClass:
+                      "bg-rose-700 text-white ring-rose-800 shadow-sm",
+                  },
+                  {
+                    id: "app" as const,
+                    title: "App — hút xu mềm",
+                    desc: "Lệch mạnh về lá trả ít, vẫn còn random",
+                    activeClass:
+                      "bg-rose-600 text-white ring-rose-700 shadow-sm",
+                  },
+                  {
+                    id: "user" as const,
+                    title: "User — nhả xu",
+                    desc: "Ưu tiên lá user trả thưởng cao (nhả kho)",
+                    activeClass:
+                      "bg-emerald-600 text-white ring-emerald-700 shadow-sm",
+                  },
+                ] as const
+              ).map((m) => {
+                const active = data.inter!.mode === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    disabled={interBusy}
+                    onClick={() => setInterMode(m.id)}
+                    className={`rounded-xl px-3 py-3 text-left transition ring-1 ${
+                      active
+                        ? m.activeClass
+                        : "bg-white/90 text-[var(--play-ink)] ring-[#1e3a6e]/15 hover:bg-white"
+                    } ${interBusy ? "opacity-60" : ""}`}
+                  >
+                    <p className="text-sm font-bold">{m.title}</p>
+                    <p
+                      className={`mt-1 text-[10px] leading-snug ${
+                        active ? "text-white/80" : "text-[var(--play-muted)]"
+                      }`}
+                    >
+                      {m.desc}
+                    </p>
+                  </button>
+                );
+              })}
             </div>
 
             <div className="grid gap-2 sm:grid-cols-3">
@@ -919,6 +1053,53 @@ export default function AdminDashboard() {
               })}
             </div>
 
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold text-[var(--play-ink)]">
+                Chỉnh thẳng lá thắng (100%)
+              </p>
+              <div className="grid grid-cols-4 gap-2">
+                {CARDS.map((card) => {
+                  const id = String(card.id) as ForceCardMode;
+                  const active = data.inter!.mode === id;
+                  return (
+                    <button
+                      key={card.id}
+                      type="button"
+                      disabled={interBusy}
+                      onClick={() => setInterMode(id)}
+                      className={`rounded-xl px-2 py-2.5 text-left transition ring-1 ${
+                        active
+                          ? "bg-amber-500 text-white ring-amber-600 shadow-sm"
+                          : "bg-white/90 text-[var(--play-ink)] ring-[#1e3a6e]/15 hover:bg-white"
+                      } ${interBusy ? "opacity-60" : ""}`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <img
+                          src={card.image}
+                          alt=""
+                          className="h-9 w-6 rounded object-cover"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold">#{card.id}</p>
+                          <p
+                            className={`truncate text-[9px] leading-tight ${
+                              active ? "text-white/80" : "text-[var(--play-muted)]"
+                            }`}
+                          >
+                            {card.nameVi}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-[var(--play-muted)]">
+                Chọn 1 lá → ván kế tiếp (và các ván sau) thắng đúng lá đó cho đến
+                khi đổi mode khác.
+              </p>
+            </div>
+
             <p className="text-[10px] text-[var(--play-muted)]">
               {data.inter.labels[data.inter.mode]}
               {data.inter.updatedBy ? (
@@ -935,19 +1116,47 @@ export default function AdminDashboard() {
 
           <section className="app-panel mt-3 space-y-2 p-3">
             <p className="play-heading text-sm">Xác suất hiệu dụng (mode hiện tại)</p>
+            {(data.inter.mode === "app" ||
+              data.inter.mode === "user" ||
+              data.inter.mode === "fed") && (
+              <p className="text-[10px] text-[var(--play-muted)]">
+                Theo stake user đăng nhập · Trả = cược×hệ số · Lời app = tổng
+                stake − trả
+                {data.inter.authBetsRound
+                  ? ` · cầu [${data.inter.authBetsRound.map((n) => formatXu(n)).join(" · ")}]`
+                  : ""}
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {data.inter.probabilities.map((p) => {
                 const card = CARDS.find((c) => c.id === p.cardId);
+                const forced =
+                  data.inter!.mode === String(p.cardId);
+                const policy =
+                  data.inter!.mode === "app" ||
+                  data.inter!.mode === "user" ||
+                  data.inter!.mode === "fed";
                 const hot =
+                  forced ||
                   (data.inter!.mode === "small" && p.group === "small") ||
-                  (data.inter!.mode === "big" && p.group === "big");
+                  (data.inter!.mode === "big" && p.group === "big") ||
+                  (data.inter!.mode === "fed" && p.percent >= 50) ||
+                  (policy && data.inter!.mode !== "fed" && p.percent >= 18);
                 return (
                   <div
                     key={p.cardId}
                     className={`rounded-xl px-2 py-2 ring-1 ${
-                      hot
-                        ? "bg-amber-50 ring-amber-300/70"
-                        : "bg-white/80 ring-[#1e3a6e]/10"
+                      forced
+                        ? "bg-amber-100 ring-amber-400"
+                        : (data.inter!.mode === "app" ||
+                              data.inter!.mode === "fed") &&
+                            hot
+                          ? "bg-rose-50 ring-rose-300/70"
+                          : data.inter!.mode === "user" && hot
+                            ? "bg-emerald-50 ring-emerald-300/70"
+                            : hot
+                              ? "bg-amber-50 ring-amber-300/70"
+                              : "bg-white/80 ring-[#1e3a6e]/10"
                     }`}
                   >
                     <div className="flex items-center gap-1.5">
@@ -967,17 +1176,22 @@ export default function AdminDashboard() {
                         </p>
                       </div>
                     </div>
-                    <p className="mt-1 text-[9px] uppercase tracking-wide text-[var(--play-muted)]">
-                      {p.group === "small" ? "Small 1–4" : "Big 5–8"}
+                    <p className="mt-1 text-[9px] leading-snug text-[var(--play-muted)]">
+                      {forced
+                        ? "Ép thẳng"
+                        : policy
+                          ? `Trả ${formatXu(p.liability ?? 0)} · App ${formatXu(p.houseProfit ?? 0)}`
+                          : p.group === "small"
+                            ? "Small 1–4"
+                            : "Big 5–8"}
                     </p>
                   </div>
                 );
               })}
             </div>
             <p className="text-[10px] text-[var(--play-muted)]">
-              Small = lá 1–4 · Big = lá 5–8 · Nhóm ưu tiên nhận ~{" "}
-              {Math.round(data.inter.prefShare * 100)}% tổng xác suất (giữ tỉ lệ
-              trong nhóm).
+              Fed = cứng max lời · App = mềm · User = nhả · Small/Big = nhóm · Ép
+              #1–#8 = 100%.
             </p>
           </section>
         </>

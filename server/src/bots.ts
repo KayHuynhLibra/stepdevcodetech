@@ -146,14 +146,14 @@ export function createIdentityPool(size = 50): BotIdentity[] {
   return pool;
 }
 
-/** Approximate normal-ish amount between 100 and 2000. */
+/** Approximate normal-ish amount between 10 and 200. */
 export function randomBotBetAmount(): number {
   const u1 = Math.random() || 0.01;
   const u2 = Math.random() || 0.01;
   const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-  const raw = 600 + z * 400;
-  const clamped = Math.max(100, Math.min(2000, raw));
-  return Math.round(clamped / 100) * 100;
+  const raw = 60 + z * 40;
+  const clamped = Math.max(10, Math.min(200, raw));
+  return Math.round(clamped / 10) * 10;
 }
 
 /** Bot dí cầu — mức cược lớn hơn bot thường. */
@@ -161,9 +161,9 @@ export function randomChaserBetAmount(): number {
   const u1 = Math.random() || 0.01;
   const u2 = Math.random() || 0.01;
   const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-  const raw = 1800 + z * 700;
-  const clamped = Math.max(500, Math.min(5000, raw));
-  return Math.round(clamped / 100) * 100;
+  const raw = 180 + z * 70;
+  const clamped = Math.max(50, Math.min(500, raw));
+  return Math.round(clamped / 10) * 10;
 }
 
 export function randomCardId(): number {

@@ -8,8 +8,12 @@ interface RevealPopupProps {
   open: boolean;
   winningCardId: number | null;
   yourStake?: number;
+  onGatherSfx?: () => void;
   onShuffleSfx?: () => void;
+  onSuspenseSfx?: () => void;
+  onFlipSfx?: () => void;
   onWinSfx?: () => void;
+  onLoseSfx?: () => void;
   onDone?: () => void;
 }
 
@@ -17,17 +21,29 @@ export function RevealPopup({
   open,
   winningCardId,
   yourStake = 0,
+  onGatherSfx,
   onShuffleSfx,
+  onSuspenseSfx,
+  onFlipSfx,
   onWinSfx,
+  onLoseSfx,
   onDone,
 }: RevealPopupProps) {
   const [stage, setStage] = useState<RevealStage>("gather");
   const onDoneRef = useRef(onDone);
+  const onGatherRef = useRef(onGatherSfx);
   const onShuffleRef = useRef(onShuffleSfx);
+  const onSuspenseRef = useRef(onSuspenseSfx);
+  const onFlipRef = useRef(onFlipSfx);
   const onWinRef = useRef(onWinSfx);
+  const onLoseRef = useRef(onLoseSfx);
   onDoneRef.current = onDone;
+  onGatherRef.current = onGatherSfx;
   onShuffleRef.current = onShuffleSfx;
+  onSuspenseRef.current = onSuspenseSfx;
+  onFlipRef.current = onFlipSfx;
   onWinRef.current = onWinSfx;
+  onLoseRef.current = onLoseSfx;
 
   const winner: CardDef | undefined = CARDS.find((c) => c.id === winningCardId);
   const payout =
@@ -40,15 +56,24 @@ export function RevealPopup({
     }
 
     setStage("gather");
+    onGatherRef.current?.();
+
     const t1 = window.setTimeout(() => {
       setStage("shuffle");
       onShuffleRef.current?.();
     }, 700);
-    const t2 = window.setTimeout(() => setStage("question"), 2000);
+    const t2 = window.setTimeout(() => {
+      setStage("question");
+      onSuspenseRef.current?.();
+    }, 2000);
     const t3 = window.setTimeout(() => {
       setStage("flip");
-      onWinRef.current?.();
+      onFlipRef.current?.();
     }, 2800);
+    const tResult = window.setTimeout(() => {
+      if (yourStake > 0) onWinRef.current?.();
+      else onLoseRef.current?.();
+    }, 3100);
     const t4 = window.setTimeout(() => setStage("done"), 4200);
     // Parent closes when phase leaves revealing; keep short safety
     const t5 = window.setTimeout(() => onDoneRef.current?.(), 4800);
@@ -57,10 +82,11 @@ export function RevealPopup({
       window.clearTimeout(t1);
       window.clearTimeout(t2);
       window.clearTimeout(t3);
+      window.clearTimeout(tResult);
       window.clearTimeout(t4);
       window.clearTimeout(t5);
     };
-  }, [open, winningCardId]);
+  }, [open, winningCardId, yourStake]);
 
   if (!open || winningCardId == null || !winner) return null;
 
@@ -154,11 +180,16 @@ export function RevealPopup({
                 transition={{ type: "spring", stiffness: 220, damping: 18 }}
               >
                 <div className="flex flex-col items-center gap-2">
-                  <img
-                    src={winner.image}
-                    alt=""
-                    className="h-40 w-[7.5rem] rounded-[0.7rem] object-cover object-center shadow-[0_0_48px_rgba(212,168,75,0.65)] ring-2 ring-[var(--gold)]"
-                  />
+                  <div className="relative">
+                    <img
+                      src={winner.image}
+                      alt={`#${winner.id} ${winner.nameVi}`}
+                      className="h-40 w-[7.5rem] rounded-[0.7rem] object-cover object-center shadow-[0_0_48px_rgba(212,168,75,0.65)] ring-2 ring-[var(--gold)]"
+                    />
+                    <span className="font-play absolute -left-1.5 -top-1.5 flex h-8 min-w-8 items-center justify-center rounded-full bg-[var(--gold)] px-1.5 text-base font-bold text-[#1a1208] tabular-nums shadow-[0_0_12px_rgba(212,168,75,0.7)] ring-2 ring-[#1a1208]/30">
+                      {winner.id}
+                    </span>
+                  </div>
                   <motion.span
                     className="font-display text-base font-bold text-[var(--gold-soft)]"
                     animate={{
@@ -167,7 +198,7 @@ export function RevealPopup({
                     }}
                     transition={{ repeat: Infinity, duration: 0.7 }}
                   >
-                    x{winner.multiplier}
+                    #{winner.id} · x{winner.multiplier}
                   </motion.span>
                 </div>
               </motion.div>

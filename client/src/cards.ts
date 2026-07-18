@@ -179,7 +179,10 @@ export const CARDS: CardDef[] = [
   },
 ];
 
-export const QUICK_ADDS = [100, 1000, 10_000, 100_000] as const;
+/** Trần xu trên 1 cầu (1 lá) — đồng bộ server MAX_BET. */
+export const MAX_BET_PER_CARD = 100_000;
+
+export const QUICK_ADDS = [10, 100, 1000, 10_000, 100_000] as const;
 
 export function formatXu(n: number): string {
   return n.toLocaleString("vi-VN");

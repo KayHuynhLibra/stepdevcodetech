@@ -1,7 +1,10 @@
 /** Phiên khách (chơi nhanh) — mỗi thiết bị/trình duyệt có mã riêng. */
 
+import { DEFAULT_AVATAR, normalizeAvatar } from "./avatars";
+
 const GUEST_CODE_KEY = "tarot_guest_code";
 const GUEST_NAME_KEY = "tarot_guest_name";
+const GUEST_AVATAR_KEY = "tarot_guest_avatar";
 
 function makeGuestCode(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -61,4 +64,22 @@ export function setGuestName(name: string) {
   } catch {
     /* ignore */
   }
+}
+
+export function getGuestAvatar(): string {
+  try {
+    return normalizeAvatar(localStorage.getItem(GUEST_AVATAR_KEY));
+  } catch {
+    return DEFAULT_AVATAR;
+  }
+}
+
+export function setGuestAvatar(avatar: string) {
+  const next = normalizeAvatar(avatar);
+  try {
+    localStorage.setItem(GUEST_AVATAR_KEY, next);
+  } catch {
+    /* ignore */
+  }
+  return next;
 }

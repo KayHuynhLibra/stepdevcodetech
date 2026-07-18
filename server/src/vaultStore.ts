@@ -39,7 +39,7 @@ const DATA_DIR = join(__dirname, "..", "data");
 const VAULT_PATH = join(DATA_DIR, "vault.json");
 const VAULT_TMP = join(DATA_DIR, "vault.json.tmp");
 const LEDGER_CAP = 200;
-const START_BALANCE = 5_000_000;
+const START_BALANCE = 500_000;
 
 export class VaultStore {
   private balance = START_BALANCE;

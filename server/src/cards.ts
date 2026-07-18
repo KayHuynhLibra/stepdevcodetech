@@ -1,4 +1,9 @@
-import { effectiveWeights, type InterMode } from "./interStore.js";
+import {
+  effectiveWeights,
+  isPolicyMode,
+  type InterMode,
+  type PolicyMode,
+} from "./interStore.js";
 import type { CardDef } from "./types.js";
 
 export const CARDS: CardDef[] = [
@@ -80,17 +85,65 @@ export function getCard(id: number): CardDef | undefined {
   return CARDS.find((c) => c.id === id);
 }
 
+/** Liability = stake × hệ số nhân nếu lá đó thắng. */
+export function cardLiabilities(realBets: number[] = []): number[] {
+  return CARDS.map((c, i) => Math.max(0, realBets[i] ?? 0) * c.multiplier);
+}
+
+/** Lời nhà cái nếu lá i thắng = tổng stake − trả thưởng lá đó. */
+export function houseProfitByCard(realBets: number[] = []): number[] {
+  const totalStake = realBets.reduce((a, b) => a + Math.max(0, b), 0);
+  return cardLiabilities(realBets).map((L) => totalStake - L);
+}
+
 /**
- * Weighted random theo mode Inter (mainadmin).
- * auto = weight gốc; small = ưu tiên lá 1–4; big = ưu tiên lá 5–8.
- * Không nhìn stake / vault / bot.
+ * App = hút xu mềm (weight cao khi liability thấp, vẫn random).
+ * Fed = đọc cầu → 100% lá app lời tối đa (min liability).
+ * User = nhả xu (weight cao khi liability cao).
+ * Không có cược → fallback weight gốc.
  */
-export function pickWinningCard(mode: InterMode = "auto"): number {
-  const weights = effectiveWeights(
+export function policyWeights(
+  mode: PolicyMode,
+  realBets: number[] = [],
+): number[] {
+  const liab = cardLiabilities(realBets);
+  const totalStake = realBets.reduce((a, b) => a + Math.max(0, b), 0);
+  if (totalStake <= 0) return CARDS.map((c) => c.weight);
+
+  if (mode === "fed") {
+    const profits = houseProfitByCard(realBets);
+    const maxProfit = Math.max(...profits);
+    const mask = profits.map((p) => (p === maxProfit ? 1 : 0));
+    const n = mask.reduce<number>((a, b) => a + b, 0) || 1;
+    return mask.map((m) => (m / n) * 100);
+  }
+
+  if (mode === "app") {
+    // Mềm hơn fed nhưng lệch mạnh về lá trả ít
+    return liab.map((L) => 1 / Math.pow(1 + L / 500, 3.5));
+  }
+  return liab.map((L) => Math.pow(1 + L / 500, 3.5));
+}
+
+function resolveWeights(mode: InterMode, realBets?: number[]): number[] {
+  if (isPolicyMode(mode)) return policyWeights(mode, realBets ?? []);
+  return effectiveWeights(
     CARDS.map((c) => c.weight),
     mode,
     CARDS.map((c) => c.id),
   );
+}
+
+/**
+ * Weighted random theo mode Inter (mainadmin).
+ * auto / small / big / ép lá — không nhìn stake.
+ * app / user / fed — nhìn stake user đăng nhập (auth bets).
+ */
+export function pickWinningCard(
+  mode: InterMode = "auto",
+  realBets?: number[],
+): number {
+  const weights = resolveWeights(mode, realBets);
   const total = weights.reduce((sum, w) => sum + w, 0);
   let roll = Math.random() * total;
   for (let i = 0; i < CARDS.length; i++) {
@@ -100,19 +153,23 @@ export function pickWinningCard(mode: InterMode = "auto"): number {
   return CARDS[CARDS.length - 1]!.id;
 }
 
-/** Xác suất hiển thị cho tab Inter (%). */
-export function cardProbabilities(mode: InterMode = "auto"): {
+/** Xác suất hiển thị cho tab Inter (%). Policy modes cần auth bets ván hiện tại. */
+export function cardProbabilities(
+  mode: InterMode = "auto",
+  realBets?: number[],
+): {
   cardId: number;
   nameVi: string;
   weight: number;
   percent: number;
   group: "small" | "big";
+  liability: number;
+  houseProfit: number;
 }[] {
-  const weights = effectiveWeights(
-    CARDS.map((c) => c.weight),
-    mode,
-    CARDS.map((c) => c.id),
-  );
+  const bets = realBets ?? [];
+  const weights = resolveWeights(mode, bets);
+  const liab = cardLiabilities(bets);
+  const profits = houseProfitByCard(bets);
   const total = weights.reduce((sum, w) => sum + w, 0) || 1;
   return CARDS.map((c, i) => ({
     cardId: c.id,
@@ -120,5 +177,7 @@ export function cardProbabilities(mode: InterMode = "auto"): {
     weight: Math.round(weights[i]! * 100) / 100,
     percent: Math.round((weights[i]! / total) * 1000) / 10,
     group: c.id <= 4 ? ("small" as const) : ("big" as const),
+    liability: liab[i]!,
+    houseProfit: profits[i]!,
   }));
 }

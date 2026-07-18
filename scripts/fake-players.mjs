@@ -8,9 +8,9 @@ import { io } from "socket.io-client";
 const BASE = process.env.API_URL || "http://localhost:3001";
 const PASSWORD = "pass1234";
 const USERS = [
-  { username: "fake_player1", cardId: 1, amount: 1000 },
-  { username: "fake_player2", cardId: 3, amount: 2000 },
-  { username: "fake_player3", cardId: 5, amount: 1500 },
+  { username: "fake_player1", cardId: 1, amount: 100 },
+  { username: "fake_player2", cardId: 3, amount: 200 },
+  { username: "fake_player3", cardId: 5, amount: 150 },
 ];
 
 async function registerOrLogin(username) {

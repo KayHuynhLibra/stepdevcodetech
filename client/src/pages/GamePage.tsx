@@ -16,9 +16,26 @@ import { RevealPopup } from "../components/RevealPopup";
 import { ResultSummaryPopup } from "../components/ResultSummaryPopup";
 import { TarotStarsSheet } from "../components/TarotStarsSheet";
 import { useSfx } from "../hooks/useSfx";
-import { getToken, getStoredUser, homePath } from "../auth";
-import { ensureGuestCode, getGuestCode, getGuestName, setGuestName } from "../guest";
+import {
+  api,
+  getToken,
+  getStoredUser,
+  homePath,
+  saveSession,
+  type AuthUser,
+} from "../auth";
+import { normalizeAvatar } from "../avatars";
+import {
+  ensureGuestCode,
+  getGuestAvatar,
+  getGuestCode,
+  getGuestName,
+  setGuestAvatar,
+  setGuestName,
+} from "../guest";
+import { AvatarPickerSheet } from "../components/AvatarPickerSheet";
 import { IdentityBadge } from "../components/IdentityBadge";
+import { uploadAvatarFromFile } from "../uploadAvatar";
 import { Link } from "react-router-dom";
 
 const SOCKET_URL =
@@ -46,12 +63,15 @@ function useServerCountdown(phaseEndsAt: number, serverTime: number) {
   return remaining;
 }
 
-type Sheet = "bet" | "history" | "leaderboard" | "tarotStars" | null;
+type Sheet = "bet" | "history" | "leaderboard" | "tarotStars" | "avatar" | null;
 
 export default function GamePage() {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [name, setName] = useState("");
+  const [me, setMe] = useState<AuthUser | null>(() => getStoredUser());
+  const [guestAvatar, setGuestAvatarState] = useState(() => getGuestAvatar());
+  const [avatarBusy, setAvatarBusy] = useState(false);
   const [state, setState] = useState<GameState | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet>(null);
@@ -93,8 +113,17 @@ export default function GamePage() {
         getGuestName() ||
         `Khach-${guestCode.slice(-4)}`;
       if (!auth) setGuestName(saved);
+      setMe(auth);
       setName(saved);
-      s.emit("join", { name: saved, token: token ?? undefined });
+      const avatar = auth
+        ? normalizeAvatar(auth.avatar)
+        : getGuestAvatar();
+      if (!auth) setGuestAvatarState(avatar);
+      s.emit("join", {
+        name: saved,
+        token: token ?? undefined,
+        avatar,
+      });
     });
 
     s.on("disconnect", () => setConnected(false));
@@ -212,6 +241,78 @@ export default function GamePage() {
     setSheet("tarotStars");
   };
 
+  const openAvatarPicker = () => setSheet("avatar");
+
+  const applyAvatar = async (next: string) => {
+    if (me && getToken()) {
+      const r = await api<{ ok: true; user: AuthUser }>("/api/auth/avatar", {
+        method: "POST",
+        body: JSON.stringify({ avatar: next }),
+      });
+      const token = getToken();
+      if (token) saveSession(token, r.user);
+      setMe(r.user);
+      socket?.emit("setAvatar", { avatar: r.user.avatar });
+      return;
+    }
+    const saved = setGuestAvatar(next);
+    setGuestAvatarState(saved);
+    await new Promise<void>((resolve) => {
+      if (!socket) {
+        resolve();
+        return;
+      }
+      socket.emit("setAvatar", { avatar: saved }, () => resolve());
+      window.setTimeout(() => resolve(), 800);
+    });
+  };
+
+  const pickAvatar = async (avatar: string) => {
+    if (avatarBusy) return;
+    const next = normalizeAvatar(avatar);
+    const current = me
+      ? normalizeAvatar(me.avatar)
+      : normalizeAvatar(guestAvatar);
+    if (next === current) {
+      setSheet(null);
+      return;
+    }
+    setAvatarBusy(true);
+    try {
+      await applyAvatar(next);
+      showToast("Đã đổi avatar");
+      setSheet(null);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Không đổi được avatar");
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const uploadAvatarFile = async (file: File) => {
+    if (avatarBusy) return;
+    setAvatarBusy(true);
+    try {
+      const guestCode = me ? null : getGuestCode() || ensureGuestCode();
+      const r = await uploadAvatarFromFile(file, { guestCode });
+      if (r.user && getToken()) {
+        saveSession(getToken()!, r.user);
+        setMe(r.user);
+        socket?.emit("setAvatar", { avatar: r.user.avatar });
+      } else {
+        const saved = setGuestAvatar(r.avatar);
+        setGuestAvatarState(saved);
+        socket?.emit("setAvatar", { avatar: saved });
+      }
+      showToast("Đã đổi avatar từ máy");
+      setSheet(null);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Upload avatar thất bại");
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
   const balance = state?.yourBalance ?? 0;
   const canBet = state?.phase === "betting";
   const winning = state?.winningCard ?? null;
@@ -267,11 +368,13 @@ export default function GamePage() {
             </button>
           </div>
           <IdentityBadge
-            user={getStoredUser()}
-            guestCode={getStoredUser() ? null : getGuestCode() || ensureGuestCode()}
-            guestName={getStoredUser() ? null : name}
+            user={me}
+            guestCode={me ? null : getGuestCode() || ensureGuestCode()}
+            guestName={me ? null : name}
+            guestAvatar={me ? null : guestAvatar}
             compact
             showPath={false}
+            onAvatarClick={openAvatarPicker}
           />
           <div className="flex items-center justify-between gap-2">
             <button
@@ -331,12 +434,20 @@ export default function GamePage() {
             {(state?.history ?? []).map((row, i) => {
               const card = CARDS.find((c) => c.id === row.win);
               return (
-                <img
+                <span
                   key={`${row.round}-${i}`}
-                  src={card?.image}
-                  alt={card?.nameVi}
-                  className="h-12 w-9 shrink-0 rounded object-cover shadow ring-1 ring-[#1e3a6e]/20"
-                />
+                  className="relative h-12 w-9 shrink-0 overflow-hidden rounded shadow ring-1 ring-[#1e3a6e]/20"
+                  title={card ? `#${card.id} ${card.nameVi}` : `#${row.win}`}
+                >
+                  <img
+                    src={card?.image}
+                    alt={card?.nameVi ?? `#${row.win}`}
+                    className="h-full w-full object-cover"
+                  />
+                  <span className="font-play absolute left-0.5 top-0.5 z-[1] rounded bg-[#1e3a6e]/92 px-1 text-[9px] font-bold leading-tight text-white tabular-nums shadow-sm">
+                    {row.win}
+                  </span>
+                </span>
               );
             })}
           </div>
@@ -401,48 +512,48 @@ export default function GamePage() {
             <p className="play-heading text-xl sm:text-2xl">
               Cao thủ dự đoán ›
             </p>
-            <span className="text-xs font-medium text-[var(--play-muted)]">
+            <span className="text-xs font-medium text-white/50">
               Thắng vòng trước
             </span>
           </button>
 
           <ul className="mt-3 space-y-2.5">
             {(state?.topAces ?? []).length === 0 && (
-              <li className="py-6 text-center text-sm text-[var(--play-muted)]">
+              <li className="py-6 text-center text-sm text-white/45">
                 Chưa có ai thắng vòng trước
               </li>
             )}
             {(state?.topAces ?? []).slice(0, 3).map((ace) => (
               <li
                 key={`${ace.rank}-${ace.name}`}
-                className={`rounded-xl px-3 py-3 ring-2 ${
+                className={`rounded-xl px-3 py-3 ring-1 ${
                   ace.isYou
-                    ? "bg-amber-100/90 ring-amber-400/60"
-                    : "bg-white/85 ring-[#1e3a6e]/12"
+                    ? "bg-[var(--gold)]/15 ring-[var(--gold)]/45"
+                    : "bg-white/5 ring-white/10"
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <span className="font-play w-7 text-center text-base font-bold text-[var(--play-ink)] tabular-nums">
+                  <span className="font-play w-7 text-center text-base font-bold text-[var(--gold-soft)] tabular-nums">
                     {ace.rank}
                   </span>
                   <img
                     src={ace.avatar}
                     alt=""
-                    className="h-12 w-12 rounded-full object-cover ring-2 ring-white shadow-md"
+                    className="h-12 w-12 rounded-full object-cover ring-2 ring-white/20 shadow-md"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-bold text-[var(--play-ink)]">
+                    <p className="truncate text-sm font-bold text-white">
                       {ace.name}
                       {ace.isYou ? " (Bạn)" : ""}
                     </p>
-                    <p className="mt-0.5 text-xs font-semibold text-amber-700 tabular-nums">
+                    <p className="mt-0.5 text-xs font-semibold text-amber-300/90 tabular-nums">
                       Thưởng vòng trước: {formatXu(ace.winToday)} xu
                     </p>
                   </div>
                 </div>
                 {ace.chosenCards.length > 0 ? (
                   <div className="mt-2.5 flex items-center gap-2 pl-10">
-                    <span className="shrink-0 text-[11px] font-medium text-[var(--play-muted)]">
+                    <span className="shrink-0 text-[11px] font-medium text-white/45">
                       Lá chọn:
                     </span>
                     <div className="flex gap-1.5 overflow-x-auto">
@@ -458,9 +569,9 @@ export default function GamePage() {
                             <img
                               src={card.image}
                               alt={card.nameVi}
-                              className="h-12 w-8 rounded-md object-cover shadow ring-1 ring-[#1e3a6e]/25"
+                              className="h-12 w-8 rounded-md object-cover shadow ring-1 ring-white/20"
                             />
-                            <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 rounded bg-[#1e3a6e] px-1 text-[8px] font-bold text-amber-200">
+                            <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 rounded bg-[#1a2234] px-1 text-[8px] font-bold text-amber-200 ring-1 ring-white/15">
                               x{card.multiplier}
                             </span>
                           </div>
@@ -469,7 +580,7 @@ export default function GamePage() {
                     </div>
                   </div>
                 ) : (
-                  <p className="mt-2 pl-10 text-[11px] text-[var(--play-muted)]/80">
+                  <p className="mt-2 pl-10 text-[11px] text-white/40">
                     Đợt này chưa đoán
                   </p>
                 )}
@@ -538,8 +649,12 @@ export default function GamePage() {
         open={revealOpen}
         winningCardId={winning}
         yourStake={myStakeOnWinner}
+        onGatherSfx={() => play("gather")}
         onShuffleSfx={() => play("shuffle")}
+        onSuspenseSfx={() => play("suspense")}
+        onFlipSfx={() => play("flip")}
         onWinSfx={() => play("win")}
+        onLoseSfx={() => play("lose")}
         onDone={() => setRevealOpen(false)}
       />
       <ResultSummaryPopup
@@ -582,6 +697,14 @@ export default function GamePage() {
             : (state?.tarotStars ?? [])
         }
         onClose={() => setSheet(null)}
+      />
+      <AvatarPickerSheet
+        open={sheet === "avatar"}
+        current={me ? me.avatar : guestAvatar}
+        busy={avatarBusy}
+        onClose={() => setSheet(null)}
+        onPick={pickAvatar}
+        onUploadFile={uploadAvatarFile}
       />
 
       {toast && (

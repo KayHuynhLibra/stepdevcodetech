@@ -19,9 +19,9 @@
   --play-ink: #1e3a6e;
   --play-muted: #3d5a80;
   --play-panel: rgba(255, 255, 255, 0.72);
-  --app-sky: #9ee9ff;
-  --app-mint: #b8f5c8;
-  --app-lime: #c8f57a;
+  --app-sky: #6ecfe8;
+  --app-mint: #7fd9a0;
+  --app-lime: #9ed85a;
   --app-frame: #2bb8a0;
   --app-frame-deep: #1e3a6e;
 }
@@ -46,7 +46,7 @@
     linear-gradient(
       165deg,
       var(--app-sky) 0%,
-      #a8f0e8 28%,
+      #5fc4bc 28%,
       var(--app-mint) 58%,
       var(--app-lime) 100%
     );
@@ -183,17 +183,28 @@
     0 10px 28px rgba(30, 58, 110, 0.1);
 }
 
-/* Khung Cao thủ — size lớn nhất */
+/* Khung Cao thủ — size lớn nhất, tông tối */
 .game-task-aces {
   border-width: 3.5px;
-  border-color: #1e9e8a;
+  border-color: #3d4f6f;
   border-radius: 1.25rem;
   padding: 1rem 0.9rem 1.1rem;
   min-height: 14rem;
+  background: linear-gradient(
+    180deg,
+    #1a2234 0%,
+    #141b2b 55%,
+    #0f1522 100%
+  );
   box-shadow:
-    0 0 0 3px rgba(30, 58, 110, 0.16),
-    0 1px 0 rgba(255, 255, 255, 0.85) inset,
-    0 12px 32px rgba(30, 58, 110, 0.14);
+    0 0 0 3px rgba(12, 18, 32, 0.35),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 12px 32px rgba(12, 18, 32, 0.35);
+  color: #e8eef8;
+}
+
+.game-task-aces .play-heading {
+  color: #f0d78c;
 }
 
 .game-task-aces::before,

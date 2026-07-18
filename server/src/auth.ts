@@ -2,7 +2,11 @@ import { createHash, randomBytes, scryptSync, timingSafeEqual } from "crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { AVATARS, DEFAULT_AVATAR, normalizeAvatar } from "./avatars.js";
+import {
+  DEFAULT_AVATAR,
+  isAllowedAvatar,
+  normalizeAvatar,
+} from "./avatars.js";
 import { STARTING_BALANCE, weekKey } from "./types.js";
 
 export type UserRole = "user" | "admin" | "mainadmin";
@@ -222,7 +226,7 @@ export class AuthStore {
       salt,
       role,
       avatar: DEFAULT_AVATAR,
-      balance: isStaffRole(role) ? 1_000_000 : STARTING_BALANCE,
+      balance: isStaffRole(role) ? 100_000 : STARTING_BALANCE,
       winToday: 0,
       guessesToday: 0,
       dayKey: todayKey(),
@@ -363,7 +367,7 @@ export class AuthStore {
   ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
     const user = this.byId.get(userId);
     if (!user) return { ok: false, reason: "Không tìm thấy user" };
-    if (!AVATARS.includes(avatar)) {
+    if (!isAllowedAvatar(avatar)) {
       return { ok: false, reason: "Avatar không hợp lệ" };
     }
     user.avatar = avatar;

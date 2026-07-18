@@ -6,7 +6,11 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { Server } from "socket.io";
 import { authStore, isMainAdmin, isStaff } from "./auth.js";
-import { AVATARS } from "./avatars.js";
+import {
+  AVATARS,
+  saveUploadedAvatar,
+  UPLOADS_DIR,
+} from "./avatars.js";
 import { betStore } from "./betStore.js";
 import { couponStore } from "./couponStore.js";
 import { cardProbabilities } from "./cards.js";
@@ -21,7 +25,8 @@ const CLIENT_DIST = join(__dirname, "..", "..", "client", "dist");
 
 const app = express();
 app.use(cors({ origin: true }));
-app.use(express.json());
+app.use(express.json({ limit: "1.5mb" }));
+app.use("/uploads/avatars", express.static(UPLOADS_DIR));
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
@@ -95,6 +100,25 @@ function requireMainAdmin(
   return user;
 }
 
+function buildInterPayload() {
+  const inter = interStore.getSnapshot();
+  const authBets = engine.getAuthBets();
+  return {
+    ...inter,
+    realBetsRound: engine.getRealBets(),
+    authBetsRound: authBets,
+    probabilities: cardProbabilities(inter.mode, authBets),
+    probabilitiesByMode: {
+      auto: cardProbabilities("auto"),
+      small: cardProbabilities("small"),
+      big: cardProbabilities("big"),
+      app: cardProbabilities("app", authBets),
+      user: cardProbabilities("user", authBets),
+      fed: cardProbabilities("fed", authBets),
+    },
+  };
+}
+
 app.get("/health", (_req, res) => {
   res.json({ ok: true, cards: CARDS.length });
 });
@@ -154,6 +178,40 @@ app.post("/api/auth/avatar", (req, res) => {
     io.to(sid).emit("state", engine.getStateFor(sid));
   }
   res.json(result);
+});
+
+/** Upload avatar từ máy (user đã login hoặc khách kèm guestCode). */
+app.post("/api/avatar/upload", (req, res) => {
+  const dataUrl = String(req.body?.dataUrl ?? "");
+  const authUser = authStore.resolveToken(bearer(req));
+  const guestCode = String(req.body?.guestCode ?? "")
+    .trim()
+    .toUpperCase();
+
+  let ownerKey = "";
+  if (authUser) ownerKey = authUser.id;
+  else if (/^G[A-Z0-9]{7}$/.test(guestCode)) ownerKey = guestCode;
+  else {
+    return res.status(401).json({
+      ok: false,
+      reason: "Cần đăng nhập hoặc mã khách để upload avatar",
+    });
+  }
+
+  const saved = saveUploadedAvatar(ownerKey, dataUrl);
+  if (!saved.ok) return res.status(400).json(saved);
+
+  if (authUser) {
+    const result = authStore.setAvatar(authUser.id, saved.avatar);
+    if (!result.ok) return res.status(400).json(result);
+    const live = engine.applyAuthAvatar(authUser.id, result.user.avatar);
+    for (const sid of live.socketIds) {
+      io.to(sid).emit("state", engine.getStateFor(sid));
+    }
+    return res.json({ ok: true, avatar: result.user.avatar, user: result.user });
+  }
+
+  res.json({ ok: true, avatar: saved.avatar });
 });
 
 /** User đổi mã nạp xu — không trả danh sách coupon. */
@@ -225,17 +283,8 @@ app.get("/api/admin/overview", (req, res) => {
     const bets = betStore.getTrafficStats();
     const accounts = authStore.getAccountStats();
     const live = engine.getLiveTraffic();
-    const inter = interStore.getSnapshot();
     payload.vault = vault;
-    payload.inter = {
-      ...inter,
-      probabilities: cardProbabilities(inter.mode),
-      probabilitiesByMode: {
-        auto: cardProbabilities("auto"),
-        small: cardProbabilities("small"),
-        big: cardProbabilities("big"),
-      },
-    };
+    payload.inter = buildInterPayload();
     payload.traffic = {
       ...live,
       ...accounts,
@@ -245,7 +294,7 @@ app.get("/api/admin/overview", (req, res) => {
       vaultPayoutOut: vault.totalPayoutOut,
       vaultNetHouse: vault.netHouse,
       houseEdgeXu: vault.totalStakeIn - vault.totalPayoutOut,
-      interMode: inter.mode,
+      interMode: interStore.getMode(),
     };
   }
   res.json(payload);
@@ -253,18 +302,9 @@ app.get("/api/admin/overview", (req, res) => {
 
 app.get("/api/mainadmin/inter", (req, res) => {
   if (!requireMainAdmin(req, res)) return;
-  const inter = interStore.getSnapshot();
   res.json({
     ok: true,
-    inter: {
-      ...inter,
-      probabilities: cardProbabilities(inter.mode),
-      probabilitiesByMode: {
-        auto: cardProbabilities("auto"),
-        small: cardProbabilities("small"),
-        big: cardProbabilities("big"),
-      },
-    },
+    inter: buildInterPayload(),
   });
 });
 
@@ -275,22 +315,13 @@ app.post("/api/mainadmin/inter", (req, res) => {
   if (!isInterMode(mode)) {
     return res.status(400).json({
       ok: false,
-      reason: "mode phải là auto | small | big",
+      reason: "mode phải là auto | small | big | app | user | fed | 1…8",
     });
   }
   interStore.setMode(mode, me.username);
-  const inter = interStore.getSnapshot();
   res.json({
     ok: true,
-    inter: {
-      ...inter,
-      probabilities: cardProbabilities(inter.mode),
-      probabilitiesByMode: {
-        auto: cardProbabilities("auto"),
-        small: cardProbabilities("small"),
-        big: cardProbabilities("big"),
-      },
-    },
+    inter: buildInterPayload(),
   });
 });
 
@@ -398,19 +429,40 @@ app.post("/api/admin/bots", (req, res) => {
 io.on("connection", (socket) => {
   socket.on(
     "join",
-    (payload?: { name?: string; token?: string }) => {
+    (payload?: { name?: string; token?: string; avatar?: string }) => {
       const authUser = authStore.resolveToken(payload?.token);
       const session = engine.join(socket.id, {
         name: payload?.name,
         userId: authUser?.id,
+        avatar: payload?.avatar,
       });
       socket.emit("joined", {
         id: session.id,
         name: session.name,
         balance: session.balance,
         userId: session.userId,
+        avatar: session.avatar,
       });
       socket.emit("state", engine.getStateFor(socket.id));
+    },
+  );
+
+  socket.on(
+    "setAvatar",
+    (
+      payload?: { avatar?: string },
+      ack?: (r: { ok: boolean; avatar?: string; reason?: string }) => void,
+    ) => {
+      const result = engine.setSessionAvatar(
+        socket.id,
+        String(payload?.avatar ?? ""),
+      );
+      if (!result.ok) {
+        ack?.(result);
+        return;
+      }
+      socket.emit("state", engine.getStateFor(socket.id));
+      ack?.(result);
     },
   );
 

@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { CARDS, QUICK_ADDS, formatXu, type CardDef } from "../cards";
+import {
+  CARDS,
+  MAX_BET_PER_CARD,
+  QUICK_ADDS,
+  formatXu,
+  type CardDef,
+} from "../cards";
 
 interface BetSheetProps {
   open: boolean;
@@ -33,25 +39,33 @@ export function BetSheet({
   if (!open || !card) return null;
 
   const already = Math.max(0, currentStake);
+  const roomLeft = Math.max(0, MAX_BET_PER_CARD - already);
   const totalAfter = already + amount;
-  const insufficient = amount > balance || amount <= 0;
+  const overCardCap = amount > roomLeft;
+  const insufficient =
+    amount > balance || amount <= 0 || overCardCap || roomLeft <= 0;
   const status =
-    amount <= 0
-      ? already > 0
-        ? `Đã đặt ${formatXu(already)} xu`
-        : "Mời chọn số đặt"
-      : insufficient
-        ? "Số dư không đủ"
-        : already > 0
-          ? `Thêm ${formatXu(amount)} → tổng ${formatXu(totalAfter)} xu`
-          : `Đặt ${formatXu(amount)} xu`;
+    roomLeft <= 0
+      ? `Đã đạt trần ${formatXu(MAX_BET_PER_CARD)} xu / cầu`
+      : amount <= 0
+        ? already > 0
+          ? `Đã đặt ${formatXu(already)} · còn thêm tối đa ${formatXu(roomLeft)}`
+          : `Mời chọn số đặt (tối đa ${formatXu(MAX_BET_PER_CARD)} / cầu)`
+        : overCardCap
+          ? `Vượt trần ${formatXu(MAX_BET_PER_CARD)} / cầu`
+          : amount > balance
+            ? "Số dư không đủ"
+            : already > 0
+              ? `Thêm ${formatXu(amount)} → tổng ${formatXu(totalAfter)} xu`
+              : `Đặt ${formatXu(amount)} xu`;
 
   const resetAndClose = () => {
     setAmount(0);
     onClose();
   };
 
-  const add = (n: number) => setAmount((prev) => prev + n);
+  const add = (n: number) =>
+    setAmount((prev) => Math.min(prev + n, roomLeft, balance));
 
   const confirm = () => {
     if (insufficient) return;
@@ -117,7 +131,8 @@ export function BetSheet({
           </div>
 
           <p className="mb-2 text-center text-[11px] font-semibold text-[#1e3a6e]/80">
-            Lá {card.id} · x{card.multiplier} · Số dư {formatXu(balance)}
+            Lá {card.id} · x{card.multiplier} · Số dư {formatXu(balance)} · Max{" "}
+            {formatXu(MAX_BET_PER_CARD)}/cầu
           </p>
 
           {already > 0 && (
@@ -145,8 +160,13 @@ export function BetSheet({
               <button
                 key={n}
                 type="button"
+                disabled={roomLeft <= 0}
                 onClick={() => add(n)}
-                className="rounded-md border-2 border-teal-500/70 bg-white py-2.5 text-base font-bold text-[#1e3a6e] shadow-sm active:scale-[0.97]"
+                className={`rounded-md border-2 py-2.5 text-base font-bold shadow-sm active:scale-[0.97] ${
+                  roomLeft <= 0
+                    ? "cursor-not-allowed border-slate-300 bg-slate-100 text-slate-400"
+                    : "border-teal-500/70 bg-white text-[#1e3a6e]"
+                }`}
               >
                 +{n >= 1000 ? n.toLocaleString("en-US").replace(/,/g, "") : n}
               </button>
