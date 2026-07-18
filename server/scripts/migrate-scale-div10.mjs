@@ -51,8 +51,8 @@ function looksLikeOldScale() {
     }
   }
   // New scale: start 20k, max bet 100k, vault seed ~500k.
-  // Old scale: start 200k, vault often ≥2M.
-  return maxBal >= 150_000 || vaultBal >= 2_000_000;
+  // Old scale: start 200k, vault often |balance| ≥2M (có thể âm sau payout).
+  return maxBal >= 150_000 || Math.abs(vaultBal) >= 2_000_000;
 }
 
 if (!existsSync(DATA)) {
