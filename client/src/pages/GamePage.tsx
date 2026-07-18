@@ -6,6 +6,7 @@ import {
   type GameState,
   type LeaderboardEntry,
   type RoundResult,
+  type TarotStarEntry,
 } from "../cards";
 import { BettingBoard } from "../components/BettingBoard";
 import { BetSheet } from "../components/BetSheet";
@@ -13,8 +14,11 @@ import { HistorySheet } from "../components/HistorySheet";
 import { LeaderboardSheet } from "../components/LeaderboardSheet";
 import { RevealPopup } from "../components/RevealPopup";
 import { ResultSummaryPopup } from "../components/ResultSummaryPopup";
+import { TarotStarsSheet } from "../components/TarotStarsSheet";
 import { useSfx } from "../hooks/useSfx";
-import { getToken, getStoredUser } from "../auth";
+import { getToken, getStoredUser, homePath } from "../auth";
+import { ensureGuestCode, getGuestCode, getGuestName, setGuestName } from "../guest";
+import { IdentityBadge } from "../components/IdentityBadge";
 import { Link } from "react-router-dom";
 
 const SOCKET_URL =
@@ -42,7 +46,7 @@ function useServerCountdown(phaseEndsAt: number, serverTime: number) {
   return remaining;
 }
 
-type Sheet = "bet" | "history" | "leaderboard" | null;
+type Sheet = "bet" | "history" | "leaderboard" | "tarotStars" | null;
 
 export default function GamePage() {
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -58,6 +62,7 @@ export default function GamePage() {
   const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardEntry[]>(
     [],
   );
+  const [tarotStarRows, setTarotStarRows] = useState<TarotStarEntry[]>([]);
   const { play, muted, toggleMute } = useSfx();
   const lastTickSec = useRef<number | null>(null);
 
@@ -82,11 +87,12 @@ export default function GamePage() {
       setConnected(true);
       const auth = getStoredUser();
       const token = getToken();
+      const guestCode = ensureGuestCode();
       const saved =
         auth?.username ||
-        localStorage.getItem("tarot_guest_name") ||
-        `Khach${Math.floor(Math.random() * 9000) + 1000}`;
-      localStorage.setItem("tarot_guest_name", saved);
+        getGuestName() ||
+        `Khach-${guestCode.slice(-4)}`;
+      if (!auth) setGuestName(saved);
       setName(saved);
       s.emit("join", { name: saved, token: token ?? undefined });
     });
@@ -118,6 +124,10 @@ export default function GamePage() {
 
     s.on("leaderboardData", (rows: LeaderboardEntry[]) => {
       setLeaderboardRows(rows);
+    });
+
+    s.on("tarotStarsData", (rows: TarotStarEntry[]) => {
+      setTarotStarRows(rows);
     });
 
     return () => {
@@ -197,6 +207,11 @@ export default function GamePage() {
     setSheet("leaderboard");
   };
 
+  const openTarotStars = () => {
+    socket?.emit("getTarotStars");
+    setSheet("tarotStars");
+  };
+
   const balance = state?.yourBalance ?? 0;
   const canBet = state?.phase === "betting";
   const winning = state?.winningCard ?? null;
@@ -225,36 +240,39 @@ export default function GamePage() {
         <header className="game-task flex flex-col gap-2 px-2.5 py-2.5">
           <div className="flex items-center gap-2">
             <Link
-              to={getStoredUser()?.role === "admin" ? "/admin" : "/dashboard"}
-              className="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-[10px] text-[var(--play-ink)] shadow-sm ring-1 ring-[#1e3a6e]/15"
+              to={
+                getStoredUser() ? homePath(getStoredUser()) : "/login"
+              }
+              className="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] shadow-sm ring-1 ring-[#1e3a6e]/15"
             >
               ← Menu
             </Link>
             <img
               src="/assets/logo/logo-tarot.png"
               alt="Tarot"
-              className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-white/80 shadow-md"
+              className="h-10 w-10 shrink-0 rounded-full object-cover ring-2 ring-white/80 shadow-md"
             />
             <div className="min-w-0 flex-1">
               <h1 className="play-heading truncate text-base leading-tight sm:text-lg">
                 Đoán bài Tarot
               </h1>
-              <p className="truncate text-[10px] text-[var(--play-muted)]">{name}</p>
             </div>
             <button
               type="button"
               onClick={toggleMute}
-              className="shrink-0 rounded-full bg-white/80 px-2 py-1 text-[10px] text-[var(--play-ink)] shadow-sm ring-1 ring-[#1e3a6e]/15"
+              className="shrink-0 rounded-full bg-white/80 px-2 py-1 text-[10px] font-bold text-[var(--play-ink)] shadow-sm ring-1 ring-[#1e3a6e]/15"
               title={muted ? "Bật tiếng" : "Tắt tiếng"}
             >
               {muted ? "Tắt" : "Âm"}
             </button>
-            <img
-              src="/assets/ui/avatar-default.png"
-              alt=""
-              className="h-9 w-9 shrink-0 rounded-full object-cover shadow-sm ring-2 ring-white/90"
-            />
           </div>
+          <IdentityBadge
+            user={getStoredUser()}
+            guestCode={getStoredUser() ? null : getGuestCode() || ensureGuestCode()}
+            guestName={getStoredUser() ? null : name}
+            compact
+            showPath={false}
+          />
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
@@ -452,9 +470,64 @@ export default function GamePage() {
                   </div>
                 ) : (
                   <p className="mt-2 pl-10 text-[11px] text-[var(--play-muted)]/80">
-                    Chưa đặt ván này
+                    Đợt này chưa đoán
                   </p>
                 )}
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        {/* ===== ZONE 8: Sao bài Tarot — xu dùng dự đoán tuần ===== */}
+        <section className="game-task mt-4">
+          <button
+            type="button"
+            onClick={openTarotStars}
+            className="flex w-full flex-col text-left"
+          >
+            <p className="play-heading text-xl sm:text-2xl">Sao bài Tarot ›</p>
+            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+              Xếp hạng theo số xu dùng dự đoán mỗi tuần
+            </p>
+          </button>
+
+          <ul className="mt-3 space-y-2.5">
+            {(state?.tarotStars ?? []).length === 0 && (
+              <li className="py-5 text-center text-sm text-[var(--play-muted)]">
+                Chưa có xu dự đoán tuần này
+              </li>
+            )}
+            {(state?.tarotStars ?? []).slice(0, 3).map((star) => (
+              <li
+                key={`${star.rank}-${star.name}`}
+                className={`flex items-center gap-3 rounded-xl px-3 py-3 ring-2 ${
+                  star.isYou
+                    ? "bg-amber-100/90 ring-amber-400/60"
+                    : "bg-white/85 ring-[#1e3a6e]/12"
+                }`}
+              >
+                <span className="font-play w-7 text-center text-base font-bold text-[var(--play-ink)] tabular-nums">
+                  {star.rank}
+                </span>
+                <img
+                  src={star.avatar}
+                  alt=""
+                  className="h-12 w-12 rounded-full object-cover shadow-md ring-2 ring-white"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-[var(--play-ink)]">
+                    {star.name}
+                    {star.isYou ? " (Bạn)" : ""}
+                  </p>
+                  <p className="mt-0.5 flex items-center gap-1 text-xs font-semibold text-amber-700 tabular-nums">
+                    <img
+                      src="/assets/ui/icon-coin-xu.png"
+                      alt=""
+                      className="h-4 w-4 rounded-full object-cover"
+                    />
+                    {formatXu(star.stakeWeek)}
+                  </p>
+                </div>
               </li>
             ))}
           </ul>
@@ -499,6 +572,15 @@ export default function GamePage() {
       <LeaderboardSheet
         open={sheet === "leaderboard"}
         rows={leaderboardRows}
+        onClose={() => setSheet(null)}
+      />
+      <TarotStarsSheet
+        open={sheet === "tarotStars"}
+        rows={
+          tarotStarRows.length > 0
+            ? tarotStarRows
+            : (state?.tarotStars ?? [])
+        }
         onClose={() => setSheet(null)}
       />
 

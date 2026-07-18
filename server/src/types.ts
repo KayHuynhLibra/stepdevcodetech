@@ -15,6 +15,7 @@ export interface PlayerSession {
   /** Linked auth user id (if logged in) */
   userId?: string;
   name: string;
+  avatar: string;
   balance: number;
   /** cardId -> amount for current round */
   bets: Map<number, number>;
@@ -23,6 +24,9 @@ export interface PlayerSession {
   /** Tổng xu thắng trong ngày (chỉ phần lời) */
   winToday: number;
   dayKey: string;
+  /** Tổng xu đã đặt cược trong tuần (Sao bài Tarot) */
+  stakeWeek: number;
+  weekKey: string;
 }
 
 export interface RoundResult {
@@ -35,6 +39,15 @@ export interface LeaderboardEntry {
   name: string;
   avatar: string;
   winToday: number;
+  isYou?: boolean;
+}
+
+/** Xếp hạng Sao bài — xu dùng dự đoán trong tuần */
+export interface TarotStarEntry {
+  rank: number;
+  name: string;
+  avatar: string;
+  stakeWeek: number;
   isYou?: boolean;
 }
 
@@ -73,6 +86,7 @@ export interface PublicState {
   history: RoundResult[];
   winningCard: number | null;
   yourBalance?: number;
+  yourAvatar?: string;
   yourBets?: number[];
   guessesToday?: number;
   winToday?: number;
@@ -80,6 +94,8 @@ export interface PublicState {
   onlineDisplay: number;
   topAces: TopAcePreview[];
   roundTopWinners: RoundTopWinner[];
+  /** Top xu dùng dự đoán tuần này */
+  tarotStars: TarotStarEntry[];
   /** Quỹ VIP hiển thị (cosmetic, dao động) */
   vipPool: number;
   botPanel: BotPanelState;
@@ -107,6 +123,8 @@ export interface BotPublic {
   id: string;
   name: string;
   isVip: boolean;
+  /** Bot dí theo cầu stake lớn */
+  isChaser: boolean;
   /** Lá đã đặt trong ván hiện tại */
   bets: { cardId: number; amount: number }[];
 }
@@ -133,4 +151,16 @@ export interface BotPanelState {
 
 export function todayKey(d = new Date()): string {
   return d.toISOString().slice(0, 10);
+}
+
+/** Tuần ISO (Monday start): YYYY-Www */
+export function weekKey(d = new Date()): string {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(
+    ((date.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7,
+  );
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
 }

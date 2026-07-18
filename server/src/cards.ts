@@ -1,3 +1,4 @@
+import { effectiveWeights, type InterMode } from "./interStore.js";
 import type { CardDef } from "./types.js";
 
 export const CARDS: CardDef[] = [
@@ -79,13 +80,45 @@ export function getCard(id: number): CardDef | undefined {
   return CARDS.find((c) => c.id === id);
 }
 
-/** Fair weighted random — does not look at bets. */
-export function pickWinningCard(): number {
-  const total = CARDS.reduce((sum, c) => sum + c.weight, 0);
+/**
+ * Weighted random theo mode Inter (mainadmin).
+ * auto = weight gốc; small = ưu tiên lá 1–4; big = ưu tiên lá 5–8.
+ * Không nhìn stake / vault / bot.
+ */
+export function pickWinningCard(mode: InterMode = "auto"): number {
+  const weights = effectiveWeights(
+    CARDS.map((c) => c.weight),
+    mode,
+    CARDS.map((c) => c.id),
+  );
+  const total = weights.reduce((sum, w) => sum + w, 0);
   let roll = Math.random() * total;
-  for (const card of CARDS) {
-    roll -= card.weight;
-    if (roll <= 0) return card.id;
+  for (let i = 0; i < CARDS.length; i++) {
+    roll -= weights[i]!;
+    if (roll <= 0) return CARDS[i]!.id;
   }
-  return CARDS[CARDS.length - 1].id;
+  return CARDS[CARDS.length - 1]!.id;
+}
+
+/** Xác suất hiển thị cho tab Inter (%). */
+export function cardProbabilities(mode: InterMode = "auto"): {
+  cardId: number;
+  nameVi: string;
+  weight: number;
+  percent: number;
+  group: "small" | "big";
+}[] {
+  const weights = effectiveWeights(
+    CARDS.map((c) => c.weight),
+    mode,
+    CARDS.map((c) => c.id),
+  );
+  const total = weights.reduce((sum, w) => sum + w, 0) || 1;
+  return CARDS.map((c, i) => ({
+    cardId: c.id,
+    nameVi: c.nameVi,
+    weight: Math.round(weights[i]! * 100) / 100,
+    percent: Math.round((weights[i]! / total) * 1000) / 10,
+    group: c.id <= 4 ? ("small" as const) : ("big" as const),
+  }));
 }

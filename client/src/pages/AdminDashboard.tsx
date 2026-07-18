@@ -1,18 +1,80 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   api,
   clearSession,
   getStoredUser,
   getToken,
+  homePath,
+  isMainAdmin,
+  isStaff,
+  playPath,
   saveSession,
   type AuthUser,
 } from "../auth";
-import { formatXu } from "../cards";
+import { AVATARS, normalizeAvatar } from "../avatars";
+import { CARDS, formatXu } from "../cards";
 import { AppShell } from "../components/AppShell";
+import { IdentityBadge } from "../components/IdentityBadge";
+
+type TabId = "overview" | "users" | "vault" | "traffic" | "coupons" | "inter";
+type InterMode = "auto" | "small" | "big";
+
+interface InterProb {
+  cardId: number;
+  nameVi: string;
+  weight: number;
+  percent: number;
+  group: "small" | "big";
+}
+
+interface InterSnapshot {
+  mode: InterMode;
+  updatedAt: number;
+  updatedBy: string;
+  labels: Record<InterMode, string>;
+  groups: { small: number[]; big: number[] };
+  prefShare: number;
+  otherShare: number;
+  probabilities: InterProb[];
+  probabilitiesByMode: Record<InterMode, InterProb[]>;
+}
+
+interface BetRow {
+  id: string;
+  at: number;
+  username: string;
+  round: number;
+  cardId: number;
+  amount: number;
+  result: "win" | "lose";
+  payout: number;
+  profit: number;
+  winningCardId: number;
+}
+
+interface VaultSnapshot {
+  balance: number;
+  totalStakeIn: number;
+  totalPayoutOut: number;
+  totalMinted: number;
+  totalBurned: number;
+  netHouse: number;
+  ledger: {
+    id: string;
+    at: number;
+    type: string;
+    amount: number;
+    balanceAfter: number;
+    note: string;
+    byUsername: string;
+    username?: string;
+  }[];
+}
 
 interface Overview {
   ok: true;
+  me: { id: string; username: string; role: AuthUser["role"] };
   stats: {
     realPlayers: number;
     displayOnline: number;
@@ -24,23 +86,112 @@ interface Overview {
   };
   users: AuthUser[];
   botPanel: { targetCount: number; activeCount: number };
+  history: { round: number; win: number }[];
+  recentBets: BetRow[];
+  betStats: {
+    rows: number;
+    stakeTotal: number;
+    payoutTotal: number;
+    winCount: number;
+    loseCount: number;
+  };
+  vault?: VaultSnapshot;
+  inter?: InterSnapshot;
+  coupons?: {
+    code: string;
+    amount: number;
+    secret: boolean;
+    label: string;
+    enabled: boolean;
+    oncePerUser: boolean;
+    redeemCount: number;
+  }[];
+  couponRedemptions?: {
+    id: string;
+    at: number;
+    code: string;
+    username: string;
+    amount: number;
+  }[];
+  /** Chỉ mainadmin */
+  traffic?: {
+    realStakeRound: number;
+    botStakeRound: number;
+    displayStakeRound: number;
+    realBettorsRound: number;
+    botBettorsRound: number;
+    loggedInOnline: number;
+    guestOnline: number;
+    historyRounds: number;
+    nextRound: number;
+    totalAccounts: number;
+    playerAccounts: number;
+    adminAccounts: number;
+    mainadminAccounts: number;
+    balanceTotal: number;
+    betRows: number;
+    uniqueUsers: number;
+    uniqueRounds: number;
+    stakeTotal: number;
+    payoutTotal: number;
+    profitTotal: number;
+    winCount: number;
+    loseCount: number;
+    stakeToday: number;
+    betsToday: number;
+    stakeHour: number;
+    betsHour: number;
+    vaultBalance: number;
+    vaultStakeIn: number;
+    vaultPayoutOut: number;
+    vaultNetHouse: number;
+    houseEdgeXu: number;
+    interMode?: InterMode;
+  };
 }
+
+function cardName(id: number) {
+  return CARDS.find((c) => c.id === id)?.nameVi ?? `Lá ${id}`;
+}
+
+const LEDGER_LABEL: Record<string, string> = {
+  stake_in: "Cược vào",
+  payout_out: "Trả thưởng",
+  mint: "Bơm kho",
+  burn: "Rút kho",
+  grant_user: "Cấp user",
+  seize_user: "Thu user",
+  set_balance: "Đặt số dư",
+};
 
 export default function AdminDashboard() {
   const nav = useNavigate();
+  const loc = useLocation();
   const [me, setMe] = useState<AuthUser | null>(getStoredUser());
   const [data, setData] = useState<Overview | null>(null);
+  const [tab, setTab] = useState<TabId>("overview");
   const [botCount, setBotCount] = useState(25);
   const [msg, setMsg] = useState<string | null>(null);
   const [adjust, setAdjust] = useState<{ userId: string; delta: string }>({
     userId: "",
     delta: "1000",
   });
+  const [vaultDelta, setVaultDelta] = useState("100000");
+  const [vaultSet, setVaultSet] = useState("");
+  const [vaultNote, setVaultNote] = useState("");
+  const [vaultUser, setVaultUser] = useState({
+    userId: "",
+    amount: "10000",
+  });
+  const [interBusy, setInterBusy] = useState(false);
 
   const load = useCallback(async () => {
     const overview = await api<Overview>("/api/admin/overview");
     setData(overview);
     setBotCount(overview.stats.botTarget);
+    if (overview.vault) {
+      setVaultSet(String(overview.vault.balance));
+    }
   }, []);
 
   useEffect(() => {
@@ -50,8 +201,14 @@ export default function AdminDashboard() {
     }
     api<{ ok: true; user: AuthUser }>("/api/auth/me")
       .then((r) => {
-        if (r.user.role !== "admin") {
-          nav("/dashboard", { replace: true });
+        if (!isStaff(r.user)) {
+          nav(homePath(r.user), { replace: true });
+          return;
+        }
+        const expected = homePath(r.user);
+        const onOwnPlay = loc.pathname === `${expected}/play`;
+        if (loc.pathname !== expected && !onOwnPlay) {
+          nav(expected, { replace: true });
           return;
         }
         setMe(r.user);
@@ -63,11 +220,27 @@ export default function AdminDashboard() {
         clearSession();
         nav("/login", { replace: true });
       });
-  }, [nav, load]);
+  }, [nav, load, loc.pathname]);
 
   const logout = () => {
     clearSession();
     nav("/login", { replace: true });
+  };
+
+  const pickAvatar = async (avatar: string) => {
+    if (!me || avatar === normalizeAvatar(me.avatar)) return;
+    try {
+      const r = await api<{ ok: true; user: AuthUser }>("/api/auth/avatar", {
+        method: "POST",
+        body: JSON.stringify({ avatar }),
+      });
+      setMe(r.user);
+      const token = getToken();
+      if (token) saveSession(token, r.user);
+      setMsg("Đã đổi avatar");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi avatar");
+    }
   };
 
   const applyBots = async () => {
@@ -93,10 +266,93 @@ export default function AdminDashboard() {
           delta: Number(adjust.delta),
         }),
       });
-      setMsg("Đã cập nhật số dư");
+      setMsg("Đã cập nhật số dư user");
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi");
+    }
+  };
+
+  const vaultAdjust = async (delta: number) => {
+    try {
+      await api("/api/mainadmin/vault/adjust", {
+        method: "POST",
+        body: JSON.stringify({ delta, note: vaultNote }),
+      });
+      setMsg(delta > 0 ? "Đã bơm kho xu" : "Đã rút kho xu");
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi");
+    }
+  };
+
+  const vaultSetBalance = async (e: FormEvent) => {
+    e.preventDefault();
+    try {
+      await api("/api/mainadmin/vault/set", {
+        method: "POST",
+        body: JSON.stringify({
+          balance: Number(vaultSet),
+          note: vaultNote,
+        }),
+      });
+      setMsg("Đã đặt số dư kho xu");
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi");
+    }
+  };
+
+  const vaultGrant = async () => {
+    try {
+      await api("/api/mainadmin/vault/grant", {
+        method: "POST",
+        body: JSON.stringify({
+          userId: vaultUser.userId,
+          amount: Number(vaultUser.amount),
+          note: vaultNote,
+        }),
+      });
+      setMsg("Đã cấp xu từ kho cho user");
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi");
+    }
+  };
+
+  const setInterMode = async (mode: InterMode) => {
+    if (interBusy) return;
+    setInterBusy(true);
+    try {
+      await api("/api/mainadmin/inter", {
+        method: "POST",
+        body: JSON.stringify({ mode }),
+      });
+      const label =
+        mode === "auto" ? "Tự động" : mode === "small" ? "Small" : "Big";
+      setMsg(`Inter → ${label}`);
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi Inter");
+    } finally {
+      setInterBusy(false);
+    }
+  };
+
+  const vaultSeize = async () => {
+    try {
+      await api("/api/mainadmin/vault/seize", {
+        method: "POST",
+        body: JSON.stringify({
+          userId: vaultUser.userId,
+          amount: Number(vaultUser.amount),
+          note: vaultNote,
+        }),
+      });
+      setMsg("Đã thu xu user về kho");
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi");
     }
   };
 
@@ -109,23 +365,72 @@ export default function AdminDashboard() {
   }
 
   const s = data.stats;
+  const main = isMainAdmin(me);
+  const tabs: { id: TabId; label: string; show: boolean }[] = [
+    { id: "overview", label: "Tổng quan", show: true },
+    { id: "traffic", label: "Lưu lượng", show: main },
+    { id: "inter", label: "Inter", show: main },
+    { id: "users", label: "User & Bot", show: true },
+    { id: "coupons", label: "Coupon ẩn", show: true },
+    { id: "vault", label: "Kho xu", show: main },
+  ];
 
   return (
     <AppShell maxWidth="lg">
-      <header className="flex items-center gap-3">
-        <img
-          src="/assets/logo/logo-tarot.png"
-          alt=""
-          className="h-11 w-11 rounded-full object-cover shadow-md ring-2 ring-white/90"
-        />
+      <header className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <h1 className="play-heading text-lg">Admin Dashboard</h1>
-          <p className="text-xs text-[var(--play-muted)]">{me.username}</p>
+          <IdentityBadge user={me} showPath={false} />
         </div>
-        <button type="button" onClick={logout} className="app-btn-ghost">
+        <button type="button" onClick={logout} className="app-btn-ghost shrink-0">
           Thoát
         </button>
       </header>
+
+      <nav className="mt-4 flex gap-1.5 overflow-x-auto">
+        {tabs
+          .filter((t) => t.show)
+          .map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold transition ${
+                tab === t.id
+                  ? "bg-[#1e3a6e] text-white shadow-sm"
+                  : "bg-white/80 text-[var(--play-ink)] ring-1 ring-[#1e3a6e]/15"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+      </nav>
+
+      <section className="app-panel mt-3 p-2.5">
+        <p className="mb-2 text-[11px] font-semibold text-[var(--play-muted)]">
+          Avatar của bạn
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {AVATARS.map((src) => {
+            const selected = src === normalizeAvatar(me.avatar);
+            return (
+              <button
+                key={src}
+                type="button"
+                onClick={() => pickAvatar(src)}
+                className={`rounded-full p-0.5 ${
+                  selected ? "ring-2 ring-teal-500" : "opacity-80"
+                }`}
+              >
+                <img
+                  src={src}
+                  alt=""
+                  className="h-8 w-8 rounded-full object-cover"
+                />
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       {msg && (
         <p className="mt-3 text-center text-xs font-semibold text-teal-800">
@@ -133,135 +438,711 @@ export default function AdminDashboard() {
         </p>
       )}
 
-      <section className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-        {[
-          ["Phase", s.phase],
-          ["Ván #", String(s.roundNumber)],
-          ["Online thật", String(s.realPlayers)],
-          ["Hiển thị", String(s.displayOnline)],
-          ["Bot active", String(s.botActive)],
-          ["VIP pool", formatXu(s.vipPool)],
-        ].map(([label, value]) => (
-          <div key={label} className="app-panel p-3">
-            <p className="play-section-title !normal-case !tracking-wide">
-              {label}
-            </p>
-            <p className="font-play mt-1 text-sm font-bold text-[var(--play-ink)]">
-              {value}
-            </p>
-          </div>
-        ))}
-      </section>
-
-      <section className="app-frame mt-4 px-3 py-3">
-        <p className="play-heading text-sm">Số lượng bot</p>
-        <div className="mt-2 flex items-center gap-2">
-          <input
-            type="range"
-            min={0}
-            max={50}
-            value={botCount}
-            onChange={(e) => setBotCount(Number(e.target.value))}
-            className="flex-1 accent-teal-600"
-          />
-          <input
-            type="number"
-            min={0}
-            max={50}
-            value={botCount}
-            onChange={(e) => setBotCount(Number(e.target.value))}
-            className="app-input w-16 !px-2 !py-1 text-center"
-          />
-          <button
-            type="button"
-            onClick={applyBots}
-            className="rounded-full bg-[#1e3a6e] px-3 py-1.5 text-xs font-bold text-white"
-          >
-            Áp dụng
-          </button>
-        </div>
-      </section>
-
-      <section className="app-panel mt-4 p-3">
-        <p className="play-heading text-sm">Cộng / trừ xu user</p>
-        <form onSubmit={applyAdjust} className="mt-2 space-y-2">
-          <select
-            value={adjust.userId}
-            onChange={(e) =>
-              setAdjust((a) => ({ ...a, userId: e.target.value }))
-            }
-            className="app-input"
-            required
-          >
-            <option value="">Chọn user…</option>
-            {data.users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.username} ({formatXu(u.balance)} xu) — {u.role}
-              </option>
-            ))}
-          </select>
-          <div className="flex gap-2">
-            <input
-              value={adjust.delta}
-              onChange={(e) =>
-                setAdjust((a) => ({ ...a, delta: e.target.value }))
-              }
-              placeholder="Delta (+/-)"
-              className="app-input flex-1"
-            />
-            <button
-              type="submit"
-              className="rounded-xl bg-[#1e3a6e] px-4 text-xs font-bold text-white"
-            >
-              Cập nhật
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {[1000, 10000, -1000, -10000].map((n) => (
+      {tab === "overview" && (
+        <>
+          {main && data.traffic && (
+            <section className="app-frame mt-4 px-3 py-3">
+              <p className="play-heading text-sm">Lưu lượng tổng (mainadmin)</p>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {[
+                  ["Online login", String(data.traffic.loggedInOnline)],
+                  ["Online khách", String(data.traffic.guestOnline)],
+                  ["Cược hôm nay", formatXu(data.traffic.stakeToday)],
+                  ["Edge nhà cái", formatXu(data.traffic.houseEdgeXu)],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-lg bg-white/80 px-2 py-2">
+                    <p className="text-[10px] text-[var(--play-muted)]">{label}</p>
+                    <p className="font-play text-sm font-bold text-amber-800 tabular-nums">
+                      {value}
+                    </p>
+                  </div>
+                ))}
+              </div>
               <button
-                key={n}
                 type="button"
-                onClick={() =>
-                  setAdjust((a) => ({ ...a, delta: String(n) }))
-                }
-                className="app-btn-ghost !text-[10px]"
+                onClick={() => setTab("traffic")}
+                className="mt-2 text-[11px] font-semibold text-teal-800 underline-offset-2 hover:underline"
               >
-                {n > 0 ? `+${formatXu(n)}` : formatXu(n)}
+                Xem đầy đủ lưu lượng ›
               </button>
-            ))}
-          </div>
-        </form>
-      </section>
+            </section>
+          )}
 
-      <section className="app-panel mt-4 p-3">
-        <p className="play-heading mb-2 text-sm">
-          Danh sách user ({data.users.length})
-        </p>
-        <ul className="max-h-56 space-y-1.5 overflow-y-auto">
-          {data.users.map((u) => (
-            <li
-              key={u.id}
-              className="flex items-center justify-between rounded-lg bg-white/70 px-2 py-2 text-xs ring-1 ring-[#1e3a6e]/10"
-            >
-              <div>
-                <p className="font-semibold text-[var(--play-ink)]">
-                  {u.username}{" "}
-                  <span className="text-teal-700">{u.role}</span>
+          <section className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+            {[
+              ["Phase", s.phase],
+              ["Ván #", String(s.roundNumber)],
+              ["Online thật", String(s.realPlayers)],
+              ["Hiển thị", String(s.displayOnline)],
+              ["Bot active", String(s.botActive)],
+              ["VIP pool", formatXu(s.vipPool)],
+            ].map(([label, value]) => (
+              <div key={label} className="app-panel p-3">
+                <p className="play-section-title !normal-case !tracking-wide">
+                  {label}
                 </p>
-                <p className="text-[10px] text-[var(--play-muted)]">
-                  Thưởng ngày: {formatXu(u.winToday)} · Đoán: {u.guessesToday}
+                <p className="font-play mt-1 text-sm font-bold text-[var(--play-ink)]">
+                  {value}
                 </p>
               </div>
-              <p className="font-play font-bold text-amber-700 tabular-nums">
-                {formatXu(u.balance)}
-              </p>
-            </li>
-          ))}
-        </ul>
-      </section>
+            ))}
+          </section>
+
+          <section className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            {[
+              ["Cược gần đây", String(data.betStats.rows)],
+              ["Tổng stake", formatXu(data.betStats.stakeTotal)],
+              ["Tổng trả", formatXu(data.betStats.payoutTotal)],
+              [
+                "Win / Lose",
+                `${data.betStats.winCount}/${data.betStats.loseCount}`,
+              ],
+            ].map(([label, value]) => (
+              <div key={label} className="app-panel p-3">
+                <p className="play-section-title !normal-case !tracking-wide">
+                  {label}
+                </p>
+                <p className="font-play mt-1 text-sm font-bold text-[var(--play-ink)]">
+                  {value}
+                </p>
+              </div>
+            ))}
+          </section>
+
+          <section className="app-panel mt-4 p-3">
+            <p className="play-heading mb-2 text-sm">
+              Lịch sử ván ({data.history.length})
+            </p>
+            <ul className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">
+              {data.history.length === 0 ? (
+                <li className="text-xs text-[var(--play-muted)]">Chưa có ván</li>
+              ) : (
+                data.history.map((h) => (
+                  <li
+                    key={h.round}
+                    className="rounded-md bg-white/80 px-2 py-1 text-[11px] font-semibold text-[var(--play-ink)] ring-1 ring-[#1e3a6e]/10"
+                    title={cardName(h.win)}
+                  >
+                    #{h.round} · {h.win}
+                  </li>
+                ))
+              )}
+            </ul>
+          </section>
+
+          <section className="app-panel mt-4 p-3">
+            <p className="play-heading mb-2 text-sm">
+              Cược user gần đây ({data.recentBets.length})
+            </p>
+            <ul className="max-h-44 space-y-1.5 overflow-y-auto">
+              {data.recentBets.length === 0 ? (
+                <li className="text-xs text-[var(--play-muted)]">
+                  Chưa ghi nhận cược.
+                </li>
+              ) : (
+                data.recentBets.map((b) => (
+                  <li
+                    key={b.id}
+                    className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[#1e3a6e]/10"
+                  >
+                    <span className="min-w-0 truncate font-semibold">
+                      {b.username} · #{b.round} · {cardName(b.cardId)}
+                    </span>
+                    <span
+                      className={`shrink-0 font-play font-bold tabular-nums ${
+                        b.result === "win" ? "text-teal-700" : "text-rose-600"
+                      }`}
+                    >
+                      {b.result === "win" ? "+" : ""}
+                      {formatXu(b.profit)}
+                    </span>
+                  </li>
+                ))
+              )}
+            </ul>
+          </section>
+        </>
+      )}
+
+      {tab === "traffic" && main && data.traffic && (
+        <>
+          <section className="mt-4">
+            <p className="play-heading text-sm">Online & bàn hiện tại</p>
+            <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+              {[
+                ["Login online", String(data.traffic.loggedInOnline)],
+                ["Khách online", String(data.traffic.guestOnline)],
+                ["Hiển thị CCU", String(s.displayOnline)],
+                ["Stake thật (ván)", formatXu(data.traffic.realStakeRound)],
+                ["Stake bot (ván)", formatXu(data.traffic.botStakeRound)],
+                ["Stake hiển thị", formatXu(data.traffic.displayStakeRound)],
+                ["Người đặt (thật)", String(data.traffic.realBettorsRound)],
+                ["Bot đặt", String(data.traffic.botBettorsRound)],
+                ["Ván tiếp theo", `#${data.traffic.nextRound}`],
+              ].map(([label, value]) => (
+                <div key={label} className="app-panel p-3">
+                  <p className="play-section-title !normal-case !tracking-wide">
+                    {label}
+                  </p>
+                  <p className="font-play mt-1 text-sm font-bold text-[var(--play-ink)] tabular-nums">
+                    {value}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="mt-4">
+            <p className="play-heading text-sm">Lưu lượng cược (đã ghi)</p>
+            <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+              {[
+                ["Tổng stake", formatXu(data.traffic.stakeTotal)],
+                ["Tổng trả thưởng", formatXu(data.traffic.payoutTotal)],
+                ["Profit user", formatXu(data.traffic.profitTotal)],
+                ["Stake 1 giờ", formatXu(data.traffic.stakeHour)],
+                ["Cược 1 giờ", String(data.traffic.betsHour)],
+                ["Stake hôm nay", formatXu(data.traffic.stakeToday)],
+                ["Cược hôm nay", String(data.traffic.betsToday)],
+                ["User có cược", String(data.traffic.uniqueUsers)],
+                ["Ván có cược", String(data.traffic.uniqueRounds)],
+                ["Dòng cược", String(data.traffic.betRows)],
+                ["Win / Lose", `${data.traffic.winCount}/${data.traffic.loseCount}`],
+                ["Lịch sử ván", String(data.traffic.historyRounds)],
+              ].map(([label, value]) => (
+                <div key={label} className="app-panel p-3">
+                  <p className="play-section-title !normal-case !tracking-wide">
+                    {label}
+                  </p>
+                  <p className="font-play mt-1 text-sm font-bold text-[var(--play-ink)] tabular-nums">
+                    {value}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="mt-4">
+            <p className="play-heading text-sm">Tài khoản & kho</p>
+            <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+              {[
+                ["Tổng tài khoản", String(data.traffic.totalAccounts)],
+                ["Player", String(data.traffic.playerAccounts)],
+                ["Admin", String(data.traffic.adminAccounts)],
+                ["Xu đang cầm (user)", formatXu(data.traffic.balanceTotal)],
+                ["Kho xu", formatXu(data.traffic.vaultBalance)],
+                ["Cược vào kho", formatXu(data.traffic.vaultStakeIn)],
+                ["Trả từ kho", formatXu(data.traffic.vaultPayoutOut)],
+                ["Edge nhà cái", formatXu(data.traffic.houseEdgeXu)],
+                ["Net kho", formatXu(data.traffic.vaultNetHouse)],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className={`app-panel p-3 ${
+                    label === "Edge nhà cái" || label === "Kho xu"
+                      ? "ring-2 ring-amber-300/50"
+                      : ""
+                  }`}
+                >
+                  <p className="play-section-title !normal-case !tracking-wide">
+                    {label}
+                  </p>
+                  <p
+                    className={`font-play mt-1 text-sm font-bold tabular-nums ${
+                      label === "Edge nhà cái" || label === "Kho xu"
+                        ? "text-amber-800"
+                        : "text-[var(--play-ink)]"
+                    }`}
+                  >
+                    {value}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
+
+      {tab === "users" && (
+        <>
+          <section className="app-frame mt-4 px-3 py-3">
+            <p className="play-heading text-sm">Số lượng bot</p>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="range"
+                min={0}
+                max={50}
+                value={botCount}
+                onChange={(e) => setBotCount(Number(e.target.value))}
+                className="flex-1 accent-teal-600"
+              />
+              <input
+                type="number"
+                min={0}
+                max={50}
+                value={botCount}
+                onChange={(e) => setBotCount(Number(e.target.value))}
+                className="app-input w-16 !px-2 !py-1 text-center"
+              />
+              <button
+                type="button"
+                onClick={applyBots}
+                className="rounded-full bg-[#1e3a6e] px-3 py-1.5 text-xs font-bold text-white"
+              >
+                Áp dụng
+              </button>
+            </div>
+          </section>
+
+          <section className="app-panel mt-4 p-3">
+            <p className="play-heading text-sm">Cộng / trừ xu user</p>
+            <form onSubmit={applyAdjust} className="mt-2 space-y-2">
+              <select
+                value={adjust.userId}
+                onChange={(e) =>
+                  setAdjust((a) => ({ ...a, userId: e.target.value }))
+                }
+                className="app-input"
+                required
+              >
+                <option value="">Chọn user…</option>
+                {data.users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.username} ({formatXu(u.balance)} xu) — {u.role}
+                  </option>
+                ))}
+              </select>
+              <div className="flex gap-2">
+                <input
+                  value={adjust.delta}
+                  onChange={(e) =>
+                    setAdjust((a) => ({ ...a, delta: e.target.value }))
+                  }
+                  placeholder="Delta (+/-)"
+                  className="app-input flex-1"
+                />
+                <button
+                  type="submit"
+                  className="rounded-xl bg-[#1e3a6e] px-4 text-xs font-bold text-white"
+                >
+                  Cập nhật
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {[1000, 10000, -1000, -10000].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() =>
+                      setAdjust((a) => ({ ...a, delta: String(n) }))
+                    }
+                    className="app-btn-ghost !text-[10px]"
+                  >
+                    {n > 0 ? `+${formatXu(n)}` : formatXu(n)}
+                  </button>
+                ))}
+              </div>
+            </form>
+          </section>
+
+          <section className="app-panel mt-4 p-3">
+            <p className="play-heading mb-2 text-sm">
+              Danh sách user ({data.users.length})
+            </p>
+            <ul className="max-h-56 space-y-1.5 overflow-y-auto">
+              {data.users.map((u) => (
+                <li
+                  key={u.id}
+                  className="flex items-center justify-between rounded-lg bg-white/70 px-2 py-2 text-xs ring-1 ring-[#1e3a6e]/10"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <img
+                      src={u.avatar || "/assets/ui/avatar-default.png"}
+                      alt=""
+                      className="h-8 w-8 rounded-full object-cover"
+                    />
+                    <div>
+                      <p className="font-semibold text-[var(--play-ink)]">
+                        {u.username}{" "}
+                        <span className="text-teal-700">{u.role}</span>
+                      </p>
+                      <p className="text-[10px] text-[var(--play-muted)]">
+                        Mã {u.code || u.id} · Thưởng: {formatXu(u.winToday)} ·
+                        Đoán: {u.guessesToday}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="font-play font-bold text-amber-700 tabular-nums">
+                    {formatXu(u.balance)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </>
+      )}
+
+      {tab === "coupons" && (
+        <>
+          <section className="app-panel mt-4 p-3">
+            <p className="play-heading text-sm">Coupon ẩn (chỉ admin biết)</p>
+            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+              User chỉ thấy ô nhập mã — không thấy danh sách này.
+            </p>
+            <ul className="mt-3 space-y-2">
+              {(data.coupons ?? []).length === 0 ? (
+                <li className="text-xs text-[var(--play-muted)]">Chưa có coupon</li>
+              ) : (
+                (data.coupons ?? []).map((c) => (
+                  <li
+                    key={c.code}
+                    className="rounded-lg bg-white/80 px-3 py-2 text-xs ring-1 ring-[#1e3a6e]/10"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-play text-sm font-bold text-amber-800">
+                        {c.code}
+                      </span>
+                      <span className="font-play font-bold tabular-nums text-teal-800">
+                        {formatXu(c.amount)} xu
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
+                      {c.label}
+                      {c.secret ? " · bí mật" : ""}
+                      {c.oncePerUser ? " · 1 lần/user" : ""}
+                      {c.enabled ? "" : " · tắt"}
+                      {" · "}đã đổi {c.redeemCount} lần
+                    </p>
+                  </li>
+                ))
+              )}
+            </ul>
+          </section>
+
+          <section className="app-panel mt-4 p-3">
+            <p className="play-heading mb-2 text-sm">
+              Lịch sử đổi mã ({(data.couponRedemptions ?? []).length})
+            </p>
+            <ul className="max-h-56 space-y-1.5 overflow-y-auto">
+              {(data.couponRedemptions ?? []).length === 0 ? (
+                <li className="text-xs text-[var(--play-muted)]">
+                  Chưa ai đổi mã
+                </li>
+              ) : (
+                (data.couponRedemptions ?? []).map((r) => (
+                  <li
+                    key={r.id}
+                    className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[#1e3a6e]/10"
+                  >
+                    <span className="min-w-0 truncate font-semibold">
+                      {r.username} · {r.code}
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <span className="font-play font-bold text-teal-700 tabular-nums">
+                        +{formatXu(r.amount)}
+                      </span>
+                      <span className="ml-2 text-[10px] text-[var(--play-muted)]">
+                        {new Date(r.at).toLocaleString("vi-VN")}
+                      </span>
+                    </span>
+                  </li>
+                ))
+              )}
+            </ul>
+          </section>
+        </>
+      )}
+
+      {tab === "inter" && main && data.inter && (
+        <>
+          <section className="app-panel mt-4 space-y-3 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="play-heading text-sm">Inter — thuật toán lá thắng</p>
+                <p className="mt-1 text-[11px] text-[var(--play-muted)]">
+                  Chỉ mainadmin. Can thiệp xác suất theo nhóm; không nhìn stake
+                  từng ván.
+                </p>
+              </div>
+              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-900 ring-1 ring-amber-300/60">
+                Mode:{" "}
+                {data.inter.mode === "auto"
+                  ? "Tự động"
+                  : data.inter.mode === "small"
+                    ? "Small"
+                    : "Big"}
+              </span>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-3">
+              {(
+                [
+                  {
+                    id: "auto" as const,
+                    title: "Tự động",
+                    desc: "Weight gốc — không lệch Small/Big",
+                  },
+                  {
+                    id: "small" as const,
+                    title: "Small",
+                    desc: "Lá 1–4 xác suất cao hơn (~72%)",
+                  },
+                  {
+                    id: "big" as const,
+                    title: "Big",
+                    desc: "Lá 5–8 xác suất cao hơn (~72%)",
+                  },
+                ] as const
+              ).map((m) => {
+                const active = data.inter!.mode === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    disabled={interBusy}
+                    onClick={() => setInterMode(m.id)}
+                    className={`rounded-xl px-3 py-3 text-left transition ring-1 ${
+                      active
+                        ? "bg-[#1e3a6e] text-white ring-[#1e3a6e] shadow-sm"
+                        : "bg-white/90 text-[var(--play-ink)] ring-[#1e3a6e]/15 hover:bg-white"
+                    } ${interBusy ? "opacity-60" : ""}`}
+                  >
+                    <p className="text-sm font-bold">{m.title}</p>
+                    <p
+                      className={`mt-1 text-[10px] leading-snug ${
+                        active ? "text-white/75" : "text-[var(--play-muted)]"
+                      }`}
+                    >
+                      {m.desc}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="text-[10px] text-[var(--play-muted)]">
+              {data.inter.labels[data.inter.mode]}
+              {data.inter.updatedBy ? (
+                <>
+                  {" "}
+                  · cập nhật bởi <strong>{data.inter.updatedBy}</strong>
+                  {data.inter.updatedAt
+                    ? ` · ${new Date(data.inter.updatedAt).toLocaleString("vi-VN")}`
+                    : null}
+                </>
+              ) : null}
+            </p>
+          </section>
+
+          <section className="app-panel mt-3 space-y-2 p-3">
+            <p className="play-heading text-sm">Xác suất hiệu dụng (mode hiện tại)</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {data.inter.probabilities.map((p) => {
+                const card = CARDS.find((c) => c.id === p.cardId);
+                const hot =
+                  (data.inter!.mode === "small" && p.group === "small") ||
+                  (data.inter!.mode === "big" && p.group === "big");
+                return (
+                  <div
+                    key={p.cardId}
+                    className={`rounded-xl px-2 py-2 ring-1 ${
+                      hot
+                        ? "bg-amber-50 ring-amber-300/70"
+                        : "bg-white/80 ring-[#1e3a6e]/10"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      {card ? (
+                        <img
+                          src={card.image}
+                          alt=""
+                          className="h-8 w-6 rounded object-cover"
+                        />
+                      ) : null}
+                      <div className="min-w-0">
+                        <p className="truncate text-[10px] font-semibold">
+                          #{p.cardId} {p.nameVi}
+                        </p>
+                        <p className="font-play text-sm font-bold tabular-nums text-[#1e3a6e]">
+                          {p.percent}%
+                        </p>
+                      </div>
+                    </div>
+                    <p className="mt-1 text-[9px] uppercase tracking-wide text-[var(--play-muted)]">
+                      {p.group === "small" ? "Small 1–4" : "Big 5–8"}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-[var(--play-muted)]">
+              Small = lá 1–4 · Big = lá 5–8 · Nhóm ưu tiên nhận ~{" "}
+              {Math.round(data.inter.prefShare * 100)}% tổng xác suất (giữ tỉ lệ
+              trong nhóm).
+            </p>
+          </section>
+        </>
+      )}
+
+      {tab === "vault" && main && data.vault && (
+        <>
+          <section className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+            {[
+              ["Kho xu hiện tại", formatXu(data.vault.balance), true],
+              ["Tổng cược vào", formatXu(data.vault.totalStakeIn), false],
+              ["Tổng trả thưởng", formatXu(data.vault.totalPayoutOut), false],
+              ["Đã bơm (mint)", formatXu(data.vault.totalMinted), false],
+              ["Đã rút (burn)", formatXu(data.vault.totalBurned), false],
+              ["Net nhà cái", formatXu(data.vault.netHouse), false],
+            ].map(([label, value, accent]) => (
+              <div
+                key={String(label)}
+                className={`app-panel p-3 ${accent ? "ring-2 ring-amber-300/50" : ""}`}
+              >
+                <p className="play-section-title !normal-case !tracking-wide">
+                  {label}
+                </p>
+                <p
+                  className={`font-play mt-1 text-sm font-bold tabular-nums ${
+                    accent ? "text-amber-700" : "text-[var(--play-ink)]"
+                  }`}
+                >
+                  {value}
+                </p>
+              </div>
+            ))}
+          </section>
+
+          <section className="app-panel mt-4 space-y-3 p-3">
+            <p className="play-heading text-sm">Can thiệp kho xu</p>
+            <p className="text-[11px] text-[var(--play-muted)]">
+              Chỉ mainadmin. Cược user thật tự vào kho; thắng thì trừ kho.
+            </p>
+            <input
+              value={vaultNote}
+              onChange={(e) => setVaultNote(e.target.value)}
+              placeholder="Ghi chú (tuỳ chọn)"
+              className="app-input"
+            />
+            <div className="flex flex-wrap gap-2">
+              <input
+                value={vaultDelta}
+                onChange={(e) => setVaultDelta(e.target.value)}
+                className="app-input w-36"
+                placeholder="Số xu"
+              />
+              <button
+                type="button"
+                onClick={() => vaultAdjust(Math.abs(Number(vaultDelta) || 0))}
+                className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-bold text-white"
+              >
+                Bơm kho
+              </button>
+              <button
+                type="button"
+                onClick={() => vaultAdjust(-Math.abs(Number(vaultDelta) || 0))}
+                className="rounded-full bg-rose-700 px-3 py-1.5 text-xs font-bold text-white"
+              >
+                Rút kho
+              </button>
+            </div>
+            <form onSubmit={vaultSetBalance} className="flex flex-wrap gap-2">
+              <input
+                value={vaultSet}
+                onChange={(e) => setVaultSet(e.target.value)}
+                className="app-input w-40"
+                placeholder="Đặt số dư tuyệt đối"
+              />
+              <button
+                type="submit"
+                className="rounded-full bg-[#1e3a6e] px-3 py-1.5 text-xs font-bold text-white"
+              >
+                Đặt số dư kho
+              </button>
+            </form>
+          </section>
+
+          <section className="app-panel mt-4 space-y-2 p-3">
+            <p className="play-heading text-sm">Xu kho ↔ user</p>
+            <select
+              value={vaultUser.userId}
+              onChange={(e) =>
+                setVaultUser((v) => ({ ...v, userId: e.target.value }))
+              }
+              className="app-input"
+            >
+              <option value="">Chọn user…</option>
+              {data.users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.username} ({formatXu(u.balance)})
+                </option>
+              ))}
+            </select>
+            <div className="flex flex-wrap gap-2">
+              <input
+                value={vaultUser.amount}
+                onChange={(e) =>
+                  setVaultUser((v) => ({ ...v, amount: e.target.value }))
+                }
+                className="app-input w-36"
+                placeholder="Số xu"
+              />
+              <button
+                type="button"
+                onClick={vaultGrant}
+                className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-bold text-white"
+              >
+                Cấp từ kho
+              </button>
+              <button
+                type="button"
+                onClick={vaultSeize}
+                className="rounded-full bg-rose-700 px-3 py-1.5 text-xs font-bold text-white"
+              >
+                Thu về kho
+              </button>
+            </div>
+          </section>
+
+          <section className="app-panel mt-4 p-3">
+            <p className="play-heading mb-2 text-sm">Sổ kho (gần đây)</p>
+            <ul className="max-h-56 space-y-1.5 overflow-y-auto">
+              {data.vault.ledger.length === 0 ? (
+                <li className="text-xs text-[var(--play-muted)]">Chưa có giao dịch</li>
+              ) : (
+                data.vault.ledger.map((row) => (
+                  <li
+                    key={row.id}
+                    className="rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[#1e3a6e]/10"
+                  >
+                    <div className="flex justify-between gap-2">
+                      <span className="font-semibold">
+                        {LEDGER_LABEL[row.type] ?? row.type}
+                        {row.username ? ` · ${row.username}` : ""}
+                      </span>
+                      <span
+                        className={`font-play font-bold tabular-nums ${
+                          row.amount >= 0 ? "text-teal-700" : "text-rose-600"
+                        }`}
+                      >
+                        {row.amount >= 0 ? "+" : ""}
+                        {formatXu(row.amount)}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-[var(--play-muted)]">
+                      {new Date(row.at).toLocaleString("vi-VN")} · sau{" "}
+                      {formatXu(row.balanceAfter)} · {row.byUsername}
+                      {row.note ? ` · ${row.note}` : ""}
+                    </p>
+                  </li>
+                ))
+              )}
+            </ul>
+          </section>
+        </>
+      )}
 
       <div className="mt-5 flex gap-2">
-        <Link to="/play" className="app-btn-primary flex-1">
+        <Link to={playPath(me)} className="app-btn-primary flex-1">
           Vào bàn chơi
         </Link>
         <button

@@ -33,7 +33,11 @@ export function BettingBoard({
       {/* Countdown ribbon */}
       <div className="absolute -top-3 left-1/2 z-10 -translate-x-1/2">
         <div
-          className="font-play bg-[#1e3a6e] px-6 py-1 text-center text-sm font-bold tracking-wide text-white shadow-md tabular-nums"
+          className={`font-play px-6 py-1 text-center text-sm font-bold tracking-wide text-white shadow-md tabular-nums transition-colors ${
+            canBet && remaining > 0 && remaining <= 5
+              ? "bg-rose-600 animate-pulse"
+              : "bg-[#1e3a6e]"
+          }`}
           style={{
             clipPath:
               "polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%)",

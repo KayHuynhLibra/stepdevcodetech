@@ -1,65 +1,146 @@
-import { todayKey } from "./types.js";
+import { todayKey, weekKey } from "./types.js";
+import { AVATARS, DEFAULT_AVATAR } from "./avatars.js";
 
-const FIRST = [
-  "Minh",
-  "Lan",
-  "Huy",
+/**
+ * Tên ngắn tiếng Việt (có dấu) — dễ hiển thị trên UI hẹp.
+ * Không dùng họ dài / đệm để tránh cắt chữ.
+ */
+const TEN_NGAN = [
   "An",
-  "Trang",
-  "Khoa",
-  "My",
-  "Duc",
-  "Ha",
-  "Phong",
-  "Linh",
-  "Tuan",
-  "Nga",
-  "Quang",
-  "Vy",
-  "Bao",
+  "Bình",
   "Chi",
   "Duy",
+  "Đạt",
+  "Hà",
+  "Hương",
+  "Huy",
+  "Khoa",
+  "Lan",
+  "Linh",
+  "Long",
+  "Mai",
+  "Minh",
+  "My",
+  "Mỹ",
+  "Nam",
+  "Nga",
+  "Nhi",
+  "Phong",
+  "Phúc",
+  "Quân",
+  "Quỳnh",
+  "Sơn",
+  "Tâm",
+  "Thảo",
+  "Thy",
+  "Trang",
+  "Trâm",
+  "Tuấn",
+  "Vy",
+  "Yến",
+  "Bảo",
+  "Cường",
+  "Dũng",
   "Giang",
-  "Hung",
-];
-
-const LAST = [
-  "Nguyen",
-  "Tran",
-  "Le",
-  "Pham",
-  "Hoang",
-  "Vu",
-  "Vo",
-  "Dang",
-  "Bui",
-  "Do",
+  "Hạnh",
+  "Hiếu",
+  "Hùng",
+  "Huệ",
+  "Khánh",
+  "Kiệt",
+  "Lộc",
+  "Ngân",
+  "Nhung",
+  "Phương",
+  "Thịnh",
+  "Thư",
+  "Uyên",
+  "Vân",
+  "Xuân",
+  "Ánh",
+  "Đức",
+  "Hải",
+  "Kiên",
+  "Lam",
+  "Oanh",
+  "Tú",
+  "Vũ",
+  "Diễm",
+  "Hòa",
+  "Kim",
+  "Loan",
+  "Ngọc",
+  "Sáng",
+  "Tuyết",
+  "Vinh",
+  "Đan",
+  "Hồng",
+  "Lệ",
+  "Nhã",
+  "Thắng",
+  "Trúc",
+  "Vỹ",
+  "Ý",
+  "Bích",
+  "Cẩm",
+  "Đông",
+  "Hạc",
+  "Liễu",
 ];
 
 export interface BotIdentity {
   id: string;
   name: string;
+  avatar: string;
   isVip: boolean;
+  /** Bot chuyên dí theo cầu đang có stake lớn nhất */
+  isChaser: boolean;
   /** Tổng xu lời trong ngày — dùng chung list với người chơi */
   winToday: number;
   guessesToday: number;
   dayKey: string;
+  stakeWeek: number;
+  weekKey: string;
 }
 
+/** Luôn giữ 2 bot dí cầu khi có đủ bot active */
+export const CHASER_BOT_COUNT = 2;
+
+function shuffleInPlace<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/** Tạo pool bot: tên ngắn có dấu, không trùng trong pool. */
 export function createIdentityPool(size = 50): BotIdentity[] {
-  const pool: BotIdentity[] = [];
   const day = todayKey();
+  const week = weekKey();
+  const poolNames = shuffleInPlace([...TEN_NGAN]);
+
+  const pool: BotIdentity[] = [];
   for (let i = 0; i < size; i++) {
-    const first = FIRST[i % FIRST.length];
-    const last = LAST[Math.floor(i / FIRST.length) % LAST.length];
-    const suffix = i >= FIRST.length * LAST.length ? String(i) : "";
+    const base = poolNames[i % poolNames.length]!;
+    const name =
+      i < poolNames.length ? base : `${base}${Math.floor(i / poolNames.length) + 1}`;
+    const avatar =
+      AVATARS.length > 0
+        ? AVATARS[(i + 1) % AVATARS.length] ?? DEFAULT_AVATAR
+        : DEFAULT_AVATAR;
+    const isChaser = i < CHASER_BOT_COUNT;
     pool.push({
       id: `bot-${i + 1}`,
-      name: `${first}${last}${suffix}`,
-      isVip: Math.random() < 0.12,
+      name,
+      avatar,
+      isVip: isChaser || Math.random() < 0.12,
+      isChaser,
       winToday: 0,
       guessesToday: 0,
       dayKey: day,
+      stakeWeek: 0,
+      weekKey: week,
     });
   }
   return pool;
@@ -72,6 +153,16 @@ export function randomBotBetAmount(): number {
   const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
   const raw = 600 + z * 400;
   const clamped = Math.max(100, Math.min(2000, raw));
+  return Math.round(clamped / 100) * 100;
+}
+
+/** Bot dí cầu — mức cược lớn hơn bot thường. */
+export function randomChaserBetAmount(): number {
+  const u1 = Math.random() || 0.01;
+  const u2 = Math.random() || 0.01;
+  const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  const raw = 1800 + z * 700;
+  const clamped = Math.max(500, Math.min(5000, raw));
   return Math.round(clamped / 100) * 100;
 }
 

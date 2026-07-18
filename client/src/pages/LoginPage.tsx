@@ -1,7 +1,14 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, saveSession, type AuthUser } from "../auth";
-import { formatXu } from "../cards";
+import {
+  api,
+  getStoredUser,
+  getToken,
+  homePath,
+  saveSession,
+  type AuthUser,
+} from "../auth";
+import { ensureGuestCode, guestPlayPath } from "../guest";
 import { AppShell } from "../components/AppShell";
 
 export default function LoginPage() {
@@ -11,6 +18,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const guestHref = useMemo(() => guestPlayPath(ensureGuestCode()), []);
+
+  // Đã login → đưa về đúng URL của user đó
+  useEffect(() => {
+    const user = getStoredUser();
+    if (getToken() && user) {
+      nav(homePath(user), { replace: true });
+    }
+  }, [nav]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -27,9 +43,7 @@ export default function LoginPage() {
         },
       );
       saveSession(data.token, data.user);
-      nav(data.user.role === "admin" ? "/admin" : "/dashboard", {
-        replace: true,
-      });
+      nav(homePath(data.user), { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi đăng nhập");
     } finally {
@@ -107,15 +121,10 @@ export default function LoginPage() {
             : "Đã có tài khoản? Đăng nhập"}
         </button>
 
-        <div className="app-panel mt-4 p-3 text-[10px] text-[var(--play-muted)]">
-          <p className="font-play text-xs font-bold text-[var(--play-ink)]">
-            Tài khoản demo
-          </p>
-          <p>User: demo / demo123 (số dư {formatXu(200_000)})</p>
-          <p>Admin: admin / admin123</p>
+        <div className="mt-4 text-center">
           <Link
-            to="/play"
-            className="mt-1 inline-block font-semibold text-teal-700"
+            to={guestHref}
+            className="text-xs font-semibold text-teal-700 underline-offset-2 hover:underline"
           >
             Vào chơi nhanh (khách) ›
           </Link>

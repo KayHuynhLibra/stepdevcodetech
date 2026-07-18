@@ -92,58 +92,65 @@
 
 .app-frame {
   position: relative;
-  border-radius: 1.15rem;
-  border: 3px solid rgba(43, 184, 160, 0.85);
+  border-radius: 1.25rem;
+  border: 3px solid #1f9e8a;
   background: linear-gradient(
     180deg,
-    rgba(224, 248, 255, 0.95) 0%,
-    rgba(236, 253, 245, 0.92) 55%,
-    rgba(240, 253, 220, 0.9) 100%
+    rgba(255, 255, 255, 0.96) 0%,
+    rgba(224, 248, 255, 0.94) 40%,
+    rgba(236, 253, 245, 0.92) 100%
   );
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.75) inset,
-    0 10px 28px rgba(30, 58, 110, 0.1);
+    0 0 0 3px rgba(30, 58, 110, 0.14),
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 12px 32px rgba(30, 58, 110, 0.12);
+  overflow: hidden;
 }
 
 /* Viền khung task trên màn chơi */
 .game-task {
   position: relative;
-  border-radius: 1rem;
-  border: 2.5px solid #2ec4a8;
+  border-radius: 1.15rem;
+  border: 3px solid #1f9e8a;
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.88) 0%,
-    rgba(232, 250, 255, 0.9) 45%,
-    rgba(236, 253, 230, 0.88) 100%
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(232, 250, 255, 0.92) 45%,
+    rgba(236, 253, 230, 0.9) 100%
   );
   box-shadow:
-    0 0 0 2px rgba(30, 58, 110, 0.12),
-    0 1px 0 rgba(255, 255, 255, 0.8) inset,
-    0 6px 18px rgba(30, 58, 110, 0.1);
+    0 0 0 3px rgba(30, 58, 110, 0.14),
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 10px 26px rgba(30, 58, 110, 0.12);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
 
 .game-task::before,
-.game-task::after {
+.game-task::after,
+.app-frame::before,
+.app-frame::after {
   content: "";
   position: absolute;
   z-index: 2;
-  width: 0.65rem;
-  height: 0.65rem;
+  width: 0.7rem;
+  height: 0.7rem;
   pointer-events: none;
 }
 
-.game-task::before {
-  top: 0.35rem;
-  left: 0.35rem;
+.game-task::before,
+.app-frame::before {
+  top: 0.4rem;
+  left: 0.4rem;
   background: #0d9488;
   clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  box-shadow: 0.55rem 0 0 #fbbf24;
 }
 
-.game-task::after {
-  right: 0.35rem;
-  bottom: 0.35rem;
+.game-task::after,
+.app-frame::after {
+  right: 0.4rem;
+  bottom: 0.4rem;
   background: #fbbf24;
   clip-path: polygon(
     50% 0,
@@ -157,6 +164,7 @@
     2% 35%,
     39% 35%
   );
+  box-shadow: -0.55rem 0 0 #0d9488;
 }
 
 .game-task-board {
@@ -194,30 +202,6 @@
   height: 0.85rem;
 }
 
-.app-frame::before,
-.app-frame::after {
-  content: "";
-  position: absolute;
-  width: 0.7rem;
-  height: 0.7rem;
-  pointer-events: none;
-  opacity: 0.85;
-  background: #14b8a6;
-  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
-}
-
-.app-frame::before {
-  top: 0.45rem;
-  left: 0.45rem;
-  background: #0d9488;
-}
-
-.app-frame::after {
-  bottom: 0.45rem;
-  right: 0.45rem;
-  background: #fbbf24;
-  clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
-}
 
 .app-input {
   width: 100%;
@@ -241,10 +225,10 @@
   align-items: center;
   justify-content: center;
   border-radius: 0.85rem;
-  background: linear-gradient(135deg, #f6d365 0%, #5ec8f0 45%, #7c6cf0 100%);
+  background: linear-gradient(135deg, #f6d365 0%, #2bb8a0 48%, #1e3a6e 100%);
   padding: 0.85rem 1rem;
-  font-family: "Fredoka", "Be Vietnam Pro", sans-serif;
-  font-weight: 700;
+  font-family: "Nunito", "Be Vietnam Pro", sans-serif;
+  font-weight: 800;
   font-size: 0.95rem;
   color: #fff;
   text-shadow: 0 1px 2px rgba(30, 58, 110, 0.35);
@@ -297,32 +281,57 @@ input {
   font-family: inherit;
 }
 
-/* Tarot / sheet titles (dark UI) */
-.font-display {
-  font-family: "Cinzel", Georgia, serif;
-}
-
+/* Display: Nunito hỗ trợ dấu tiếng Việt tốt hơn Fredoka */
+.font-display,
 .play-screen .font-display,
 .font-play {
-  font-family: "Fredoka", "Be Vietnam Pro", sans-serif;
-  letter-spacing: 0.02em;
+  font-family: "Nunito", "Be Vietnam Pro", sans-serif;
+  letter-spacing: 0.01em;
+  font-weight: 800;
 }
 
 .play-section-title {
-  font-family: "Fredoka", "Be Vietnam Pro", sans-serif;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-family: "Nunito", "Be Vietnam Pro", sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   line-height: 1.3;
-  color: var(--play-ink);
+  color: var(--play-muted);
 }
 
 .play-heading {
-  font-family: "Fredoka", "Be Vietnam Pro", sans-serif;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  font-family: "Nunito", "Be Vietnam Pro", sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.01em;
   color: var(--play-ink);
+}
+
+/* Chip phân biệt user / khách / mã */
+.identity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 0.2rem 0.55rem;
+  font-family: "Nunito", "Be Vietnam Pro", sans-serif;
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: var(--play-ink);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset;
+  border: 1px solid rgba(30, 58, 110, 0.14);
+}
+
+.identity-chip--code {
+  color: #0f766e;
+  letter-spacing: 0.04em;
+}
+
+.identity-chip--role {
+  background: #1e3a6e;
+  color: #fff;
+  border-color: transparent;
 }
 
 @keyframes flip-in {

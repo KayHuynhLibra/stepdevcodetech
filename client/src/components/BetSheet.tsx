@@ -71,7 +71,7 @@ export function BetSheet({
       {/* Floating selected card (như ảnh mẫu) */}
       <div className="pointer-events-none relative z-10 mx-auto mb-[-1.5rem] flex justify-center">
         <div className="relative">
-          <div className="absolute inset-[-12px] rounded-2xl bg-fuchsia-400/35 blur-xl" />
+          <div className="absolute inset-[-12px] rounded-2xl bg-teal-400/30 blur-xl" />
           <img
             src={card.image}
             alt={card.nameVi}
@@ -146,7 +146,7 @@ export function BetSheet({
                 key={n}
                 type="button"
                 onClick={() => add(n)}
-                className="rounded-md border-2 border-[#3b82c4] bg-white py-2.5 text-base font-bold text-[#7c3aed] shadow-sm active:scale-[0.97]"
+                className="rounded-md border-2 border-teal-500/70 bg-white py-2.5 text-base font-bold text-[#1e3a6e] shadow-sm active:scale-[0.97]"
               >
                 +{n >= 1000 ? n.toLocaleString("en-US").replace(/,/g, "") : n}
               </button>
@@ -161,16 +161,8 @@ export function BetSheet({
             className={`relative mx-auto mt-4 flex w-[90%] items-center justify-center rounded-xl py-3 text-lg font-extrabold tracking-wide text-white shadow-lg transition ${
               insufficient
                 ? "cursor-not-allowed bg-slate-300 text-slate-500"
-                : "bg-gradient-to-r from-amber-300 via-sky-400 to-violet-500 active:scale-[0.98]"
+                : "bg-gradient-to-r from-amber-400 via-teal-500 to-[#1e3a6e] active:scale-[0.98]"
             }`}
-            style={
-              insufficient
-                ? undefined
-                : {
-                    textShadow:
-                      "0 0 2px #5b21b6, 0 0 6px #5b21b6, 1px 1px 0 #5b21b6",
-                  }
-            }
           >
             {!insufficient && (
               <>

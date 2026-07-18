@@ -127,6 +127,9 @@ export function BotPanelSheet({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-semibold">
                     {bot.name}
+                    {bot.isChaser ? (
+                      <span className="ml-1 text-[9px] text-rose-300">Dí cầu</span>
+                    ) : null}
                     {bot.isVip ? (
                       <span className="ml-1 text-[9px] text-[var(--gold)]">VIP</span>
                     ) : null}

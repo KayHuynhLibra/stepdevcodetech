@@ -1,11 +1,20 @@
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 import { authStore } from "./auth.js";
+import { DEFAULT_AVATAR, normalizeAvatar } from "./avatars.js";
+import { betStore } from "./betStore.js";
 import { CARDS, getCard, pickWinningCard } from "./cards.js";
+import { interStore } from "./interStore.js";
 import {
+  CHASER_BOT_COUNT,
   createIdentityPool,
   randomBotBetAmount,
   randomCardId,
+  randomChaserBetAmount,
   type BotIdentity,
 } from "./bots.js";
+import { vaultStore } from "./vaultStore.js";
 import {
   BOT_LOG_LIMIT,
   HISTORY_LIMIT,
@@ -19,6 +28,7 @@ import {
   STARTING_BALANCE,
   TARGET_DISPLAY_CCU,
   todayKey,
+  weekKey,
   type BotLogEntry,
   type BotPanelState,
   type BotPublic,
@@ -28,21 +38,53 @@ import {
   type PublicState,
   type RoundResult,
   type RoundTopWinner,
+  type TarotStarEntry,
   type TopAcePreview,
 } from "./types.js";
 
 type BroadcastFn = (state: PublicState, playerId?: string) => void;
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const DATA_DIR = join(__dirname, "..", "data");
+const HISTORY_PATH = join(DATA_DIR, "history.json");
+const HISTORY_TMP = join(DATA_DIR, "history.json.tmp");
+
+interface PersistedWinner {
+  playerId: string;
+  name: string;
+  profit: number;
+  payout: number;
+  stake: number;
+  winningCardId: number;
+  round: number;
+  chosenCards: { cardId: number; amount: number }[];
+}
+
+interface HistoryFile {
+  version: 1 | 2;
+  nextRound: number;
+  history: RoundResult[];
+  vipPool?: number;
+  vipBase?: number;
+  lastRoundWinners?: PersistedWinner[];
+}
+
+/** Che tên ngắn tiếng Việt (theo grapheme, giữ dấu). */
 function maskName(name: string): string {
-  if (name.length <= 3) return `${name[0]}***`;
-  return `${name.slice(0, 2)}***${name.slice(-1)}`;
+  const chars = [...name.trim()];
+  if (chars.length === 0) return "***";
+  if (chars.length <= 2) return `${chars[0]}*`;
+  if (chars.length <= 4) return `${chars[0]}${chars[1]}*`;
+  return `${chars[0]}${chars[1]}···`;
 }
 
 interface BotJob {
   at: number;
   botId: string;
+  /** 0 = chọn lúc đặt (dí cầu lớn) */
   cardId: number;
   amount: number;
+  chase?: boolean;
 }
 
 export class GameEngine {
@@ -100,11 +142,94 @@ export class GameEngine {
 
   constructor(broadcast: BroadcastFn) {
     this.broadcast = broadcast;
+    this.loadHistoryFromDisk();
   }
 
   start() {
     this.resetBettingPhase();
     this.tickTimer = setInterval(() => this.tick(), 250);
+  }
+
+  private loadHistoryFromDisk() {
+    try {
+      if (!existsSync(HISTORY_PATH)) return;
+      const parsed = JSON.parse(readFileSync(HISTORY_PATH, "utf8")) as HistoryFile;
+      if (
+        (parsed?.version !== 1 && parsed?.version !== 2) ||
+        !Array.isArray(parsed.history)
+      ) {
+        return;
+      }
+      const rows: RoundResult[] = [];
+      for (const row of parsed.history) {
+        if (
+          row &&
+          typeof row.round === "number" &&
+          typeof row.win === "number" &&
+          row.win >= 1 &&
+          row.win <= 8
+        ) {
+          rows.push({ round: row.round, win: row.win });
+        }
+      }
+      this.history = rows.slice(0, HISTORY_LIMIT);
+      const next = Math.floor(Number(parsed.nextRound));
+      if (Number.isFinite(next) && next >= 1) {
+        this.roundNumber = next;
+      } else if (this.history.length > 0) {
+        this.roundNumber = Math.max(...this.history.map((h) => h.round)) + 1;
+      }
+      if (typeof parsed.vipPool === "number" && Number.isFinite(parsed.vipPool)) {
+        this.vipPool = parsed.vipPool;
+      }
+      if (typeof parsed.vipBase === "number" && Number.isFinite(parsed.vipBase)) {
+        this.vipBase = parsed.vipBase;
+      }
+      if (Array.isArray(parsed.lastRoundWinners)) {
+        this.lastRoundWinners = parsed.lastRoundWinners
+          .filter(
+            (w) =>
+              w &&
+              typeof w.name === "string" &&
+              typeof w.profit === "number" &&
+              typeof w.payout === "number",
+          )
+          .slice(0, 3)
+          .map((w) => ({
+            playerId: String(w.playerId ?? ""),
+            name: w.name,
+            profit: w.profit,
+            payout: w.payout,
+            stake: Number(w.stake) || 0,
+            winningCardId: Number(w.winningCardId) || 1,
+            round: Number(w.round) || 0,
+            chosenCards: Array.isArray(w.chosenCards) ? w.chosenCards : [],
+          }));
+      }
+      console.log(
+        `[game] Loaded ${this.history.length} results · next round #${this.roundNumber} · vip ${Math.round(this.vipPool)}`,
+      );
+    } catch (err) {
+      console.warn("[game] Failed to load history.json:", err);
+    }
+  }
+
+  private saveHistoryToDisk() {
+    try {
+      if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+      const payload: HistoryFile = {
+        version: 2,
+        nextRound: this.roundNumber,
+        history: this.history.slice(0, HISTORY_LIMIT),
+        vipPool: this.vipPool,
+        vipBase: this.vipBase,
+        lastRoundWinners: this.lastRoundWinners.slice(0, 3),
+      };
+      writeFileSync(HISTORY_TMP, JSON.stringify(payload, null, 2), "utf8");
+      renameSync(HISTORY_TMP, HISTORY_PATH);
+    } catch (err) {
+      console.warn("[game] Failed to save history.json:", err);
+    }
   }
 
   stop() {
@@ -127,12 +252,16 @@ export class GameEngine {
         opts?.name?.trim() ||
         `Khach${Math.floor(Math.random() * 9000) + 1000}`
       ).slice(0, 20),
+      avatar: normalizeAvatar(linked?.avatar) || DEFAULT_AVATAR,
       balance: linked?.balance ?? STARTING_BALANCE,
       bets: new Map(),
       guessesToday: linked?.guessesToday ?? 0,
       winToday: linked?.winToday ?? 0,
       dayKey: todayKey(),
+      stakeWeek: linked?.stakeWeek ?? 0,
+      weekKey: linked?.weekKey ?? weekKey(),
     };
+    this.ensureWeek(session);
     this.players.set(socketId, session);
     this.emitToAll();
     return session;
@@ -146,6 +275,7 @@ export class GameEngine {
         session.balance,
         session.winToday,
         session.guessesToday,
+        session.stakeWeek,
       );
     }
     this.players.delete(socketId);
@@ -169,6 +299,34 @@ export class GameEngine {
     return { socketIds, balance: next };
   }
 
+  /** Đổi avatar auth → đồng bộ session online. */
+  applyAuthAvatar(
+    userId: string,
+    avatar: string,
+  ): { socketIds: string[]; avatar: string } {
+    const next = normalizeAvatar(avatar);
+    const socketIds: string[] = [];
+    for (const session of this.players.values()) {
+      if (session.userId !== userId) continue;
+      session.avatar = next;
+      socketIds.push(session.id);
+      this.broadcast(this.getStateFor(session.id), session.id);
+    }
+    return { socketIds, avatar: next };
+  }
+
+  private resolveAvatar(playerId: string, userId?: string): string {
+    const live = this.players.get(playerId);
+    if (live?.avatar) return normalizeAvatar(live.avatar);
+    if (userId) {
+      const u = authStore.getById(userId);
+      if (u) return normalizeAvatar(u.avatar);
+    }
+    const bot = this.activeBots.find((b) => b.id === playerId);
+    if (bot?.avatar) return normalizeAvatar(bot.avatar);
+    return DEFAULT_AVATAR;
+  }
+
   /** Snapshot online for admin */
   getOnlineStats() {
     return {
@@ -182,6 +340,31 @@ export class GameEngine {
     };
   }
 
+  /** Lưu lượng bàn hiện tại (mainadmin). */
+  getLiveTraffic() {
+    const realStake = this.realBets.reduce((a, b) => a + b, 0);
+    const botStake = this.botBets.reduce((a, b) => a + b, 0);
+    const realBettors = this.realBettors.reduce((a, b) => a + b, 0);
+    const botBettors = this.botBettors.reduce((a, b) => a + b, 0);
+    let loggedInOnline = 0;
+    let guestOnline = 0;
+    for (const p of this.players.values()) {
+      if (p.userId) loggedInOnline += 1;
+      else guestOnline += 1;
+    }
+    return {
+      realStakeRound: realStake,
+      botStakeRound: botStake,
+      displayStakeRound: realStake + botStake,
+      realBettorsRound: realBettors,
+      botBettorsRound: botBettors,
+      loggedInOnline,
+      guestOnline,
+      historyRounds: this.history.length,
+      nextRound: this.roundNumber,
+    };
+  }
+
   private syncUser(session: PlayerSession) {
     if (!session.userId) return;
     authStore.syncPlayStats(
@@ -189,6 +372,7 @@ export class GameEngine {
       session.balance,
       session.winToday,
       session.guessesToday,
+      session.stakeWeek,
     );
   }
 
@@ -243,6 +427,7 @@ export class GameEngine {
     if (!player) return { ok: false, reason: "Chưa vào phòng" };
 
     this.ensureDay(player);
+    this.ensureWeek(player);
 
     if (player.balance < amt) {
       return { ok: false, reason: "Số dư không đủ" };
@@ -266,8 +451,13 @@ export class GameEngine {
     player.balance -= amt;
     player.bets.set(cardId, prev + amt);
     player.guessesToday += 1;
+    player.stakeWeek += amt;
     this.realBets[idx] += amt;
     if (prev === 0) this.realBettors[idx] += 1;
+
+    if (player.userId) {
+      vaultStore.recordStakeIn(amt, player.name, player.userId);
+    }
 
     this.syncUser(player);
     this.emitToAll();
@@ -282,11 +472,23 @@ export class GameEngine {
     const day = todayKey();
     const humanRows = [...this.players.values()].map((p) => {
       this.ensureDay(p);
-      return { id: p.id, name: p.name, winToday: p.winToday, dayKey: p.dayKey };
+      return {
+        id: p.id,
+        name: p.name,
+        avatar: normalizeAvatar(p.avatar),
+        winToday: p.winToday,
+        dayKey: p.dayKey,
+      };
     });
     const botRows = this.activeBots.map((b) => {
       this.ensureBotDay(b);
-      return { id: b.id, name: b.name, winToday: b.winToday, dayKey: b.dayKey };
+      return {
+        id: b.id,
+        name: b.name,
+        avatar: normalizeAvatar(b.avatar),
+        winToday: b.winToday,
+        dayKey: b.dayKey,
+      };
     });
 
     const rows = [...humanRows, ...botRows]
@@ -297,7 +499,7 @@ export class GameEngine {
     return rows.map((p, i) => ({
       rank: i + 1,
       name: p.id === viewerId ? p.name : maskName(p.name),
-      avatar: "/assets/ui/avatar-default.png",
+      avatar: p.avatar,
       winToday: p.winToday,
       isYou: p.id === viewerId,
     }));
@@ -326,7 +528,7 @@ export class GameEngine {
       return {
         rank: i + 1,
         name: w.playerId === viewerId ? w.name : maskName(w.name),
-        avatar: "/assets/ui/avatar-default.png",
+        avatar: this.resolveAvatar(w.playerId),
         // Thưởng vòng trước = số xu nhận từ lá thắng (stake × hệ số)
         winToday: w.payout,
         isYou: w.playerId === viewerId,
@@ -350,6 +552,7 @@ export class GameEngine {
         id: b.id,
         name: b.name,
         isVip: b.isVip,
+        isChaser: b.isChaser,
         bets,
       };
     });
@@ -367,7 +570,7 @@ export class GameEngine {
     return this.roundTopWinnersRaw.map((w, i) => ({
       rank: i + 1,
       name: w.playerId === viewerId ? w.name : maskName(w.name),
-      avatar: "/assets/ui/avatar-default.png",
+      avatar: this.resolveAvatar(w.playerId),
       profit: w.profit,
       stake: w.stake,
       payout: w.payout,
@@ -397,6 +600,7 @@ export class GameEngine {
       onlineDisplay,
       topAces: this.getTopAces(playerId),
       roundTopWinners: this.getRoundTopWinners(playerId),
+      tarotStars: this.getTarotStars(playerId),
       vipPool: Math.round(this.vipPool),
       botPanel: this.getBotPanel(),
     };
@@ -406,6 +610,7 @@ export class GameEngine {
       if (p) {
         this.ensureDay(p);
         base.yourBalance = p.balance;
+        base.yourAvatar = normalizeAvatar(p.avatar);
         base.yourBets = CARDS.map((c) => p.bets.get(c.id) ?? 0);
         base.guessesToday = p.guessesToday;
         base.winToday = p.winToday;
@@ -423,6 +628,14 @@ export class GameEngine {
     }
   }
 
+  private ensureWeek(player: PlayerSession) {
+    const wk = weekKey();
+    if (player.weekKey !== wk) {
+      player.weekKey = wk;
+      player.stakeWeek = 0;
+    }
+  }
+
   private ensureBotDay(bot: BotIdentity) {
     const key = todayKey();
     if (bot.dayKey !== key) {
@@ -430,6 +643,74 @@ export class GameEngine {
       bot.guessesToday = 0;
       bot.winToday = 0;
     }
+  }
+
+  private ensureBotWeek(bot: BotIdentity) {
+    const wk = weekKey();
+    if (bot.weekKey !== wk) {
+      bot.weekKey = wk;
+      bot.stakeWeek = 0;
+    }
+  }
+
+  getTarotStars(viewerId?: string): TarotStarEntry[] {
+    const wk = weekKey();
+    type Row = {
+      key: string;
+      name: string;
+      avatar: string;
+      stakeWeek: number;
+      socketId?: string;
+    };
+    const byKey = new Map<string, Row>();
+
+    for (const p of this.players.values()) {
+      this.ensureWeek(p);
+      if (p.weekKey !== wk || p.stakeWeek <= 0) continue;
+      const key = p.userId ?? `socket:${p.id}`;
+      byKey.set(key, {
+        key,
+        name: p.name,
+        avatar: normalizeAvatar(p.avatar),
+        stakeWeek: p.stakeWeek,
+        socketId: p.id,
+      });
+    }
+
+    for (const u of authStore.listWeeklyStakers()) {
+      if (byKey.has(u.id)) continue;
+      byKey.set(u.id, {
+        key: u.id,
+        name: u.username,
+        avatar: u.avatar,
+        stakeWeek: u.stakeWeek,
+      });
+    }
+
+    for (const b of this.activeBots) {
+      this.ensureBotWeek(b);
+      if (b.weekKey !== wk || b.stakeWeek <= 0) continue;
+      byKey.set(b.id, {
+        key: b.id,
+        name: b.name,
+        avatar: normalizeAvatar(b.avatar),
+        stakeWeek: b.stakeWeek,
+      });
+    }
+
+    return [...byKey.values()]
+      .sort((a, b) => b.stakeWeek - a.stakeWeek)
+      .slice(0, LEADERBOARD_LIMIT)
+      .map((row, i) => ({
+        rank: i + 1,
+        name:
+          row.socketId === viewerId || row.key === viewerId
+            ? row.name
+            : maskName(row.name),
+        avatar: row.avatar,
+        stakeWeek: row.stakeWeek,
+        isYou: row.socketId === viewerId,
+      }));
   }
 
   private botStakeOnCard(botId: string, cardId: number): number {
@@ -495,7 +776,8 @@ export class GameEngine {
     if (this.phase === "betting") {
       this.phase = "revealing";
       this.phaseEndsAt = Date.now() + PHASE_MS.revealing;
-      this.winningCard = pickWinningCard();
+      const interMode = interStore.getMode();
+      this.winningCard = pickWinningCard(interMode);
       this.snapshotRoundTopWinners();
       this.pushLog({
         botId: "system",
@@ -503,7 +785,7 @@ export class GameEngine {
         cardId: this.winningCard,
         amount: 0,
         action: "round_reset",
-        message: `Khóa cược — lá thắng (weighted): #${this.winningCard}`,
+        message: `Khóa cược — lá thắng #${this.winningCard} (Inter: ${interMode})`,
       });
       this.emitToAll();
       return;
@@ -516,12 +798,14 @@ export class GameEngine {
       if (this.winningCard != null) {
         this.history.unshift({ round: this.roundNumber, win: this.winningCard });
         if (this.history.length > HISTORY_LIMIT) this.history.pop();
+        this.saveHistoryToDisk();
       }
       this.emitToAll();
       return;
     }
 
     this.roundNumber += 1;
+    this.saveHistoryToDisk();
     this.resetBettingPhase();
     this.emitToAll();
   }
@@ -603,6 +887,9 @@ export class GameEngine {
           round: this.roundNumber,
           chosenCards,
         });
+        if (player.userId) {
+          vaultStore.recordPayoutOut(payout, player.name, player.userId);
+        }
       }
     }
 
@@ -637,6 +924,30 @@ export class GameEngine {
     // Top 3 thắng vòng trước (người + bot) — hiện ở "Cao thủ dự đoán"
     this.lastRoundWinners = winners.slice(0, 3);
 
+    const betRows: Parameters<typeof betStore.recordRoundBets>[0] = [];
+    for (const player of this.players.values()) {
+      if (!player.userId) continue;
+      for (const [cardId, amount] of player.bets.entries()) {
+        if (amount <= 0) continue;
+        const isWin = cardId === this.winningCard;
+        const payout = isWin ? amount * card.multiplier : 0;
+        betRows.push({
+          userId: player.userId,
+          username: player.name,
+          round: this.roundNumber,
+          cardId,
+          amount,
+          result: isWin ? "win" : "lose",
+          payout,
+          profit: isWin ? payout - amount : -amount,
+          winningCardId: this.winningCard,
+        });
+      }
+    }
+    if (betRows.length > 0) {
+      betStore.recordRoundBets(betRows);
+    }
+
     for (const player of this.players.values()) {
       this.syncUser(player);
     }
@@ -655,19 +966,21 @@ export class GameEngine {
       p.bets.clear();
     }
     this.scaleBots();
+    const chasers = this.activeBots.filter((b) => b.isChaser).length;
     this.pushLog({
       botId: "system",
       botName: "System",
       cardId: 0,
       amount: 0,
       action: "round_reset",
-      message: `Ván #${this.roundNumber} — ${this.activeBots.length} bot sẵn sàng`,
+      message: `Ván #${this.roundNumber} — ${this.activeBots.length} bot (${chasers} dí cầu)`,
     });
     this.scheduleBotBets(false);
   }
 
   private scaleBots() {
     const n = Math.max(MIN_BOTS, Math.min(MAX_BOTS, this.targetBotCount));
+    // Pool đã gắn 2 bot đầu là chaser — slice giữ họ khi n ≥ 2
     this.activeBots = this.identityPool.slice(0, n);
   }
 
@@ -681,23 +994,68 @@ export class GameEngine {
     const windowEnd = Math.max(windowStart + 400, remaining - 800);
     if (windowEnd <= windowStart) return;
 
-    const betCount = Math.max(this.activeBots.length, this.activeBots.length * 2);
+    const normals = this.activeBots.filter((b) => !b.isChaser);
+    const chasers = this.activeBots.filter((b) => b.isChaser).slice(0, CHASER_BOT_COUNT);
 
-    for (let i = 0; i < betCount; i++) {
-      const bot = this.activeBots[i % this.activeBots.length];
-      const t = start + windowStart + Math.random() * (windowEnd - windowStart);
-      this.botSchedule.push({
-        at: t,
-        botId: bot.id,
-        cardId: randomCardId(),
-        amount: randomBotBetAmount(),
-      });
+    // Bot thường — rải đều trong cửa sổ đặt cược
+    if (normals.length > 0) {
+      const betCount = Math.max(normals.length, normals.length * 2);
+      for (let i = 0; i < betCount; i++) {
+        const bot = normals[i % normals.length]!;
+        const t = start + windowStart + Math.random() * (windowEnd - windowStart);
+        this.botSchedule.push({
+          at: t,
+          botId: bot.id,
+          cardId: randomCardId(),
+          amount: randomBotBetAmount(),
+        });
+      }
     }
+
+    // Luôn có tối đa 2 bot dí cầu lớn — vào muộn hơn để “soi” pool
+    if (chasers.length > 0) {
+      const chaseStart = start + remaining * 0.28;
+      const chaseEnd = start + Math.max(remaining * 0.28 + 600, remaining - 1200);
+      const chaseWindow = Math.max(400, chaseEnd - chaseStart);
+      const betsPerChaser = 4;
+      for (const bot of chasers) {
+        for (let i = 0; i < betsPerChaser; i++) {
+          const t = chaseStart + ((i + 0.15 + Math.random() * 0.7) / betsPerChaser) * chaseWindow;
+          this.botSchedule.push({
+            at: Math.min(t, start + remaining - 400),
+            botId: bot.id,
+            cardId: 0,
+            amount: randomChaserBetAmount(),
+            chase: true,
+          });
+        }
+      }
+    }
+
     this.botSchedule.sort((a, b) => a.at - b.at);
   }
 
+  /** Chọn lá đang có tổng stake lớn nhất (ưu tiên top 1–2). */
+  private pickChaseCardId(): number {
+    const ranked = this.realBets
+      .map((real, i) => ({
+        cardId: i + 1,
+        amount: real + this.botBets[i]!,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
+    const top = ranked[0];
+    if (!top || top.amount <= 0) return randomCardId();
+
+    const second = ranked[1];
+    if (second && second.amount > 0 && Math.random() < 0.32) {
+      return second.cardId;
+    }
+    return top.cardId;
+  }
+
   private processBotSchedule(now: number) {
-    while (this.botSchedule.length && this.botSchedule[0].at <= now) {
+    while (this.botSchedule.length && this.botSchedule[0]!.at <= now) {
       const job = this.botSchedule.shift()!;
       const bot = this.activeBots.find((b) => b.id === job.botId);
       if (!bot) continue;
@@ -708,7 +1066,9 @@ export class GameEngine {
         this.botRoundBets.set(bot.id, map);
       }
 
-      let cardId = job.cardId;
+      let cardId = job.chase ? this.pickChaseCardId() : job.cardId;
+      if (!cardId || cardId < 1 || cardId > 8) cardId = randomCardId();
+
       const prevOnCard = map.get(cardId) ?? 0;
       if (prevOnCard <= 0) {
         let distinct = 0;
@@ -719,18 +1079,27 @@ export class GameEngine {
           // Đã đủ 5 lá — cộng thêm vào 1 lá đã đặt thay vì mở lá mới
           const existing = [...map.entries()].filter(([, v]) => v > 0);
           if (existing.length === 0) continue;
-          cardId = existing[Math.floor(Math.random() * existing.length)][0];
+          if (job.chase) {
+            // Dí cầu: ưu tiên lá đã đặt nếu đang nằm trong top stake
+            const topId = this.pickChaseCardId();
+            const hit = existing.find(([id]) => id === topId);
+            cardId = hit ? hit[0] : existing[Math.floor(Math.random() * existing.length)]![0];
+          } else {
+            cardId = existing[Math.floor(Math.random() * existing.length)]![0];
+          }
         }
       }
 
       const idx = cardId - 1;
-      this.botBets[idx] += job.amount;
-      this.botBettors[idx] += 1;
+      this.botBets[idx]! += job.amount;
+      this.botBettors[idx]! += 1;
 
       const prev = map.get(cardId) ?? 0;
       map.set(cardId, prev + job.amount);
       this.ensureBotDay(bot);
+      this.ensureBotWeek(bot);
       bot.guessesToday += 1;
+      bot.stakeWeek += job.amount;
 
       const card = getCard(cardId);
       this.pushLog({
@@ -739,7 +1108,9 @@ export class GameEngine {
         cardId,
         amount: job.amount,
         action: "bet",
-        message: `${bot.name} đặt ${job.amount} xu → ${card?.nameVi ?? `#${cardId}`}`,
+        message: job.chase
+          ? `${bot.name} dí cầu lớn ${job.amount} xu → ${card?.nameVi ?? `#${cardId}`}`
+          : `${bot.name} đặt ${job.amount} xu → ${card?.nameVi ?? `#${cardId}`}`,
       });
     }
   }

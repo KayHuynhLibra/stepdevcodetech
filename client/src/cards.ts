@@ -23,6 +23,14 @@ export interface LeaderboardEntry {
   isYou?: boolean;
 }
 
+export interface TarotStarEntry {
+  rank: number;
+  name: string;
+  avatar: string;
+  stakeWeek: number;
+  isYou?: boolean;
+}
+
 export interface TopAcePreview {
   rank: number;
   name: string;
@@ -48,6 +56,7 @@ export interface BotPublic {
   id: string;
   name: string;
   isVip: boolean;
+  isChaser?: boolean;
   bets: { cardId: number; amount: number }[];
 }
 
@@ -82,6 +91,7 @@ export interface GameState {
   history: RoundResult[];
   winningCard: number | null;
   yourBalance?: number;
+  yourAvatar?: string;
   yourBets?: number[];
   guessesToday?: number;
   winToday?: number;
@@ -89,6 +99,7 @@ export interface GameState {
   onlineDisplay: number;
   topAces?: TopAcePreview[];
   roundTopWinners?: RoundTopWinner[];
+  tarotStars?: TarotStarEntry[];
   vipPool?: number;
   botPanel?: BotPanelState;
 }
