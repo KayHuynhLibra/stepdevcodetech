@@ -39,15 +39,16 @@ Mount a volume at `/app/server/data`.
 
 ### Scale migrate (÷10) — one-shot
 
-If Railway volume still has pre-scale balances:
+Production `npm start` runs `migrate-scale-div10.mjs --auto` before the server boots: if balances still look like the old ×10 scale (and no marker file), it divides money fields by 10 once.
+
+Manual:
 
 ```bash
-# Railway shell / one-off
 npm run migrate:scale10
-# or: node server/scripts/migrate-scale-div10.mjs
+# or: node server/scripts/migrate-scale-div10.mjs --force
 ```
 
-Writes marker `server/data/migrate-scale-div10.done`. Use `--force` only if you intentionally re-scale.
+Writes marker `server/data/migrate-scale-div10.done`.
 
 ### Custom domain `stepdevcode.tech`
 

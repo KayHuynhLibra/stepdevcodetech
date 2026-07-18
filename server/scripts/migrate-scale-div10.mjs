@@ -1,10 +1,10 @@
 /**
  * One-shot: scale monetary fields ÷10 on server/data (Railway volume).
- * Safe to re-run only once — checks marker file migrate-scale-div10.done
  *
- * Usage (from repo root / container):
- *   node server/scripts/migrate-scale-div10.mjs
- *   node server/scripts/migrate-scale-div10.mjs --force
+ * Usage:
+ *   node server/scripts/migrate-scale-div10.mjs           # only if no marker
+ *   node server/scripts/migrate-scale-div10.mjs --force   # ignore marker
+ *   node server/scripts/migrate-scale-div10.mjs --auto    # only if no marker AND looks like old scale
  */
 import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
@@ -14,6 +14,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA = join(__dirname, "..", "data");
 const MARKER = join(DATA, "migrate-scale-div10.done");
 const force = process.argv.includes("--force");
+const auto = process.argv.includes("--auto");
 
 function scale(n) {
   if (typeof n !== "number" || !Number.isFinite(n)) return n;
@@ -26,13 +27,48 @@ function writeJson(path, obj) {
   renameSync(tmp, path);
 }
 
+function looksLikeOldScale() {
+  const usersPath = join(DATA, "users.json");
+  const vaultPath = join(DATA, "vault.json");
+  let maxBal = 0;
+  if (existsSync(usersPath)) {
+    try {
+      const raw = JSON.parse(readFileSync(usersPath, "utf8"));
+      for (const u of raw.users || []) {
+        if (typeof u.balance === "number" && u.balance > maxBal) maxBal = u.balance;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  let vaultBal = 0;
+  if (existsSync(vaultPath)) {
+    try {
+      const raw = JSON.parse(readFileSync(vaultPath, "utf8"));
+      if (typeof raw.balance === "number") vaultBal = raw.balance;
+    } catch {
+      /* ignore */
+    }
+  }
+  // New scale: start 20k, max bet 100k, vault seed ~500k.
+  // Old scale: start 200k, vault often ≥2M.
+  return maxBal >= 150_000 || vaultBal >= 2_000_000;
+}
+
 if (!existsSync(DATA)) {
-  console.error("[migrate] No data dir:", DATA);
-  process.exit(1);
+  console.log("[migrate] No data dir yet — skip");
+  process.exit(0);
 }
 if (existsSync(MARKER) && !force) {
-  console.log("[migrate] Already done (marker present). Use --force to re-run.");
+  console.log("[migrate] Already done (marker present).");
   process.exit(0);
+}
+if (auto && !force && !looksLikeOldScale()) {
+  console.log("[migrate] Auto: balances look post-÷10 — skip");
+  process.exit(0);
+}
+if (!force && !auto && !existsSync(MARKER) === false) {
+  /* fall through */
 }
 
 mkdirSync(DATA, { recursive: true });
@@ -53,6 +89,10 @@ const vaultPath = join(DATA, "vault.json");
 if (existsSync(vaultPath)) {
   const raw = JSON.parse(readFileSync(vaultPath, "utf8"));
   if (typeof raw.balance === "number") raw.balance = scale(raw.balance);
+  if (typeof raw.totalStakeIn === "number") raw.totalStakeIn = scale(raw.totalStakeIn);
+  if (typeof raw.totalPayoutOut === "number") {
+    raw.totalPayoutOut = scale(raw.totalPayoutOut);
+  }
   for (const e of raw.ledger || []) {
     if (typeof e.amount === "number") e.amount = scale(e.amount);
     if (typeof e.balanceAfter === "number") e.balanceAfter = scale(e.balanceAfter);
