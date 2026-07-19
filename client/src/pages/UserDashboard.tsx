@@ -2,7 +2,9 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   api,
+  changePassword,
   clearSession,
+  fetchRecoveryCode,
   getStoredUser,
   getToken,
   homePath,
@@ -74,6 +76,10 @@ export default function UserDashboard() {
   const [savingAvatar, setSavingAvatar] = useState(false);
   const [couponCode, setCouponCode] = useState("");
   const [redeeming, setRedeeming] = useState(false);
+  const [curPw, setCurPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+  const [recoveryShown, setRecoveryShown] = useState<string | null>(null);
 
   useEffect(() => {
     if (!getToken()) {
@@ -303,9 +309,7 @@ export default function UserDashboard() {
           [
             "VIP",
             user.isVip
-              ? user.vipGranted
-                ? "Admin"
-                : "10k ván"
+              ? "VIP"
               : `${(user.roundsPlayed ?? 0).toLocaleString("vi-VN")}/${VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván`,
             false,
           ],
@@ -326,6 +330,76 @@ export default function UserDashboard() {
             </p>
           </div>
         ))}
+      </section>
+
+      <section className="app-panel mt-4 p-3">
+        <p className="play-heading text-sm">Bảo mật</p>
+        <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+          Đổi mật khẩu hoặc xem mã khôi phục (dùng khi quên MK).
+        </p>
+        <form
+          className="mt-2 space-y-2"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setPwBusy(true);
+            setError(null);
+            setMsg(null);
+            try {
+              await changePassword(curPw, newPw);
+              clearSession();
+              setMsg("Đã đổi mật khẩu — đăng nhập lại.");
+              nav("/login", { replace: true });
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Lỗi đổi MK");
+            } finally {
+              setPwBusy(false);
+            }
+          }}
+        >
+          <input
+            type="password"
+            value={curPw}
+            onChange={(e) => setCurPw(e.target.value)}
+            placeholder="Mật khẩu hiện tại"
+            className="app-input"
+            required
+          />
+          <input
+            type="password"
+            value={newPw}
+            onChange={(e) => setNewPw(e.target.value)}
+            placeholder="Mật khẩu mới (≥6)"
+            className="app-input"
+            minLength={6}
+            required
+          />
+          <button
+            type="submit"
+            disabled={pwBusy}
+            className="rounded-xl bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+          >
+            {pwBusy ? "…" : "Đổi mật khẩu"}
+          </button>
+        </form>
+        <button
+          type="button"
+          className="mt-2 text-xs font-semibold text-[var(--wood-deep)] underline-offset-2 hover:underline"
+          onClick={async () => {
+            try {
+              const r = await fetchRecoveryCode();
+              if (r.recoveryCode) setRecoveryShown(r.recoveryCode);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Lỗi");
+            }
+          }}
+        >
+          Hiện mã khôi phục
+        </button>
+        {recoveryShown && (
+          <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1.5 font-mono text-xs font-bold text-amber-900 ring-1 ring-amber-200">
+            {recoveryShown}
+          </p>
+        )}
       </section>
 
       <div className="app-frame mt-6 px-4 py-5">

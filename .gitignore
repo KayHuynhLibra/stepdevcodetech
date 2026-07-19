@@ -7,3 +7,6 @@ dist
 .env.local
 server/data/
 .tmp-img/
+
+# Tài liệu học tập nội bộ — không commit / không push
+studying/

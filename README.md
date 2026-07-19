@@ -31,11 +31,22 @@ This app runs as **one Node service**: Express serves `/api`, Socket.io, and the
 | `TOKEN_TTL_MS` | Auth token lifetime (default 7 days) |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins (empty = reflect request origin / same-origin deploy) |
 
-Mainadmin is prompted to **change password on first login**.
+Mainadmin / admin mới seed được **bắt đổi mật khẩu**. Production: không seed bằng fallback; nếu `SEED_*` trùng `mainadmin123` / `admin123` thì bỏ qua. Acc staff còn MK mặc định sẽ bị gắn `mustChangePassword` khi boot / login.
 
 ### Persist user data
 
 Mount a volume at `/app/server/data`.
+
+### Backup data
+
+Copy all `server/data/*.json` into a timestamped folder:
+
+```bash
+npm run backup:data
+# → server/data/backups/YYYYMMDD-HHMMSS/
+```
+
+On Railway, run this before risky deploys, or schedule a cron that executes the same command / snapshots the volume. Keep `users.json`, `vault.json`, `tokens.json`, `bets.json`, `coupons.json`, `inter.json`, `history.json`, `audit.json`, `reports.json`, `guest-ips.json`.
 
 ### Scale migrate (÷10) — one-shot
 
@@ -50,14 +61,16 @@ npm run migrate:scale10
 
 Writes marker `server/data/migrate-scale-div10.done`.
 
-### Custom domain `stepdevcode.tech`
+### Custom domains
 
-Railway custom domain should already be attached. At your DNS host (Orderbox / registrar):
+**Live hiện tại:** `https://stepkay.codes` — verify `https://stepkay.codes/health` → `{"ok":true,...}`.
+
+**`stepdevcode.tech` (nếu muốn dùng):** Railway custom domain phải gắn sẵn. Tại DNS host (Orderbox / registrar):
 
 1. **Remove** GitHub Pages A records for `@` (`185.199.108.153` … `185.199.111.153`) and any `www` → `*.github.io` CNAME.
 2. **Add** Railway records (check dashboard → Domains):
-   - CNAME/ALIAS for `@` / `www` → `jvqxrffr.up.railway.app` (or the target Railway shows)
-   - TXT `_railway-verify` with the value Railway shows (run `railway domain` / check Domains UI)
+   - CNAME/ALIAS for `@` / `www` → target Railway shows (vd. `*.up.railway.app`)
+   - TXT `_railway-verify` với giá trị Railway hiện
 3. Wait for DNS + TLS. Verify: `https://stepdevcode.tech/health` → `{"ok":true,...}`
 
 Optional: disable GitHub Pages on the repo so the old portfolio is not published.
@@ -70,3 +83,5 @@ Optional: disable GitHub Pages on the repo so the old portfolio is not published
 | `npm run build` | Build client to `client/dist` |
 | `npm start` | Production server (serves API + `client/dist`) |
 | `npm run migrate:scale10` | One-shot ÷10 money migrate on `server/data` |
+| `npm run backup:data` | Copy `server/data/*.json` → `server/data/backups/<stamp>/` |
+| `npm run install:all` | npm install |

@@ -21,6 +21,11 @@ export interface AuthUser {
   vipGranted?: boolean;
   /** VIP hiệu lực (admin hoặc đủ 10k ván) */
   isVip?: boolean;
+  banned?: boolean;
+  banReason?: string;
+  muted?: boolean;
+  mutedUntil?: number;
+  recoveryCode?: string;
 }
 
 /** Ngưỡng VIP tự động — đồng bộ server */
@@ -101,6 +106,38 @@ export async function changePassword(
     method: "POST",
     body: JSON.stringify({ currentPassword, nextPassword }),
   });
+}
+
+export async function recoverPassword(
+  username: string,
+  recoveryCode: string,
+  nextPassword: string,
+): Promise<{ ok: boolean; reason?: string; message?: string }> {
+  return api("/api/auth/recover-password", {
+    method: "POST",
+    body: JSON.stringify({ username, recoveryCode, nextPassword }),
+  });
+}
+
+export async function fetchRecoveryCode(): Promise<{
+  ok: boolean;
+  recoveryCode?: string;
+  reason?: string;
+}> {
+  return api("/api/auth/recovery-code", { method: "POST" });
+}
+
+/** Payload mang từ phiên khách khi đăng nhập / đăng ký. */
+export function guestMergeFields(extra?: {
+  balance?: number;
+  avatar?: string;
+}): { guestBalance?: number; guestAvatar?: string } {
+  const out: { guestBalance?: number; guestAvatar?: string } = {};
+  if (extra?.balance != null && Number.isFinite(extra.balance)) {
+    out.guestBalance = Math.max(0, Math.floor(extra.balance));
+  }
+  if (extra?.avatar) out.guestAvatar = extra.avatar;
+  return out;
 }
 
 export async function api<T>(

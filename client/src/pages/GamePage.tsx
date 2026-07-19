@@ -33,6 +33,7 @@ import { ShoutBar } from "../components/ShoutBar";
 import { ShoutMarquee } from "../components/ShoutMarquee";
 import { SaintOverlay } from "../components/SaintOverlay";
 import { TarotStarsSheet } from "../components/TarotStarsSheet";
+import { RulesSheet } from "../components/RulesSheet";
 import type { ChatMode, ShoutEvent } from "../shouts";
 import { SAINT_DISPLAY_MS } from "../shouts";
 import type { OnlinePlayerPublic } from "../cards";
@@ -48,17 +49,19 @@ import {
   homePath,
   isStaff,
   saveSession,
+  VIP_ROUNDS_REQUIRED,
   type AuthUser,
 } from "../auth";
-import { normalizeAvatar } from "../avatars";
 import {
   ensureGuestCode,
   getGuestAvatar,
   getGuestCode,
   getGuestName,
   setGuestAvatar,
+  setGuestBalanceHint,
   setGuestName,
 } from "../guest";
+import { normalizeAvatar } from "../avatars";
 import { AvatarPickerSheet } from "../components/AvatarPickerSheet";
 import { IdentityBadge } from "../components/IdentityBadge";
 import { uploadAvatarFromFile } from "../uploadAvatar";
@@ -101,6 +104,7 @@ type Sheet =
   | "playerInfo"
   | "vipTopups"
   | "autoBet"
+  | "rules"
   | null;
 
 export default function GamePage() {
@@ -155,6 +159,7 @@ export default function GamePage() {
   } = usePlaytime();
   const lastTickSec = useRef<number | null>(null);
   const shoutKeyRef = useRef(0);
+  const saintTimerRef = useRef<number | null>(null);
 
   const prevBalance = useRef<number | null>(null);
   const prevPhase = useRef<string | null>(null);
@@ -215,6 +220,7 @@ export default function GamePage() {
         name: saved,
         token: token ?? undefined,
         avatar,
+        guestCode: auth ? undefined : guestCode,
       });
     });
 
@@ -233,12 +239,31 @@ export default function GamePage() {
         setName(payload.name);
         prevBalance.current = payload.balance;
         setSessionAuthed(!!payload.userId);
+        if (!payload.userId) setGuestBalanceHint(payload.balance);
         // Token hết hạn phía server nhưng localStorage còn → nhắc đăng nhập lại
         if (getToken() && getStoredUser() && !payload.userId) {
-          showToast("Phiên hết hạn — đăng nhập lại để chat");
+          showToast("Phiên hết hạn — đăng nhập lại để chat & lưu cược");
         }
       },
     );
+
+    s.on("joinRejected", (payload: { reason?: string }) => {
+      showToast(payload.reason || "Không vào được phòng");
+      if (payload.reason?.includes("khóa") || payload.reason?.includes("hết hạn")) {
+        clearSession();
+        setMe(null);
+        setSessionAuthed(false);
+      }
+    });
+
+    s.on("sessionReplaced", (payload: { reason?: string }) => {
+      showToast(payload.reason || "Phiên đã bị thay thế");
+      if (payload.reason?.includes("khóa") || payload.reason?.includes("Mật khẩu")) {
+        clearSession();
+        setMe(null);
+        setSessionAuthed(false);
+      }
+    });
 
     s.on("state", (payload: GameState) => {
       setState(payload);
@@ -252,6 +277,7 @@ export default function GamePage() {
       setState((prev) =>
         prev ? { ...prev, yourBalance: payload.balance } : prev,
       );
+      if (!getStoredUser()) setGuestBalanceHint(payload.balance);
     });
 
     s.on("historyData", (rows: RoundResult[]) => {
@@ -272,8 +298,12 @@ export default function GamePage() {
       const isSaint = !!(payload.saint || payload.mode === "saint");
       if (isSaint) {
         const key = `saint${++shoutKeyRef.current}`;
+        if (saintTimerRef.current != null) {
+          window.clearTimeout(saintTimerRef.current);
+        }
         setSaintItem({ ...payload, key });
-        window.setTimeout(() => {
+        saintTimerRef.current = window.setTimeout(() => {
+          saintTimerRef.current = null;
           setSaintItem((prev) => (prev?.key === key ? null : prev));
         }, SAINT_DISPLAY_MS);
         return;
@@ -287,6 +317,10 @@ export default function GamePage() {
     });
 
     return () => {
+      if (saintTimerRef.current != null) {
+        window.clearTimeout(saintTimerRef.current);
+        saintTimerRef.current = null;
+      }
       s.disconnect();
     };
   }, [showToast]);
@@ -297,18 +331,20 @@ export default function GamePage() {
     }
   }, [state?.chatLines]);
 
-  // Đồng bộ VIP / số ván từ phòng (admin cấp hoặc vừa đủ 10k ván)
+  // Đồng bộ VIP / số ván / ID từ phòng (admin đổi hoặc đủ 10k ván)
   useEffect(() => {
     if (!me?.id || !state?.onlinePlayers) return;
     const self = state.onlinePlayers.find((p) => p.userId === me.id);
-    if (!self || self.isVip == null) return;
-    const nextVip = !!self.isVip;
+    if (!self) return;
+    const nextVip = self.isVip != null ? !!self.isVip : !!me.isVip;
     const nextRounds = self.roundsPlayed ?? me.roundsPlayed ?? 0;
     const nextGranted = self.vipGranted ?? me.vipGranted ?? false;
+    const nextCode = self.code ?? me.code;
     if (
       nextVip === !!me.isVip &&
       nextRounds === (me.roundsPlayed ?? 0) &&
-      nextGranted === !!me.vipGranted
+      nextGranted === !!me.vipGranted &&
+      nextCode === me.code
     ) {
       return;
     }
@@ -317,12 +353,57 @@ export default function GamePage() {
       isVip: nextVip,
       roundsPlayed: nextRounds,
       vipGranted: nextGranted,
+      code: nextCode,
     };
     setMe(next);
     const token = getToken();
     if (token) saveSession(token, next);
     if (!next.isVip) setChatMode((m) => (m === "vip" ? "no" : m));
   }, [me, state?.onlinePlayers]);
+
+  // Popup đang mở: cập nhật ID/VIP khi phòng refresh (admin vừa đổi)
+  useEffect(() => {
+    const online = state?.onlinePlayers;
+    if (!online?.length) return;
+    setProfile((prev) => {
+      if (!prev) return prev;
+      const match = online.find((p) =>
+        prev.userId
+          ? p.userId === prev.userId
+          : p.name === prev.name && p.avatar === prev.avatar,
+      );
+      if (!match) return prev;
+      const next: PlayerInfoView = {
+        ...prev,
+        code: match.code ?? prev.code,
+        isVip: match.isVip ?? prev.isVip,
+        vipGranted: match.vipGranted ?? prev.vipGranted,
+        roundsPlayed: match.roundsPlayed ?? prev.roundsPlayed,
+        userId: match.userId ?? prev.userId,
+        winToday: match.winToday ?? prev.winToday,
+        guessesToday: match.guessesToday ?? prev.guessesToday,
+        balance: match.balance ?? prev.balance,
+        outcomeMode: match.outcomeMode ?? prev.outcomeMode,
+        isBot: match.isBot,
+        isGuest: !match.isBot && !match.code && !match.userId,
+      };
+      if (
+        next.code === prev.code &&
+        next.isVip === prev.isVip &&
+        next.vipGranted === prev.vipGranted &&
+        next.roundsPlayed === prev.roundsPlayed &&
+        next.userId === prev.userId &&
+        next.winToday === prev.winToday &&
+        next.guessesToday === prev.guessesToday &&
+        next.balance === prev.balance &&
+        next.outcomeMode === prev.outcomeMode &&
+        next.isGuest === prev.isGuest
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, [state?.onlinePlayers]);
 
   useEffect(() => {
     if (!state) return;
@@ -383,7 +464,7 @@ export default function GamePage() {
         const need = Math.max(0, slot.amount - current);
         if (need <= 0) continue;
         if (balance < need) {
-          lastError = "Số dư không đủ";
+          lastError = "Số dư không đủ cho Auto — nạp xu hoặc giảm preset";
           continue;
         }
 
@@ -501,43 +582,80 @@ export default function GamePage() {
     }
   };
 
-  const openPlayerInfo = (info: PlayerInfoView) => {
-    setProfile(info);
-    setSheet("playerInfo");
-  };
+  const enrichPlayerInfo = useCallback(
+    (partial: PlayerInfoView): PlayerInfoView => {
+      const online = state?.onlinePlayers ?? [];
+      const match = online.find((p) =>
+        partial.userId
+          ? p.userId === partial.userId
+          : p.name === partial.name && p.avatar === partial.avatar,
+      );
+      if (!match) {
+        return {
+          ...partial,
+          isGuest:
+            partial.isGuest ??
+            (!partial.isBot && !partial.code && !partial.userId),
+        };
+      }
+      return {
+        ...partial,
+        name: match.name || partial.name,
+        avatar: match.avatar || partial.avatar,
+        isBot: match.isBot,
+        code: match.code ?? partial.code,
+        winToday: match.winToday ?? partial.winToday,
+        guessesToday: match.guessesToday ?? partial.guessesToday,
+        userId: match.userId ?? partial.userId,
+        balance: match.balance ?? partial.balance,
+        outcomeMode: match.outcomeMode ?? partial.outcomeMode,
+        isVip: match.isVip ?? partial.isVip,
+        roundsPlayed: match.roundsPlayed ?? partial.roundsPlayed,
+        vipGranted: match.vipGranted ?? partial.vipGranted,
+        isGuest: !match.isBot && !match.code && !match.userId,
+      };
+    },
+    [state?.onlinePlayers],
+  );
 
-  const openOnlinePlayer = (p: OnlinePlayerPublic) => {
-    openPlayerInfo({
-      name: p.name,
-      avatar: p.avatar,
-      isBot: p.isBot,
-      code: p.code,
-      winToday: p.winToday,
-      guessesToday: p.guessesToday,
-      isGuest: !p.isBot && !p.code && !p.userId,
-      userId: p.userId,
-      balance: p.balance,
-      outcomeMode: p.outcomeMode,
-      isVip: p.isVip,
-      roundsPlayed: p.roundsPlayed,
-      vipGranted: p.vipGranted,
-    });
-  };
+  const openPlayerInfo = useCallback(
+    (info: PlayerInfoView) => {
+      setProfile(enrichPlayerInfo(info));
+      setSheet("playerInfo");
+    },
+    [enrichPlayerInfo],
+  );
 
-  const openChatPlayer = (line: ShoutEvent) => {
-    const match = (state?.onlinePlayers ?? []).find(
-      (p) => p.name === line.name && p.avatar === line.avatar,
-    );
-    if (match) {
-      openOnlinePlayer(match);
-      return;
-    }
-    openPlayerInfo({
-      name: line.name,
-      avatar: line.avatar,
-      isGuest: true,
-    });
-  };
+  const openOnlinePlayer = useCallback(
+    (p: OnlinePlayerPublic) => {
+      openPlayerInfo({
+        name: p.name,
+        avatar: p.avatar,
+        isBot: p.isBot,
+        code: p.code,
+        winToday: p.winToday,
+        guessesToday: p.guessesToday,
+        isGuest: !p.isBot && !p.code && !p.userId,
+        userId: p.userId,
+        balance: p.balance,
+        outcomeMode: p.outcomeMode,
+        isVip: p.isVip,
+        roundsPlayed: p.roundsPlayed,
+        vipGranted: p.vipGranted,
+      });
+    },
+    [openPlayerInfo],
+  );
+
+  const openChatPlayer = useCallback(
+    (line: ShoutEvent) => {
+      openPlayerInfo({
+        name: line.name,
+        avatar: line.avatar,
+      });
+    },
+    [openPlayerInfo],
+  );
 
   const adminSetOutcome = async (
     userId: string,
@@ -876,7 +994,16 @@ export default function GamePage() {
     <div className="app-shell play-screen relative h-dvh overflow-y-auto overflow-x-hidden">
       <div className="app-shell-deco" aria-hidden />
       <ShoutMarquee items={shouts} />
-      <SaintOverlay item={saintItem} />
+      <SaintOverlay
+        item={saintItem}
+        onDismiss={() => {
+          if (saintTimerRef.current != null) {
+            window.clearTimeout(saintTimerRef.current);
+            saintTimerRef.current = null;
+          }
+          setSaintItem(null);
+        }}
+      />
       <div className="relative z-[1] mx-auto flex w-full max-w-md flex-col px-3 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))]">
         {/* ===== ZONE 1: Hồ sơ & số dư (per-user) ===== */}
         <header className="game-task flex flex-col gap-2 px-2.5 py-2.5">
@@ -901,6 +1028,14 @@ export default function GamePage() {
             </div>
             <button
               type="button"
+              onClick={() => setSheet("rules")}
+              className="app-btn-ghost shrink-0 px-2 py-1 text-[10px]"
+              title="Luật chơi"
+            >
+              Luật
+            </button>
+            <button
+              type="button"
               onClick={toggleMute}
               className="app-btn-ghost shrink-0 px-2 py-1 text-[10px]"
               title={muted ? "Bật tiếng" : "Tắt tiếng"}
@@ -908,6 +1043,23 @@ export default function GamePage() {
               {muted ? "Tắt" : "Âm"}
             </button>
           </div>
+          {!!(getToken() && getStoredUser() && !sessionAuthed) && (
+            <div className="mb-2 flex items-center justify-between gap-2 rounded-xl bg-rose-500/15 px-2.5 py-2 ring-1 ring-rose-400/40">
+              <p className="text-[11px] font-semibold text-rose-100">
+                Phiên đăng nhập hết hạn — vào lại để chat, nạp xu và lưu lịch sử cược.
+              </p>
+              <button
+                type="button"
+                className="shrink-0 rounded-full bg-rose-500 px-2.5 py-1 text-[10px] font-bold text-white"
+                onClick={() => {
+                  clearSession();
+                  nav("/login");
+                }}
+              >
+                Đăng nhập
+              </button>
+            </div>
+          )}
           <div className="relative" ref={renameRef}>
             <IdentityBadge
               user={me}
@@ -926,6 +1078,17 @@ export default function GamePage() {
                     }
               }
             />
+            {me && !me.isVip && (
+              <p className="mt-1 px-0.5 text-[10px] font-semibold tabular-nums text-amber-200/90">
+                VIP {(me.roundsPlayed ?? 0).toLocaleString("vi-VN")}/
+                {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván
+              </p>
+            )}
+            {me?.isVip && (
+              <p className="mt-1 px-0.5 text-[10px] font-extrabold text-amber-300">
+                VIP
+              </p>
+            )}
             <p
               className="mt-1 px-0.5 text-[10px] font-semibold tabular-nums text-[var(--play-muted)]"
               title="Thời gian chơi (chỉ đếm khi tab đang mở)"
@@ -1212,6 +1375,25 @@ export default function GamePage() {
           onSendSlang={(id) => sendChat({ id })}
           onSendText={(text) => sendChat({ text })}
           onAvatarClick={openChatPlayer}
+          onReport={async (line) => {
+            if (!sessionAuthed) {
+              showToast("Đăng nhập để báo cáo");
+              return;
+            }
+            try {
+              await api("/api/chat/report", {
+                method: "POST",
+                body: JSON.stringify({
+                  text: line.text,
+                  targetName: line.name,
+                  mode: line.mode,
+                }),
+              });
+              showToast("Đã gửi báo cáo");
+            } catch (e) {
+              showToast(e instanceof Error ? e.message : "Lỗi báo cáo");
+            }
+          }}
         />
 
         {/* ===== ZONE 7: Cao thủ — gọn, đủ thông tin ===== */}
@@ -1499,6 +1681,7 @@ export default function GamePage() {
         }
         onClose={() => setSheet(null)}
       />
+      <RulesSheet open={sheet === "rules"} onClose={() => setSheet(null)} />
       <AvatarPickerSheet
         open={sheet === "avatar"}
         current={me ? me.avatar : guestAvatar}

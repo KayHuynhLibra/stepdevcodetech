@@ -43,6 +43,14 @@ export interface UserRecord {
   vipGranted?: boolean;
   /** Legacy — migrate sang vipGranted khi load */
   isVip?: boolean;
+  /** Tài khoản bị khóa — không login / join */
+  banned?: boolean;
+  banReason?: string;
+  bannedAt?: number;
+  /** Chat mute đến timestamp; 0/undefined = không mute. Number.MAX_SAFE_INTEGER ≈ vĩnh viễn */
+  mutedUntil?: number;
+  /** Mã khôi phục mật khẩu (hiển thị 1 lần khi tạo / reset) */
+  recoveryCode?: string;
 }
 
 export type UserOutcomeMode = "normal" | "win" | "lose";
@@ -64,7 +72,17 @@ export interface PublicUser {
   vipGranted: boolean;
   /** vipGranted || roundsPlayed >= VIP_ROUNDS_REQUIRED */
   isVip: boolean;
+  banned: boolean;
+  banReason?: string;
+  /** ms còn mute; 0 = không mute */
+  mutedUntil: number;
+  muted: boolean;
+  /** Chỉ trả khi vừa tạo / vừa hiện recovery — không lộ hash */
+  recoveryCode?: string;
 }
+
+/** Trần xu mang từ guest → account */
+export const GUEST_MERGE_BALANCE_CAP = 500_000;
 
 interface UsersFile {
   version: 1;
@@ -86,9 +104,22 @@ const SAVE_DEBOUNCE_MS = 300;
 const TOKEN_TTL_MS = Number(process.env.TOKEN_TTL_MS) || 7 * 24 * 60 * 60 * 1000;
 const IS_PROD = process.env.NODE_ENV === "production";
 
+/** Fallback chỉ dùng khi seed local — production không tạo bằng các giá trị này. */
+const STAFF_SEED_FALLBACKS: Record<string, string> = {
+  mainadmin: "mainadmin123",
+  admin: "admin123",
+};
+
 interface TokenEntry {
   userId: string;
   exp: number;
+}
+
+function passwordMatches(user: UserRecord, password: string): boolean {
+  const hash = hashPassword(password, user.salt);
+  const a = Buffer.from(hash, "hex");
+  const b = Buffer.from(user.passwordHash, "hex");
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 function todayKey(d = new Date()): string {
@@ -128,12 +159,24 @@ function computeIsVip(u: UserRecord): boolean {
   return !!u.vipGranted || rounds >= VIP_ROUNDS_REQUIRED;
 }
 
-function toPublic(u: UserRecord): PublicUser {
+function makeRecoveryCode(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = randomBytes(8);
+  let out = "";
+  for (let i = 0; i < 8; i++) {
+    out += alphabet[bytes[i]! % alphabet.length];
+  }
+  return out;
+}
+
+function toPublic(u: UserRecord, opts?: { includeRecovery?: boolean }): PublicUser {
   ensureDay(u);
   u.avatar = normalizeAvatar(u.avatar);
   const roundsPlayed = Math.max(0, Math.floor(u.roundsPlayed ?? 0));
   const vipGranted = !!u.vipGranted;
-  return {
+  const mutedUntil = Math.max(0, Math.floor(u.mutedUntil ?? 0));
+  const muted = mutedUntil > Date.now();
+  const pub: PublicUser = {
     id: u.id,
     code: u.code,
     username: u.username,
@@ -149,7 +192,15 @@ function toPublic(u: UserRecord): PublicUser {
     roundsPlayed,
     vipGranted,
     isVip: computeIsVip(u),
+    banned: !!u.banned,
+    banReason: u.banReason,
+    mutedUntil,
+    muted,
   };
+  if (opts?.includeRecovery && u.recoveryCode) {
+    pub.recoveryCode = u.recoveryCode;
+  }
+  return pub;
 }
 
 export function isUserOutcomeMode(v: unknown): v is UserOutcomeMode {
@@ -202,18 +253,48 @@ export class AuthStore {
     this.loadTokensFromDisk();
     this.ensureUserCodes();
     this.ensureSeedAccounts();
-    this.ensureMainAdminMustChangePassword();
+    this.ensureStaffDefaultPasswordGuard();
+    this.ensureRecoveryCodes();
     this.saveNow();
   }
 
-  /** Mainadmin seed / chưa đổi MK → bắt đổi lần đầu. */
-  private ensureMainAdminMustChangePassword() {
+  private ensureRecoveryCodes() {
+    let n = 0;
     for (const u of this.byId.values()) {
-      if (u.role !== "mainadmin") continue;
-      if (u.mustChangePassword === undefined) {
-        u.mustChangePassword = true;
+      if (!u.recoveryCode) {
+        u.recoveryCode = makeRecoveryCode();
+        n += 1;
       }
     }
+    if (n) console.log(`[auth] Assigned recovery codes to ${n} users`);
+  }
+
+  /**
+   * Staff còn mật khẩu seed mặc định (hoặc mainadmin chưa từng set flag)
+   * → bắt đổi MK. Production không tạo seed bằng fallback.
+   */
+  private ensureStaffDefaultPasswordGuard() {
+    let changed = false;
+    for (const u of this.byId.values()) {
+      if (u.role === "mainadmin" && u.mustChangePassword === undefined) {
+        u.mustChangePassword = true;
+        changed = true;
+      }
+      if (!isStaffRole(u.role)) continue;
+      const fallback = STAFF_SEED_FALLBACKS[u.username.toLowerCase()];
+      if (!fallback) continue;
+      if (!passwordMatches(u, fallback)) continue;
+      if (!u.mustChangePassword) {
+        u.mustChangePassword = true;
+        changed = true;
+      }
+      if (IS_PROD) {
+        console.warn(
+          `[auth] ${u.username} vẫn dùng mật khẩu seed mặc định — bắt đổi MK`,
+        );
+      }
+    }
+    if (changed) this.scheduleSave();
   }
 
   private allocateCode(): string {
@@ -298,13 +379,13 @@ export class AuthStore {
         {
           user: "mainadmin",
           env: "SEED_MAINADMIN_PASSWORD",
-          fallback: "mainadmin123",
+          fallback: STAFF_SEED_FALLBACKS.mainadmin!,
           role: "mainadmin",
         },
         {
           user: "admin",
           env: "SEED_ADMIN_PASSWORD",
-          fallback: "admin123",
+          fallback: STAFF_SEED_FALLBACKS.admin!,
           role: "admin",
         },
         {
@@ -321,6 +402,12 @@ export class AuthStore {
       if (!password) {
         console.warn(
           `[auth] Skip seed ${s.user}: set ${s.env} in production`,
+        );
+        continue;
+      }
+      if (IS_PROD && STAFF_SEED_FALLBACKS[s.user] === password) {
+        console.warn(
+          `[auth] Skip seed ${s.user}: ${s.env} trùng mật khẩu mặc định — đặt mật khẩu mạnh`,
         );
         continue;
       }
@@ -350,7 +437,7 @@ export class AuthStore {
       weekKey: weekKey(),
       createdAt: Date.now(),
       roundsPlayed: 0,
-      mustChangePassword: role === "mainadmin",
+      mustChangePassword: isStaffRole(role),
     };
     this.indexUser(user);
   }
@@ -462,11 +549,12 @@ export class AuthStore {
       weekKey: weekKey(),
       createdAt: Date.now(),
       roundsPlayed: 0,
+      recoveryCode: makeRecoveryCode(),
     };
     this.indexUser(user);
     this.scheduleSave();
     const token = this.issueToken(user.id);
-    return { ok: true, user: toPublic(user), token };
+    return { ok: true, user: toPublic(user, { includeRecovery: true }), token };
   }
 
   login(
@@ -475,11 +563,23 @@ export class AuthStore {
   ): { ok: true; user: PublicUser; token: string } | { ok: false; reason: string } {
     const user = this.users.get(username.trim().toLowerCase());
     if (!user) return { ok: false, reason: "Sai tài khoản hoặc mật khẩu" };
-    const hash = hashPassword(password, user.salt);
-    const a = Buffer.from(hash, "hex");
-    const b = Buffer.from(user.passwordHash, "hex");
-    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    if (!passwordMatches(user, password)) {
       return { ok: false, reason: "Sai tài khoản hoặc mật khẩu" };
+    }
+    if (user.banned) {
+      return {
+        ok: false,
+        reason: user.banReason
+          ? `Tài khoản bị khóa: ${user.banReason}`
+          : "Tài khoản bị khóa",
+      };
+    }
+    if (
+      isStaffRole(user.role) &&
+      STAFF_SEED_FALLBACKS[user.username.toLowerCase()] === password
+    ) {
+      user.mustChangePassword = true;
+      this.scheduleSave();
     }
     ensureDay(user);
     return { ok: true, user: toPublic(user), token: this.issueToken(user.id) };
@@ -506,7 +606,188 @@ export class AuthStore {
     }
     const user = this.byId.get(entry.userId);
     if (!user) return null;
+    if (user.banned) {
+      this.tokens.delete(token);
+      this.scheduleTokenSave();
+      return null;
+    }
     return toPublic(user);
+  }
+
+  /** Xem userId của token (kể cả khi banned) — không thu hồi. */
+  peekTokenUserId(token?: string | null): string | null {
+    if (!token) return null;
+    const entry = this.tokens.get(token);
+    if (!entry) return null;
+    if (Date.now() > entry.exp) return null;
+    return entry.userId;
+  }
+
+  isBanned(userId: string): boolean {
+    return !!this.byId.get(userId)?.banned;
+  }
+
+  isMuted(userId: string): boolean {
+    const u = this.byId.get(userId);
+    if (!u) return false;
+    return (u.mutedUntil ?? 0) > Date.now();
+  }
+
+  getMuteRemainingMs(userId: string): number {
+    const u = this.byId.get(userId);
+    if (!u) return 0;
+    return Math.max(0, (u.mutedUntil ?? 0) - Date.now());
+  }
+
+  setBanned(
+    userId: string,
+    banned: boolean,
+    reason?: string,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    if (user.role === "mainadmin") {
+      return { ok: false, reason: "Không khóa mainadmin" };
+    }
+    user.banned = !!banned;
+    if (banned) {
+      user.banReason = String(reason ?? "").trim().slice(0, 120) || "Vi phạm";
+      user.bannedAt = Date.now();
+      for (const [tok, entry] of this.tokens) {
+        if (entry.userId === userId) this.tokens.delete(tok);
+      }
+      this.scheduleTokenSave();
+    } else {
+      delete user.banReason;
+      delete user.bannedAt;
+    }
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  setMuted(
+    userId: string,
+    mutedUntil: number,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    const until = Math.max(0, Math.floor(mutedUntil));
+    if (until <= Date.now()) {
+      delete user.mutedUntil;
+    } else {
+      user.mutedUntil = until;
+    }
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  /** Quên MK: username + recovery code → đặt MK mới. */
+  recoverPassword(
+    username: string,
+    recoveryCode: string,
+    nextPassword: string,
+  ): { ok: true } | { ok: false; reason: string } {
+    const user = this.users.get(username.trim().toLowerCase());
+    if (!user) return { ok: false, reason: "Sai tài khoản hoặc mã khôi phục" };
+    if (user.banned) return { ok: false, reason: "Tài khoản bị khóa" };
+    const code = String(recoveryCode ?? "")
+      .trim()
+      .toUpperCase();
+    if (!user.recoveryCode || user.recoveryCode !== code) {
+      return { ok: false, reason: "Sai tài khoản hoặc mã khôi phục" };
+    }
+    if (nextPassword.length < 6) {
+      return { ok: false, reason: "Mật khẩu mới tối thiểu 6 ký tự" };
+    }
+    user.salt = randomBytes(16).toString("hex");
+    user.passwordHash = hashPassword(nextPassword, user.salt);
+    user.mustChangePassword = false;
+    user.recoveryCode = makeRecoveryCode();
+    this.scheduleSave();
+    for (const [tok, entry] of this.tokens) {
+      if (entry.userId === user.id) this.tokens.delete(tok);
+    }
+    this.scheduleTokenSave();
+    return { ok: true };
+  }
+
+  /** Admin đặt MK tạm + bắt đổi; trả recoveryCode mới. */
+  adminResetPassword(
+    userId: string,
+    nextPassword: string,
+  ):
+    | { ok: true; user: PublicUser; tempPassword: string }
+    | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    const pw =
+      String(nextPassword ?? "").trim() ||
+      `Tmp${randomBytes(3).toString("hex")}`;
+    if (pw.length < 6) {
+      return { ok: false, reason: "Mật khẩu tối thiểu 6 ký tự" };
+    }
+    user.salt = randomBytes(16).toString("hex");
+    user.passwordHash = hashPassword(pw, user.salt);
+    user.mustChangePassword = true;
+    user.recoveryCode = makeRecoveryCode();
+    this.scheduleSave();
+    for (const [tok, entry] of this.tokens) {
+      if (entry.userId === userId) this.tokens.delete(tok);
+    }
+    this.scheduleTokenSave();
+    return {
+      ok: true,
+      user: toPublic(user, { includeRecovery: true }),
+      tempPassword: pw,
+    };
+  }
+
+  /** Hiện lại mã khôi phục (user đã login). */
+  revealRecoveryCode(
+    userId: string,
+  ): { ok: true; recoveryCode: string } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    if (!user.recoveryCode) {
+      user.recoveryCode = makeRecoveryCode();
+      this.scheduleSave();
+    }
+    return { ok: true, recoveryCode: user.recoveryCode };
+  }
+
+  /**
+   * Mang xu/avatar từ phiên khách vào account.
+   * Register: set balance (cap). Login: chỉ nâng nếu guestBalance > balance hiện tại.
+   */
+  mergeGuestIntoUser(
+    userId: string,
+    opts: { balance?: number; avatar?: string },
+  ): { ok: true; user: PublicUser; mergedBalance: number } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    let mergedBalance = user.balance;
+    if (opts.balance != null && Number.isFinite(opts.balance)) {
+      const guestBal = Math.max(
+        0,
+        Math.min(GUEST_MERGE_BALANCE_CAP, Math.floor(opts.balance)),
+      );
+      if (guestBal > user.balance) {
+        user.balance = guestBal;
+        mergedBalance = guestBal;
+      }
+    }
+    if (opts.avatar && isAllowedAvatar(opts.avatar)) {
+      user.avatar = opts.avatar;
+    }
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user), mergedBalance };
+  }
+
+  private revokeAllTokens(userId: string) {
+    for (const [tok, entry] of this.tokens) {
+      if (entry.userId === userId) this.tokens.delete(tok);
+    }
+    this.scheduleTokenSave();
   }
 
   revokeToken(token?: string | null): boolean {
@@ -620,11 +901,7 @@ export class AuthStore {
     user.passwordHash = hashPassword(nextPassword, user.salt);
     user.mustChangePassword = false;
     this.scheduleSave();
-    // Thu hồi mọi token của user
-    for (const [tok, entry] of this.tokens) {
-      if (entry.userId === userId) this.tokens.delete(tok);
-    }
-    this.scheduleTokenSave();
+    this.revokeAllTokens(userId);
     return { ok: true };
   }
 
@@ -632,8 +909,30 @@ export class AuthStore {
     return this.byId.get(id);
   }
 
+  getByCode(code: string): UserRecord | undefined {
+    return this.byCode.get(String(code ?? "").trim().toUpperCase());
+  }
+
+  getByUsername(username: string): UserRecord | undefined {
+    return this.users.get(String(username ?? "").trim().toLowerCase());
+  }
+
+  /** Tìm user theo username / code / id (partial, không phân biệt hoa thường). */
+  searchUsers(query: string, limit = 30): PublicUser[] {
+    const q = String(query ?? "").trim().toLowerCase();
+    if (!q) return [];
+    const out: PublicUser[] = [];
+    for (const u of this.byId.values()) {
+      const hay = `${u.username} ${u.code} ${u.id}`.toLowerCase();
+      if (!hay.includes(q)) continue;
+      out.push(toPublic(u));
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
   listUsers(): PublicUser[] {
-    return [...this.byId.values()].map(toPublic);
+    return [...this.byId.values()].map((u) => toPublic(u));
   }
 
   getAccountStats() {

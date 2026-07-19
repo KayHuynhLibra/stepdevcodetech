@@ -33,6 +33,7 @@ interface ShoutBarProps {
   /** Hiện nút đăng nhập lại khi phiên chat chết */
   needRelogin?: boolean;
   onRelogin?: () => void;
+  onReport?: (line: ShoutEvent) => void;
 }
 
 export function ShoutBar({
@@ -49,6 +50,7 @@ export function ShoutBar({
   onAvatarClick,
   needRelogin,
   onRelogin,
+  onReport,
 }: ShoutBarProps) {
   const [text, setText] = useState("");
   const [badgeVisible, setBadgeVisible] = useState(readVipBadgeVisible);
@@ -223,6 +225,16 @@ export function ShoutBar({
                 <span className="mx-1 text-[var(--play-muted)]">·</span>
                 {m.text}
               </p>
+              {onReport && chatLive && (
+                <button
+                  type="button"
+                  title="Báo cáo"
+                  className="shrink-0 px-1 text-[9px] font-bold text-rose-700/80"
+                  onClick={() => onReport(m)}
+                >
+                  !
+                </button>
+              )}
             </div>
           ))
         )}

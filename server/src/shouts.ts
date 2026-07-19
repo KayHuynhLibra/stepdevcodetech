@@ -66,3 +66,23 @@ export function sanitizeChatText(raw: string): string | null {
   if (!t) return null;
   return t;
 }
+
+const BLOCKED_WORDS = [
+  "địt",
+  "dit",
+  "đụ",
+  "lồn",
+  "lon",
+  "cặc",
+  "cac",
+  "đéo",
+  "fuck",
+  "shit",
+  "bitch",
+];
+
+/** Bộ lọc từ thô cơ bản (server). */
+export function containsBlockedWords(text: string): boolean {
+  const lower = String(text ?? "").toLowerCase();
+  return BLOCKED_WORDS.some((w) => lower.includes(w));
+}

@@ -104,6 +104,26 @@ export class BetStore {
     return this.entries.slice(0, Math.min(limit, 100));
   }
 
+  /** Thống kê cược 24h theo userId. */
+  getUserStats24h(userId: string): {
+    stake24h: number;
+    bets24h: number;
+    profit24h: number;
+  } {
+    const since = Date.now() - 24 * 60 * 60 * 1000;
+    let stake24h = 0;
+    let bets24h = 0;
+    let profit24h = 0;
+    for (const e of this.entries) {
+      if (e.userId !== userId) continue;
+      if (e.at < since) continue;
+      stake24h += e.amount;
+      bets24h += 1;
+      profit24h += e.profit;
+    }
+    return { stake24h, bets24h, profit24h };
+  }
+
   /** Tổng lưu lượng cược đã ghi (toàn bộ bản ghi trong store). */
   getTrafficStats() {
     let stakeTotal = 0;

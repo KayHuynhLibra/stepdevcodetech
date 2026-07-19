@@ -916,6 +916,87 @@ input {
   border-color: rgba(232, 176, 80, 0.35);
 }
 
+/* Hero popup thông tin người chơi (click avatar) */
+.player-info-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.15rem;
+  padding: 1.15rem 1rem 1.25rem;
+  text-align: center;
+  border: 1px solid rgba(232, 176, 80, 0.42);
+  background: linear-gradient(
+    165deg,
+    rgba(255, 248, 232, 0.22) 0%,
+    rgba(90, 52, 24, 0.55) 42%,
+    rgba(42, 24, 10, 0.72) 100%
+  );
+  box-shadow:
+    0 0 0 1px rgba(255, 220, 150, 0.12) inset,
+    0 10px 28px rgba(20, 10, 4, 0.35);
+}
+
+.player-info-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 80% 55% at 50% -10%,
+      rgba(255, 200, 100, 0.28),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 60% 40% at 85% 90%,
+      rgba(61, 184, 160, 0.12),
+      transparent 65%
+    );
+}
+
+.player-info-hero--vip {
+  border-color: rgba(255, 200, 80, 0.72);
+  background: linear-gradient(
+    165deg,
+    rgba(255, 230, 170, 0.35) 0%,
+    rgba(120, 70, 20, 0.62) 40%,
+    rgba(58, 34, 16, 0.85) 100%
+  );
+  box-shadow:
+    0 0 0 1px rgba(255, 220, 140, 0.28) inset,
+    0 0 24px rgba(255, 176, 64, 0.22),
+    0 12px 32px rgba(20, 10, 4, 0.4);
+}
+
+.player-info-hero__avatar {
+  position: relative;
+  z-index: 1;
+  height: 5.25rem;
+  width: 5.25rem;
+  border-radius: 999px;
+  object-fit: cover;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  border: 3px solid rgba(232, 176, 80, 0.55);
+}
+
+.player-info-hero--vip .player-info-hero__avatar {
+  border-color: rgba(255, 214, 120, 0.95);
+  box-shadow:
+    0 0 0 3px rgba(255, 200, 80, 0.35),
+    0 8px 22px rgba(180, 110, 20, 0.45);
+}
+
+.player-info-hero__body {
+  position: relative;
+  z-index: 1;
+}
+
+.player-info-hero .identity-chip--code,
+.player-info-hero .identity-chip--code-vip {
+  margin-top: 0.55rem;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.75rem;
+}
+
 @keyframes flip-in {
   from {
     transform: rotateY(90deg);

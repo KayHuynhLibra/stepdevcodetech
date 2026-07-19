@@ -19,7 +19,89 @@ import { AppShell } from "../components/AppShell";
 import { IdentityBadge } from "../components/IdentityBadge";
 import { uploadAvatarFromFile } from "../uploadAvatar";
 
-type TabId = "overview" | "users" | "vault" | "traffic" | "coupons" | "inter";
+type TabId =
+  | "overview"
+  | "users"
+  | "vault"
+  | "traffic"
+  | "coupons"
+  | "inter"
+  | "mod"
+  | "ips"
+  | "tools";
+
+interface IpRow {
+  ip: string;
+  kind: string;
+  guestCode?: string;
+  online: boolean;
+  lastSeen: number;
+  blocked: boolean;
+  blockedUntil: number;
+  joinCount?: number;
+  clusterFlag?: boolean;
+  stake24h?: number;
+  bets24h?: number;
+  profit24h?: number;
+  geo?: {
+    local?: boolean;
+    country?: string;
+    regionName?: string;
+    city?: string;
+    isp?: string;
+    org?: string;
+    as?: string;
+    proxy?: boolean;
+    hosting?: boolean;
+  } | null;
+  seenUsers?: {
+    userId: string;
+    username: string;
+    firstAt: number;
+    lastAt: number;
+    joins: number;
+  }[];
+  seenGuests?: {
+    code: string;
+    firstAt: number;
+    lastAt: number;
+    joins: number;
+  }[];
+  sessions: {
+    kind: string;
+    name?: string;
+    guestCode?: string;
+    username?: string;
+  }[];
+  users: {
+    id: string;
+    code: string;
+    username: string;
+    role: string;
+    balance: number;
+    isVip: boolean;
+    banned: boolean;
+    muted: boolean;
+    roundsPlayed: number;
+    stake24h?: number;
+    bets24h?: number;
+    profit24h?: number;
+  }[];
+}
+
+function formatIpGeo(geo: IpRow["geo"]): string {
+  if (!geo) return "—";
+  if (geo.local) return "Local / private";
+  const place = [geo.city, geo.regionName, geo.country].filter(Boolean).join(", ");
+  const isp = geo.isp || geo.org || "";
+  const flags = [
+    geo.proxy ? "proxy" : "",
+    geo.hosting ? "hosting" : "",
+  ]
+    .filter(Boolean)
+    .join("/");
+  return [place || "—", isp, flags].filter(Boolean).join(" · ");
+}
 type ForceCardMode = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8";
 type InterMode =
   | "all"
@@ -193,6 +275,22 @@ interface Overview {
     houseEdgeXu: number;
     interMode?: InterMode;
   };
+  audit?: {
+    id: string;
+    at: number;
+    actorName: string;
+    action: string;
+    targetName?: string;
+    detail?: string;
+  }[];
+  reports?: {
+    id: string;
+    at: number;
+    reporterName: string;
+    targetName: string;
+    text: string;
+    status: "open" | "done";
+  }[];
 }
 
 function cardName(id: number) {
@@ -239,6 +337,43 @@ export default function AdminDashboard() {
   const [couponBusy, setCouponBusy] = useState(false);
   const [codeDrafts, setCodeDrafts] = useState<Record<string, string>>({});
   const [codeBusyId, setCodeBusyId] = useState<string | null>(null);
+  const [ipRows, setIpRows] = useState<IpRow[]>([]);
+  const [ipBusy, setIpBusy] = useState(false);
+  const [userFilter, setUserFilter] = useState("");
+  const [userQuick, setUserQuick] = useState<
+    "all" | "vip" | "banned" | "muted"
+  >("all");
+  const [ipFilter, setIpFilter] = useState("");
+  const [ipQuick, setIpQuick] = useState<
+    "all" | "online" | "cluster" | "blocked"
+  >("all");
+  const [toolsQ, setToolsQ] = useState("");
+  const [toolsBusy, setToolsBusy] = useState(false);
+  const [toolsResult, setToolsResult] = useState<{
+    users: (AuthUser & {
+      stake24h?: number;
+      bets24h?: number;
+      profit24h?: number;
+    })[];
+    ips: IpRow[];
+    recentBets: {
+      id: string;
+      at: number;
+      round: number;
+      cardId: number;
+      amount: number;
+      result: string;
+      profit: number;
+    }[];
+    counts: {
+      users: number;
+      ips: number;
+      vip: number;
+      banned: number;
+      muted: number;
+      clusters: number;
+    };
+  } | null>(null);
 
   const load = useCallback(async () => {
     const overview = await api<Overview>("/api/admin/overview");
@@ -246,6 +381,16 @@ export default function AdminDashboard() {
     setBotCount(overview.stats.botTarget);
     if (overview.vault) {
       setVaultSet(String(overview.vault.balance));
+    }
+    if (overview.me.role === "mainadmin") {
+      try {
+        const ips = await api<{ ok: true; rows: IpRow[] }>(
+          "/api/mainadmin/ips",
+        );
+        setIpRows(ips.rows);
+      } catch {
+        /* ignore */
+      }
     }
   }, []);
 
@@ -414,6 +559,147 @@ export default function AdminDashboard() {
     }
   };
 
+  const setUserBan = async (userId: string, banned: boolean) => {
+    try {
+      const reason = banned
+        ? window.prompt("Lý do khóa (tuỳ chọn)", "Vi phạm") ?? "Vi phạm"
+        : "";
+      await api("/api/admin/user-ban", {
+        method: "POST",
+        body: JSON.stringify({ userId, banned, reason }),
+      });
+      setMsg(banned ? "Đã khóa tài khoản" : "Đã mở khóa");
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi");
+    }
+  };
+
+  const setUserMute = async (
+    userId: string,
+    opts: { minutes?: number; permanent?: boolean; off?: boolean },
+  ) => {
+    try {
+      await api("/api/admin/user-mute", {
+        method: "POST",
+        body: JSON.stringify({
+          userId,
+          minutes: opts.off ? 0 : opts.minutes ?? 0,
+          permanent: !!opts.permanent,
+        }),
+      });
+      setMsg(
+        opts.off
+          ? "Đã unmute"
+          : opts.permanent
+            ? "Mute vĩnh viễn"
+            : `Mute ${opts.minutes} phút`,
+      );
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi");
+    }
+  };
+
+  const resetUserPassword = async (userId: string) => {
+    try {
+      const r = await api<{
+        ok: true;
+        tempPassword: string;
+        recoveryCode?: string;
+      }>("/api/admin/user-reset-password", {
+        method: "POST",
+        body: JSON.stringify({ userId }),
+      });
+      setMsg(
+        `MK tạm: ${r.tempPassword}` +
+          (r.recoveryCode ? ` · recovery: ${r.recoveryCode}` : ""),
+      );
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi");
+    }
+  };
+
+  const markReport = async (id: string, status: "open" | "done") => {
+    try {
+      await api("/api/admin/reports/status", {
+        method: "POST",
+        body: JSON.stringify({ id, status }),
+      });
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi");
+    }
+  };
+
+  const runIpAction = async (
+    path: string,
+    body: Record<string, unknown>,
+    okMsg: string,
+  ) => {
+    setIpBusy(true);
+    try {
+      const r = await api<{ ok: true; rows?: IpRow[] }>(path, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      if (r.rows) setIpRows(r.rows);
+      setMsg(okMsg);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi IP");
+    } finally {
+      setIpBusy(false);
+    }
+  };
+
+  const runLookup = async (q?: string) => {
+    const query = (q ?? toolsQ).trim();
+    if (!query) {
+      setMsg("Nhập username / ID / IP / guest");
+      return;
+    }
+    setToolsBusy(true);
+    try {
+      const r = await api<{
+        ok: true;
+        users: (AuthUser & {
+          stake24h?: number;
+          bets24h?: number;
+          profit24h?: number;
+        })[];
+        ips: IpRow[];
+        recentBets: {
+          id: string;
+          at: number;
+          round: number;
+          cardId: number;
+          amount: number;
+          result: string;
+          profit: number;
+        }[];
+        counts: {
+          users: number;
+          ips: number;
+          vip: number;
+          banned: number;
+          muted: number;
+          clusters: number;
+        };
+      }>(`/api/mainadmin/lookup?q=${encodeURIComponent(query)}`);
+      setToolsResult(r);
+      setToolsQ(query);
+      setMsg(
+        `Tìm thấy ${r.counts.users} user · ${r.counts.ips} IP` +
+          (r.counts.clusters ? ` · ${r.counts.clusters} cụm` : ""),
+      );
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi tra cứu");
+    } finally {
+      setToolsBusy(false);
+    }
+  };
+
   const createCoupon = async (e: FormEvent) => {
     e.preventDefault();
     setCouponBusy(true);
@@ -575,12 +861,46 @@ export default function AdminDashboard() {
   const main = isMainAdmin(me);
   const tabs: { id: TabId; label: string; show: boolean }[] = [
     { id: "overview", label: "Tổng quan", show: true },
+    { id: "tools", label: "Tra cứu", show: main },
     { id: "traffic", label: "Lưu lượng", show: main },
     { id: "inter", label: "Inter", show: main },
+    { id: "ips", label: "IP", show: main },
     { id: "users", label: "User & Bot", show: true },
+    { id: "mod", label: "Mod", show: true },
     { id: "coupons", label: "Coupon ẩn", show: true },
     { id: "vault", label: "Kho xu", show: main },
   ];
+
+  const filteredUsers = data.users.filter((u) => {
+    if (userQuick === "vip" && !u.isVip) return false;
+    if (userQuick === "banned" && !u.banned) return false;
+    if (userQuick === "muted" && !u.muted) return false;
+    const q = userFilter.trim().toLowerCase();
+    if (!q) return true;
+    return `${u.username} ${u.code} ${u.id} ${u.role}`
+      .toLowerCase()
+      .includes(q);
+  });
+
+  const filteredIps = ipRows.filter((row) => {
+    if (ipQuick === "online" && !row.online) return false;
+    if (ipQuick === "cluster" && !row.clusterFlag) return false;
+    if (ipQuick === "blocked" && !row.blocked) return false;
+    const q = ipFilter.trim().toLowerCase();
+    if (!q) return true;
+    const blob = [
+      row.ip,
+      row.guestCode,
+      row.kind,
+      formatIpGeo(row.geo),
+      ...(row.users ?? []).map((u) => `${u.username} ${u.code}`),
+      ...(row.seenUsers ?? []).map((s) => s.username),
+      ...(row.seenGuests ?? []).map((s) => s.code),
+    ]
+      .join(" ")
+      .toLowerCase();
+    return blob.includes(q);
+  });
 
   return (
     <AppShell maxWidth="lg">
@@ -601,7 +921,7 @@ export default function AdminDashboard() {
         </button>
       </header>
 
-      <nav className="mt-4 flex gap-1.5 overflow-x-auto">
+      <nav className="mt-4 flex flex-wrap gap-1.5 sm:flex-nowrap sm:overflow-x-auto">
         {tabs
           .filter((t) => t.show)
           .map((t) => (
@@ -609,7 +929,7 @@ export default function AdminDashboard() {
               key={t.id}
               type="button"
               onClick={() => setTab(t.id)}
-              className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold transition ${
+              className={`min-h-9 shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold transition ${
                 tab === t.id
                   ? "bg-[var(--wood-deep)] text-white shadow-sm"
                   : "bg-white/80 text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
@@ -677,6 +997,232 @@ export default function AdminDashboard() {
         <p className="mt-3 text-center text-xs font-semibold text-[var(--wood-deep)]">
           {msg}
         </p>
+      )}
+
+      {tab === "tools" && main && (
+        <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+          <div>
+            <p className="play-heading text-sm">Tra cứu nhanh</p>
+            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+              Username · ID · IP · guest code — kèm cược 24h & IP liên quan
+            </p>
+          </div>
+          <form
+            className="flex flex-wrap gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void runLookup();
+            }}
+          >
+            <input
+              value={toolsQ}
+              onChange={(e) => setToolsQ(e.target.value)}
+              placeholder="vd: demo · 12345 · 1.2.3.4 · GABC1234"
+              className="app-input flex-1 !py-2 text-sm"
+              autoFocus
+            />
+            <button
+              type="submit"
+              disabled={toolsBusy || !toolsQ.trim()}
+              className="rounded-xl bg-[var(--wood-deep)] px-4 text-xs font-bold text-white disabled:opacity-45"
+            >
+              {toolsBusy ? "…" : "Tra"}
+            </button>
+          </form>
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                ["vip", "VIP đang có"],
+                ["banned", "Đang ban"],
+                ["muted", "Đang mute"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/20"
+                onClick={() => {
+                  setTab("users");
+                  setUserQuick(key);
+                  setUserFilter("");
+                  setMsg(`Đã mở User & Bot · lọc ${label}`);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/20"
+              onClick={() => {
+                setTab("ips");
+                setIpQuick("cluster");
+                setIpFilter("");
+                setMsg("Đã mở IP · lọc cụm");
+              }}
+            >
+              Cụm IP
+            </button>
+            <button
+              type="button"
+              className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/20"
+              onClick={() => {
+                setTab("ips");
+                setIpQuick("online");
+                setMsg("Đã mở IP · online");
+              }}
+            >
+              IP online
+            </button>
+            <button
+              type="button"
+              className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/20"
+              onClick={() => {
+                setTab("ips");
+                setIpQuick("blocked");
+                setMsg("Đã mở IP · blocked");
+              }}
+            >
+              IP blocked
+            </button>
+          </div>
+
+          {toolsResult && (
+            <>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {[
+                  ["User", toolsResult.counts.users],
+                  ["IP", toolsResult.counts.ips],
+                  ["VIP", toolsResult.counts.vip],
+                  ["Ban", toolsResult.counts.banned],
+                  ["Mute", toolsResult.counts.muted],
+                  ["Cụm", toolsResult.counts.clusters],
+                ].map(([label, n]) => (
+                  <div
+                    key={String(label)}
+                    className="rounded-lg bg-white/80 px-2.5 py-2 ring-1 ring-[var(--wood-deep)]/10"
+                  >
+                    <p className="text-[10px] text-[var(--play-muted)]">
+                      {label}
+                    </p>
+                    <p className="font-play text-lg font-bold tabular-nums text-[var(--play-ink)]">
+                      {n}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <p className="mb-1 text-xs font-bold text-[var(--play-ink)]">
+                  User khớp
+                </p>
+                <ul className="max-h-48 space-y-1.5 overflow-y-auto">
+                  {toolsResult.users.length === 0 && (
+                    <li className="text-[11px] text-[var(--play-muted)]">
+                      Không có user
+                    </li>
+                  )}
+                  {toolsResult.users.map((u) => (
+                    <li
+                      key={u.id}
+                      className="rounded-lg bg-white/80 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
+                    >
+                      <span className="font-semibold">{u.username}</span> · ID{" "}
+                      {u.code} · {formatXu(u.balance)} xu
+                      {u.isVip ? " · VIP" : ""}
+                      {u.banned ? " · BAN" : ""}
+                      {u.muted ? " · MUTE" : ""} · stake24h{" "}
+                      {formatXu(u.stake24h ?? 0)}
+                      <button
+                        type="button"
+                        className="ml-2 text-[10px] font-bold text-[var(--wood-deep)] underline"
+                        onClick={() => {
+                          setTab("users");
+                          setUserFilter(u.username);
+                          setUserQuick("all");
+                        }}
+                      >
+                        Mở User
+                      </button>
+                      <button
+                        type="button"
+                        className="ml-2 text-[10px] font-bold text-[var(--wood-deep)] underline"
+                        onClick={() => {
+                          setTab("ips");
+                          setIpFilter(u.username);
+                          setIpQuick("all");
+                        }}
+                      >
+                        Mở IP
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <p className="mb-1 text-xs font-bold text-[var(--play-ink)]">
+                  IP khớp / liên quan
+                </p>
+                <ul className="max-h-48 space-y-1.5 overflow-y-auto">
+                  {toolsResult.ips.length === 0 && (
+                    <li className="text-[11px] text-[var(--play-muted)]">
+                      Không có IP
+                    </li>
+                  )}
+                  {toolsResult.ips.map((row) => (
+                    <li
+                      key={row.ip}
+                      className={`rounded-lg px-2 py-1.5 text-[11px] ring-1 ${
+                        row.clusterFlag
+                          ? "bg-amber-50 ring-amber-400/60"
+                          : "bg-white/80 ring-[var(--wood-deep)]/10"
+                      }`}
+                    >
+                      <span className="font-mono font-bold">{row.ip}</span>
+                      {row.online ? " · online" : ""}
+                      {row.clusterFlag ? " · cụm" : ""}
+                      <span className="block text-[10px] text-[var(--play-muted)]">
+                        {formatIpGeo(row.geo)}
+                      </span>
+                      <button
+                        type="button"
+                        className="mt-0.5 text-[10px] font-bold text-[var(--wood-deep)] underline"
+                        onClick={() => {
+                          setTab("ips");
+                          setIpFilter(row.ip);
+                          setIpQuick("all");
+                        }}
+                      >
+                        Mở IP
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {toolsResult.recentBets.length > 0 && (
+                <div>
+                  <p className="mb-1 text-xs font-bold text-[var(--play-ink)]">
+                    Cược gần của user đầu tiên
+                  </p>
+                  <ul className="max-h-40 space-y-1 overflow-y-auto text-[10px]">
+                    {toolsResult.recentBets.map((b) => (
+                      <li
+                        key={b.id}
+                        className="rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/10"
+                      >
+                        Ván #{b.round} · lá {b.cardId} · {formatXu(b.amount)} ·{" "}
+                        {b.result} · {formatXu(b.profit)} ·{" "}
+                        {new Date(b.at).toLocaleString("vi-VN")}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+        </section>
       )}
 
       {tab === "overview" && (
@@ -988,15 +1534,45 @@ export default function AdminDashboard() {
 
           <section className="app-panel mt-4 p-3">
             <p className="play-heading mb-1 text-sm">
-              Chỉnh ID user · Danh sách ({data.users.length})
+              Chỉnh ID user · Danh sách ({filteredUsers.length}/
+              {data.users.length})
             </p>
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              <input
+                value={userFilter}
+                onChange={(e) => setUserFilter(e.target.value)}
+                placeholder="Lọc username / ID…"
+                className="app-input !py-1.5 text-xs sm:!max-w-xs"
+              />
+              {(
+                [
+                  ["all", "Tất cả"],
+                  ["vip", "VIP"],
+                  ["banned", "Ban"],
+                  ["muted", "Mute"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setUserQuick(id)}
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                    userQuick === id
+                      ? "bg-[var(--wood-deep)] text-white"
+                      : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <p className="mb-2 text-[11px] text-[var(--play-muted)]">
               Mỗi user: ô ID + nút <strong>Lưu ID</strong> (3–8 chữ/số, không
               trùng). Mode Lose/Normal/Win khi user có cược. VIP hiện ID nền
               vàng nổi.
             </p>
             <ul className="max-h-80 space-y-2 overflow-y-auto">
-              {data.users.map((u) => {
+              {filteredUsers.map((u) => {
                 const om = u.outcomeMode ?? "normal";
                 const granted = !!u.vipGranted;
                 const rounds = u.roundsPlayed ?? 0;
@@ -1110,6 +1686,42 @@ export default function AdminDashboard() {
                       >
                         {granted ? "VIP admin ✓" : "VIP admin"}
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setUserBan(u.id, !u.banned)}
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                          u.banned
+                            ? "bg-rose-600 text-white"
+                            : "bg-white text-rose-700 ring-1 ring-rose-300/60"
+                        }`}
+                      >
+                        {u.banned ? "Mở khóa" : "Khóa"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          u.muted
+                            ? setUserMute(u.id, { off: true })
+                            : setUserMute(u.id, { minutes: 30 })
+                        }
+                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                      >
+                        {u.muted ? "Unmute" : "Mute 30p"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setUserMute(u.id, { permanent: true })}
+                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                      >
+                        Mute ∞
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => resetUserPassword(u.id)}
+                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                      >
+                        Reset MK
+                      </button>
                     </div>
                   </li>
                 );
@@ -1117,6 +1729,300 @@ export default function AdminDashboard() {
             </ul>
           </section>
         </>
+      )}
+
+      {tab === "mod" && (
+        <>
+          <section className="app-panel mt-4 p-3 sm:p-4">
+            <p className="play-heading text-sm">Audit log</p>
+            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+              Thao tác staff gần đây (Inter, VIP, ban, vault…).
+            </p>
+            <ul className="mt-2 max-h-64 space-y-1.5 overflow-y-auto sm:max-h-80">
+              {(data.audit ?? []).length === 0 && (
+                <li className="text-[11px] text-[var(--play-muted)]">
+                  Chưa có bản ghi
+                </li>
+              )}
+              {(data.audit ?? []).map((a) => (
+                <li
+                  key={a.id}
+                  className="rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
+                >
+                  <span className="font-semibold text-[var(--play-ink)]">
+                    {a.actorName}
+                  </span>{" "}
+                  · {a.action}
+                  {a.targetName ? ` → ${a.targetName}` : ""}
+                  {a.detail ? ` · ${a.detail}` : ""}
+                  <span className="block text-[10px] text-[var(--play-muted)]">
+                    {new Date(a.at).toLocaleString("vi-VN")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+          <section className="app-panel mt-4 p-3 sm:p-4">
+            <p className="play-heading text-sm">Báo cáo chat</p>
+            <ul className="mt-2 max-h-64 space-y-1.5 overflow-y-auto sm:max-h-80">
+              {(data.reports ?? []).length === 0 && (
+                <li className="text-[11px] text-[var(--play-muted)]">
+                  Chưa có báo cáo
+                </li>
+              )}
+              {(data.reports ?? []).map((r) => (
+                <li
+                  key={r.id}
+                  className="rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
+                >
+                  <p>
+                    <span className="font-semibold">{r.reporterName}</span> báo{" "}
+                    <span className="font-semibold">{r.targetName}</span>
+                    {r.status === "done" ? " · xong" : " · mở"}
+                  </p>
+                  <p className="text-[var(--play-ink)]">“{r.text}”</p>
+                  <div className="mt-1 flex gap-1">
+                    <button
+                      type="button"
+                      className="rounded-full bg-[var(--wood-deep)] px-2 py-0.5 text-[10px] font-bold text-white"
+                      onClick={() =>
+                        markReport(
+                          r.id,
+                          r.status === "done" ? "open" : "done",
+                        )
+                      }
+                    >
+                      {r.status === "done" ? "Mở lại" : "Đánh dấu xong"}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </>
+      )}
+
+      {tab === "ips" && main && (
+        <section className="app-panel mt-4 p-3 sm:p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="play-heading text-sm">IP · geo & lịch sử</p>
+              <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+                Geo/ISP · joins · stake 24h · cụm · ({filteredIps.length}/
+                {ipRows.length})
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={ipBusy}
+              className="app-btn-ghost !text-[10px]"
+              onClick={() => void load().then(() => setMsg("Đã làm mới IP"))}
+            >
+              Refresh
+            </button>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <input
+              value={ipFilter}
+              onChange={(e) => setIpFilter(e.target.value)}
+              placeholder="Lọc IP / user / guest / city…"
+              className="app-input !py-1.5 text-xs sm:!max-w-xs"
+            />
+            {(
+              [
+                ["all", "Tất cả"],
+                ["online", "Online"],
+                ["cluster", "Cụm"],
+                ["blocked", "Blocked"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setIpQuick(id)}
+                className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                  ipQuick === id
+                    ? "bg-[var(--wood-deep)] text-white"
+                    : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <ul className="mt-3 max-h-[70vh] space-y-2 overflow-y-auto">
+            {filteredIps.length === 0 && (
+              <li className="text-[11px] text-[var(--play-muted)]">
+                Không khớp bộ lọc
+              </li>
+            )}
+            {filteredIps.map((row) => (
+              <li
+                key={row.ip}
+                className={`rounded-lg px-2.5 py-2 text-[11px] ring-1 ${
+                  row.clusterFlag
+                    ? "bg-amber-50 ring-amber-400/70"
+                    : "bg-white/70 ring-[var(--wood-deep)]/10"
+                }`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-mono text-xs font-bold text-[var(--play-ink)]">
+                      {row.ip}
+                      {row.online ? (
+                        <span className="ml-1 text-emerald-700">· online</span>
+                      ) : (
+                        <span className="ml-1 text-[var(--play-muted)]">
+                          · offline
+                        </span>
+                      )}
+                      {row.blocked && (
+                        <span className="ml-1 text-rose-700">· blocked</span>
+                      )}
+                      {row.clusterFlag && (
+                        <span className="ml-1 rounded bg-amber-500 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-[#1a1208]">
+                          cụm
+                        </span>
+                      )}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
+                      {formatIpGeo(row.geo)}
+                    </p>
+                    <p className="text-[10px] text-[var(--play-muted)]">
+                      {row.kind}
+                      {row.guestCode ? ` · guest ${row.guestCode}` : ""}
+                      {` · ${row.joinCount ?? 0} joins`}
+                      {` · stake 24h ${formatXu(row.stake24h ?? 0)}`}
+                      {row.lastSeen
+                        ? ` · ${new Date(row.lastSeen).toLocaleString("vi-VN")}`
+                        : ""}
+                    </p>
+                    {row.users.map((u) => (
+                      <p
+                        key={u.id}
+                        className="mt-0.5 text-[11px] text-[var(--play-ink)]"
+                      >
+                        <span className="font-semibold">{u.username}</span> · ID{" "}
+                        {u.code} · {formatXu(u.balance)} xu
+                        {u.isVip ? " · VIP" : ""}
+                        {u.banned ? " · BAN" : ""}
+                        {u.muted ? " · MUTE" : ""} · {u.roundsPlayed} ván
+                        {typeof u.stake24h === "number"
+                          ? ` · 24h ${formatXu(u.stake24h)}`
+                          : ""}{" "}
+                        · {u.role}
+                      </p>
+                    ))}
+                    {(row.seenUsers ?? []).length > 0 && (
+                      <p className="mt-1 text-[10px] text-[var(--play-muted)]">
+                        Từng user:{" "}
+                        {(row.seenUsers ?? [])
+                          .slice(0, 8)
+                          .map(
+                            (s) =>
+                              `${s.username}(${s.joins}× ${new Date(s.lastAt).toLocaleDateString("vi-VN")})`,
+                          )
+                          .join(" · ")}
+                      </p>
+                    )}
+                    {(row.seenGuests ?? []).length > 0 && (
+                      <p className="text-[10px] text-[var(--play-muted)]">
+                        Từng guest:{" "}
+                        {(row.seenGuests ?? [])
+                          .slice(0, 6)
+                          .map((s) => `${s.code}(${s.joins}×)`)
+                          .join(" · ")}
+                      </p>
+                    )}
+                    {row.sessions
+                      .filter((s) => s.kind === "guest")
+                      .map((s, i) => (
+                        <p
+                          key={`g-${i}`}
+                          className="text-[10px] text-[var(--play-muted)]"
+                        >
+                          Khách online: {s.name || "—"}{" "}
+                          {s.guestCode ? `(${s.guestCode})` : ""}
+                        </p>
+                      ))}
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    <button
+                      type="button"
+                      disabled={ipBusy || !row.guestCode}
+                      className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/20 disabled:opacity-40"
+                      onClick={() =>
+                        void runIpAction(
+                          "/api/mainadmin/ips/clear-guest",
+                          { ip: row.ip },
+                          `Đã xóa bind guest ${row.ip}`,
+                        )
+                      }
+                    >
+                      Xóa bind
+                    </button>
+                    <button
+                      type="button"
+                      disabled={ipBusy || !row.online}
+                      className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/20 disabled:opacity-40"
+                      onClick={() =>
+                        void runIpAction(
+                          "/api/mainadmin/ips/kick",
+                          { ip: row.ip },
+                          `Đã kick ${row.ip}`,
+                        )
+                      }
+                    >
+                      Kick
+                    </button>
+                    <button
+                      type="button"
+                      disabled={ipBusy}
+                      className="rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-bold text-white disabled:opacity-40"
+                      onClick={() =>
+                        void runIpAction(
+                          "/api/mainadmin/ips/block",
+                          { ip: row.ip, hours: 1 },
+                          `Block 1h ${row.ip}`,
+                        )
+                      }
+                    >
+                      Block 1h
+                    </button>
+                    <button
+                      type="button"
+                      disabled={ipBusy}
+                      className="rounded-full bg-rose-700 px-2 py-0.5 text-[10px] font-bold text-white disabled:opacity-40"
+                      onClick={() =>
+                        void runIpAction(
+                          "/api/mainadmin/ips/block",
+                          { ip: row.ip, hours: 24 },
+                          `Block 24h ${row.ip}`,
+                        )
+                      }
+                    >
+                      Block 24h
+                    </button>
+                    <button
+                      type="button"
+                      disabled={ipBusy || !row.blocked}
+                      className="rounded-full bg-emerald-700 px-2 py-0.5 text-[10px] font-bold text-white disabled:opacity-40"
+                      onClick={() =>
+                        void runIpAction(
+                          "/api/mainadmin/ips/block",
+                          { ip: row.ip, hours: 0 },
+                          `Mở khóa ${row.ip}`,
+                        )
+                      }
+                    >
+                      Mở
+                    </button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {tab === "coupons" && (
@@ -1296,7 +2202,7 @@ export default function AdminDashboard() {
 
       {tab === "inter" && main && data.inter && (
         <>
-          <section className="app-panel mt-4 space-y-3 p-3">
+          <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p className="play-heading text-sm">Inter — thuật toán lá thắng</p>
@@ -1783,7 +2689,7 @@ export default function AdminDashboard() {
 
       {tab === "vault" && main && data.vault && (
         <>
-          <section className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+          <section className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
             {[
               ["Kho xu hiện tại", formatXu(data.vault.balance), true],
               ["Tổng cược vào", formatXu(data.vault.totalStakeIn), false],

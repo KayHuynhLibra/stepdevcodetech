@@ -67,11 +67,6 @@ export function PlayerInfoSheet({
 
   const rounds = player.roundsPlayed ?? 0;
   const autoVip = rounds >= VIP_ROUNDS_REQUIRED;
-  const vipSource = player.vipGranted
-    ? "Admin"
-    : autoVip
-      ? "10k ván"
-      : null;
 
   const canManage = !!(staff && player.userId && !player.isBot);
 
@@ -92,7 +87,7 @@ export function PlayerInfoSheet({
         onClick={onClose}
       />
       <div className="sheet-shell relative z-10 max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-t-2xl px-5 pb-6 pt-5 shadow-xl ring-1 ring-[var(--jade)]/40 sm:rounded-2xl">
-        <div className="mb-4 flex items-start justify-between gap-2">
+        <div className="mb-3 flex items-start justify-between gap-2">
           <p className="font-display text-sm tracking-wide text-[var(--jade-soft)]">
             Thông tin
           </p>
@@ -105,46 +100,49 @@ export function PlayerInfoSheet({
           </button>
         </div>
 
-        <div className="flex flex-col items-center text-center">
+        <div
+          className={`player-info-hero${player.isVip ? " player-info-hero--vip" : ""}`}
+        >
           <img
             src={player.avatar || "/assets/ui/avatar-default.png"}
             alt=""
-            className="h-20 w-20 rounded-full object-cover ring-2 ring-[var(--gold)]/50 shadow-lg"
+            className="player-info-hero__avatar mx-auto"
           />
-          <p className="mt-3 font-play text-lg font-bold text-white">
-            {player.name}
-          </p>
-          <div className="mt-1 flex flex-wrap items-center justify-center gap-1">
-            <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[10px] font-bold text-white/70">
-              {kind}
-            </span>
-            {player.isVip && (
-              <span className="rounded-full bg-amber-500/90 px-2.5 py-0.5 text-[10px] font-bold text-[#1a1208]">
-                VIP{vipSource ? ` · ${vipSource}` : ""}
+          <div className="player-info-hero__body mt-3">
+            <p className="font-play text-lg font-bold text-[var(--cream)] drop-shadow-sm">
+              {player.name}
+            </p>
+            <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1">
+              <span className="identity-chip identity-chip--role !text-[9px]">
+                {kind}
+              </span>
+              {player.isVip && (
+                <span className="rounded-full bg-amber-400 px-2.5 py-0.5 text-[10px] font-extrabold text-[#1a1208] shadow ring-1 ring-amber-200/80">
+                  VIP
+                </span>
+              )}
+            </div>
+            {player.code && (
+              <span
+                className={`identity-chip identity-chip--code${
+                  player.isVip ? " identity-chip--code-vip" : ""
+                }`}
+                title={player.isVip ? "ID VIP" : "ID"}
+              >
+                ID {player.code}
               </span>
             )}
+            {player.userId && !player.isBot && (
+              <p className="mt-2 text-[11px] tabular-nums text-[var(--cream)]/65">
+                Đã chơi {rounds.toLocaleString("vi-VN")} /{" "}
+                {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván
+              </p>
+            )}
           </div>
-          {player.code && (
-            <p
-              className={`mt-2 inline-flex items-center justify-center rounded-full px-3 py-1 font-mono text-sm font-bold tabular-nums ${
-                player.isVip
-                  ? "bg-gradient-to-br from-amber-200 via-amber-400 to-amber-300 text-[#3a2210] ring-1 ring-amber-200/80 shadow"
-                  : "text-[var(--gold-soft)]"
-              }`}
-            >
-              ID {player.code}
-            </p>
-          )}
-          {player.userId && !player.isBot && (
-            <p className="mt-1 text-[11px] text-white/50 tabular-nums">
-              Đã chơi {rounds.toLocaleString("vi-VN")} /{" "}
-              {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván
-            </p>
-          )}
         </div>
 
         {!player.isBot && (
-          <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="mt-3 grid grid-cols-2 gap-2">
             <div className="rounded-xl bg-white/5 px-3 py-2.5 ring-1 ring-white/10">
               <p className="text-[10px] text-white/45">Thắng hôm nay</p>
               <p className="font-play mt-0.5 text-sm font-bold text-amber-200 tabular-nums">
@@ -224,7 +222,11 @@ export function PlayerInfoSheet({
               <p className="mb-1.5 text-[10px] text-white/40 tabular-nums">
                 {rounds.toLocaleString("vi-VN")} ván
                 {player.isVip
-                  ? ` · đang VIP (${vipSource ?? "—"})`
+                  ? localGranted
+                    ? " · đang VIP (cấp thủ công)"
+                    : autoVip
+                      ? " · đang VIP (đủ ván)"
+                      : " · đang VIP"
                   : " · chưa VIP"}
               </p>
               <button

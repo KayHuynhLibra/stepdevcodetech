@@ -26,6 +26,7 @@ import {
   CHAT_HISTORY_LIMIT,
   SAINT_COOLDOWN_MS,
   chatCost,
+  containsBlockedWords,
   getShout,
   isChatMode,
   sanitizeChatText,
@@ -328,14 +329,25 @@ export class GameEngine {
   join(
     socketId: string,
     opts?: { name?: string; userId?: string; avatar?: string },
-  ): { session: PlayerSession; kickedSocketIds: string[] } {
+  ):
+    | { ok: true; session: PlayerSession; kickedSocketIds: string[] }
+    | { ok: false; reason: string } {
+    if (opts?.userId && authStore.isBanned(opts.userId)) {
+      const u = authStore.getById(opts.userId);
+      return {
+        ok: false,
+        reason: u?.banReason
+          ? `Tài khoản bị khóa: ${u.banReason}`
+          : "Tài khoản bị khóa",
+      };
+    }
     const existing = this.players.get(socketId);
     if (existing) {
       // Re-join cùng socket: gắn auth nếu trước đó vào như khách
       if (opts?.userId && !existing.userId) {
         this.linkAuth(socketId, opts.userId);
       }
-      return { session: existing, kickedSocketIds: [] };
+      return { ok: true, session: existing, kickedSocketIds: [] };
     }
 
     const linked = opts?.userId ? authStore.getById(opts.userId) : undefined;
@@ -399,7 +411,16 @@ export class GameEngine {
     this.ensureWeek(session);
     this.players.set(socketId, session);
     this.emitToAll();
-    return { session, kickedSocketIds };
+    return { ok: true, session, kickedSocketIds };
+  }
+
+  /** Socket ids của user đang online — để kick khi ban. */
+  getSocketIdsForUser(userId: string): string[] {
+    const out: string[] = [];
+    for (const [sid, s] of this.players) {
+      if (s.userId === userId) out.push(sid);
+    }
+    return out;
   }
 
   /**
@@ -687,6 +708,9 @@ export class GameEngine {
 
     const player = this.players.get(socketId);
     if (!player) return { ok: false, reason: "Chưa vào phòng" };
+    if (player.userId && authStore.isBanned(player.userId)) {
+      return { ok: false, reason: "Tài khoản bị khóa" };
+    }
 
     this.ensureDay(player);
     this.ensureWeek(player);
@@ -757,6 +781,19 @@ export class GameEngine {
     if (!player.userId) {
       return { ok: false, reason: "Cần đăng nhập lại để chat" };
     }
+    if (authStore.isBanned(player.userId)) {
+      return { ok: false, reason: "Tài khoản bị khóa" };
+    }
+    if (authStore.isMuted(player.userId)) {
+      const sec = Math.ceil(authStore.getMuteRemainingMs(player.userId) / 1000);
+      return {
+        ok: false,
+        reason:
+          sec > 86400 * 365
+            ? "Bạn bị cấm chat"
+            : `Bạn bị mute còn ${sec}s`,
+      };
+    }
 
     let mode: ChatMode = "no";
     if (isChatMode(opts.mode)) mode = opts.mode;
@@ -776,6 +813,9 @@ export class GameEngine {
     } else {
       text = sanitizeChatText(opts.text ?? "");
       if (!text) return { ok: false, reason: "Nhập nội dung chat" };
+      if (containsBlockedWords(text)) {
+        return { ok: false, reason: "Nội dung không phù hợp" };
+      }
     }
 
     const now = Date.now();
