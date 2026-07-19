@@ -133,7 +133,7 @@ export interface PublicState {
 }
 
 export const PHASE_MS = {
-  betting: 60_000,
+  betting: 30_000,
   revealing: 5_000,
   payout: 4_000,
 } as const;

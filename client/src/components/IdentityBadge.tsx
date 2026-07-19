@@ -104,7 +104,12 @@ export function IdentityBadge({
             {roleLabel(role)}
           </span>
           {code && (
-            <span className="identity-chip identity-chip--code" title="ID">
+            <span
+              className={`identity-chip identity-chip--code${
+                user?.isVip ? " identity-chip--code-vip" : ""
+              }`}
+              title={user?.isVip ? "ID VIP" : "ID"}
+            >
               ID {code}
             </span>
           )}

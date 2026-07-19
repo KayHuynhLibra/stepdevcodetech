@@ -4,9 +4,11 @@ import { fileURLToPath } from "url";
 
 /** Mode can thiệp xác suất lá thắng (mainadmin). */
 export type ForceCardMode = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8";
-export type PolicyMode = "app" | "user" | "fed";
+export type PolicyMode = "app" | "user" | "fed" | "hedge";
+/** Bias không đọc stake (có thể dùng history). */
+export type BiasMode = "auto" | "small" | "big" | "flat" | "cool";
 /** Mode tác động xoay trong ALL (không gồm ép lá / ALL). */
-export type RotateMode = "auto" | "small" | "big" | PolicyMode;
+export type RotateMode = BiasMode | PolicyMode;
 export type InterMode = RotateMode | "all" | ForceCardMode;
 
 export const FORCE_CARD_MODES: ForceCardMode[] = [
@@ -20,15 +22,18 @@ export const FORCE_CARD_MODES: ForceCardMode[] = [
   "8",
 ];
 
-export const POLICY_MODES: PolicyMode[] = ["app", "user", "fed"];
+export const POLICY_MODES: PolicyMode[] = ["app", "user", "fed", "hedge"];
 
 /** Thứ tự xoay khi mode = ALL — mỗi slot 5 phút. */
 export const ALL_ROTATION: RotateMode[] = [
   "auto",
   "small",
   "big",
+  "flat",
   "app",
+  "hedge",
   "fed",
+  "cool",
   "user",
 ];
 
@@ -39,7 +44,10 @@ export const INTER_MODES: InterMode[] = [
   "auto",
   "small",
   "big",
+  "flat",
+  "cool",
   "app",
+  "hedge",
   "user",
   "fed",
   ...FORCE_CARD_MODES,
@@ -59,16 +67,21 @@ export function isForceCardMode(v: unknown): v is ForceCardMode {
 }
 
 export function isPolicyMode(v: unknown): v is PolicyMode {
-  return v === "app" || v === "user" || v === "fed";
+  return v === "app" || v === "user" || v === "fed" || v === "hedge";
 }
 
-export function isRotateMode(v: unknown): v is RotateMode {
+export function isBiasMode(v: unknown): v is BiasMode {
   return (
     v === "auto" ||
     v === "small" ||
     v === "big" ||
-    isPolicyMode(v)
+    v === "flat" ||
+    v === "cool"
   );
+}
+
+export function isRotateMode(v: unknown): v is RotateMode {
+  return isBiasMode(v) || isPolicyMode(v);
 }
 
 export function isInterMode(v: unknown): v is InterMode {
@@ -96,7 +109,10 @@ const TMP = join(DATA_DIR, "inter.json.tmp");
  * Small = lá 1–4 xác suất cao hơn.
  * Big = lá 5–8 xác suất cao hơn.
  * Auto = weight gốc, không lệch nhóm.
+ * Flat = cân đều mỗi lá.
+ * Cool = giảm weight 3 lá thắng gần nhất (anti-streak).
  * App = hút xu mềm — ưu tiên lá trả thấp (vẫn random).
+ * Hedge = soft-Fed — lệch mạnh theo house profit^2, vẫn random.
  * Fed = đọc cầu user đăng nhập → chọn lá app lời tối đa (cứng).
  * User = nhả xu — ưu tiên lá user thật trả thưởng cao.
  * ALL = xoay các mode tác động mỗi 5 phút.
@@ -238,11 +254,15 @@ export class InterStore {
       updatedAt: this.updatedAt,
       updatedBy: this.updatedBy,
       labels: {
-        all: "ALL — xoay auto→small→big→app→fed→user mỗi 5 phút",
+        all: "ALL — xoay auto→small→big→flat→app→hedge→fed→cool→user mỗi 5 phút",
         auto: "Tự động — weight gốc, không lệch nhóm",
         small: "Small — ưu tiên lá 1–4 (Nhà Ảo Thuật … Hoàng Đế)",
         big: "Big — ưu tiên lá 5–8 (Đôi Tình Nhân … Mặt Trời)",
+        flat: "Flat — cân đều ~12.5% mỗi lá",
+        cool: "Cool — giảm mạnh 3 lá thắng gần nhất (anti-streak)",
         app: "App — hút xu mềm theo stake user (ưu tiên lá trả ít, vẫn random)",
+        hedge:
+          "Hedge — soft-Fed; lệch mạnh theo lời nhà (profit²), vẫn random",
         fed: "Fed — đọc cầu user đăng nhập; luôn chọn lá app lời tối đa (thường lá ít/không ai đánh)",
         user: "User — nhả xu theo stake user thật (ưu tiên lá trả nhiều)",
         ...FORCE_LABELS,
@@ -273,7 +293,14 @@ export function effectiveWeights(
     return cardIds.map((id) => (id === forced ? 100 : 0));
   }
 
-  if (mode === "auto" || isPolicyMode(mode)) return [...baseWeights];
+  if (
+    mode === "auto" ||
+    mode === "flat" ||
+    mode === "cool" ||
+    isPolicyMode(mode)
+  ) {
+    return [...baseWeights];
+  }
 
   const prefIds = new Set(mode === "small" ? [1, 2, 3, 4] : [5, 6, 7, 8]);
   let prefTotal = 0;

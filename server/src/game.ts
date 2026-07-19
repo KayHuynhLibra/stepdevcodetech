@@ -82,6 +82,8 @@ interface PersistedWinner {
 interface HistoryFile {
   version: 1 | 2;
   nextRound: number;
+  /** UTC day key (YYYY-MM-DD) — hết ngày thì ván về #1 */
+  roundDayKey?: string;
   history: RoundResult[];
   vipPool?: number;
   vipBase?: number;
@@ -101,6 +103,8 @@ export class GameEngine {
   private phase: Phase = "betting";
   private phaseEndsAt = Date.now() + PHASE_MS.betting;
   private roundNumber = 1;
+  /** Ngày UTC đang đếm thứ tự ván — đổi ngày → reset về 1 */
+  private roundDayKey = todayKey();
   private winningCard: number | null = null;
   private history: RoundResult[] = [];
 
@@ -182,6 +186,30 @@ export class GameEngine {
       ) {
         return;
       }
+      const today = todayKey();
+      const savedDay =
+        typeof parsed.roundDayKey === "string" && parsed.roundDayKey
+          ? parsed.roundDayKey
+          : null;
+
+      // Hết ngày (UTC) → thứ tự ván về 1, xóa strip kết quả cũ
+      if (savedDay && savedDay !== today) {
+        this.roundDayKey = today;
+        this.roundNumber = 1;
+        this.history = [];
+        if (typeof parsed.vipPool === "number" && Number.isFinite(parsed.vipPool)) {
+          this.vipPool = parsed.vipPool;
+        }
+        if (typeof parsed.vipBase === "number" && Number.isFinite(parsed.vipBase)) {
+          this.vipBase = parsed.vipBase;
+        }
+        console.log(
+          `[game] Day rollover (${savedDay} → ${today}) · round #1`,
+        );
+        this.saveHistoryToDisk();
+        return;
+      }
+
       const rows: RoundResult[] = [];
       for (const row of parsed.history) {
         if (
@@ -195,6 +223,7 @@ export class GameEngine {
         }
       }
       this.history = rows.slice(0, HISTORY_LIMIT);
+      this.roundDayKey = savedDay ?? today;
       const next = Math.floor(Number(parsed.nextRound));
       if (Number.isFinite(next) && next >= 1) {
         this.roundNumber = next;
@@ -229,7 +258,7 @@ export class GameEngine {
           }));
       }
       console.log(
-        `[game] Loaded ${this.history.length} results · next round #${this.roundNumber} · vip ${Math.round(this.vipPool)}`,
+        `[game] Loaded ${this.history.length} results · next round #${this.roundNumber} · day ${this.roundDayKey} · vip ${Math.round(this.vipPool)}`,
       );
     } catch (err) {
       console.warn("[game] Failed to load history.json:", err);
@@ -242,6 +271,7 @@ export class GameEngine {
       const payload: HistoryFile = {
         version: 2,
         nextRound: this.roundNumber,
+        roundDayKey: this.roundDayKey,
         history: this.history.slice(0, HISTORY_LIMIT),
         vipPool: this.vipPool,
         vipBase: this.vipBase,
@@ -252,6 +282,20 @@ export class GameEngine {
     } catch (err) {
       console.warn("[game] Failed to save history.json:", err);
     }
+  }
+
+  /** Hết ngày UTC → ván về #1. Trả true nếu vừa reset. */
+  private ensureRoundDay(): boolean {
+    const key = todayKey();
+    if (this.roundDayKey === key) return false;
+    const prev = this.roundDayKey;
+    this.roundDayKey = key;
+    this.roundNumber = 1;
+    this.history = [];
+    this.saveHistoryToDisk();
+    console.log(`[game] Day rollover (${prev} → ${key}) · round #1`);
+    this.emitToAll();
+    return true;
   }
 
   stop() {
@@ -1117,6 +1161,7 @@ export class GameEngine {
   private tick() {
     const now = Date.now();
     interStore.tickRotation();
+    this.ensureRoundDay();
 
     if (now - this.lastBotScaleAt > 30_000) {
       this.scaleBots();
@@ -1161,10 +1206,12 @@ export class GameEngine {
       const authBets = this.getAuthBets();
       const policyBets = isPolicyMode(interMode) ? authBets : this.realBets;
       const userBiases = this.collectUserBiases();
+      const recentWins = this.getHistory(3).map((h) => h.win);
       this.winningCard = pickWinningCardWithUserBias(
         interMode,
         policyBets,
         userBiases,
+        recentWins,
       );
       const winIdx = (this.winningCard ?? 1) - 1;
       const profits = houseProfitByCard(authBets);
@@ -1212,7 +1259,9 @@ export class GameEngine {
       return;
     }
 
-    this.roundNumber += 1;
+    // Kết thúc payout → ván mới. Hết ngày UTC thì về #1, không +1 thêm.
+    const rolled = this.ensureRoundDay();
+    if (!rolled) this.roundNumber += 1;
     this.saveHistoryToDisk();
     this.resetBettingPhase();
     this.emitToAll();

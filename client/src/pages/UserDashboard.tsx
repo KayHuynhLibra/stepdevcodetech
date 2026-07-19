@@ -18,31 +18,57 @@ import {
   isCustomAvatar,
   normalizeAvatar,
 } from "../avatars";
-import { CARDS, formatXu } from "../cards";
+import { CARDS, formatXu, type BetEntry } from "../cards";
 import { AppShell } from "../components/AppShell";
 import { IdentityBadge } from "../components/IdentityBadge";
 import { uploadAvatarFromFile } from "../uploadAvatar";
-
-interface BetRow {
-  id: string;
-  at: number;
-  round: number;
-  cardId: number;
-  amount: number;
-  result: "win" | "lose";
-  payout: number;
-  profit: number;
-  winningCardId: number;
-}
 
 function cardName(id: number) {
   return CARDS.find((c) => c.id === id)?.nameVi ?? `Lá ${id}`;
 }
 
+function groupBetsByRound(bets: BetEntry[]) {
+  const map = new Map<
+    string,
+    {
+      key: string;
+      round: number;
+      at: number;
+      winningCardId: number;
+      bets: BetEntry[];
+      profit: number;
+      stake: number;
+    }
+  >();
+  for (const b of bets) {
+    const key = `${b.round}-${b.at}`;
+    let g = map.get(key);
+    if (!g) {
+      g = {
+        key,
+        round: b.round,
+        at: b.at,
+        winningCardId: b.winningCardId,
+        bets: [],
+        profit: 0,
+        stake: 0,
+      };
+      map.set(key, g);
+    }
+    g.bets.push(b);
+    g.profit += b.profit;
+    g.stake += b.amount;
+  }
+  for (const g of map.values()) {
+    g.bets.sort((a, b) => a.cardId - b.cardId);
+  }
+  return [...map.values()].sort((a, b) => b.at - a.at);
+}
+
 export default function UserDashboard() {
   const nav = useNavigate();
   const [user, setUser] = useState<AuthUser | null>(getStoredUser());
-  const [bets, setBets] = useState<BetRow[]>([]);
+  const [bets, setBets] = useState<BetEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [savingAvatar, setSavingAvatar] = useState(false);
@@ -63,9 +89,9 @@ export default function UserDashboard() {
           nav(homePath(r.user), { replace: true });
           return;
         }
-        return api<{ ok: true; bets: BetRow[] }>("/api/auth/bets?limit=30").then(
-          (b) => setBets(b.bets),
-        );
+        return api<{ ok: true; bets: BetEntry[] }>(
+          "/api/auth/bets?limit=50",
+        ).then((b) => setBets(b.bets));
       })
       .catch((e) => {
         setError(e instanceof Error ? e.message : "Lỗi");
@@ -320,33 +346,64 @@ export default function UserDashboard() {
             : `${bets.length} dòng gần nhất`}
         </p>
         {bets.length > 0 && (
-          <ul className="mt-2 max-h-72 space-y-1.5 overflow-y-auto">
-            {bets.map((b) => (
+          <ul className="mt-2 max-h-72 space-y-2 overflow-y-auto">
+            {groupBetsByRound(bets).map((g) => (
               <li
-                key={b.id}
-                className="flex items-start justify-between gap-2 rounded-lg bg-white/70 px-2.5 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
+                key={g.key}
+                className="rounded-lg bg-white/70 px-2.5 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
               >
-                <div className="min-w-0">
-                  <p className="font-semibold text-[var(--play-ink)]">
-                    Ván #{b.round} · {cardName(b.cardId)}
-                  </p>
-                  <p className="text-[10px] text-[var(--play-muted)]">
-                    {new Date(b.at).toLocaleString("vi-VN")} · thắng{" "}
-                    {cardName(b.winningCardId)}
-                  </p>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-[var(--play-ink)]">
+                      Ván #{g.round}
+                      <span className="ml-1 font-normal text-[var(--play-muted)]">
+                        · thắng {cardName(g.winningCardId)}
+                      </span>
+                    </p>
+                    <p className="text-[10px] text-[var(--play-muted)]">
+                      {new Date(g.at).toLocaleString("vi-VN")}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p
+                      className={`font-play font-bold tabular-nums ${
+                        g.profit >= 0
+                          ? "text-[var(--jade-deep)]"
+                          : "text-rose-600"
+                      }`}
+                    >
+                      {g.profit > 0 ? "+" : ""}
+                      {formatXu(g.profit)}
+                    </p>
+                    <p className="text-[10px] text-[var(--play-muted)]">
+                      cược {formatXu(g.stake)}
+                    </p>
+                  </div>
                 </div>
-                <div className="shrink-0 text-right">
-                  <p
-                    className={`font-play font-bold tabular-nums ${
-                      b.result === "win" ? "text-[var(--wood-deep)]" : "text-rose-600"
-                    }`}
-                  >
-                    {b.result === "win" ? "+" : ""}
-                    {formatXu(b.profit)}
-                  </p>
-                  <p className="text-[10px] text-[var(--play-muted)]">
-                    cược {formatXu(b.amount)}
-                  </p>
+                <div className="mt-1.5 flex gap-1 overflow-x-auto">
+                  {g.bets.map((b) => {
+                    const c = CARDS.find((x) => x.id === b.cardId);
+                    return (
+                      <div
+                        key={b.id}
+                        className={`relative shrink-0 rounded-md p-0.5 ${
+                          b.result === "win"
+                            ? "ring-1 ring-[var(--jade)]"
+                            : "ring-1 ring-[var(--wood-deep)]/15"
+                        }`}
+                        title={`${cardName(b.cardId)} · ${formatXu(b.amount)}`}
+                      >
+                        <img
+                          src={c?.image}
+                          alt={c?.nameVi ?? `#${b.cardId}`}
+                          className="h-10 w-7 rounded object-cover"
+                        />
+                        <span className="font-play absolute left-0.5 top-0.5 rounded bg-[var(--wood-deep)]/90 px-0.5 text-[8px] font-bold text-[var(--gold-soft)] tabular-nums">
+                          {b.cardId}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </li>
             ))}

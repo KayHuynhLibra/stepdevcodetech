@@ -235,12 +235,13 @@ export class AuthStore {
     this.byCode.set(u.code.toUpperCase(), u);
   }
 
-  /** Gán / migrate mã ID 5 số cho mọi user. */
+  /** Gán / migrate mã ID cho mọi user (3–8 ký tự A–Z0–9; cũ 5 số vẫn hợp lệ). */
   private ensureUserCodes() {
     this.byCode.clear();
     let changed = false;
     for (const u of this.byId.values()) {
-      if (typeof u.code === "string" && /^\d{5}$/.test(u.code)) {
+      if (typeof u.code === "string" && /^[A-Z0-9]{3,8}$/i.test(u.code)) {
+        u.code = u.code.toUpperCase();
         this.byCode.set(u.code, u);
         continue;
       }
@@ -249,7 +250,7 @@ export class AuthStore {
       changed = true;
     }
     if (changed) {
-      console.log(`[auth] Migrated/assigned 5-digit IDs for users`);
+      console.log(`[auth] Migrated/assigned IDs for users`);
     }
   }
 
@@ -542,6 +543,37 @@ export class AuthStore {
     if (!user) return { ok: false, reason: "Không tìm thấy user" };
     user.vipGranted = !!isVip;
     if (user.isVip) delete user.isVip;
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  /**
+   * Admin gán ID riêng (3–8 ký tự A–Z / 0–9).
+   * Phải unique; cập nhật index byCode.
+   */
+  setUserCode(
+    userId: string,
+    rawCode: string,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    const code = String(rawCode ?? "")
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+    if (code.length < 3 || code.length > 8) {
+      return { ok: false, reason: "ID gồm 3–8 ký tự chữ/số" };
+    }
+    const existing = this.byCode.get(code);
+    if (existing && existing.id !== userId) {
+      return { ok: false, reason: `ID ${code} đã được dùng` };
+    }
+    const prev = user.code?.toUpperCase();
+    if (prev && prev !== code) {
+      this.byCode.delete(prev);
+    }
+    user.code = code;
+    this.byCode.set(code, user);
     this.scheduleSave();
     return { ok: true, user: toPublic(user) };
   }

@@ -28,7 +28,9 @@ const DATA_DIR = join(__dirname, "..", "data");
 const BETS_PATH = join(DATA_DIR, "bets.json");
 const BETS_TMP = join(DATA_DIR, "bets.json.tmp");
 const GLOBAL_CAP = 2000;
-const PER_USER_CAP = 80;
+/** Max rows returned / kept per user — used by API clamp */
+export const PER_USER_BET_CAP = 80;
+const PER_USER_CAP = PER_USER_BET_CAP;
 
 export class BetStore {
   private entries: BetEntry[] = [];

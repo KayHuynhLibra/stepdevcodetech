@@ -3,6 +3,7 @@ import { io, Socket } from "socket.io-client";
 import {
   CARDS,
   formatXu,
+  type BetEntry,
   type GameState,
   type LeaderboardEntry,
   type RoundResult,
@@ -11,6 +12,7 @@ import {
 import { BettingBoard } from "../components/BettingBoard";
 import { BetSheet } from "../components/BetSheet";
 import { HistorySheet } from "../components/HistorySheet";
+import { MyBetsSheet } from "../components/MyBetsSheet";
 import { LeaderboardSheet } from "../components/LeaderboardSheet";
 import { RevealPopup } from "../components/RevealPopup";
 import { ResultSummaryPopup } from "../components/ResultSummaryPopup";
@@ -35,6 +37,9 @@ import type { ChatMode, ShoutEvent } from "../shouts";
 import { SAINT_DISPLAY_MS } from "../shouts";
 import type { OnlinePlayerPublic } from "../cards";
 import { useSfx } from "../hooks/useSfx";
+import { usePlaytime } from "../hooks/usePlaytime";
+import { formatDuration } from "../playtime";
+import { PlaytimeNudge } from "../components/PlaytimeNudge";
 import {
   api,
   clearSession,
@@ -87,6 +92,7 @@ function useServerCountdown(phaseEndsAt: number, serverTime: number) {
 type Sheet =
   | "bet"
   | "history"
+  | "myBets"
   | "leaderboard"
   | "tarotStars"
   | "avatar"
@@ -115,6 +121,9 @@ export default function GamePage() {
   const [revealOpen, setRevealOpen] = useState(false);
   const [resultOpen, setResultOpen] = useState(false);
   const [historyRows, setHistoryRows] = useState<RoundResult[]>([]);
+  const [myBets, setMyBets] = useState<BetEntry[]>([]);
+  const [myBetsLoading, setMyBetsLoading] = useState(false);
+  const [myBetsError, setMyBetsError] = useState<string | null>(null);
   const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardEntry[]>(
     [],
   );
@@ -138,6 +147,12 @@ export default function GamePage() {
   /** Session socket đã gắn userId (tin cậy hơn localStorage) */
   const [sessionAuthed, setSessionAuthed] = useState(false);
   const { play, muted, toggleMute } = useSfx();
+  const {
+    sessionMs,
+    dayMs,
+    nudge: playtimeNudge,
+    dismissNudge,
+  } = usePlaytime();
   const lastTickSec = useRef<number | null>(null);
   const shoutKeyRef = useRef(0);
 
@@ -676,6 +691,25 @@ export default function GamePage() {
     setSheet("history");
   };
 
+  const openMyBets = () => {
+    setSheet("myBets");
+    setMyBetsError(null);
+    if (!getToken() || !getStoredUser()) {
+      setMyBets([]);
+      setMyBetsLoading(false);
+      return;
+    }
+    setMyBetsLoading(true);
+    api<{ ok: true; bets: BetEntry[] }>("/api/auth/bets?limit=50")
+      .then((r) => setMyBets(r.bets))
+      .catch((e) =>
+        setMyBetsError(
+          e instanceof Error ? e.message : "Không tải được lịch sử",
+        ),
+      )
+      .finally(() => setMyBetsLoading(false));
+  };
+
   const openLeaderboard = () => {
     socket?.emit("getLeaderboard");
     setSheet("leaderboard");
@@ -892,6 +926,13 @@ export default function GamePage() {
                     }
               }
             />
+            <p
+              className="mt-1 px-0.5 text-[10px] font-semibold tabular-nums text-[var(--play-muted)]"
+              title="Thời gian chơi (chỉ đếm khi tab đang mở)"
+            >
+              Đã chơi {formatDuration(sessionMs)} · Hôm nay{" "}
+              {formatDuration(dayMs)}
+            </p>
             {!me && renameOpen && (
               <form
                 className="absolute left-10 right-0 top-[calc(100%-0.15rem)] z-30 flex gap-1 rounded-xl bg-[rgba(232,250,245,0.97)] p-1.5 shadow-lg ring-1 ring-[var(--jade)]/45 backdrop-blur-sm"
@@ -1063,19 +1104,31 @@ export default function GamePage() {
         {/* ===== ZONE 5: Lá bài đã chọn — khung cứng cố định ===== */}
         <section className="game-task mt-3 px-3 py-2">
           <div className="mb-1.5 flex items-center justify-between gap-2">
-            <p className="play-section-title">Lá bài bạn đã chọn</p>
-            <button
-              type="button"
-              onClick={() => setSheet("autoBet")}
-              className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${
-                autoBet.enabled
-                  ? "ui-pill ui-pill--strong"
-                  : "app-btn-soft !px-2.5 !py-0.5 !text-[10px]"
-              }`}
-              title="Cấu hình tự động đặt lá"
-            >
-              Auto{autoBet.enabled ? " · ON" : ""}
-            </button>
+            <p className="play-section-title min-w-0 truncate">
+              Lá bài bạn đã chọn
+            </p>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={openMyBets}
+                className="app-btn-soft !px-2.5 !py-0.5 !text-[10px] font-extrabold uppercase tracking-wide"
+                title="Lịch sử thắng/thua của bạn"
+              >
+                Lịch sử
+              </button>
+              <button
+                type="button"
+                onClick={() => setSheet("autoBet")}
+                className={`rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${
+                  autoBet.enabled
+                    ? "ui-pill ui-pill--strong"
+                    : "app-btn-soft !px-2.5 !py-0.5 !text-[10px]"
+                }`}
+                title="Cấu hình tự động đặt lá"
+              >
+                Auto{autoBet.enabled ? " · ON" : ""}
+              </button>
+            </div>
           </div>
           <div className="grid h-[4.75rem] grid-cols-5 gap-1.5">
             {Array.from({ length: 5 }, (_, i) => {
@@ -1424,6 +1477,14 @@ export default function GamePage() {
         rows={historyRows}
         onClose={() => setSheet(null)}
       />
+      <MyBetsSheet
+        open={sheet === "myBets"}
+        bets={myBets}
+        loading={myBetsLoading}
+        error={myBetsError}
+        needsLogin={!getToken() || !me}
+        onClose={() => setSheet(null)}
+      />
       <LeaderboardSheet
         open={sheet === "leaderboard"}
         rows={leaderboardRows}
@@ -1446,6 +1507,14 @@ export default function GamePage() {
         onPick={pickAvatar}
         onUploadFile={uploadAvatarFile}
       />
+
+      {playtimeNudge && (
+        <PlaytimeNudge
+          nudge={playtimeNudge}
+          menuHref={me ? homePath(me) : "/login"}
+          onContinue={dismissNudge}
+        />
+      )}
 
       {toast && (
         <div className="pointer-events-none fixed inset-x-0 bottom-8 z-50 flex justify-center px-4">

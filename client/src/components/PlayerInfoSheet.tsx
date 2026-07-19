@@ -125,7 +125,13 @@ export function PlayerInfoSheet({
             )}
           </div>
           {player.code && (
-            <p className="mt-2 font-mono text-sm font-semibold text-[var(--gold-soft)]">
+            <p
+              className={`mt-2 inline-flex items-center justify-center rounded-full px-3 py-1 font-mono text-sm font-bold tabular-nums ${
+                player.isVip
+                  ? "bg-gradient-to-br from-amber-200 via-amber-400 to-amber-300 text-[#3a2210] ring-1 ring-amber-200/80 shadow"
+                  : "text-[var(--gold-soft)]"
+              }`}
+            >
               ID {player.code}
             </p>
           )}

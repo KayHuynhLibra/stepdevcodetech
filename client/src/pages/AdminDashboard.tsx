@@ -26,7 +26,10 @@ type InterMode =
   | "auto"
   | "small"
   | "big"
+  | "flat"
+  | "cool"
   | "app"
+  | "hedge"
   | "user"
   | "fed"
   | ForceCardMode;
@@ -62,6 +65,7 @@ interface InterSnapshot {
   otherShare: number;
   realBetsRound?: number[];
   authBetsRound?: number[];
+  recentWins?: number[];
   probabilities: InterProb[];
   probabilitiesByMode: Partial<Record<InterMode, InterProb[]>>;
   all?: InterAllRotation;
@@ -112,7 +116,21 @@ interface Overview {
     vipPool: number;
   };
   users: AuthUser[];
-  botPanel: { targetCount: number; activeCount: number };
+  botPanel: {
+    targetCount: number;
+    activeCount: number;
+    logs?: {
+      id: string;
+      at: number;
+      round: number;
+      botId: string;
+      botName: string;
+      cardId: number;
+      amount: number;
+      action: string;
+      message: string;
+    }[];
+  };
   history: { round: number; win: number }[];
   recentBets: BetRow[];
   betStats: {
@@ -219,6 +237,8 @@ export default function AdminDashboard() {
     enabled: true,
   });
   const [couponBusy, setCouponBusy] = useState(false);
+  const [codeDrafts, setCodeDrafts] = useState<Record<string, string>>({});
+  const [codeBusyId, setCodeBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const overview = await api<Overview>("/api/admin/overview");
@@ -367,6 +387,33 @@ export default function AdminDashboard() {
     }
   };
 
+  const setUserCode = async (userId: string, code: string) => {
+    if (codeBusyId) return;
+    setCodeBusyId(userId);
+    try {
+      const r = await api<{ ok: true; user: AuthUser }>("/api/admin/user-code", {
+        method: "POST",
+        body: JSON.stringify({ userId, code }),
+      });
+      setMsg(`Đã đổi ID → ${r.user.code}`);
+      setCodeDrafts((d) => {
+        const next = { ...d };
+        delete next[userId];
+        return next;
+      });
+      if (me && me.id === userId) {
+        const token = getToken();
+        if (token) saveSession(token, { ...me, ...r.user });
+        setMe((prev) => (prev ? { ...prev, ...r.user } : prev));
+      }
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi đổi ID");
+    } finally {
+      setCodeBusyId(null);
+    }
+  };
+
   const createCoupon = async (e: FormEvent) => {
     e.preventDefault();
     setCouponBusy(true);
@@ -465,8 +512,14 @@ export default function AdminDashboard() {
         return "Small";
       case "big":
         return "Big";
+      case "flat":
+        return "Flat (cân đều)";
+      case "cool":
+        return "Cool (anti-streak)";
       case "app":
         return "App (hút xu mềm)";
+      case "hedge":
+        return "Hedge (soft-Fed)";
       case "fed":
         return "Fed (đọc cầu → app lời)";
       case "user":
@@ -934,12 +987,13 @@ export default function AdminDashboard() {
           </section>
 
           <section className="app-panel mt-4 p-3">
-            <p className="play-heading mb-2 text-sm">
-              Danh sách user ({data.users.length})
+            <p className="play-heading mb-1 text-sm">
+              Chỉnh ID user · Danh sách ({data.users.length})
             </p>
             <p className="mb-2 text-[11px] text-[var(--play-muted)]">
-              Mode riêng: Lose / Normal / Win — chỉ áp khi user đó có đặt cược
-              ván hiện tại (ưu tiên hơn Inter phòng).
+              Mỗi user: ô ID + nút <strong>Lưu ID</strong> (3–8 chữ/số, không
+              trùng). Mode Lose/Normal/Win khi user có cược. VIP hiện ID nền
+              vàng nổi.
             </p>
             <ul className="max-h-80 space-y-2 overflow-y-auto">
               {data.users.map((u) => {
@@ -952,6 +1006,10 @@ export default function AdminDashboard() {
                   : rounds >= VIP_ROUNDS_REQUIRED
                     ? "10k ván"
                     : null;
+                const draft =
+                  codeDrafts[u.id] !== undefined
+                    ? codeDrafts[u.id]!
+                    : u.code || "";
                 return (
                   <li
                     key={u.id}
@@ -975,8 +1033,14 @@ export default function AdminDashboard() {
                             )}
                           </p>
                           <p className="text-[10px] text-[var(--play-muted)]">
-                            ID {u.code || "—"} ·{" "}
-                            {rounds.toLocaleString("vi-VN")} ván · Thưởng:{" "}
+                            <span
+                              className={`identity-chip identity-chip--code${
+                                vip ? " identity-chip--code-vip" : ""
+                              } !text-[9px]`}
+                            >
+                              ID {u.code || "—"}
+                            </span>{" "}
+                            · {rounds.toLocaleString("vi-VN")} ván · Thưởng:{" "}
                             {formatXu(u.winToday)} · Đoán: {u.guessesToday}
                           </p>
                         </div>
@@ -985,7 +1049,32 @@ export default function AdminDashboard() {
                         {formatXu(u.balance)}
                       </p>
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-1">
+                    <div className="mt-2 flex flex-wrap items-center gap-1">
+                      <input
+                        value={draft}
+                        onChange={(e) =>
+                          setCodeDrafts((d) => ({
+                            ...d,
+                            [u.id]: e.target.value.toUpperCase(),
+                          }))
+                        }
+                        maxLength={8}
+                        placeholder="ID mới"
+                        className="app-input !w-24 !px-2 !py-1 !text-[11px] font-mono uppercase"
+                        title="ID riêng 3–8 chữ/số"
+                      />
+                      <button
+                        type="button"
+                        disabled={
+                          codeBusyId === u.id ||
+                          !draft.trim() ||
+                          draft.trim().toUpperCase() === (u.code || "")
+                        }
+                        onClick={() => setUserCode(u.id, draft)}
+                        className="rounded-full bg-[var(--wood-deep)] px-2.5 py-1 text-[10px] font-bold text-white disabled:opacity-40"
+                      >
+                        {codeBusyId === u.id ? "…" : "Lưu ID"}
+                      </button>
                       {(
                         [
                           ["lose", "Lose"],
@@ -1212,8 +1301,8 @@ export default function AdminDashboard() {
               <div>
                 <p className="play-heading text-sm">Inter — thuật toán lá thắng</p>
                 <p className="mt-1 text-[11px] text-[var(--play-muted)]">
-                  ALL xoay các mode tác động mỗi 5 phút. App/Fed/User đọc cầu
-                  user đăng nhập.
+                  ALL xoay mỗi 5 phút. Policy đọc cầu user đăng nhập. Cool dùng
+                  3 lá thắng gần nhất.
                 </p>
               </div>
               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-900 ring-1 ring-amber-300/60">
@@ -1246,6 +1335,23 @@ export default function AdminDashboard() {
                     ),
                   ).padStart(2, "0")}
                 </p>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-amber-200/80">
+                  <div
+                    className="h-full rounded-full bg-amber-600 transition-[width] duration-1000"
+                    style={{
+                      width: `${Math.max(
+                        2,
+                        Math.min(
+                          100,
+                          (1 -
+                            Math.max(0, data.inter.all.remainingMs) /
+                              Math.max(1, data.inter.all.slotMs)) *
+                            100,
+                        ),
+                      )}%`,
+                    }}
+                  />
+                </div>
                 <p className="mt-1 text-[10px] text-amber-900/80">
                   Chuỗi: {data.inter.all.rotation.join(" → ")} (mỗi{" "}
                   {Math.round(data.inter.all.slotMs / 60000)} phút)
@@ -1271,111 +1377,138 @@ export default function AdminDashboard() {
                     : "text-[var(--play-muted)]"
                 }`}
               >
-                auto → small → big → app → fed → user · lặp lại
+                auto → small → big → flat → app → hedge → fed → cool → user
               </p>
             </button>
 
-            <div className="grid gap-2 sm:grid-cols-3">
-              {(
-                [
-                  {
-                    id: "fed" as const,
-                    title: "Fed — đọc cầu",
-                    desc: "Cứng: chọn lá app lời max (thường lá ít ai đánh)",
-                    activeClass:
-                      "bg-rose-700 text-white ring-rose-800 shadow-sm",
-                  },
-                  {
-                    id: "app" as const,
-                    title: "App — hút xu mềm",
-                    desc: "Lệch mạnh về lá trả ít, vẫn còn random",
-                    activeClass:
-                      "bg-rose-600 text-white ring-rose-700 shadow-sm",
-                  },
-                  {
-                    id: "user" as const,
-                    title: "User — nhả xu",
-                    desc: "Ưu tiên lá user trả thưởng cao (nhả kho)",
-                    activeClass:
-                      "bg-emerald-600 text-white ring-emerald-700 shadow-sm",
-                  },
-                ] as const
-              ).map((m) => {
-                const active = data.inter!.mode === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    disabled={interBusy}
-                    onClick={() => setInterMode(m.id)}
-                    className={`rounded-xl px-3 py-3 text-left transition ring-1 ${
-                      active
-                        ? m.activeClass
-                        : "bg-white/90 text-[var(--play-ink)] ring-[var(--wood-deep)]/15 hover:bg-white"
-                    } ${interBusy ? "opacity-60" : ""}`}
-                  >
-                    <p className="text-sm font-bold">{m.title}</p>
-                    <p
-                      className={`mt-1 text-[10px] leading-snug ${
-                        active ? "text-white/80" : "text-[var(--play-muted)]"
-                      }`}
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-semibold text-[var(--play-ink)]">
+                Policy — đọc cầu auth
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {(
+                  [
+                    {
+                      id: "fed" as const,
+                      title: "Fed — đọc cầu",
+                      desc: "Cứng: lá app lời max",
+                      activeClass:
+                        "bg-rose-700 text-white ring-rose-800 shadow-sm",
+                    },
+                    {
+                      id: "hedge" as const,
+                      title: "Hedge — soft-Fed",
+                      desc: "Lệch profit², vẫn random",
+                      activeClass:
+                        "bg-rose-500 text-white ring-rose-600 shadow-sm",
+                    },
+                    {
+                      id: "app" as const,
+                      title: "App — hút xu mềm",
+                      desc: "Ưu tiên lá trả ít",
+                      activeClass:
+                        "bg-rose-600 text-white ring-rose-700 shadow-sm",
+                    },
+                    {
+                      id: "user" as const,
+                      title: "User — nhả xu",
+                      desc: "Ưu tiên lá trả cao",
+                      activeClass:
+                        "bg-emerald-600 text-white ring-emerald-700 shadow-sm",
+                    },
+                  ] as const
+                ).map((m) => {
+                  const active = data.inter!.mode === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      disabled={interBusy}
+                      onClick={() => setInterMode(m.id)}
+                      className={`rounded-xl px-3 py-3 text-left transition ring-1 ${
+                        active
+                          ? m.activeClass
+                          : "bg-white/90 text-[var(--play-ink)] ring-[var(--wood-deep)]/15 hover:bg-white"
+                      } ${interBusy ? "opacity-60" : ""}`}
                     >
-                      {m.desc}
-                    </p>
-                  </button>
-                );
-              })}
+                      <p className="text-sm font-bold">{m.title}</p>
+                      <p
+                        className={`mt-1 text-[10px] leading-snug ${
+                          active ? "text-white/80" : "text-[var(--play-muted)]"
+                        }`}
+                      >
+                        {m.desc}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-3">
-              {(
-                [
-                  {
-                    id: "auto" as const,
-                    title: "Tự động",
-                    desc: "Weight gốc — không lệch Small/Big",
-                  },
-                  {
-                    id: "small" as const,
-                    title: "Small",
-                    desc: "Lá 1–4 xác suất cao hơn (~72%)",
-                  },
-                  {
-                    id: "big" as const,
-                    title: "Big",
-                    desc: "Lá 5–8 xác suất cao hơn (~72%)",
-                  },
-                ] as const
-              ).map((m) => {
-                const active = data.inter!.mode === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    disabled={interBusy}
-                    onClick={() => setInterMode(m.id)}
-                    className={`rounded-xl px-3 py-3 text-left transition ring-1 ${
-                      active
-                        ? "bg-[var(--wood-deep)] text-white ring-[var(--wood-deep)] shadow-sm"
-                        : "bg-white/90 text-[var(--play-ink)] ring-[var(--wood-deep)]/15 hover:bg-white"
-                    } ${interBusy ? "opacity-60" : ""}`}
-                  >
-                    <p className="text-sm font-bold">{m.title}</p>
-                    <p
-                      className={`mt-1 text-[10px] leading-snug ${
-                        active ? "text-white/75" : "text-[var(--play-muted)]"
-                      }`}
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-semibold text-[var(--play-ink)]">
+                Bias — không đọc stake
+              </p>
+              <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                {(
+                  [
+                    {
+                      id: "auto" as const,
+                      title: "Tự động",
+                      desc: "Weight gốc",
+                    },
+                    {
+                      id: "small" as const,
+                      title: "Small",
+                      desc: "Lá 1–4 ~72%",
+                    },
+                    {
+                      id: "big" as const,
+                      title: "Big",
+                      desc: "Lá 5–8 ~72%",
+                    },
+                    {
+                      id: "flat" as const,
+                      title: "Flat",
+                      desc: "Cân ~12.5%",
+                    },
+                    {
+                      id: "cool" as const,
+                      title: "Cool",
+                      desc: "Anti-streak",
+                    },
+                  ] as const
+                ).map((m) => {
+                  const active = data.inter!.mode === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      disabled={interBusy}
+                      onClick={() => setInterMode(m.id)}
+                      className={`rounded-xl px-3 py-3 text-left transition ring-1 ${
+                        active
+                          ? "bg-[var(--wood-deep)] text-white ring-[var(--wood-deep)] shadow-sm"
+                          : "bg-white/90 text-[var(--play-ink)] ring-[var(--wood-deep)]/15 hover:bg-white"
+                      } ${interBusy ? "opacity-60" : ""}`}
                     >
-                      {m.desc}
-                    </p>
-                  </button>
-                );
-              })}
+                      <p className="text-sm font-bold">{m.title}</p>
+                      <p
+                        className={`mt-1 text-[10px] leading-snug ${
+                          active ? "text-white/75" : "text-[var(--play-muted)]"
+                        }`}
+                      >
+                        {m.desc}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="space-y-2">
               <p className="text-[11px] font-semibold text-[var(--play-ink)]">
-                Chỉnh thẳng lá thắng (100%)
+                Force — ép lá thắng (100%)
               </p>
               <div className="grid grid-cols-4 gap-2">
                 {CARDS.map((card) => {
@@ -1414,10 +1547,6 @@ export default function AdminDashboard() {
                   );
                 })}
               </div>
-              <p className="text-[10px] text-[var(--play-muted)]">
-                Chọn 1 lá → ván kế tiếp (và các ván sau) thắng đúng lá đó cho đến
-                khi đổi mode khác.
-              </p>
             </div>
 
             <p className="text-[10px] text-[var(--play-muted)]">
@@ -1435,44 +1564,142 @@ export default function AdminDashboard() {
           </section>
 
           <section className="app-panel mt-3 space-y-2 p-3">
-            <p className="play-heading text-sm">Xác suất hiệu dụng (mode hiện tại)</p>
+            <p className="play-heading text-sm">Cầu auth + lời nhà (ván này)</p>
+            <p className="text-[10px] text-[var(--play-muted)]">
+              Stake user đăng nhập · Lời ước lượng nếu lá đó thắng
+              {data.inter.recentWins && data.inter.recentWins.length > 0
+                ? ` · cool gần đây: #${data.inter.recentWins.join(", #")}`
+                : ""}
+            </p>
+            <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-8">
+              {CARDS.map((card, i) => {
+                const stake = data.inter!.authBetsRound?.[i] ?? 0;
+                const profit =
+                  data.inter!.probabilities.find((p) => p.cardId === card.id)
+                    ?.houseProfit ?? 0;
+                return (
+                  <div
+                    key={card.id}
+                    className="rounded-lg bg-white/80 px-1.5 py-1.5 text-center ring-1 ring-[var(--wood-deep)]/10"
+                  >
+                    <img
+                      src={card.image}
+                      alt=""
+                      className="mx-auto h-8 w-6 rounded object-cover"
+                    />
+                    <p className="mt-0.5 text-[9px] font-bold text-[var(--play-ink)]">
+                      #{card.id}
+                    </p>
+                    <p className="font-play text-[9px] tabular-nums text-[var(--play-muted)]">
+                      {formatXu(stake)}
+                    </p>
+                    <p
+                      className={`font-play text-[9px] font-bold tabular-nums ${
+                        profit >= 0
+                          ? "text-[var(--jade-deep)]"
+                          : "text-rose-600"
+                      }`}
+                    >
+                      {profit > 0 ? "+" : ""}
+                      {formatXu(Math.round(profit))}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="app-panel mt-3 space-y-2 p-3">
+            <p className="play-heading text-sm">
+              Xác suất hiệu dụng
+              {data.inter.effectiveMode
+                ? ` (${data.inter.effectiveMode})`
+                : ""}
+            </p>
             {(data.inter.mode === "app" ||
               data.inter.mode === "user" ||
-              data.inter.mode === "fed") && (
+              data.inter.mode === "fed" ||
+              data.inter.mode === "hedge" ||
+              data.inter.effectiveMode === "app" ||
+              data.inter.effectiveMode === "user" ||
+              data.inter.effectiveMode === "fed" ||
+              data.inter.effectiveMode === "hedge") && (
               <p className="text-[10px] text-[var(--play-muted)]">
                 Theo stake user đăng nhập · Trả = cược×hệ số · Lời app = tổng
                 stake − trả
-                {data.inter.authBetsRound
-                  ? ` · cầu [${data.inter.authBetsRound.map((n) => formatXu(n)).join(" · ")}]`
-                  : ""}
               </p>
             )}
+            {(() => {
+              const probs = data.inter!.probabilities;
+              const maxPct = Math.max(...probs.map((p) => p.percent), 0);
+              return (
+                <div className="space-y-1.5">
+                  {probs.map((p) => {
+                    const card = CARDS.find((c) => c.id === p.cardId);
+                    const forced = data.inter!.mode === String(p.cardId);
+                    const isMax = p.percent === maxPct && maxPct > 0;
+                    return (
+                      <div key={p.cardId} className="flex items-center gap-2">
+                        {card ? (
+                          <img
+                            src={card.image}
+                            alt=""
+                            className="h-7 w-5 shrink-0 rounded object-cover"
+                          />
+                        ) : null}
+                        <span className="w-16 shrink-0 truncate text-[10px] font-semibold">
+                          #{p.cardId}
+                        </span>
+                        <div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--wood-deep)]/10">
+                          <div
+                            className={`h-full rounded-full ${
+                              forced || isMax
+                                ? "bg-amber-500"
+                                : "bg-[var(--wood-deep)]/55"
+                            }`}
+                            style={{
+                              width: `${Math.min(100, Math.max(2, p.percent))}%`,
+                            }}
+                          />
+                        </div>
+                        <span className="font-play w-12 shrink-0 text-right text-xs font-bold tabular-nums text-[var(--wood-deep)]">
+                          {p.percent}%
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {data.inter.probabilities.map((p) => {
                 const card = CARDS.find((c) => c.id === p.cardId);
-                const forced =
-                  data.inter!.mode === String(p.cardId);
+                const forced = data.inter!.mode === String(p.cardId);
+                const eff = data.inter!.effectiveMode ?? data.inter!.mode;
                 const policy =
-                  data.inter!.mode === "app" ||
-                  data.inter!.mode === "user" ||
-                  data.inter!.mode === "fed";
+                  eff === "app" ||
+                  eff === "user" ||
+                  eff === "fed" ||
+                  eff === "hedge";
                 const hot =
                   forced ||
-                  (data.inter!.mode === "small" && p.group === "small") ||
-                  (data.inter!.mode === "big" && p.group === "big") ||
-                  (data.inter!.mode === "fed" && p.percent >= 50) ||
-                  (policy && data.inter!.mode !== "fed" && p.percent >= 18);
+                  (eff === "small" && p.group === "small") ||
+                  (eff === "big" && p.group === "big") ||
+                  (eff === "fed" && p.percent >= 50) ||
+                  (eff === "hedge" && p.percent >= 20) ||
+                  (policy && eff !== "fed" && p.percent >= 18);
                 return (
                   <div
                     key={p.cardId}
                     className={`rounded-xl px-2 py-2 ring-1 ${
                       forced
                         ? "bg-amber-100 ring-amber-400"
-                        : (data.inter!.mode === "app" ||
-                              data.inter!.mode === "fed") &&
+                        : (eff === "app" ||
+                              eff === "fed" ||
+                              eff === "hedge") &&
                             hot
                           ? "bg-rose-50 ring-rose-300/70"
-                          : data.inter!.mode === "user" && hot
+                          : eff === "user" && hot
                             ? "bg-emerald-50 ring-emerald-300/70"
                             : hot
                               ? "bg-amber-50 ring-amber-300/70"
@@ -1509,15 +1736,47 @@ export default function AdminDashboard() {
                 );
               })}
             </div>
-            <p className="text-[10px] text-[var(--play-muted)]">
-              ALL = xoay 5 phút · Fed = cứng max lời · App = mềm · User = nhả ·
-              Small/Big = nhóm · Ép #1–#8 = 100%. Xác suất bên dưới theo mode
-              hiệu dụng hiện tại
-              {data.inter.effectiveMode
-                ? ` (${data.inter.effectiveMode})`
-                : ""}
-              .
-            </p>
+          </section>
+
+          <section className="app-panel mt-3 space-y-2 p-3">
+            <p className="play-heading text-sm">Log Inter gần đây</p>
+            <ul className="max-h-40 space-y-1 overflow-y-auto text-[11px]">
+              {(data.botPanel.logs ?? [])
+                .filter(
+                  (l) =>
+                    l.botId === "system" &&
+                    typeof l.message === "string" &&
+                    l.message.includes("Inter:"),
+                )
+                .slice(0, 5)
+                .map((l) => (
+                  <li
+                    key={l.id}
+                    className="rounded-lg bg-white/70 px-2 py-1.5 ring-1 ring-[var(--wood-deep)]/10"
+                  >
+                    <span className="font-semibold text-[var(--wood-deep)]">
+                      Ván #{l.round}
+                    </span>
+                    <span className="text-[var(--play-muted)]">
+                      {" "}
+                      · {new Date(l.at).toLocaleTimeString("vi-VN")}
+                    </span>
+                    <p className="mt-0.5 text-[10px] leading-snug text-[var(--play-ink)]">
+                      {l.message}
+                    </p>
+                  </li>
+                ))}
+              {(data.botPanel.logs ?? []).filter(
+                (l) =>
+                  l.botId === "system" &&
+                  typeof l.message === "string" &&
+                  l.message.includes("Inter:"),
+              ).length === 0 && (
+                <li className="py-3 text-center text-[var(--play-muted)]">
+                  Chưa có log Inter — đợi khóa cược ván sau
+                </li>
+              )}
+            </ul>
           </section>
         </>
       )}

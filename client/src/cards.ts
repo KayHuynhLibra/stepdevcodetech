@@ -15,6 +15,21 @@ export interface RoundResult {
   win: number;
 }
 
+/** Lịch sử cược cá nhân (auth) — khớp server betStore.BetEntry */
+export interface BetEntry {
+  id: string;
+  at: number;
+  userId?: string;
+  username?: string;
+  round: number;
+  cardId: number;
+  amount: number;
+  result: "win" | "lose";
+  payout: number;
+  profit: number;
+  winningCardId: number;
+}
+
 export interface LeaderboardEntry {
   rank: number;
   name: string;

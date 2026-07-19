@@ -17,7 +17,7 @@ import {
   saveUploadedAvatar,
   UPLOADS_DIR,
 } from "./avatars.js";
-import { betStore } from "./betStore.js";
+import { betStore, PER_USER_BET_CAP } from "./betStore.js";
 import { couponStore } from "./couponStore.js";
 import { cardProbabilities } from "./cards.js";
 import { CARDS, GameEngine } from "./game.js";
@@ -151,17 +151,22 @@ function requireMainAdmin(
 function buildInterPayload() {
   const inter = interStore.getSnapshot();
   const authBets = engine.getAuthBets();
+  const recentWins = engine.getHistory(3).map((h) => h.win);
   const effective = inter.effectiveMode;
   return {
     ...inter,
     realBetsRound: engine.getRealBets(),
     authBetsRound: authBets,
-    probabilities: cardProbabilities(effective, authBets),
+    recentWins,
+    probabilities: cardProbabilities(effective, authBets, recentWins),
     probabilitiesByMode: {
       auto: cardProbabilities("auto"),
       small: cardProbabilities("small"),
       big: cardProbabilities("big"),
+      flat: cardProbabilities("flat"),
+      cool: cardProbabilities("cool", authBets, recentWins),
       app: cardProbabilities("app", authBets),
+      hedge: cardProbabilities("hedge", authBets),
       user: cardProbabilities("user", authBets),
       fed: cardProbabilities("fed", authBets),
     },
@@ -235,7 +240,11 @@ app.get("/api/auth/me", (req, res) => {
 app.get("/api/auth/bets", (req, res) => {
   const user = requireAuth(req, res);
   if (!user) return;
-  const limit = Math.min(80, Math.max(1, Number(req.query.limit) || 30));
+  const raw = Number(req.query.limit);
+  const limit = Math.min(
+    PER_USER_BET_CAP,
+    Math.max(1, Number.isFinite(raw) ? Math.floor(raw) : 50),
+  );
   res.json({ ok: true, bets: betStore.getByUser(user.id, limit) });
 });
 
@@ -598,6 +607,20 @@ app.post("/api/admin/user-vip", (req, res) => {
     return res.status(400).json({ ok: false, reason: "Thiếu userId" });
   }
   const result = authStore.setVip(userId, isVip);
+  if (!result.ok) return res.status(400).json(result);
+  engine.refreshAllClients();
+  res.json(result);
+});
+
+/** Admin: chỉnh ID riêng cho user. */
+app.post("/api/admin/user-code", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const userId = String(req.body?.userId ?? "");
+  const code = String(req.body?.code ?? "");
+  if (!userId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId" });
+  }
+  const result = authStore.setUserCode(userId, code);
   if (!result.ok) return res.status(400).json(result);
   engine.refreshAllClients();
   res.json(result);

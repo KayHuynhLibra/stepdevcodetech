@@ -2,7 +2,7 @@ import { CARDS, formatXu, type Phase } from "../cards";
 
 const MAX_CARDS_PER_ROUND = 5;
 /** Đồng bộ server PHASE_MS.betting — dùng cho thanh tiến trình */
-const BETTING_SECONDS = 60;
+const BETTING_SECONDS = 30;
 
 interface BettingBoardProps {
   remaining: number;
