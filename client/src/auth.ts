@@ -65,6 +65,14 @@ export function playPath(
   return `${homePath(user)}/play`;
 }
 
+/** Bàn Bánh xe Arcana theo role + mã user. */
+export function arcanaPath(
+  user: { role: UserRole; code?: string; id: string } | null | undefined,
+): string {
+  if (!user) return "/login";
+  return `${homePath(user)}/arcana`;
+}
+
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }

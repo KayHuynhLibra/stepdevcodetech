@@ -10,6 +10,7 @@ import {
   homePath,
   isStaff,
   playPath,
+  arcanaPath,
   saveSession,
   VIP_ROUNDS_REQUIRED,
   type AuthUser,
@@ -403,12 +404,18 @@ export default function UserDashboard() {
       </section>
 
       <div className="app-frame mt-6 px-4 py-5">
-        <p className="play-heading text-center text-base">Sẵn sàng đoán bài?</p>
+        <p className="play-heading text-center text-base">Chọn bàn chơi</p>
         <p className="mt-1 text-center text-xs text-[var(--play-muted)]">
-          Số dư đồng bộ khi bạn chơi và thoát bàn.
+          Hai bàn độc lập — số dư xu dùng chung.
         </p>
-        <Link to={playPath(user)} className="app-btn-primary mt-4">
+        <Link to={playPath(user)} className="app-btn-primary mt-4 block text-center">
           Vào bàn Tarot
+        </Link>
+        <Link
+          to={arcanaPath(user)}
+          className="mt-2 block rounded-xl bg-[var(--wood-deep)] px-4 py-3 text-center text-sm font-bold text-[var(--gold-soft)] ring-1 ring-[var(--gold)]/40"
+        >
+          Vào Bánh xe Arcana
         </Link>
       </div>
 

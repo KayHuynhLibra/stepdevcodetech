@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   api,
+  arcanaPath,
   clearSession,
   getStoredUser,
   getToken,
@@ -19,6 +20,9 @@ import { AppShell } from "../components/AppShell";
 import { IdentityBadge } from "../components/IdentityBadge";
 import { uploadAvatarFromFile } from "../uploadAvatar";
 
+type ManagedGame = "tarot" | "arcana";
+const MANAGED_GAME_KEY = "tarot_admin_managed_game";
+
 type TabId =
   | "overview"
   | "users"
@@ -28,7 +32,8 @@ type TabId =
   | "inter"
   | "mod"
   | "ips"
-  | "tools";
+  | "tools"
+  | "arcana";
 
 interface IpRow {
   ip: string;
@@ -210,6 +215,7 @@ interface BetRow {
 }
 
 interface VaultSnapshot {
+  label?: string;
   balance: number;
   totalStakeIn: number;
   totalPayoutOut: number;
@@ -226,6 +232,38 @@ interface VaultSnapshot {
     byUsername: string;
     username?: string;
   }[];
+}
+
+interface ArcanaSlotAdmin {
+  id: number;
+  key: string;
+  name: string;
+  nameVi: string;
+  ratio: number;
+  weight: number;
+  image: string;
+}
+
+interface ArcanaConfig {
+  version: 1;
+  enabled: boolean;
+  betTiers: number[];
+  slots: ArcanaSlotAdmin[];
+  updatedAt: number;
+  updatedBy?: string;
+}
+
+interface ArcanaStats {
+  spinCount: number;
+  winCount: number;
+  loseCount: number;
+  winRate: number;
+  vaultBalance: number;
+  vaultStakeIn: number;
+  vaultPayoutOut: number;
+  vaultNetHouse: number;
+  houseEdgeXu: number;
+  enabled: boolean;
 }
 
 interface Overview {
@@ -266,6 +304,9 @@ interface Overview {
     loseCount: number;
   };
   vault?: VaultSnapshot;
+  vaultArcana?: VaultSnapshot;
+  arcanaStats?: ArcanaStats;
+  arcanaConfig?: ArcanaConfig;
   inter?: InterSnapshot;
   coupons?: {
     code: string;
@@ -316,6 +357,11 @@ interface Overview {
     vaultPayoutOut: number;
     vaultNetHouse: number;
     houseEdgeXu: number;
+    vaultArcanaBalance?: number;
+    vaultArcanaStakeIn?: number;
+    vaultArcanaPayoutOut?: number;
+    vaultArcanaNetHouse?: number;
+    arcanaHouseEdgeXu?: number;
     interMode?: InterMode;
   };
   audit?: {
@@ -356,6 +402,14 @@ export default function AdminDashboard() {
   const [me, setMe] = useState<AuthUser | null>(getStoredUser());
   const [data, setData] = useState<Overview | null>(null);
   const [tab, setTab] = useState<TabId>("overview");
+  const [managedGame, setManagedGame] = useState<ManagedGame>(() => {
+    try {
+      const v = localStorage.getItem(MANAGED_GAME_KEY);
+      return v === "arcana" ? "arcana" : "tarot";
+    } catch {
+      return "tarot";
+    }
+  });
   const [botCount, setBotCount] = useState(25);
   const [msg, setMsg] = useState<string | null>(null);
   const [adjust, setAdjust] = useState<{ userId: string; delta: string }>({
@@ -419,13 +473,41 @@ export default function AdminDashboard() {
       clusters: number;
     };
   } | null>(null);
+  const [arcanaSpins, setArcanaSpins] = useState<
+    {
+      id: string;
+      at: number;
+      username: string;
+      stake: number;
+      pickId: number;
+      pickIds?: number[];
+      winId: number;
+      won: boolean;
+      profit: number;
+      seed: string;
+    }[]
+  >([]);
+  const [arcanaBusy, setArcanaBusy] = useState(false);
+
+  const selectManagedGame = (g: ManagedGame) => {
+    setManagedGame(g);
+    try {
+      localStorage.setItem(MANAGED_GAME_KEY, g);
+    } catch {
+      /* ignore */
+    }
+    if (g === "tarot" && tab === "arcana") setTab("overview");
+    if (g === "arcana" && tab === "inter") setTab("overview");
+  };
 
   const load = useCallback(async () => {
     const overview = await api<Overview>("/api/admin/overview");
     setData(overview);
     setBotCount(overview.stats.botTarget);
-    if (overview.vault) {
-      setVaultSet(String(overview.vault.balance));
+    const activeVault =
+      managedGame === "arcana" ? overview.vaultArcana : overview.vault;
+    if (activeVault) {
+      setVaultSet(String(activeVault.balance));
     }
     if (overview.me.role === "mainadmin") {
       try {
@@ -437,7 +519,7 @@ export default function AdminDashboard() {
         /* ignore */
       }
     }
-  }, []);
+  }, [managedGame]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -451,7 +533,9 @@ export default function AdminDashboard() {
           return;
         }
         const expected = homePath(r.user);
-        const onOwnPlay = loc.pathname === `${expected}/play`;
+        const onOwnPlay =
+          loc.pathname === `${expected}/play` ||
+          loc.pathname === `${expected}/arcana`;
         if (loc.pathname !== expected && !onOwnPlay) {
           nav(expected, { replace: true });
           return;
@@ -805,11 +889,19 @@ export default function AdminDashboard() {
 
   const vaultAdjust = async (delta: number) => {
     try {
-      await api("/api/mainadmin/vault/adjust", {
+      const path =
+        managedGame === "arcana"
+          ? "/api/mainadmin/vault-arcana/adjust"
+          : "/api/mainadmin/vault/adjust";
+      await api(path, {
         method: "POST",
         body: JSON.stringify({ delta, note: vaultNote }),
       });
-      setMsg(delta > 0 ? "Đã bơm kho xu" : "Đã rút kho xu");
+      setMsg(
+        delta > 0
+          ? `Đã bơm ${managedGame === "arcana" ? "Kho Arcana" : "Kho Tarot"}`
+          : `Đã rút ${managedGame === "arcana" ? "Kho Arcana" : "Kho Tarot"}`,
+      );
       await load();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Lỗi");
@@ -819,14 +911,22 @@ export default function AdminDashboard() {
   const vaultSetBalance = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      await api("/api/mainadmin/vault/set", {
+      const path =
+        managedGame === "arcana"
+          ? "/api/mainadmin/vault-arcana/set"
+          : "/api/mainadmin/vault/set";
+      await api(path, {
         method: "POST",
         body: JSON.stringify({
           balance: Number(vaultSet),
           note: vaultNote,
         }),
       });
-      setMsg("Đã đặt số dư kho xu");
+      setMsg(
+        managedGame === "arcana"
+          ? "Đã đặt số dư Kho Arcana"
+          : "Đã đặt số dư Kho Tarot",
+      );
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi");
@@ -834,6 +934,10 @@ export default function AdminDashboard() {
   };
 
   const vaultGrant = async () => {
+    if (managedGame === "arcana") {
+      setMsg("Cấp/thu xu chỉ dùng Kho Tarot (ví vận hành chung)");
+      return;
+    }
     try {
       await api("/api/mainadmin/vault/grant", {
         method: "POST",
@@ -895,6 +999,10 @@ export default function AdminDashboard() {
   };
 
   const vaultSeize = async () => {
+    if (managedGame === "arcana") {
+      setMsg("Cấp/thu xu chỉ dùng Kho Tarot (ví vận hành chung)");
+      return;
+    }
     try {
       await api("/api/mainadmin/vault/seize", {
         method: "POST",
@@ -911,6 +1019,57 @@ export default function AdminDashboard() {
     }
   };
 
+  const loadArcanaSpins = async () => {
+    try {
+      const r = await api<{
+        ok: true;
+        spins: typeof arcanaSpins;
+      }>("/api/mainadmin/arcana/spins?limit=80");
+      setArcanaSpins(r.spins);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi tải spin");
+    }
+  };
+
+  const toggleArcanaEnabled = async () => {
+    if (!data?.arcanaConfig) return;
+    setArcanaBusy(true);
+    try {
+      await api("/api/mainadmin/arcana/config", {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: !data.arcanaConfig.enabled }),
+      });
+      setMsg(
+        data.arcanaConfig.enabled
+          ? "Đã khóa bàn Bánh xe Arcana"
+          : "Đã mở bàn Bánh xe Arcana",
+      );
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi");
+    } finally {
+      setArcanaBusy(false);
+    }
+  };
+
+  const saveArcanaSlot = async (slot: ArcanaSlotAdmin) => {
+    setArcanaBusy(true);
+    try {
+      await api("/api/mainadmin/arcana/config", {
+        method: "PATCH",
+        body: JSON.stringify({
+          slots: [{ id: slot.id, ratio: slot.ratio, weight: slot.weight }],
+        }),
+      });
+      setMsg(`Đã lưu ${slot.nameVi}`);
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi");
+    } finally {
+      setArcanaBusy(false);
+    }
+  };
+
   if (!me || !data) {
     return (
       <AppShell center maxWidth="lg">
@@ -921,16 +1080,23 @@ export default function AdminDashboard() {
 
   const s = data.stats;
   const main = isMainAdmin(me);
+  const activeVault =
+    managedGame === "arcana" ? data.vaultArcana : data.vault;
   const tabs: { id: TabId; label: string; show: boolean }[] = [
     { id: "overview", label: "Tổng quan", show: true },
     { id: "tools", label: "Tra cứu", show: main },
-    { id: "traffic", label: "Lưu lượng", show: main },
-    { id: "inter", label: "Inter", show: main },
+    { id: "traffic", label: "Lưu lượng", show: main && managedGame === "tarot" },
+    { id: "inter", label: "Inter", show: main && managedGame === "tarot" },
+    { id: "arcana", label: "Bánh xe", show: main && managedGame === "arcana" },
     { id: "ips", label: "IP", show: main },
     { id: "users", label: "User & Bot", show: true },
     { id: "mod", label: "Mod", show: true },
     { id: "coupons", label: "Coupon ẩn", show: true },
-    { id: "vault", label: "Kho xu", show: main },
+    {
+      id: "vault",
+      label: managedGame === "arcana" ? "Kho Arcana" : "Kho Tarot",
+      show: main,
+    },
   ];
 
   const filteredUsers = data.users.filter((u) => {
@@ -982,6 +1148,35 @@ export default function AdminDashboard() {
           Thoát
         </button>
       </header>
+
+      {main && (
+        <div className="mt-3 rounded-xl bg-[var(--wood-deep)]/90 p-1.5 ring-1 ring-[var(--gold)]/30">
+          <p className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--gold-soft)]/80">
+            Chọn game quản lý
+          </p>
+          <div className="flex gap-1">
+            {(
+              [
+                ["tarot", "Bàn Tarot"],
+                ["arcana", "Bánh xe Arcana"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => selectManagedGame(id)}
+                className={`flex-1 rounded-lg px-3 py-2 text-xs font-bold transition ${
+                  managedGame === id
+                    ? "bg-[var(--gold)] text-[var(--wood-deep)]"
+                    : "bg-transparent text-[var(--cream)]/85 hover:bg-white/10"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <nav className="mt-4 flex flex-wrap gap-1.5 sm:flex-nowrap sm:overflow-x-auto">
         {tabs
@@ -2773,16 +2968,20 @@ export default function AdminDashboard() {
         </>
       )}
 
-      {tab === "vault" && main && data.vault && (
+      {tab === "vault" && main && activeVault && (
         <>
           <section className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
             {[
-              ["Kho xu hiện tại", formatXu(data.vault.balance), true],
-              ["Tổng cược vào", formatXu(data.vault.totalStakeIn), false],
-              ["Tổng trả thưởng", formatXu(data.vault.totalPayoutOut), false],
-              ["Đã bơm (mint)", formatXu(data.vault.totalMinted), false],
-              ["Đã rút (burn)", formatXu(data.vault.totalBurned), false],
-              ["Net nhà cái", formatXu(data.vault.netHouse), false],
+              [
+                managedGame === "arcana" ? "Kho Arcana hiện tại" : "Kho Tarot hiện tại",
+                formatXu(activeVault.balance),
+                true,
+              ],
+              ["Tổng cược vào", formatXu(activeVault.totalStakeIn), false],
+              ["Tổng trả thưởng", formatXu(activeVault.totalPayoutOut), false],
+              ["Đã bơm (mint)", formatXu(activeVault.totalMinted), false],
+              ["Đã rút (burn)", formatXu(activeVault.totalBurned), false],
+              ["Net nhà cái", formatXu(activeVault.netHouse), false],
             ].map(([label, value, accent]) => (
               <div
                 key={String(label)}
@@ -2803,9 +3002,13 @@ export default function AdminDashboard() {
           </section>
 
           <section className="app-panel mt-4 space-y-3 p-3">
-            <p className="play-heading text-sm">Can thiệp kho xu</p>
+            <p className="play-heading text-sm">
+              Can thiệp {managedGame === "arcana" ? "Kho Arcana" : "Kho Tarot"}
+            </p>
             <p className="text-[11px] text-[var(--play-muted)]">
-              Chỉ mainadmin. Cược user thật tự vào kho; thắng thì trừ kho.
+              {managedGame === "arcana"
+                ? "Chỉ cược/trả bánh xe ghi kho này. Coupon/cấp xu user dùng Kho Tarot."
+                : "Cược bàn Tarot + coupon/cấp/thu xu. Không lẫn Kho Arcana."}
             </p>
             <input
               value={vaultNote}
@@ -2851,6 +3054,7 @@ export default function AdminDashboard() {
             </form>
           </section>
 
+          {managedGame === "tarot" && (
           <section className="app-panel mt-4 space-y-2 p-3">
             <p className="play-heading text-sm">Xu kho ↔ user</p>
             <select
@@ -2892,14 +3096,15 @@ export default function AdminDashboard() {
               </button>
             </div>
           </section>
+          )}
 
           <section className="app-panel mt-4 p-3">
             <p className="play-heading mb-2 text-sm">Sổ kho (gần đây)</p>
             <ul className="max-h-56 space-y-1.5 overflow-y-auto">
-              {data.vault.ledger.length === 0 ? (
+              {activeVault.ledger.length === 0 ? (
                 <li className="text-xs text-[var(--play-muted)]">Chưa có giao dịch</li>
               ) : (
-                data.vault.ledger.map((row) => (
+                activeVault.ledger.map((row) => (
                   <li
                     key={row.id}
                     className="rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
@@ -2931,9 +3136,177 @@ export default function AdminDashboard() {
         </>
       )}
 
-      <div className="mt-5 flex gap-2">
-        <Link to={playPath(me)} className="app-btn-primary flex-1">
-          Vào bàn chơi
+      {tab === "arcana" && main && data.arcanaConfig && (
+        <>
+          <section className="app-panel mt-4 space-y-3 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="play-heading text-sm">Bàn Bánh xe Arcana</p>
+                <p className="text-[11px] text-[var(--play-muted)]">
+                  Hệ số / weight riêng — không dùng Inter Tarot
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={arcanaBusy}
+                onClick={() => void toggleArcanaEnabled()}
+                className={`rounded-full px-3 py-1.5 text-xs font-bold text-white ${
+                  data.arcanaConfig.enabled
+                    ? "bg-[var(--jade-deep)]"
+                    : "bg-rose-700"
+                }`}
+              >
+                {data.arcanaConfig.enabled ? "Đang mở" : "Đang khóa"}
+              </button>
+            </div>
+            {data.arcanaStats && (
+              <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                <div className="rounded-lg bg-white/70 p-2 ring-1 ring-[var(--wood-deep)]/10">
+                  <p className="text-[var(--play-muted)]">Spins</p>
+                  <p className="font-play font-bold">
+                    {data.arcanaStats.spinCount}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-white/70 p-2 ring-1 ring-[var(--wood-deep)]/10">
+                  <p className="text-[var(--play-muted)]">Win rate</p>
+                  <p className="font-play font-bold">
+                    {data.arcanaStats.winRate}%
+                  </p>
+                </div>
+                <div className="rounded-lg bg-white/70 p-2 ring-1 ring-[var(--wood-deep)]/10">
+                  <p className="text-[var(--play-muted)]">Edge</p>
+                  <p className="font-play font-bold">
+                    {formatXu(data.arcanaStats.houseEdgeXu)}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-white/70 p-2 ring-1 ring-[var(--wood-deep)]/10">
+                  <p className="text-[var(--play-muted)]">Kho Arcana</p>
+                  <p className="font-play font-bold">
+                    {formatXu(data.arcanaStats.vaultBalance)}
+                  </p>
+                </div>
+              </div>
+            )}
+          </section>
+          <section className="app-panel mt-3 space-y-2 p-3">
+            <p className="play-heading text-sm">Hệ số & weight 8 lá</p>
+            <ul className="space-y-2">
+              {data.arcanaConfig.slots.map((slot) => (
+                <li
+                  key={slot.id}
+                  className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
+                >
+                  <img
+                    src={slot.image}
+                    alt=""
+                    className="h-10 w-7 rounded object-cover"
+                  />
+                  <span className="min-w-[6rem] font-semibold">
+                    {slot.nameVi}
+                  </span>
+                  <label className="flex items-center gap-1">
+                    1:
+                    <input
+                      type="number"
+                      min={1}
+                      className="app-input w-16 py-1"
+                      defaultValue={slot.ratio}
+                      id={`arcana-ratio-${slot.id}`}
+                    />
+                  </label>
+                  <label className="flex items-center gap-1">
+                    w
+                    <input
+                      type="number"
+                      min={0}
+                      className="app-input w-16 py-1"
+                      defaultValue={slot.weight}
+                      id={`arcana-weight-${slot.id}`}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={arcanaBusy}
+                    className="rounded-full bg-[var(--wood-deep)] px-2.5 py-1 text-[10px] font-bold text-white"
+                    onClick={() => {
+                      const ratio = Number(
+                        (
+                          document.getElementById(
+                            `arcana-ratio-${slot.id}`,
+                          ) as HTMLInputElement | null
+                        )?.value,
+                      );
+                      const weight = Number(
+                        (
+                          document.getElementById(
+                            `arcana-weight-${slot.id}`,
+                          ) as HTMLInputElement | null
+                        )?.value,
+                      );
+                      void saveArcanaSlot({ ...slot, ratio, weight });
+                    }}
+                  >
+                    Lưu
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+          <section className="app-panel mt-3 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="play-heading text-sm">Log quay gần đây</p>
+              <button
+                type="button"
+                className="text-[11px] font-bold text-[var(--wood-deep)] underline"
+                onClick={() => void loadArcanaSpins()}
+              >
+                Tải lại
+              </button>
+            </div>
+            <ul className="max-h-56 space-y-1.5 overflow-y-auto text-[11px]">
+              {arcanaSpins.length === 0 ? (
+                <li className="text-[var(--play-muted)]">
+                  Bấm “Tải lại” để xem log
+                </li>
+              ) : (
+                arcanaSpins.map((sp) => (
+                  <li
+                    key={sp.id}
+                    className="rounded-lg bg-white/70 px-2 py-1.5 ring-1 ring-[var(--wood-deep)]/10"
+                  >
+                    <span className="font-semibold">{sp.username}</span>
+                    {" · "}
+                    {formatXu(sp.stake)} · picks [
+                    {(sp.pickIds?.length ? sp.pickIds : [sp.pickId]).join(", ")}
+                    ] → #{sp.winId}
+                    {" · "}
+                    <span
+                      className={
+                        sp.won ? "text-[var(--jade-deep)]" : "text-rose-600"
+                      }
+                    >
+                      {sp.won ? "win" : "lose"} {formatXu(sp.profit)}
+                    </span>
+                    <p className="text-[10px] text-[var(--play-muted)]">
+                      {new Date(sp.at).toLocaleString("vi-VN")} · seed {sp.seed}
+                    </p>
+                  </li>
+                ))
+              )}
+            </ul>
+          </section>
+        </>
+      )}
+
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+        <Link to={playPath(me)} className="app-btn-primary flex-1 text-center">
+          Vào bàn Tarot
+        </Link>
+        <Link
+          to={arcanaPath(me)}
+          className="flex-1 rounded-xl bg-[var(--wood-deep)] px-4 py-3 text-center text-sm font-bold text-[var(--gold-soft)] ring-1 ring-[var(--gold)]/40"
+        >
+          Vào Bánh xe Arcana
         </Link>
         <button
           type="button"

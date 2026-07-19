@@ -46,7 +46,7 @@ npm run backup:data
 # → server/data/backups/YYYYMMDD-HHMMSS/
 ```
 
-On Railway, run this before risky deploys, or schedule a cron that executes the same command / snapshots the volume. Keep `users.json`, `vault.json`, `tokens.json`, `bets.json`, `coupons.json`, `inter.json`, `history.json`, `audit.json`, `reports.json`, `guest-ips.json`.
+On Railway, run this before risky deploys, or schedule a cron that executes the same command / snapshots the volume. Keep `users.json`, `vault.json`, `vault-arcana.json`, `arcana-wheel.json`, `arcana-spins.json`, `tokens.json`, `bets.json`, `coupons.json`, `inter.json`, `history.json`, `audit.json`, `reports.json`, `guest-ips.json`.
 
 ### Scale migrate (÷10) — one-shot
 

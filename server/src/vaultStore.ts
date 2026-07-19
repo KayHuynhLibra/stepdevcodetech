@@ -39,8 +39,6 @@ interface VaultFile {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, "..", "data");
-const VAULT_PATH = join(DATA_DIR, "vault.json");
-const VAULT_TMP = join(DATA_DIR, "vault.json.tmp");
 const LEDGER_CAP = 200;
 const START_BALANCE = 500_000;
 
@@ -51,18 +49,24 @@ export class VaultStore {
   private totalMinted = 0;
   private totalBurned = 0;
   private ledger: VaultLedgerEntry[] = [];
+  private readonly filePath: string;
+  private readonly tmpPath: string;
+  private readonly label: string;
 
-  constructor() {
+  constructor(fileName = "vault.json", label = "Kho Tarot") {
+    this.filePath = join(DATA_DIR, fileName);
+    this.tmpPath = join(DATA_DIR, `${fileName}.tmp`);
+    this.label = label;
     this.load();
   }
 
   private load() {
     try {
-      if (!existsSync(VAULT_PATH)) {
+      if (!existsSync(this.filePath)) {
         this.save();
         return;
       }
-      const parsed = JSON.parse(readFileSync(VAULT_PATH, "utf8")) as VaultFile;
+      const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as VaultFile;
       if (parsed?.version !== 1) return;
       if (typeof parsed.balance === "number") this.balance = parsed.balance;
       if (typeof parsed.totalStakeIn === "number")
@@ -76,9 +80,11 @@ export class VaultStore {
       if (Array.isArray(parsed.ledger)) {
         this.ledger = parsed.ledger.slice(0, LEDGER_CAP);
       }
-      console.log(`[vault] Loaded kho xu · balance ${Math.round(this.balance)}`);
+      console.log(
+        `[vault:${this.label}] Loaded · balance ${Math.round(this.balance)}`,
+      );
     } catch (err) {
-      console.warn("[vault] Failed to load vault.json:", err);
+      console.warn(`[vault:${this.label}] Failed to load:`, err);
     }
   }
 
@@ -94,10 +100,10 @@ export class VaultStore {
         totalBurned: this.totalBurned,
         ledger: this.ledger.slice(0, LEDGER_CAP),
       };
-      writeFileSync(VAULT_TMP, JSON.stringify(payload, null, 2), "utf8");
-      renameSync(VAULT_TMP, VAULT_PATH);
+      writeFileSync(this.tmpPath, JSON.stringify(payload, null, 2), "utf8");
+      renameSync(this.tmpPath, this.filePath);
     } catch (err) {
-      console.warn("[vault] Failed to save vault.json:", err);
+      console.warn(`[vault:${this.label}] Failed to save:`, err);
     }
   }
 
@@ -125,6 +131,7 @@ export class VaultStore {
 
   getSnapshot() {
     return {
+      label: this.label,
       balance: this.balance,
       totalStakeIn: this.totalStakeIn,
       totalPayoutOut: this.totalPayoutOut,
@@ -171,7 +178,7 @@ export class VaultStore {
     this.totalPayoutOut += amt;
     if (this.balance < 0) {
       console.warn(
-        `[vault] Kho âm ${this.balance} sau trả ${amt} cho ${username}`,
+        `[vault:${this.label}] Kho âm ${this.balance} sau trả ${amt} cho ${username}`,
       );
     }
     this.push("payout_out", -amt, "system", `Trả thưởng từ kho`, {
@@ -194,7 +201,12 @@ export class VaultStore {
     this.balance = next;
     if (d > 0) this.totalMinted += d;
     else this.totalBurned += -d;
-    this.push(d > 0 ? "mint" : "burn", d, byUsername, note || (d > 0 ? "Bơm kho" : "Rút kho"));
+    this.push(
+      d > 0 ? "mint" : "burn",
+      d,
+      byUsername,
+      note || (d > 0 ? "Bơm kho" : "Rút kho"),
+    );
     return { ok: true, balance: this.balance };
   }
 
@@ -269,13 +281,10 @@ export class VaultStore {
     if (amt <= 0) return;
     this.balance -= amt;
     this.totalMinted += amt;
-    this.push(
-      "coupon_mint",
-      -amt,
-      "system",
-      `Coupon ${code}`,
-      { userId, username },
-    );
+    this.push("coupon_mint", -amt, "system", `Coupon ${code}`, {
+      userId,
+      username,
+    });
   }
 
   /**
@@ -303,4 +312,9 @@ export class VaultStore {
   }
 }
 
-export const vaultStore = new VaultStore();
+/** Kho bàn Tarot + vận hành ví (coupon/grant/seize) */
+export const vaultTarot = new VaultStore("vault.json", "Kho Tarot");
+/** Alias cũ — game.ts / coupon vẫn import vaultStore */
+export const vaultStore = vaultTarot;
+/** Kho bàn Bánh xe Arcana — độc lập */
+export const vaultArcana = new VaultStore("vault-arcana.json", "Kho Arcana");

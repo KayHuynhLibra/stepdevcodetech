@@ -13,6 +13,7 @@ import LoginPage from "./pages/LoginPage";
 import UserDashboard from "./pages/UserDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import GamePage from "./pages/GamePage";
+import ArcanaWheelPage from "./pages/ArcanaWheelPage";
 
 function RequireAuth({
   children,
@@ -63,24 +64,31 @@ function RequireOwnCode({
 
   const mine = String(user.code || user.id);
   const param = String(userCode || "");
-  const onPlay = loc.pathname.endsWith("/play");
+  const onPlay =
+    loc.pathname.endsWith("/play") || loc.pathname.endsWith("/arcana");
   const ownHome = homePath(user);
   const ownPlay = playPath(user);
+  // Khi đang ở /arcana mà bị redirect vì sai mã, giữ /arcana
+  const ownDest = loc.pathname.endsWith("/arcana")
+    ? `${ownHome}/arcana`
+    : onPlay
+      ? ownPlay
+      : ownHome;
 
   // Role URL không khớp (vd player vào /admin/…)
   if (role === "mainadmin" && user.role !== "mainadmin") {
-    return <Navigate to={onPlay ? ownPlay : ownHome} replace />;
+    return <Navigate to={ownDest} replace />;
   }
   if (role === "admin" && user.role !== "admin") {
-    return <Navigate to={onPlay ? ownPlay : ownHome} replace />;
+    return <Navigate to={ownDest} replace />;
   }
   if (role === "user" && isStaff(user)) {
-    return <Navigate to={onPlay ? ownPlay : ownHome} replace />;
+    return <Navigate to={ownDest} replace />;
   }
 
   // Mã trên URL ≠ mã user đang login
   if (!param || param !== mine) {
-    return <Navigate to={onPlay ? ownPlay : ownHome} replace />;
+    return <Navigate to={ownDest} replace />;
   }
 
   return <RequireAuth role={role}>{children}</RequireAuth>;
@@ -137,6 +145,14 @@ export default function App() {
           </RequireOwnCode>
         }
       />
+      <Route
+        path="/player/:userCode/arcana"
+        element={
+          <RequireOwnCode role="user">
+            <ArcanaWheelPage />
+          </RequireOwnCode>
+        }
+      />
 
       <Route
         path="/admin/:userCode"
@@ -154,6 +170,14 @@ export default function App() {
           </RequireOwnCode>
         }
       />
+      <Route
+        path="/admin/:userCode/arcana"
+        element={
+          <RequireOwnCode role="admin">
+            <ArcanaWheelPage />
+          </RequireOwnCode>
+        }
+      />
 
       <Route
         path="/mainadmin/:userCode"
@@ -168,6 +192,14 @@ export default function App() {
         element={
           <RequireOwnCode role="mainadmin">
             <GamePage />
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/mainadmin/:userCode/arcana"
+        element={
+          <RequireOwnCode role="mainadmin">
+            <ArcanaWheelPage />
           </RequireOwnCode>
         }
       />

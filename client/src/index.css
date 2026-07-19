@@ -1097,3 +1097,15 @@ input {
 .tap-card:active {
   transform: scale(0.94);
 }
+
+/* Bánh xe Arcana — quay tròn GPU */
+.arcana-wheel-wrap {
+  touch-action: none;
+  user-select: none;
+}
+
+.arcana-wheel-disc {
+  will-change: transform;
+  backface-visibility: hidden;
+}
+

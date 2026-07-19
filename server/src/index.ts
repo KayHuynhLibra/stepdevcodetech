@@ -28,7 +28,8 @@ import { guestIpStore } from "./guestIpStore.js";
 import { lookupIpGeoMany } from "./ipGeo.js";
 import { reportStore } from "./reportStore.js";
 import type { PublicState } from "./types.js";
-import { vaultStore } from "./vaultStore.js";
+import { arcanaWheelStore } from "./arcanaWheelStore.js";
+import { vaultArcana, vaultStore } from "./vaultStore.js";
 
 const PORT = Number(process.env.PORT) || 3001;
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -538,10 +539,15 @@ app.get("/api/admin/overview", (req, res) => {
 
   if (isMainAdmin(me)) {
     const vault = vaultStore.getSnapshot();
+    const vaultArcanaSnap = vaultArcana.getSnapshot();
     const bets = betStore.getTrafficStats();
     const accounts = authStore.getAccountStats();
     const live = engine.getLiveTraffic();
+    const arcanaStats = arcanaWheelStore.getStats();
     payload.vault = vault;
+    payload.vaultArcana = vaultArcanaSnap;
+    payload.arcanaStats = arcanaStats;
+    payload.arcanaConfig = arcanaWheelStore.getConfig();
     payload.inter = buildInterPayload();
     payload.traffic = {
       ...live,
@@ -552,6 +558,12 @@ app.get("/api/admin/overview", (req, res) => {
       vaultPayoutOut: vault.totalPayoutOut,
       vaultNetHouse: vault.netHouse,
       houseEdgeXu: vault.totalStakeIn - vault.totalPayoutOut,
+      vaultArcanaBalance: vaultArcanaSnap.balance,
+      vaultArcanaStakeIn: vaultArcanaSnap.totalStakeIn,
+      vaultArcanaPayoutOut: vaultArcanaSnap.totalPayoutOut,
+      vaultArcanaNetHouse: vaultArcanaSnap.netHouse,
+      arcanaHouseEdgeXu:
+        vaultArcanaSnap.totalStakeIn - vaultArcanaSnap.totalPayoutOut,
       interMode: interStore.getMode(),
       interEffectiveMode: interStore.getEffectiveMode(),
     };
@@ -673,6 +685,156 @@ app.post("/api/mainadmin/vault/seize", (req, res) => {
     io.to(sid).emit("balanceUpdate", { balance: live.balance });
   }
   res.json({ ok: true, user: adj.user, vault: vaultStore.getSnapshot() });
+});
+
+/** Kho Arcana — chỉ adjust/set (ops ví dùng Kho Tarot) */
+app.get("/api/mainadmin/vault-arcana", (req, res) => {
+  if (!requireMainAdmin(req, res)) return;
+  res.json({ ok: true, vault: vaultArcana.getSnapshot() });
+});
+
+app.post("/api/mainadmin/vault-arcana/adjust", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const result = vaultArcana.adjust(
+    Number(req.body?.delta),
+    me.username,
+    String(req.body?.note ?? ""),
+  );
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "vault_arcana_adjust", {
+    detail: `${req.body?.delta} ${req.body?.note ?? ""}`,
+  });
+  res.json({ ok: true, vault: vaultArcana.getSnapshot() });
+});
+
+app.post("/api/mainadmin/vault-arcana/set", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const result = vaultArcana.setBalance(
+    Number(req.body?.balance),
+    me.username,
+    String(req.body?.note ?? ""),
+  );
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "vault_arcana_set", { detail: String(req.body?.balance) });
+  res.json({ ok: true, vault: vaultArcana.getSnapshot() });
+});
+
+app.get("/api/mainadmin/games", (req, res) => {
+  if (!requireMainAdmin(req, res)) return;
+  const cfg = arcanaWheelStore.getConfig();
+  res.json({
+    ok: true,
+    games: [
+      {
+        id: "tarot",
+        label: "Bàn Tarot",
+        vaultKey: "tarot",
+        enabled: true,
+      },
+      {
+        id: "arcana",
+        label: "Bánh xe Arcana",
+        vaultKey: "arcana",
+        enabled: cfg.enabled,
+      },
+    ],
+  });
+});
+
+app.get("/api/mainadmin/arcana/config", (req, res) => {
+  if (!requireMainAdmin(req, res)) return;
+  res.json({
+    ok: true,
+    config: arcanaWheelStore.getConfig(),
+    stats: arcanaWheelStore.getStats(),
+  });
+});
+
+app.patch("/api/mainadmin/arcana/config", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const result = arcanaWheelStore.updateConfig(
+    {
+      enabled: req.body?.enabled,
+      betTiers: req.body?.betTiers,
+      slots: req.body?.slots,
+    },
+    me.username,
+  );
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "arcana_config", {
+    detail: JSON.stringify({
+      enabled: req.body?.enabled,
+      betTiers: req.body?.betTiers,
+    }),
+  });
+  res.json({
+    ok: true,
+    config: result.config,
+    stats: arcanaWheelStore.getStats(),
+  });
+});
+
+app.get("/api/mainadmin/arcana/spins", (req, res) => {
+  if (!requireMainAdmin(req, res)) return;
+  const limit = Number(req.query.limit ?? 100);
+  const userId = req.query.userId ? String(req.query.userId) : undefined;
+  res.json({
+    ok: true,
+    spins: arcanaWheelStore.listSpins(limit, userId),
+    stats: arcanaWheelStore.getStats(),
+  });
+});
+
+/** Player: bàn Bánh xe Arcana */
+app.get("/api/arcana-wheel", (req, res) => {
+  const user = requireAuth(req, res);
+  if (!user) return;
+  res.json({
+    ok: true,
+    ...arcanaWheelStore.getPublicState(),
+    balance: user.balance,
+  });
+});
+
+app.get("/api/arcana-wheel/history", (req, res) => {
+  const user = requireAuth(req, res);
+  if (!user) return;
+  const limit = Number(req.query.limit ?? 50);
+  res.json({
+    ok: true,
+    spins: arcanaWheelStore.listSpins(limit, user.id),
+  });
+});
+
+app.post("/api/arcana-wheel/spin", (req, res) => {
+  const user = requireAuth(req, res);
+  if (!user) return;
+  if (!rateLimit(`arcana-spin:${user.id}`, 60, 60_000)) {
+    return res
+      .status(429)
+      .json({ ok: false, reason: "Quay quá nhanh — thử lại sau" });
+  }
+  const result = arcanaWheelStore.spin({
+    userId: user.id,
+    stake: Number(req.body?.stake),
+    pickIds: req.body?.pickIds,
+    pickId: req.body?.pickId,
+  });
+  if (!result.ok) return res.status(400).json(result);
+  const live = engine.applyAuthBalance(user.id, result.balance);
+  for (const sid of live.socketIds) {
+    io.to(sid).emit("balanceUpdate", { balance: live.balance });
+  }
+  res.json({
+    ok: true,
+    spin: result.spin,
+    slot: result.slot,
+    balance: result.balance,
+    recent: arcanaWheelStore.getPublicState().recent,
+  });
 });
 
 app.post("/api/admin/adjust-balance", (req, res) => {
