@@ -403,6 +403,38 @@ export class GuestIpStore {
     return { ok: true, blockedUntil };
   }
 
+  /** Các IP từng thấy userId (cho popup His mainadmin). */
+  findIpsForUser(userId: string): {
+    ip: string;
+    lastSeen: number;
+    joins: number;
+    firstAt: number;
+    lastAt: number;
+  }[] {
+    const id = String(userId ?? "").trim();
+    if (!id) return [];
+    const out: {
+      ip: string;
+      lastSeen: number;
+      joins: number;
+      firstAt: number;
+      lastAt: number;
+    }[] = [];
+    for (const [ip, bind] of this.binds) {
+      const seen = (bind.seenUsers ?? []).find((s) => s.userId === id);
+      if (!seen && bind.lastUserId !== id) continue;
+      out.push({
+        ip,
+        lastSeen: bind.lastSeen,
+        joins: seen?.joins ?? 0,
+        firstAt: seen?.firstAt ?? bind.lastSeen,
+        lastAt: seen?.lastAt ?? bind.lastSeen,
+      });
+    }
+    out.sort((a, b) => b.lastAt - a.lastAt);
+    return out.slice(0, 40);
+  }
+
   listForAdmin(): IpAdminRow[] {
     const now = Date.now();
     const ips = new Set<string>([

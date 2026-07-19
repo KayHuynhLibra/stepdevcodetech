@@ -102,6 +102,49 @@ function formatIpGeo(geo: IpRow["geo"]): string {
     .join("/");
   return [place || "—", isp, flags].filter(Boolean).join(" · ");
 }
+
+interface UserHisPayload {
+  user: {
+    id: string;
+    username: string;
+    code: string;
+    balance: number;
+    role: string;
+    banned: boolean;
+    muted: boolean;
+    isVip: boolean;
+    roundsPlayed: number;
+  };
+  lastIp: string | null;
+  lastIpAt: number | null;
+  ipHistory: {
+    ip: string;
+    firstAt: number;
+    lastAt: number;
+    hits: number;
+  }[];
+  relatedIps: {
+    ip: string;
+    lastSeen: number;
+    joins: number;
+    firstAt: number;
+    lastAt: number;
+  }[];
+  recentBets: {
+    id: string;
+    at: number;
+    round: number;
+    cardId: number;
+    amount: number;
+    result: string;
+    profit: number;
+  }[];
+  stake24h: {
+    stake24h: number;
+    bets24h: number;
+    profit24h: number;
+  };
+}
 type ForceCardMode = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8";
 type InterMode =
   | "all"
@@ -347,6 +390,8 @@ export default function AdminDashboard() {
   const [ipQuick, setIpQuick] = useState<
     "all" | "online" | "cluster" | "blocked"
   >("all");
+  const [hisBusy, setHisBusy] = useState(false);
+  const [hisData, setHisData] = useState<UserHisPayload | null>(null);
   const [toolsQ, setToolsQ] = useState("");
   const [toolsBusy, setToolsBusy] = useState(false);
   const [toolsResult, setToolsResult] = useState<{
@@ -650,6 +695,23 @@ export default function AdminDashboard() {
       setMsg(err instanceof Error ? err.message : "Lỗi IP");
     } finally {
       setIpBusy(false);
+    }
+  };
+
+  const openUserHis = async (userId: string) => {
+    if (!userId || !main) return;
+    setHisBusy(true);
+    setHisData(null);
+    try {
+      const r = await api<{ ok: true } & UserHisPayload>(
+        `/api/mainadmin/users/${encodeURIComponent(userId)}/history`,
+      );
+      setHisData(r);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Không tải His");
+      setHisData(null);
+    } finally {
+      setHisBusy(false);
     }
   };
 
@@ -1900,30 +1962,54 @@ export default function AdminDashboard() {
                     {row.users.map((u) => (
                       <p
                         key={u.id}
-                        className="mt-0.5 text-[11px] text-[var(--play-ink)]"
+                        className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-[var(--play-ink)]"
                       >
-                        <span className="font-semibold">{u.username}</span> · ID{" "}
-                        {u.code} · {formatXu(u.balance)} xu
-                        {u.isVip ? " · VIP" : ""}
-                        {u.banned ? " · BAN" : ""}
-                        {u.muted ? " · MUTE" : ""} · {u.roundsPlayed} ván
-                        {typeof u.stake24h === "number"
-                          ? ` · 24h ${formatXu(u.stake24h)}`
-                          : ""}{" "}
-                        · {u.role}
+                        <span>
+                          <span className="font-semibold">{u.username}</span> ·
+                          ID {u.code} · {formatXu(u.balance)} xu
+                          {u.isVip ? " · VIP" : ""}
+                          {u.banned ? " · BAN" : ""}
+                          {u.muted ? " · MUTE" : ""} · {u.roundsPlayed} ván
+                          {typeof u.stake24h === "number"
+                            ? ` · 24h ${formatXu(u.stake24h)}`
+                            : ""}{" "}
+                          · {u.role}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={hisBusy}
+                          className="rounded-full bg-[var(--wood-deep)] px-2 py-0.5 text-[10px] font-bold text-white disabled:opacity-40"
+                          onClick={() => void openUserHis(u.id)}
+                        >
+                          His
+                        </button>
                       </p>
                     ))}
                     {(row.seenUsers ?? []).length > 0 && (
-                      <p className="mt-1 text-[10px] text-[var(--play-muted)]">
-                        Từng user:{" "}
-                        {(row.seenUsers ?? [])
-                          .slice(0, 8)
-                          .map(
-                            (s) =>
-                              `${s.username}(${s.joins}× ${new Date(s.lastAt).toLocaleDateString("vi-VN")})`,
-                          )
-                          .join(" · ")}
-                      </p>
+                      <div className="mt-1 space-y-0.5">
+                        <p className="text-[10px] font-semibold text-[var(--play-muted)]">
+                          Từng user:
+                        </p>
+                        {(row.seenUsers ?? []).slice(0, 12).map((s) => (
+                          <p
+                            key={s.userId}
+                            className="flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--play-muted)]"
+                          >
+                            <span>
+                              {s.username} ({s.joins}× ·{" "}
+                              {new Date(s.lastAt).toLocaleDateString("vi-VN")})
+                            </span>
+                            <button
+                              type="button"
+                              disabled={hisBusy}
+                              className="rounded-full bg-[var(--wood-deep)]/90 px-2 py-0.5 text-[9px] font-bold text-white disabled:opacity-40"
+                              onClick={() => void openUserHis(s.userId)}
+                            >
+                              His
+                            </button>
+                          </p>
+                        ))}
+                      </div>
                     )}
                     {(row.seenGuests ?? []).length > 0 && (
                       <p className="text-[10px] text-[var(--play-muted)]">
@@ -2857,6 +2943,135 @@ export default function AdminDashboard() {
           Refresh
         </button>
       </div>
+
+      {(hisBusy || hisData) && main && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-3 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => {
+            if (!hisBusy) setHisData(null);
+          }}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-[var(--play-cream,#f7f1e6)] p-4 shadow-xl ring-1 ring-[var(--wood-deep)]/20"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-start justify-between gap-2">
+              <div>
+                <p className="play-heading text-sm">His · lịch sử user</p>
+                <p className="text-[10px] text-[var(--play-muted)]">
+                  Chỉ mainadmin · không lộ client
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/20"
+                disabled={hisBusy}
+                onClick={() => setHisData(null)}
+              >
+                Đóng
+              </button>
+            </div>
+            {hisBusy && !hisData && (
+              <p className="text-xs text-[var(--play-muted)]">Đang tải…</p>
+            )}
+            {hisData && (
+              <div className="space-y-3 text-[11px]">
+                <div className="rounded-lg bg-white/80 px-2.5 py-2 ring-1 ring-[var(--wood-deep)]/10">
+                  <p className="font-semibold text-[var(--play-ink)]">
+                    {hisData.user.username} · ID {hisData.user.code}
+                  </p>
+                  <p className="text-[var(--play-muted)]">
+                    {formatXu(hisData.user.balance)} xu ·{" "}
+                    {hisData.user.roundsPlayed} ván
+                    {hisData.user.isVip ? " · VIP" : ""}
+                    {hisData.user.banned ? " · BAN" : ""}
+                    {hisData.user.muted ? " · MUTE" : ""} · {hisData.user.role}
+                  </p>
+                  <p className="mt-1 text-[var(--play-muted)]">
+                    IP cuối:{" "}
+                    <span className="font-mono font-bold text-[var(--play-ink)]">
+                      {hisData.lastIp ?? "—"}
+                    </span>
+                    {hisData.lastIpAt
+                      ? ` · ${new Date(hisData.lastIpAt).toLocaleString("vi-VN")}`
+                      : ""}
+                  </p>
+                  <p className="text-[var(--play-muted)]">
+                    24h: stake {formatXu(hisData.stake24h.stake24h)} ·{" "}
+                    {hisData.stake24h.bets24h} cược · P/L{" "}
+                    {formatXu(hisData.stake24h.profit24h)}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="mb-1 text-xs font-bold text-[var(--play-ink)]">
+                    IP trên account
+                  </p>
+                  <ul className="max-h-36 space-y-1 overflow-y-auto">
+                    {hisData.ipHistory.length === 0 && (
+                      <li className="text-[var(--play-muted)]">
+                        Chưa ghi (user login/vào bàn sau bản này mới có)
+                      </li>
+                    )}
+                    {hisData.ipHistory.map((h) => (
+                      <li
+                        key={h.ip}
+                        className="rounded bg-white/70 px-2 py-1 font-mono ring-1 ring-[var(--wood-deep)]/10"
+                      >
+                        {h.ip} · {h.hits}× ·{" "}
+                        {new Date(h.lastAt).toLocaleString("vi-VN")}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div>
+                  <p className="mb-1 text-xs font-bold text-[var(--play-ink)]">
+                    IP liên quan (guest-ips)
+                  </p>
+                  <ul className="max-h-28 space-y-1 overflow-y-auto">
+                    {hisData.relatedIps.length === 0 && (
+                      <li className="text-[var(--play-muted)]">Không có</li>
+                    )}
+                    {hisData.relatedIps.map((r) => (
+                      <li
+                        key={r.ip}
+                        className="rounded bg-white/70 px-2 py-1 font-mono ring-1 ring-[var(--wood-deep)]/10"
+                      >
+                        {r.ip} · {r.joins} joins ·{" "}
+                        {new Date(r.lastAt).toLocaleString("vi-VN")}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div>
+                  <p className="mb-1 text-xs font-bold text-[var(--play-ink)]">
+                    Cược gần
+                  </p>
+                  <ul className="max-h-40 space-y-1 overflow-y-auto">
+                    {hisData.recentBets.length === 0 && (
+                      <li className="text-[var(--play-muted)]">Không có</li>
+                    )}
+                    {hisData.recentBets.map((b) => (
+                      <li
+                        key={b.id}
+                        className="rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/10"
+                      >
+                        Ván #{b.round} · lá {b.cardId} · {formatXu(b.amount)} ·{" "}
+                        {b.result} · {formatXu(b.profit)} ·{" "}
+                        {new Date(b.at).toLocaleString("vi-VN")}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </AppShell>
   );
 }

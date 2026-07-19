@@ -51,7 +51,21 @@ export interface UserRecord {
   mutedUntil?: number;
   /** Mã khôi phục mật khẩu (hiển thị 1 lần khi tạo / reset) */
   recoveryCode?: string;
+  /** IP gần nhất (chỉ staff/mainadmin đọc qua API riêng — không vào toPublic) */
+  lastIp?: string;
+  lastIpAt?: number;
+  ipHistory?: IpHistoryEntry[];
 }
+
+/** Lịch sử IP theo user — không lộ ra PublicUser / client player */
+export interface IpHistoryEntry {
+  ip: string;
+  firstAt: number;
+  lastAt: number;
+  hits: number;
+}
+
+const IP_HISTORY_CAP = 20;
 
 export type UserOutcomeMode = "normal" | "win" | "lose";
 
@@ -907,6 +921,49 @@ export class AuthStore {
 
   getById(id: string): UserRecord | undefined {
     return this.byId.get(id);
+  }
+
+  /**
+   * Ghi IP vào account (login / join). Không đưa vào toPublic — chỉ API mainadmin.
+   */
+  recordIp(userId: string, ipRaw: string): void {
+    const ip = String(ipRaw ?? "").trim();
+    if (!ip || ip === "unknown") return;
+    const user = this.byId.get(userId);
+    if (!user) return;
+    const now = Date.now();
+    user.lastIp = ip;
+    user.lastIpAt = now;
+    if (!Array.isArray(user.ipHistory)) user.ipHistory = [];
+    const hit = user.ipHistory.find((x) => x.ip === ip);
+    if (hit) {
+      hit.lastAt = now;
+      hit.hits += 1;
+      user.ipHistory = [hit, ...user.ipHistory.filter((x) => x.ip !== ip)];
+    } else {
+      user.ipHistory.unshift({ ip, firstAt: now, lastAt: now, hits: 1 });
+    }
+    if (user.ipHistory.length > IP_HISTORY_CAP) {
+      user.ipHistory.length = IP_HISTORY_CAP;
+    }
+    this.scheduleSave();
+  }
+
+  /** Snapshot lịch sử IP cho mainadmin (không qua toPublic). */
+  getIpIntel(userId: string): {
+    lastIp?: string;
+    lastIpAt?: number;
+    ipHistory: IpHistoryEntry[];
+  } | null {
+    const user = this.byId.get(userId);
+    if (!user) return null;
+    return {
+      lastIp: user.lastIp,
+      lastIpAt: user.lastIpAt,
+      ipHistory: Array.isArray(user.ipHistory)
+        ? user.ipHistory.map((x) => ({ ...x }))
+        : [],
+    };
   }
 
   getByCode(code: string): UserRecord | undefined {

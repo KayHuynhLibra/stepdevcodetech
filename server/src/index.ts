@@ -10,6 +10,7 @@ import {
   isMainAdmin,
   isStaff,
   isUserOutcomeMode,
+  VIP_ROUNDS_REQUIRED,
 } from "./auth.js";
 import { auditStore } from "./auditStore.js";
 import {
@@ -236,6 +237,7 @@ app.post("/api/auth/register", (req, res) => {
     String(req.body?.password ?? ""),
   );
   if (!result.ok) return res.status(400).json(result);
+  authStore.recordIp(result.user.id, ip);
   const guestBalance = Number(req.body?.guestBalance);
   const guestAvatar = String(req.body?.guestAvatar ?? "");
   if (
@@ -268,6 +270,7 @@ app.post("/api/auth/login", (req, res) => {
     String(req.body?.password ?? ""),
   );
   if (!result.ok) return res.status(401).json(result);
+  authStore.recordIp(result.user.id, ip);
   const guestBalance = Number(req.body?.guestBalance);
   const guestAvatar = String(req.body?.guestAvatar ?? "");
   if (
@@ -927,6 +930,40 @@ app.get("/api/mainadmin/ips", async (req, res) => {
   res.json({ ok: true, rows: await enrichIpRows() });
 });
 
+/** Lịch sử user (IP + cược) — chỉ mainadmin; không lộ ra client player. */
+app.get("/api/mainadmin/users/:userId/history", (req, res) => {
+  if (!requireMainAdmin(req, res)) return;
+  const userId = String(req.params.userId ?? "").trim();
+  const rec = authStore.getById(userId);
+  if (!rec) {
+    return res.status(404).json({ ok: false, reason: "Không tìm thấy user" });
+  }
+  const intel = authStore.getIpIntel(userId)!;
+  const roundsPlayed = Math.max(0, Math.floor(rec.roundsPlayed ?? 0));
+  const isVip =
+    !!rec.vipGranted || roundsPlayed >= VIP_ROUNDS_REQUIRED;
+  res.json({
+    ok: true,
+    user: {
+      id: rec.id,
+      username: rec.username,
+      code: rec.code,
+      balance: rec.balance,
+      role: rec.role,
+      banned: !!rec.banned,
+      muted: (rec.mutedUntil ?? 0) > Date.now(),
+      isVip,
+      roundsPlayed,
+    },
+    lastIp: intel.lastIp ?? null,
+    lastIpAt: intel.lastIpAt ?? null,
+    ipHistory: intel.ipHistory,
+    relatedIps: guestIpStore.findIpsForUser(userId),
+    recentBets: betStore.getByUser(userId, 20),
+    stake24h: betStore.getUserStats24h(userId),
+  });
+});
+
 /** Tra cứu nhanh: user / ID / IP / guest code. */
 app.get("/api/mainadmin/lookup", async (req, res) => {
   if (!requireMainAdmin(req, res)) return;
@@ -1121,6 +1158,7 @@ io.on("connection", (socket) => {
       }
 
       if (authUser) {
+        authStore.recordIp(authUser.id, ip);
         guestIpStore.touchLive({
           ip,
           socketId: socket.id,
