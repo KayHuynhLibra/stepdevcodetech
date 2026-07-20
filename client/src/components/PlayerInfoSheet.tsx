@@ -27,6 +27,8 @@ interface PlayerInfoSheetProps {
   open: boolean;
   player: PlayerInfoView | null;
   staff?: boolean;
+  /** Deal / admin / mainadmin — chỉ cộng trừ xu (không outcome/VIP) */
+  balanceOperator?: boolean;
   busy?: boolean;
   onClose: () => void;
   onSetOutcome?: (userId: string, mode: "normal" | "win" | "lose") => void;
@@ -43,6 +45,7 @@ export function PlayerInfoSheet({
   open,
   player,
   staff,
+  balanceOperator,
   busy,
   onClose,
   onSetOutcome,
@@ -84,20 +87,25 @@ export function PlayerInfoSheet({
   });
 
   const canManageUser = !!(staff && player.userId && !player.isBot);
+  const canBalanceUser = !!(
+    (staff || balanceOperator) &&
+    player.userId &&
+    !player.isBot
+  );
   const canManageGuest = !!(
     staff &&
     !player.isBot &&
     player.isGuest &&
     (player.guestCode || player.socketId)
   );
-  const canManage = canManageUser || canManageGuest;
+  const canManage = canManageUser || canBalanceUser || canManageGuest;
 
   const submitDelta = (e: FormEvent) => {
     e.preventDefault();
     const n = Number(delta);
     if (!Number.isFinite(n) || n === 0) return;
     const d = Math.floor(n);
-    if (canManageUser && player.userId && onAdjustBalance) {
+    if (canBalanceUser && player.userId && onAdjustBalance) {
       onAdjustBalance(player.userId, d);
       return;
     }
@@ -222,7 +230,9 @@ export function PlayerInfoSheet({
           <div className="mt-4 space-y-3 rounded-xl bg-white/5 px-3 py-3 ring-1 ring-[var(--gold)]/30">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--gold-soft)]">
               Xử lý (admin)
-              {canManageGuest && !canManageUser ? " · khách" : ""}
+              {canBalanceUser && !canManageUser ? " · chỉnh xu" : ""}
+              {canManageGuest && !canManageUser && !canBalanceUser ? " · khách" : ""}
+              {canManageGuest && !canManageUser && canBalanceUser ? "" : ""}
             </p>
             {localBalance != null && (
               <p className="text-xs text-white/70">
@@ -316,7 +326,7 @@ export function PlayerInfoSheet({
                     type="button"
                     disabled={busy}
                     onClick={() => {
-                      if (canManageUser && player.userId && onAdjustBalance) {
+                      if (canBalanceUser && player.userId && onAdjustBalance) {
                         onAdjustBalance(player.userId, n);
                         return;
                       }

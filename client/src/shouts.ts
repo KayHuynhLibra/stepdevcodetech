@@ -22,7 +22,15 @@ export const SHOUTS: ShoutDef[] = [
   { id: "salt", text: "Muối" },
 ];
 
-export function chatCost(mode: ChatMode): number {
+export function chatCost(
+  mode: ChatMode,
+  costs?: { no: number; vip: number; saint: number },
+): number {
+  if (costs) {
+    if (mode === "saint") return costs.saint;
+    if (mode === "vip") return costs.vip;
+    return costs.no;
+  }
   if (mode === "saint") return SAINT_CHAT_COST;
   if (mode === "vip") return VIP_CHAT_COST;
   return CHAT_COST;

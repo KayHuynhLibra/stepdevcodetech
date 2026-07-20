@@ -1,4 +1,4 @@
-export type UserRole = "user" | "admin" | "mainadmin";
+export type UserRole = "user" | "admin" | "mainadmin" | "deal";
 
 export interface AuthUser {
   id: string;
@@ -26,6 +26,8 @@ export interface AuthUser {
   muted?: boolean;
   mutedUntil?: number;
   recoveryCode?: string;
+  /** Mainadmin: ẩn khỏi BXH (chỉ trong admin list) */
+  hideFromLeaderboard?: boolean;
 }
 
 /** Ngưỡng VIP tự động — đồng bộ server */
@@ -65,6 +67,17 @@ export function isStaff(user: { role: UserRole } | null | undefined): boolean {
   return user?.role === "admin" || user?.role === "mainadmin";
 }
 
+export function isBalanceOperator(
+  user: { role: UserRole } | null | undefined,
+): boolean {
+  if (!user) return false;
+  return (
+    user.role === "admin" ||
+    user.role === "mainadmin" ||
+    user.role === "deal"
+  );
+}
+
 export function isMainAdmin(user: { role: UserRole } | null | undefined): boolean {
   return user?.role === "mainadmin";
 }
@@ -81,6 +94,7 @@ export function homePath(
   const code = userCode(user);
   if (user.role === "mainadmin") return `/mainadmin/${code}`;
   if (user.role === "admin") return `/admin/${code}`;
+  if (user.role === "deal") return `/deal/${code}`;
   return `/player/${code}`;
 }
 
@@ -186,8 +200,31 @@ export async function api<T>(
   }
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const res = await fetch(path, { ...opts, headers });
-  const data = (await res.json()) as T & { ok?: boolean; reason?: string };
+  let res: Response;
+  try {
+    res = await fetch(path, { ...opts, headers });
+  } catch {
+    throw new Error(
+      "Không kết nối được API — hãy chạy server (port 3001) hoặc kiểm tra mạng.",
+    );
+  }
+
+  const text = await res.text();
+  let data: T & { ok?: boolean; reason?: string };
+  if (!text.trim()) {
+    throw new Error(
+      res.ok
+        ? "Server trả về rỗng — kiểm tra server có đang chạy không."
+        : `Lỗi HTTP ${res.status} — server có thể chưa bật (port 3001).`,
+    );
+  }
+  try {
+    data = JSON.parse(text) as T & { ok?: boolean; reason?: string };
+  } catch {
+    throw new Error(
+      "Phản hồi không phải JSON — thường do API chưa chạy hoặc proxy sai.",
+    );
+  }
   if (!res.ok) {
     throw new Error(
       (data as { reason?: string }).reason || `HTTP ${res.status}`,

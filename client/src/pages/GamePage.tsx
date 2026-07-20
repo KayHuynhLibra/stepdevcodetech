@@ -9,6 +9,7 @@ import {
   type RoundResult,
   type TarotStarEntry,
 } from "../cards";
+import { mergeGameState } from "../lib/gameStateMerge";
 import { BettingBoard } from "../components/BettingBoard";
 import { BetSheet } from "../components/BetSheet";
 import { HistorySheet } from "../components/HistorySheet";
@@ -47,6 +48,7 @@ import {
   getToken,
   getStoredUser,
   homePath,
+  isBalanceOperator,
   isStaff,
   saveSession,
   userShowsVip,
@@ -54,6 +56,7 @@ import {
   type AuthUser,
 } from "../auth";
 import {
+  clearGuestBalanceAfterLimit,
   ensureGuestCode,
   getGuestAvatar,
   getGuestCode,
@@ -67,32 +70,12 @@ import { normalizeAvatar } from "../avatars";
 import { AvatarPickerSheet } from "../components/AvatarPickerSheet";
 import { IdentityBadge } from "../components/IdentityBadge";
 import { uploadAvatarFromFile } from "../uploadAvatar";
+import { getDevicePayload } from "../device";
 import { Link, useNavigate } from "react-router-dom";
 
 const SOCKET_URL =
   import.meta.env.VITE_SOCKET_URL ??
   (import.meta.env.DEV ? "http://localhost:3001" : undefined);
-
-function useServerCountdown(phaseEndsAt: number, serverTime: number) {
-  const offsetRef = useRef(0);
-  const [remaining, setRemaining] = useState(0);
-
-  useEffect(() => {
-    offsetRef.current = serverTime - Date.now();
-  }, [serverTime]);
-
-  useEffect(() => {
-    const tick = () => {
-      const now = Date.now() + offsetRef.current;
-      setRemaining(Math.max(0, Math.ceil((phaseEndsAt - now) / 1000)));
-    };
-    tick();
-    const id = setInterval(tick, 200);
-    return () => clearInterval(id);
-  }, [phaseEndsAt]);
-
-  return remaining;
-}
 
 type Sheet =
   | "bet"
@@ -170,15 +153,32 @@ export default function GamePage() {
     { cardId: number; amount: number }[]
   >([]);
 
-  const remaining = useServerCountdown(
-    state?.phaseEndsAt ?? 0,
-    state?.serverTime ?? Date.now(),
-  );
+  const staffViewer = isStaff(me);
+  const staffViewerRef = useRef(staffViewer);
+  staffViewerRef.current = staffViewer;
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(null), 1600);
   }, []);
+
+  const lastJackpotRoundRef = useRef<number | null>(null);
+  const lastStreakAtRef = useRef(0);
+
+  useEffect(() => {
+    const j = state?.lastJackpotWin;
+    if (!j?.round) return;
+    if (lastJackpotRoundRef.current === j.round) return;
+    lastJackpotRoundRef.current = j.round;
+    showToast(`Hũ Tarot · ${j.name} +${formatXu(j.amount)} xu`);
+  }, [state?.lastJackpotWin, showToast]);
+
+  useEffect(() => {
+    const top = state?.streakHighlights?.[0];
+    if (!top?.at || top.at === lastStreakAtRef.current) return;
+    lastStreakAtRef.current = top.at;
+    showToast(`${top.name} thắng ${top.streak} ván liên tiếp`);
+  }, [state?.streakHighlights, showToast]);
 
   useEffect(() => {
     if (!renameOpen) return;
@@ -227,6 +227,7 @@ export default function GamePage() {
         avatar,
         guestCode: auth ? undefined : guestCode,
         guestBalance: auth ? undefined : getGuestBalanceHint(),
+        ...getDevicePayload(),
       });
     };
 
@@ -265,11 +266,19 @@ export default function GamePage() {
         balance: number;
         userId?: string;
         recoveredBets?: boolean;
+        guestPlayExpired?: boolean;
+        guestPlayRemainingMs?: number;
       }) => {
         setName(payload.name);
         prevBalance.current = payload.balance;
         setSessionAuthed(!!payload.userId);
-        if (!payload.userId) setGuestBalanceHint(payload.balance);
+        if (!payload.userId) {
+          setGuestBalanceHint(payload.balance);
+          if (payload.guestPlayExpired) {
+            clearGuestBalanceAfterLimit();
+            showToast("Hết 20 phút chơi khách — xu reset về 20.000");
+          }
+        }
         if (payload.recoveredBets) {
           showToast("Đã khôi phục cược ván đang chơi");
         }
@@ -308,7 +317,11 @@ export default function GamePage() {
     });
 
     s.on("state", (payload: GameState) => {
-      setState(payload);
+      setState((prev) =>
+        mergeGameState(prev, payload, {
+          trackOnlinePlayers: staffViewerRef.current,
+        }),
+      );
     });
 
     s.on("betRejected", (payload: { reason: string }) => {
@@ -373,15 +386,14 @@ export default function GamePage() {
     }
   }, [state?.chatLines]);
 
-  // Đồng bộ VIP / số ván / ID từ phòng (admin đổi hoặc đủ 10k ván)
+  // Đồng bộ VIP / số ván / ID từ phòng (không cần online list)
   useEffect(() => {
-    if (!me?.id || !state?.onlinePlayers) return;
-    const self = state.onlinePlayers.find((p) => p.userId === me.id);
-    if (!self) return;
-    const nextVip = self.isVip != null ? !!self.isVip : !!me.isVip;
-    const nextRounds = self.roundsPlayed ?? me.roundsPlayed ?? 0;
-    const nextGranted = self.vipGranted ?? me.vipGranted ?? false;
-    const nextCode = self.code ?? me.code;
+    if (!me?.id || !state?.viewerAuth) return;
+    const v = state.viewerAuth;
+    const nextVip = v.isVip != null ? !!v.isVip : !!me.isVip;
+    const nextRounds = v.roundsPlayed ?? me.roundsPlayed ?? 0;
+    const nextGranted = v.vipGranted ?? me.vipGranted ?? false;
+    const nextCode = v.code ?? me.code;
     if (
       nextVip === !!me.isVip &&
       nextRounds === (me.roundsPlayed ?? 0) &&
@@ -401,10 +413,11 @@ export default function GamePage() {
     const token = getToken();
     if (token) saveSession(token, next);
     if (!next.isVip) setChatMode((m) => (m === "vip" ? "no" : m));
-  }, [me, state?.onlinePlayers]);
+  }, [me, state?.viewerAuth]);
 
   // Popup đang mở: cập nhật ID/VIP khi phòng refresh (admin vừa đổi)
   useEffect(() => {
+    if (!isStaff(me)) return;
     const online = state?.onlinePlayers;
     if (!online?.length) return;
     setProfile((prev) => {
@@ -445,7 +458,30 @@ export default function GamePage() {
       }
       return next;
     });
-  }, [state?.onlinePlayers]);
+  }, [me, state?.onlinePlayers]);
+
+  // Tick SFX 5 giây cuối (local timer — không re-render GamePage mỗi giây)
+  useEffect(() => {
+    if (state?.phase !== "betting" || !state.phaseEndsAt) {
+      lastTickSec.current = null;
+      return;
+    }
+    const offset = state.serverTime - Date.now();
+    const ends = state.phaseEndsAt;
+    const tick = () => {
+      const rem = Math.max(
+        0,
+        Math.ceil((ends - (Date.now() + offset)) / 1000),
+      );
+      if (rem > 0 && rem <= 5 && lastTickSec.current !== rem) {
+        lastTickSec.current = rem;
+        play("tick");
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [state?.phase, state?.phaseEndsAt, state?.serverTime, play]);
 
   useEffect(() => {
     if (!state) return;
@@ -469,18 +505,6 @@ export default function GamePage() {
     }
     prevPhase.current = state.phase;
   }, [state]);
-
-  // Tick SFX 5 giây cuối
-  useEffect(() => {
-    if (state?.phase !== "betting") {
-      lastTickSec.current = null;
-      return;
-    }
-    if (remaining > 0 && remaining <= 5 && lastTickSec.current !== remaining) {
-      lastTickSec.current = remaining;
-      play("tick");
-    }
-  }, [remaining, state?.phase, play]);
 
   const runAutoPlace = useCallback(
     async (cfg: AutoBetConfig, roundId: number) => {
@@ -626,6 +650,14 @@ export default function GamePage() {
 
   const enrichPlayerInfo = useCallback(
     (partial: PlayerInfoView): PlayerInfoView => {
+      if (!isStaff(me)) {
+        return {
+          ...partial,
+          isGuest:
+            partial.isGuest ??
+            (!partial.isBot && !partial.code && !partial.userId),
+        };
+      }
       const online = state?.onlinePlayers ?? [];
       const match = online.find((p) =>
         partial.userId
@@ -659,7 +691,7 @@ export default function GamePage() {
         isGuest: !match.isBot && !match.code && !match.userId,
       };
     },
-    [state?.onlinePlayers],
+    [state?.onlinePlayers, me],
   );
 
   const fetchPlayerCard = useCallback(async (info: PlayerInfoView) => {
@@ -1310,6 +1342,15 @@ export default function GamePage() {
               </button>
               <button
                 type="button"
+                title="Quỹ hũ Tarot"
+                className="ui-pill ui-pill--deep flex items-center gap-1 px-2 py-1"
+              >
+                <span className="font-play text-[9px] font-semibold text-amber-100 tabular-nums">
+                  Hũ {formatXu(state?.jackpotPool ?? 0)}
+                </span>
+              </button>
+              <button
+                type="button"
                 title="Danh sách người đã nạp xu"
                 onClick={() => void openVipTopups()}
                 className="ui-pill ui-pill--deep flex items-center gap-1 px-2 py-1"
@@ -1319,15 +1360,16 @@ export default function GamePage() {
                   alt=""
                   className="h-3.5 w-3.5 rounded-full object-cover"
                 />
-                <span className="font-play text-[9px] font-semibold text-amber-200 tabular-nums">
-                  VIP {formatXu(state?.vipPool ?? 0)}
+                <span className="font-play text-[9px] font-semibold text-amber-200">
+                  VIP
                 </span>
               </button>
             </div>
           </div>
         </header>
 
-        {/* ===== ZONE 2: Đồng bộ phòng — bấm mở list người chơi ===== */}
+        {/* ===== ZONE 2: Đồng bộ phòng — admin mở list người chơi ===== */}
+        {staffViewer ? (
         <button
           type="button"
           onClick={() => connected && setSheet("players")}
@@ -1349,6 +1391,32 @@ export default function GamePage() {
             <span className="text-[10px] font-semibold text-[var(--wood-deep)]">›</span>
           )}
         </button>
+        ) : (
+        <div
+          className="game-task mt-2 flex w-full items-center gap-2 px-3 py-1.5 text-[10px] text-[var(--play-muted)]"
+          aria-live="polite"
+        >
+          <span
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+              connected ? "ui-live-dot" : "bg-rose-400"
+            }`}
+            aria-hidden
+          />
+          <span className="flex-1 font-semibold text-[var(--play-ink)]">
+            {connected
+              ? `${state?.onlineDisplay ?? 0} online`
+              : "Mất kết nối"}
+            {!sessionAuthed &&
+              connected &&
+              state?.guestPlayRemainingMs != null &&
+              state.guestPlayRemainingMs > 0 && (
+                <span className="ml-1.5 text-[9px] font-semibold text-amber-800 tabular-nums">
+                  · Khách còn {formatDuration(state.guestPlayRemainingMs)}
+                </span>
+              )}
+          </span>
+        </div>
+        )}
 
         {/* ===== ZONE 3: Lịch sử nhanh (strip) ===== */}
         <button
@@ -1388,13 +1456,21 @@ export default function GamePage() {
         </button>
 
         {/* ===== ZONE 4+6: Form bàn cược (deck) ===== */}
+        {state?.viewerEngagement?.warmActive && (
+          <p className="mt-2 px-1 text-center text-[10px] font-semibold text-amber-700">
+            Chuỗi thua {state.viewerEngagement.lossStreak} — vận ấm nhẹ lá bạn
+            cược nhiều nhất
+          </p>
+        )}
         <BettingBoard
-          remaining={remaining}
+          phaseEndsAt={state?.phaseEndsAt ?? 0}
+          serverTime={state?.serverTime ?? Date.now()}
           canBet={canBet}
           playerCounts={state?.playerCounts ?? []}
           yourBets={state?.yourBets ?? []}
           winningCardId={winning}
           phase={state?.phase ?? null}
+          cardHeat={state?.cardHeat}
           onPick={openBet}
         />
 
@@ -1494,6 +1570,7 @@ export default function GamePage() {
           chatLive={connected && sessionAuthed}
           isVip={!!me?.isVip}
           mode={chatMode}
+          chatCosts={state?.chatCosts}
           onModeChange={(m) => {
             if (m === "vip" && !me?.isVip) {
               showToast("Cần VIP để chat bay");
@@ -1740,6 +1817,7 @@ export default function GamePage() {
         }}
         onConfirm={confirmBet}
       />
+      {staffViewer && (
       <PlayersSheet
         open={sheet === "players"}
         players={state?.onlinePlayers ?? []}
@@ -1749,6 +1827,7 @@ export default function GamePage() {
           openOnlinePlayer(p);
         }}
       />
+      )}
       <CouponSheet
         open={sheet === "coupon"}
         busy={couponBusy}
@@ -1795,15 +1874,20 @@ export default function GamePage() {
         open={sheet === "playerInfo"}
         player={profile}
         staff={isStaff(me)}
+        balanceOperator={isBalanceOperator(me)}
         busy={adminBusy}
         onClose={() => {
           setProfile(null);
           setSheet(null);
         }}
-        onSetOutcome={adminSetOutcome}
-        onSetVip={adminSetVip}
-        onAdjustBalance={adminAdjustBalance}
-        onAdjustGuestBalance={adminAdjustGuestBalance}
+        onSetOutcome={isStaff(me) ? adminSetOutcome : undefined}
+        onSetVip={isStaff(me) ? adminSetVip : undefined}
+        onAdjustBalance={
+          isBalanceOperator(me) ? adminAdjustBalance : undefined
+        }
+        onAdjustGuestBalance={
+          isStaff(me) ? adminAdjustGuestBalance : undefined
+        }
       />
 
       <HistorySheet

@@ -135,3 +135,13 @@ export function clearGuestMergePending() {
     /* ignore */
   }
 }
+
+/** Sau hết 20 phút khách — xóa xu local để đồng bộ server reset. */
+export function clearGuestBalanceAfterLimit() {
+  try {
+    localStorage.removeItem(GUEST_BALANCE_KEY);
+    localStorage.removeItem(GUEST_MERGE_FLAG);
+  } catch {
+    /* ignore */
+  }
+}

@@ -136,10 +136,32 @@ export interface GameState {
   onlineReal?: number;
   onlineDisplay: number;
   onlinePlayers?: OnlinePlayerPublic[];
+  viewerAuth?: {
+    code?: string;
+    isVip?: boolean;
+    roundsPlayed?: number;
+    vipGranted?: boolean;
+  };
   topAces?: TopAcePreview[];
   roundTopWinners?: RoundTopWinner[];
   tarotStars?: TarotStarEntry[];
   vipPool?: number;
+  jackpotPool?: number;
+  lastJackpotWin?: { name: string; amount: number; round: number } | null;
+  cardHeat?: {
+    cardId: number;
+    wins: number;
+    level: "hot" | "cold" | "neutral";
+  }[];
+  streakHighlights?: { name: string; streak: number; at: number }[];
+  viewerEngagement?: {
+    lossStreak: number;
+    winStreak: number;
+    warmActive: boolean;
+  };
+  guestPlayRemainingMs?: number;
+  guestPlayLimitMs?: number;
+  chatCosts?: { no: number; vip: number; saint: number };
   chatLines?: import("./shouts").ShoutEvent[];
   botPanel?: BotPanelState;
 }

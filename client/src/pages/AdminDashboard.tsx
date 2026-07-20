@@ -32,6 +32,7 @@ type TabId =
   | "inter"
   | "mod"
   | "ips"
+  | "chat"
   | "tools"
   | "arcana";
 
@@ -48,6 +49,24 @@ interface IpRow {
   stake24h?: number;
   bets24h?: number;
   profit24h?: number;
+  devices?: {
+    deviceId: string;
+    shortId: string;
+    lastAt: number;
+    blocked: boolean;
+    blockedUntil: number;
+    online: boolean;
+    joinCount: number;
+    meta: {
+      platform?: string;
+      screen?: string;
+      timezone?: string;
+      language?: string;
+      ua?: string;
+    };
+    seenUsers: { userId: string; username: string; lastAt: number; joins: number }[];
+    seenGuests: { code: string; lastAt: number; joins: number }[];
+  }[];
   geo?: {
     local?: boolean;
     country?: string;
@@ -189,6 +208,7 @@ interface InterProb {
 interface InterAllRotation {
   rotation: string[];
   slotMs: number;
+  slotMinutes?: number;
   slotIndex: number;
   effectiveMode: string;
   nextMode: string;
@@ -199,6 +219,7 @@ interface InterAllRotation {
 interface InterSnapshot {
   mode: InterMode;
   effectiveMode?: string;
+  allSlotMinutes?: number;
   updatedAt: number;
   updatedBy: string;
   labels: Record<InterMode, string>;
@@ -352,6 +373,13 @@ interface Overview {
     username: string;
     amount: number;
   }[];
+  chatConfig?: {
+    noCost: number;
+    vipCost: number;
+    saintCost: number;
+    updatedAt: number;
+    updatedBy?: string;
+  };
   /** Chỉ mainadmin */
   traffic?: {
     realStakeRound: number;
@@ -462,6 +490,7 @@ export default function AdminDashboard() {
     amount: "1000",
   });
   const [interBusy, setInterBusy] = useState(false);
+  const [allSlotMinutes, setAllSlotMinutes] = useState("5");
   const [couponForm, setCouponForm] = useState({
     code: "",
     amount: "10000",
@@ -601,6 +630,12 @@ export default function AdminDashboard() {
         nav("/login", { replace: true });
       });
   }, [nav, load, loc.pathname]);
+
+  useEffect(() => {
+    if (data?.inter?.allSlotMinutes != null) {
+      setAllSlotMinutes(String(data.inter.allSlotMinutes));
+    }
+  }, [data?.inter?.allSlotMinutes]);
 
   // ALL mode: refresh countdown / effective slot
   useEffect(() => {
@@ -757,6 +792,41 @@ export default function AdminDashboard() {
       setMsg(err instanceof Error ? err.message : "Lỗi đổi ID");
     } finally {
       setCodeBusyId(null);
+    }
+  };
+
+  const setUserRole = async (
+    userId: string,
+    role: "user" | "deal" | "admin",
+  ) => {
+    try {
+      await api("/api/mainadmin/user-role", {
+        method: "POST",
+        body: JSON.stringify({ userId, role }),
+      });
+      setMsg(
+        role === "deal"
+          ? "Đã cấp role Deal"
+          : role === "admin"
+            ? "Đã cấp admin"
+            : "Đã chuyển về user",
+      );
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi đổi role");
+    }
+  };
+
+  const setUserLeaderboardHide = async (userId: string, hidden: boolean) => {
+    try {
+      await api("/api/mainadmin/user-leaderboard-hide", {
+        method: "POST",
+        body: JSON.stringify({ userId, hidden }),
+      });
+      setMsg(hidden ? "Đã ẩn khỏi bảng xếp hạng" : "Đã hiện trên bảng xếp hạng");
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi ẩn BXH");
     }
   };
 
@@ -1104,6 +1174,28 @@ export default function AdminDashboard() {
     }
   };
 
+  const applyAllSlotMinutes = async () => {
+    if (interBusy) return;
+    const m = Math.floor(Number(allSlotMinutes));
+    if (!Number.isFinite(m) || m < 1 || m > 9) {
+      setMsg("Chọn 1–9 phút mỗi slot ALL (< 10 phút)");
+      return;
+    }
+    setInterBusy(true);
+    try {
+      await api("/api/mainadmin/inter", {
+        method: "POST",
+        body: JSON.stringify({ allSlotMinutes: m }),
+      });
+      setMsg(`ALL: mỗi slot ${m} phút`);
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi cấu hình ALL");
+    } finally {
+      setInterBusy(false);
+    }
+  };
+
   const vaultSeize = async () => {
     if (managedGame === "arcana") {
       setMsg("Cấp/thu xu chỉ dùng Kho Tarot (ví vận hành chung)");
@@ -1284,6 +1376,7 @@ export default function AdminDashboard() {
     { id: "inter", label: "Inter", show: main && managedGame === "tarot" },
     { id: "arcana", label: "Bánh xe", show: main && managedGame === "arcana" },
     { id: "ips", label: "IP", show: main },
+    { id: "chat", label: "Chat", show: main },
     { id: "users", label: "User & Bot", show: true },
     { id: "mod", label: "Mod", show: true },
     { id: "coupons", label: "Coupon ẩn", show: true },
@@ -2193,6 +2286,22 @@ export default function AdminDashboard() {
                       >
                         {granted ? "VIP admin ✓" : "VIP admin"}
                       </button>
+                      {data?.me.role === "mainadmin" &&
+                        u.role !== "mainadmin" && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setUserLeaderboardHide(u.id, !u.hideFromLeaderboard)
+                            }
+                            className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                              u.hideFromLeaderboard
+                                ? "bg-slate-700 text-white"
+                                : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                            }`}
+                          >
+                            {u.hideFromLeaderboard ? "BXH ẩn ✓" : "Ẩn BXH"}
+                          </button>
+                        )}
                       <button
                         type="button"
                         onClick={() => setUserBan(u.id, !u.banned)}
@@ -2229,6 +2338,29 @@ export default function AdminDashboard() {
                       >
                         Reset MK
                       </button>
+                      {data?.me.role === "mainadmin" &&
+                        u.role !== "mainadmin" && (
+                          <>
+                            {u.role !== "deal" && (
+                              <button
+                                type="button"
+                                onClick={() => setUserRole(u.id, "deal")}
+                                className="rounded-full bg-teal-700 px-2.5 py-1 text-[10px] font-bold text-white"
+                              >
+                                Cấp Deal
+                              </button>
+                            )}
+                            {u.role === "deal" && (
+                              <button
+                                type="button"
+                                onClick={() => setUserRole(u.id, "user")}
+                                className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-teal-600/40"
+                              >
+                                Thu Deal
+                              </button>
+                            )}
+                          </>
+                        )}
                     </div>
                   </li>
                 );
@@ -2307,6 +2439,132 @@ export default function AdminDashboard() {
             </ul>
           </section>
         </>
+      )}
+
+      {tab === "chat" && main && (
+        <section className="app-panel mt-4 p-3 sm:p-4">
+          <p className="play-heading text-sm">Giá chat phòng Tarot</p>
+          <p className="mt-1 text-[11px] text-[var(--play-muted)]">
+            No = khung chat · VIP = bay marquee (cần VIP) · Saint = toàn màn +
+            CD 45s. Lịch sử khung chat reset mỗi ngày (UTC).
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <label className="text-[11px] font-semibold text-[var(--play-muted)]">
+              No (xu / tin)
+              <input
+                id="mainadmin-chat-no-cost"
+                type="number"
+                min={1}
+                max={100000}
+                step={1}
+                defaultValue={data.chatConfig?.noCost ?? 10}
+                className="app-input mt-1 w-full !py-1.5 text-sm tabular-nums"
+              />
+            </label>
+            <label className="text-[11px] font-semibold text-[var(--play-muted)]">
+              VIP (xu / tin)
+              <input
+                id="mainadmin-chat-vip-cost"
+                type="number"
+                min={1}
+                max={100000}
+                step={1}
+                defaultValue={data.chatConfig?.vipCost ?? 50}
+                className="app-input mt-1 w-full !py-1.5 text-sm tabular-nums"
+              />
+            </label>
+            <label className="text-[11px] font-semibold text-[var(--play-muted)]">
+              Saint (xu / tin)
+              <input
+                id="mainadmin-chat-saint-cost"
+                type="number"
+                min={100}
+                max={1000000}
+                step={100}
+                defaultValue={data.chatConfig?.saintCost ?? 10_000}
+                className="app-input mt-1 w-full !py-1.5 text-sm tabular-nums"
+              />
+            </label>
+          </div>
+          <button
+            type="button"
+            className="app-btn-primary mt-4 !w-auto !px-4 !py-2 !text-xs"
+            onClick={async () => {
+              const noEl = document.getElementById(
+                "mainadmin-chat-no-cost",
+              ) as HTMLInputElement | null;
+              const vipEl = document.getElementById(
+                "mainadmin-chat-vip-cost",
+              ) as HTMLInputElement | null;
+              const saintEl = document.getElementById(
+                "mainadmin-chat-saint-cost",
+              ) as HTMLInputElement | null;
+              try {
+                await api("/api/mainadmin/chat-config", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    noCost: Number(noEl?.value),
+                    vipCost: Number(vipEl?.value),
+                    saintCost: Number(saintEl?.value),
+                  }),
+                });
+                setMsg("Đã lưu giá chat No / VIP / Saint");
+                await load();
+              } catch (err) {
+                setMsg(
+                  err instanceof Error ? err.message : "Lỗi cấu hình chat",
+                );
+              }
+            }}
+          >
+            Áp dụng
+          </button>
+          {data.chatConfig?.updatedBy && (
+            <p className="mt-2 text-[10px] text-[var(--play-muted)]">
+              Cập nhật lần cuối: {data.chatConfig.updatedBy}
+              {data.chatConfig.updatedAt
+                ? ` · ${new Date(data.chatConfig.updatedAt).toLocaleString("vi-VN")}`
+                : ""}
+            </p>
+          )}
+          <section className="mt-4 border-t border-[var(--wood-deep)]/12 pt-3">
+            <p className="play-heading text-sm">Báo cáo chat</p>
+            <ul className="mt-2 max-h-64 space-y-1.5 overflow-y-auto sm:max-h-80">
+              {(data.reports ?? []).length === 0 && (
+                <li className="text-[11px] text-[var(--play-muted)]">
+                  Chưa có báo cáo
+                </li>
+              )}
+              {(data.reports ?? []).map((r) => (
+                <li
+                  key={r.id}
+                  className="rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
+                >
+                  <p>
+                    <span className="font-semibold">{r.reporterName}</span> báo{" "}
+                    <span className="font-semibold">{r.targetName}</span>
+                    {r.status === "done" ? " · xong" : " · mở"}
+                  </p>
+                  <p className="text-[var(--play-ink)]">“{r.text}”</p>
+                  <div className="mt-1 flex gap-1">
+                    <button
+                      type="button"
+                      className="rounded-full bg-[var(--wood-deep)] px-2 py-0.5 text-[10px] font-bold text-white"
+                      onClick={() =>
+                        markReport(
+                          r.id,
+                          r.status === "done" ? "open" : "done",
+                        )
+                      }
+                    >
+                      {r.status === "done" ? "Mở lại" : "Đánh dấu xong"}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </section>
       )}
 
       {tab === "ips" && main && (
@@ -2477,6 +2735,78 @@ export default function AdminDashboard() {
                         </p>
                       ))}
                   </div>
+                    {(row.devices ?? []).length > 0 && (
+                      <div className="mt-2 space-y-1 border-t border-[var(--wood-deep)]/10 pt-1.5">
+                        <p className="text-[10px] font-semibold text-[var(--play-muted)]">
+                          Thiết bị (gần IP này):
+                        </p>
+                        {(row.devices ?? []).slice(0, 5).map((d) => (
+                          <div
+                            key={d.deviceId}
+                            className="rounded-lg bg-white/60 px-2 py-1 text-[10px] text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/10"
+                          >
+                            <p className="font-mono font-semibold">
+                              {d.shortId}
+                              {d.online ? " · online" : ""}
+                              {d.blocked ? " · BLOCK TB" : ""}
+                              {d.meta.platform
+                                ? ` · ${d.meta.platform}`
+                                : ""}
+                              {d.meta.screen ? ` · ${d.meta.screen}` : ""}
+                            </p>
+                            {d.meta.ua && (
+                              <p className="mt-0.5 line-clamp-2 text-[9px] text-[var(--play-muted)]">
+                                {d.meta.ua}
+                              </p>
+                            )}
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              <button
+                                type="button"
+                                disabled={ipBusy}
+                                className="rounded-full bg-rose-600 px-2 py-0.5 text-[9px] font-bold text-white disabled:opacity-40"
+                                onClick={() =>
+                                  void runIpAction(
+                                    "/api/mainadmin/devices/block",
+                                    { deviceId: d.deviceId, hours: 24 },
+                                    `Block TB 24h ${d.shortId}`,
+                                  )
+                                }
+                              >
+                                Block TB 24h
+                              </button>
+                              <button
+                                type="button"
+                                disabled={ipBusy || !d.blocked}
+                                className="rounded-full bg-emerald-700 px-2 py-0.5 text-[9px] font-bold text-white disabled:opacity-40"
+                                onClick={() =>
+                                  void runIpAction(
+                                    "/api/mainadmin/devices/block",
+                                    { deviceId: d.deviceId, hours: 0 },
+                                    `Mở TB ${d.shortId}`,
+                                  )
+                                }
+                              >
+                                Mở TB
+                              </button>
+                              <button
+                                type="button"
+                                disabled={ipBusy}
+                                className="rounded-full bg-white px-2 py-0.5 text-[9px] font-bold ring-1 ring-[var(--wood-deep)]/20 disabled:opacity-40"
+                                onClick={() =>
+                                  void runIpAction(
+                                    "/api/mainadmin/devices/kick",
+                                    { deviceId: d.deviceId },
+                                    `Kick TB ${d.shortId}`,
+                                  )
+                                }
+                              >
+                                Kick TB
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   <div className="flex flex-wrap gap-1">
                     <button
                       type="button"
@@ -2738,8 +3068,9 @@ export default function AdminDashboard() {
               <div>
                 <p className="play-heading text-sm">Inter — thuật toán lá thắng</p>
                 <p className="mt-1 text-[11px] text-[var(--play-muted)]">
-                  ALL xoay mỗi 5 phút. Policy đọc cầu user đăng nhập. Cool dùng
-                  3 lá thắng gần nhất.
+                  ALL xoay chuỗi mode — chọn 1–9 phút/slot (&lt; 10 phút).
+                  Policy đọc cầu user đăng nhập. Cool dùng 3 lá thắng gần
+                  nhất.
                 </p>
               </div>
               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-900 ring-1 ring-amber-300/60">
@@ -2791,10 +3122,42 @@ export default function AdminDashboard() {
                 </div>
                 <p className="mt-1 text-[10px] text-amber-900/80">
                   Chuỗi: {data.inter.all.rotation.join(" → ")} (mỗi{" "}
-                  {Math.round(data.inter.all.slotMs / 60000)} phút)
+                  {data.inter.all.slotMinutes ??
+                    Math.round(data.inter.all.slotMs / 60000)}{" "}
+                  phút)
                 </p>
               </div>
             )}
+
+            <div className="flex flex-wrap items-end gap-2 rounded-xl bg-white/70 px-3 py-2.5 ring-1 ring-amber-200/80">
+              <label className="min-w-[8rem] flex-1 text-[11px] font-semibold text-[var(--play-ink)]">
+                ALL — phút mỗi slot
+                <select
+                  value={allSlotMinutes}
+                  onChange={(e) => setAllSlotMinutes(e.target.value)}
+                  className="app-input mt-1 w-full"
+                  disabled={interBusy}
+                >
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
+                    <option key={n} value={String(n)}>
+                      {n} phút
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                disabled={interBusy}
+                onClick={() => void applyAllSlotMinutes()}
+                className="rounded-xl bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+              >
+                Áp dụng
+              </button>
+              <p className="w-full text-[10px] text-[var(--play-muted)]">
+                Đang lưu: {data.inter.allSlotMinutes ?? 5} phút/slot. Đổi phút
+                khi đang ALL sẽ reset lại slot hiện tại.
+              </p>
+            </div>
 
             <button
               type="button"
@@ -2806,7 +3169,9 @@ export default function AdminDashboard() {
                   : "bg-white/90 text-[var(--play-ink)] ring-amber-300/50 hover:bg-amber-50"
               } ${interBusy ? "opacity-60" : ""}`}
             >
-              <p className="text-sm font-bold">ALL — xoay mode 5 phút</p>
+              <p className="text-sm font-bold">
+                ALL — xoay mode ({data.inter.allSlotMinutes ?? 5} phút/slot)
+              </p>
               <p
                 className={`mt-1 text-[10px] leading-snug ${
                   data.inter.mode === "all"

@@ -9,7 +9,7 @@ import {
 } from "./avatars.js";
 import { STARTING_BALANCE, weekKey } from "./types.js";
 
-export type UserRole = "user" | "admin" | "mainadmin";
+export type UserRole = "user" | "admin" | "mainadmin" | "deal";
 
 /** Đủ số ván lifetime → VIP tự động */
 export const VIP_ROUNDS_REQUIRED = 10_000;
@@ -49,12 +49,17 @@ export interface UserRecord {
   bannedAt?: number;
   /** Chat mute đến timestamp; 0/undefined = không mute. Number.MAX_SAFE_INTEGER ≈ vĩnh viễn */
   mutedUntil?: number;
+  /** Tarot — chuỗi thua/thắng liên tiếp (có cược khi settle) */
+  tarotLossStreak?: number;
+  tarotWinStreak?: number;
   /** Mã khôi phục mật khẩu (hiển thị 1 lần khi tạo / reset) */
   recoveryCode?: string;
   /** IP gần nhất (chỉ staff/mainadmin đọc qua API riêng — không vào toPublic) */
   lastIp?: string;
   lastIpAt?: number;
   ipHistory?: IpHistoryEntry[];
+  /** Mainadmin: không hiện trên BXH Tarot (ngày/tuần/top ván/ace/streak) */
+  hideFromLeaderboard?: boolean;
 }
 
 /** Lịch sử IP theo user — không lộ ra PublicUser / client player */
@@ -93,6 +98,8 @@ export interface PublicUser {
   muted: boolean;
   /** Chỉ trả khi vừa tạo / vừa hiện recovery — không lộ hash */
   recoveryCode?: string;
+  /** Chỉ admin list — mainadmin bật ẩn BXH */
+  hideFromLeaderboard?: boolean;
 }
 
 /** Trần xu mang từ guest → account */
@@ -210,6 +217,7 @@ function toPublic(u: UserRecord, opts?: { includeRecovery?: boolean }): PublicUs
     banReason: u.banReason,
     mutedUntil,
     muted,
+    hideFromLeaderboard: !!u.hideFromLeaderboard,
   };
   if (opts?.includeRecovery && u.recoveryCode) {
     pub.recoveryCode = u.recoveryCode;
@@ -239,7 +247,10 @@ function isUserRecord(u: unknown): u is UserRecord {
   if (!u || typeof u !== "object") return false;
   const r = u as UserRecord;
   const roleOk =
-    r.role === "user" || r.role === "admin" || r.role === "mainadmin";
+    r.role === "user" ||
+    r.role === "admin" ||
+    r.role === "mainadmin" ||
+    r.role === "deal";
   return (
     typeof r.id === "string" &&
     typeof r.username === "string" &&
@@ -679,6 +690,26 @@ export class AuthStore {
     return { ok: true, user: toPublic(user) };
   }
 
+  /** Mainadmin: đổi role user / deal / admin (không đụng mainadmin). */
+  setUserRole(
+    userId: string,
+    role: "user" | "deal" | "admin",
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    if (user.role === "mainadmin") {
+      return { ok: false, reason: "Không đổi role mainadmin" };
+    }
+    user.role = role;
+    if (role === "admin") {
+      user.mustChangePassword = user.mustChangePassword ?? true;
+    }
+    this.revokeAllTokens(userId);
+    this.scheduleSave();
+    this.scheduleTokenSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
   setMuted(
     userId: string,
     mutedUntil: number,
@@ -842,6 +873,25 @@ export class AuthStore {
     return { ok: true, user: toPublic(user) };
   }
 
+  isHiddenFromLeaderboard(userId?: string | null): boolean {
+    if (!userId) return false;
+    return !!this.byId.get(userId)?.hideFromLeaderboard;
+  }
+
+  setHideFromLeaderboard(
+    userId: string,
+    hidden: boolean,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    if (user.role === "mainadmin") {
+      return { ok: false, reason: "Không áp dụng cho mainadmin" };
+    }
+    user.hideFromLeaderboard = !!hidden;
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
   /**
    * Admin gán ID riêng (3–8 ký tự A–Z / 0–9).
    * Phải unique; cập nhật index byCode.
@@ -892,6 +942,22 @@ export class AuthStore {
   getRoundsPlayed(userId: string): number {
     const user = this.byId.get(userId);
     return Math.max(0, Math.floor(user?.roundsPlayed ?? 0));
+  }
+
+  getTarotStreaks(userId: string): { loss: number; win: number } {
+    const user = this.byId.get(userId);
+    return {
+      loss: Math.max(0, Math.floor(user?.tarotLossStreak ?? 0)),
+      win: Math.max(0, Math.floor(user?.tarotWinStreak ?? 0)),
+    };
+  }
+
+  setTarotStreaks(userId: string, loss: number, win: number) {
+    const user = this.byId.get(userId);
+    if (!user) return;
+    user.tarotLossStreak = Math.max(0, Math.floor(loss));
+    user.tarotWinStreak = Math.max(0, Math.floor(win));
+    this.scheduleSave();
   }
 
   /** Đổi mật khẩu (user đã login). */
@@ -1031,6 +1097,7 @@ export class AuthStore {
 
   getAccountStats() {
     let users = 0;
+    let deals = 0;
     let admins = 0;
     let mainadmins = 0;
     let balanceTotal = 0;
@@ -1038,11 +1105,13 @@ export class AuthStore {
       balanceTotal += u.balance;
       if (u.role === "mainadmin") mainadmins += 1;
       else if (u.role === "admin") admins += 1;
+      else if (u.role === "deal") deals += 1;
       else users += 1;
     }
     return {
       totalAccounts: this.byId.size,
       playerAccounts: users,
+      dealAccounts: deals,
       adminAccounts: admins,
       mainadminAccounts: mainadmins,
       balanceTotal,
@@ -1139,4 +1208,12 @@ export function isStaff(user: { role: UserRole }): boolean {
 
 export function isMainAdmin(user: { role: UserRole }): boolean {
   return user.role === "mainadmin";
+}
+
+export function isBalanceOperator(user: { role: UserRole }): boolean {
+  return (
+    user.role === "admin" ||
+    user.role === "mainadmin" ||
+    user.role === "deal"
+  );
 }

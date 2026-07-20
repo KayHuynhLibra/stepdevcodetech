@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { formatXu } from "../cards";
 import {
   CHAT_MAX_LEN,
@@ -26,6 +26,7 @@ interface ShoutBarProps {
   chatLive?: boolean;
   isVip?: boolean;
   mode: ChatMode;
+  chatCosts?: { no: number; vip: number; saint: number };
   onModeChange: (mode: ChatMode) => void;
   onSendSlang: (id: string) => void;
   onSendText: (text: string) => void;
@@ -44,6 +45,7 @@ export function ShoutBar({
   chatLive = false,
   isVip = false,
   mode,
+  chatCosts,
   onModeChange,
   onSendSlang,
   onSendText,
@@ -55,13 +57,7 @@ export function ShoutBar({
   const [text, setText] = useState("");
   const [badgeVisible, setBadgeVisible] = useState(readVipBadgeVisible);
   const listRef = useRef<HTMLDivElement>(null);
-  const cost = chatCost(mode);
-
-  useEffect(() => {
-    const el = listRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [lines]);
+  const cost = chatCost(mode, chatCosts);
 
   const toggleBadge = () => {
     const next = !badgeVisible;
@@ -93,7 +89,7 @@ export function ShoutBar({
       {
         id: "saint",
         label: "Saint",
-        title: "Saint — toàn màn ~4.5s (10.000 xu)",
+        title: `Saint — toàn màn ~4.5s (${formatXu(chatCosts?.saint ?? 10_000)} xu)`,
       },
     ];
 
@@ -190,7 +186,7 @@ export function ShoutBar({
       >
         {lines.length === 0 ? (
           <p className="py-2 text-center text-[10px] text-[var(--play-muted)]">
-            Chưa có tin
+            Chưa có tin · lịch sử reset mỗi ngày (UTC)
           </p>
         ) : (
           lines.map((m, i) => (

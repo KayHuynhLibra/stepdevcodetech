@@ -1474,7 +1474,12 @@ input {
   .vip-fantasy-avatar .arcana-aura,
   .vip-fantasy-avatar .arcana-aura-inner,
   .vip-fantasy-avatar .arcana-sparkle,
-  .vip-fantasy-avatar .arcana-star {
+  .vip-fantasy-avatar .arcana-star,
+  .tarot-board-deck__fx .arcana-aura,
+  .tarot-board-deck__fx .arcana-aura-inner,
+  .tarot-board-deck__fx .arcana-sparkle,
+  .tarot-board-deck__fx .arcana-star,
+  .tarot-board-ambient__glow {
     animation: none !important;
   }
 }

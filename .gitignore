@@ -10,3 +10,6 @@ server/data/
 
 # Tài liệu học tập nội bộ — không commit / không push
 studying/
+
+# Bản chụp Version 1 — chỉ local, không push GitHub
+version 1/

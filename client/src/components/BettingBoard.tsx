@@ -1,4 +1,6 @@
-import { CARDS, formatXu, type Phase } from "../cards";
+import { memo, useMemo } from "react";
+import { CARDS, formatXu, type Phase, type GameState } from "../cards";
+import { usePhaseRemaining } from "../hooks/usePhaseRemaining";
 import {
   FANTASY_SPARKLE_ANGLES,
   FANTASY_STAR_ANGLES,
@@ -10,24 +12,29 @@ const MAX_CARDS_PER_ROUND = 5;
 const BETTING_SECONDS = 30;
 
 interface BettingBoardProps {
-  remaining: number;
+  phaseEndsAt: number;
+  serverTime: number;
   canBet: boolean;
   playerCounts: number[];
   yourBets: number[];
   winningCardId: number | null;
   phase: Phase | null;
+  cardHeat?: GameState["cardHeat"];
   onPick: (cardId: number) => void;
 }
 
-export function BettingBoard({
-  remaining,
+function BettingBoardInner({
+  phaseEndsAt,
+  serverTime,
   canBet,
   playerCounts,
   yourBets,
   winningCardId,
   phase,
+  cardHeat,
   onPick,
 }: BettingBoardProps) {
+  const remaining = usePhaseRemaining(phaseEndsAt, serverTime);
   const showWin =
     winningCardId != null &&
     (phase === "revealing" || phase === "payout");
@@ -39,6 +46,14 @@ export function BettingBoard({
     0,
     Math.min(100, (seconds / BETTING_SECONDS) * 100),
   );
+
+  const heatById = useMemo(() => {
+    const m = new Map<number, "hot" | "cold" | "neutral">();
+    for (const row of cardHeat ?? []) {
+      m.set(row.cardId, row.level);
+    }
+    return m;
+  }, [cardHeat]);
 
   return (
     <div className="board-stack tarot-board-stack mt-4">
@@ -104,6 +119,7 @@ export function BettingBoard({
             const isWin = showWin && winningCardId === card.id;
             const lockedOut = canBet && atCardLimit && mine <= 0;
             const hasBet = mine > 0;
+            const heat = heatById.get(card.id);
 
             return (
               <button
@@ -117,6 +133,16 @@ export function BettingBoard({
               >
                 <span className="tarot-board-card__index font-play tabular-nums">
                   {card.id}
+                  {heat === "hot" && (
+                    <span className="ml-0.5 text-[8px] text-orange-400" title="Lá nóng">
+                      🔥
+                    </span>
+                  )}
+                  {heat === "cold" && (
+                    <span className="ml-0.5 text-[8px] text-sky-300" title="Lá lạnh">
+                      ❄
+                    </span>
+                  )}
                 </span>
 
                 <div
@@ -161,3 +187,5 @@ export function BettingBoard({
     </div>
   );
 }
+
+export const BettingBoard = memo(BettingBoardInner);

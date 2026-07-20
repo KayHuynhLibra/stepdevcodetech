@@ -307,6 +307,15 @@ export default function ArcanaWheelPage() {
   );
   const [history, setHistory] = useState<SpinResult[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [mission, setMission] = useState({
+    count: 0,
+    target: 3,
+    bonusSpins: 0,
+    stakeMin: 10_000,
+    bonusStake: 300,
+    windowHours: 24,
+  });
+  const [useBonusSpin, setUseBonusSpin] = useState(false);
   const rotationRef = useRef(0);
   const autoRef = useRef(false);
   const spinningRef = useRef(false);
@@ -376,6 +385,7 @@ export default function ArcanaWheelPage() {
         slots: ArcanaSlotPublic[];
         recent: RecentSpin[];
         balance: number;
+        mission?: typeof mission;
       }>("/api/arcana-wheel");
       setEnabled(r.enabled);
       enabledRef.current = r.enabled;
@@ -400,6 +410,7 @@ export default function ArcanaWheelPage() {
         });
       }
       syncUserBalance(r.balance);
+      if (r.mission) setMission(r.mission);
       if (r.betTiers.length && !r.betTiers.includes(stakeRef.current)) {
         setStake(r.betTiers[0]!);
         stakeRef.current = r.betTiers[0]!;
@@ -438,6 +449,11 @@ export default function ArcanaWheelPage() {
     });
   };
 
+  const useBonusRef = useRef(false);
+  useEffect(() => {
+    useBonusRef.current = useBonusSpin;
+  }, [useBonusSpin]);
+
   const runSpin = useCallback(async (): Promise<boolean> => {
     const picks = pickIdsRef.current;
     if (
@@ -453,7 +469,11 @@ export default function ArcanaWheelPage() {
       setAutoSpin(false);
       return false;
     }
-    if (balanceRef.current < stakeRef.current) {
+    const bonus = useBonusRef.current;
+    if (
+      !bonus &&
+      balanceRef.current < stakeRef.current
+    ) {
       setError("Không đủ xu");
       setAutoSpin(false);
       return false;
@@ -472,15 +492,19 @@ export default function ArcanaWheelPage() {
         luckStreak: number;
         streakBonus: StreakBonusRules;
         recent: RecentSpin[];
+        mission?: typeof mission;
       }>("/api/arcana-wheel/spin", {
         method: "POST",
         body: JSON.stringify({
-          stake: stakeRef.current,
+          stake: bonus ? mission.bonusStake : stakeRef.current,
           pickIds: picks,
+          useBonusSpin: bonus,
         }),
       });
 
-      const winIndex = slots.findIndex((s) => s.id === r.spin.winId);
+      const animWinId =
+        r.spin.wheelDisplayWinId ?? r.spin.winId;
+      const winIndex = slots.findIndex((s) => s.id === animWinId);
       const idx = winIndex >= 0 ? winIndex : 0;
       const nextRot = targetRotationDeg(idx, slots.length, rotationRef.current);
       rotationRef.current = nextRot;
@@ -497,6 +521,10 @@ export default function ArcanaWheelPage() {
       syncUserBalance(r.balance);
       setLuckStreak(r.luckStreak);
       if (r.streakBonus) setStreakBonus(r.streakBonus);
+      if (r.mission) setMission(r.mission);
+      if (r.spin.missionCompleted) {
+        setError("Hoàn thành nhiệm vụ — +1 lượt quay thưởng!");
+      }
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Quay thất bại");
@@ -619,6 +647,19 @@ export default function ArcanaWheelPage() {
         onDetail={() => setDetailSheet("streak")}
       />
 
+      <p className="mt-2 text-center text-[11px] font-semibold text-[var(--play-muted)]">
+        Nhiệm vụ: {mission.count}/{mission.target} spin ≥{" "}
+        {formatXu(mission.stakeMin)} (24h)
+        {mission.bonusSpins > 0
+          ? ` · ${mission.bonusSpins} lượt quay thưởng`
+          : ""}
+      </p>
+      {(streakBonus.nextWinBonusPercent ?? 0) > 0 && (
+        <p className="text-center text-[10px] font-bold text-[var(--jade-deep)]">
+          Ván thắng tới: +{streakBonus.nextWinBonusPercent}% chuỗi vận
+        </p>
+      )}
+
       <div className="mt-2">
         <ArcanaRoulette
           slots={slots}
@@ -641,7 +682,9 @@ export default function ArcanaWheelPage() {
                   ? ` (gồm +${lastResult.streakBonusPercent}% chuỗi vận)`
                   : ""
               } · ${slotById.get(lastResult.winId)?.nameVi ?? ""}`
-            : `Trượt · −${formatXu(lastResult.stake)} xu · ra ${slotById.get(lastResult.winId)?.nameVi ?? ""}`}
+            : lastResult.nearMiss
+              ? `Suýt trúng · −${formatXu(lastResult.stake)} xu · vòng dừng ${slotById.get(lastResult.wheelDisplayWinId ?? lastResult.winId)?.nameVi ?? ""} · kết quả ${slotById.get(lastResult.winId)?.nameVi ?? ""}`
+              : `Trượt · −${formatXu(lastResult.stake)} xu · ra ${slotById.get(lastResult.winId)?.nameVi ?? ""}`}
         </p>
       )}
 
@@ -759,6 +802,18 @@ export default function ArcanaWheelPage() {
             </button>
           ))}
         </div>
+
+        <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 text-xs font-semibold text-[var(--play-ink)]">
+          <input
+            type="checkbox"
+            checked={useBonusSpin}
+            disabled={spinning || mission.bonusSpins <= 0}
+            onChange={(e) => setUseBonusSpin(e.target.checked)}
+            className="h-4 w-4 accent-[var(--jade-deep)]"
+          />
+          Dùng lượt quay thưởng ({mission.bonusSpins} · mức{" "}
+          {formatXu(mission.bonusStake)} miễn phí)
+        </label>
 
         <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 text-xs font-semibold text-[var(--play-ink)]">
           <input

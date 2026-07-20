@@ -20,6 +20,10 @@ import {
 } from "./arcanaStreakStore.js";
 import { vaultArcana } from "./vaultStore.js";
 import { CARDS } from "./cards.js";
+import {
+  arcanaMissionStore,
+  MISSION_BONUS_STAKE,
+} from "./arcanaMissionStore.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, "..", "data");
@@ -81,6 +85,10 @@ export interface ArcanaSpinEntry {
   streakBonusPercent?: number;
   streakBefore?: number;
   streakAfter?: number;
+  nearMiss?: boolean;
+  wheelDisplayWinId?: number;
+  missionCompleted?: boolean;
+  usedBonusSpin?: boolean;
   profit: number;
   seed: string;
   balanceAfter: number;
@@ -467,6 +475,7 @@ class ArcanaWheelStore {
         payout: s.payout,
         profit: s.profit,
       })),
+      mission: userId ? arcanaMissionStore.getProgress(userId) : undefined,
     };
   }
 
@@ -596,6 +605,7 @@ class ArcanaWheelStore {
     pickIds?: unknown;
     /** @deprecated dùng pickIds */
     pickId?: unknown;
+    useBonusSpin?: boolean;
   }):
     | {
         ok: true;
@@ -611,14 +621,22 @@ class ArcanaWheelStore {
     }
     const stake = Math.floor(Number(input.stake));
     const maxStake = this.config.maxStake ?? MAX_STAKE;
+    const useBonus = !!input.useBonusSpin;
+    if (useBonus) {
+      if (!arcanaMissionStore.consumeBonusSpin(input.userId)) {
+        return { ok: false, reason: "Không còn lượt quay thưởng nhiệm vụ" };
+      }
+    }
     if (
-      !Number.isFinite(stake) ||
-      stake <= 0 ||
-      stake > maxStake ||
-      !this.config.betTiers.includes(stake)
+      !useBonus &&
+      (!Number.isFinite(stake) ||
+        stake <= 0 ||
+        stake > maxStake ||
+        !this.config.betTiers.includes(stake))
     ) {
       return { ok: false, reason: "Mức cược không hợp lệ" };
     }
+    const effectiveStake = useBonus ? MISSION_BONUS_STAKE : stake;
 
     const pickMin = this.config.pickMin ?? PICK_MIN;
     const pickMax = this.config.pickMax ?? PICK_MAX;
@@ -641,14 +659,24 @@ class ArcanaWheelStore {
     const user = authStore.getById(input.userId);
     if (!user) return { ok: false, reason: "User không tồn tại" };
     if (user.banned) return { ok: false, reason: "Tài khoản bị khóa" };
-    if (user.balance < stake) return { ok: false, reason: "Không đủ xu" };
 
-    const debit = authStore.adjustBalance(input.userId, -stake);
-    if (!debit.ok) {
-      return { ok: false, reason: debit.reason || "Không trừ được xu" };
+    if (!useBonus && user.balance < effectiveStake) {
+      return { ok: false, reason: "Không đủ xu" };
     }
 
-    vaultArcana.recordStakeIn(stake, debit.user.username, debit.user.id);
+    let balanceAfter = user.balance;
+    if (!useBonus) {
+      const debit = authStore.adjustBalance(input.userId, -effectiveStake);
+      if (!debit.ok) {
+        return { ok: false, reason: debit.reason || "Không trừ được xu" };
+      }
+      balanceAfter = debit.user.balance;
+      vaultArcana.recordStakeIn(
+        effectiveStake,
+        debit.user.username,
+        debit.user.id,
+      );
+    }
 
     const streakBefore = arcanaStreakStore.get(input.userId);
     const streakCfg = this.streakBonusConfig();
@@ -657,9 +685,22 @@ class ArcanaWheelStore {
     const payoutScale = this.config.payoutScale ?? DEFAULT_PAYOUT_SCALE;
     const winSlot = pickWeighted(this.config.slots);
     const won = pickIds.includes(winSlot.id);
+
+    let wheelDisplayWinId = winSlot.id;
+    let nearMiss = false;
+    if (!won && Math.random() < 0.38) {
+      const candidates = this.config.slots.filter(
+        (s) => s.ratio >= 20 && !pickIds.includes(s.id),
+      );
+      if (candidates.length > 0) {
+        wheelDisplayWinId = pickWeighted(candidates).id;
+        nearMiss = wheelDisplayWinId !== winSlot.id;
+      }
+    }
+
     const payoutBase = won
       ? computeArcanaPayout(
-          stake,
+          effectiveStake,
           winSlot.ratio,
           pickIds.length,
           payoutScale,
@@ -672,9 +713,8 @@ class ArcanaWheelStore {
       won && streakBonusPercent > 0
         ? applyStreakBonusToPayout(payoutBase, streakBonusPercent)
         : payoutBase;
-    const profit = payout - stake;
+    const profit = payout - (useBonus ? 0 : effectiveStake);
 
-    let balanceAfter = debit.user.balance;
     if (payout > 0) {
       const credit = authStore.adjustBalance(input.userId, payout);
       if (credit.ok) {
@@ -684,12 +724,12 @@ class ArcanaWheelStore {
           credit.user.username,
           credit.user.id,
         );
-      } else {
-        const refund = authStore.adjustBalance(input.userId, stake);
+      } else if (!useBonus) {
+        const refund = authStore.adjustBalance(input.userId, effectiveStake);
         if (refund.ok) {
           balanceAfter = refund.user.balance;
           vaultArcana.recordStakeRefund(
-            stake,
+            effectiveStake,
             refund.user.username,
             refund.user.id,
           );
@@ -698,17 +738,26 @@ class ArcanaWheelStore {
           ok: false,
           reason: "Không trả thưởng được — đã hoàn cược",
         };
+      } else {
+        return { ok: false, reason: "Không trả thưởng được" };
       }
     }
 
     const { streakAfter } = arcanaStreakStore.recordSpin(input.userId, won);
+    let missionCompleted = false;
+    if (!useBonus) {
+      missionCompleted = arcanaMissionStore.recordPaidSpin(
+        input.userId,
+        effectiveStake,
+      );
+    }
 
     const entry: ArcanaSpinEntry = {
       id: randomBytes(6).toString("hex"),
       at: Date.now(),
-      userId: debit.user.id,
-      username: debit.user.username,
-      stake,
+      userId: user.id,
+      username: user.username,
+      stake: effectiveStake,
       pickId: pickIds[0]!,
       pickIds,
       winId: winSlot.id,
@@ -719,6 +768,11 @@ class ArcanaWheelStore {
       streakBonusPercent: won ? streakBonusPercent : undefined,
       streakBefore,
       streakAfter,
+      nearMiss: nearMiss || undefined,
+      wheelDisplayWinId:
+        wheelDisplayWinId !== winSlot.id ? wheelDisplayWinId : undefined,
+      missionCompleted: missionCompleted || undefined,
+      usedBonusSpin: useBonus || undefined,
       profit,
       seed,
       balanceAfter,

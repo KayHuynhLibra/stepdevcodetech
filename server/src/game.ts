@@ -13,6 +13,17 @@ import {
 } from "./cards.js";
 import { interStore, isPolicyMode } from "./interStore.js";
 import {
+  computeCardHeat,
+  engagementAllowedForMode,
+  feedJackpotFromStake,
+  JACKPOT_MIN_STAKE,
+  JACKPOT_START,
+  PUBLIC_WIN_STREAK_MIN,
+  rollJackpotPayout,
+  WARM_MIN_LOSS_STREAK,
+  type JackpotCandidate,
+} from "./tarotEngagement.js";
+import {
   CHASER_BOT_COUNT,
   createIdentityPool,
   randomBotBetAmount,
@@ -21,11 +32,12 @@ import {
   type BotIdentity,
 } from "./bots.js";
 import { vaultStore } from "./vaultStore.js";
+import { guestPlayStore, GUEST_PLAY_LIMIT_MS } from "./guestPlayStore.js";
+import { chatConfigStore } from "./chatConfigStore.js";
 import {
   CHAT_COOLDOWN_MS,
   CHAT_HISTORY_LIMIT,
   SAINT_COOLDOWN_MS,
-  chatCost,
   containsBlockedWords,
   getShout,
   isChatMode,
@@ -62,7 +74,22 @@ import {
   type TopAcePreview,
 } from "./types.js";
 
+function readBotTargetCount(): number {
+  const raw = process.env.BOT_TARGET_COUNT;
+  if (raw != null && String(raw).trim() !== "") {
+    const n = Math.floor(Number(raw));
+    if (Number.isFinite(n)) {
+      return Math.max(MIN_BOTS, Math.min(MAX_BOTS, n));
+    }
+  }
+  return TARGET_DISPLAY_CCU;
+}
+
 type BroadcastFn = (state: PublicState, playerId?: string) => void;
+
+function hiddenFromLeaderboards(userId?: string | null): boolean {
+  return authStore.isHiddenFromLeaderboard(userId);
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, "..", "data");
@@ -81,13 +108,15 @@ interface PersistedWinner {
 }
 
 interface HistoryFile {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   nextRound: number;
   /** UTC day key (YYYY-MM-DD) — hết ngày thì ván về #1 */
   roundDayKey?: string;
   history: RoundResult[];
   vipPool?: number;
   vipBase?: number;
+  jackpotPool?: number;
+  lastJackpotWin?: { name: string; amount: number; round: number } | null;
   lastRoundWinners?: PersistedWinner[];
 }
 
@@ -119,7 +148,7 @@ export class GameEngine {
 
   private identityPool = createIdentityPool(50);
   /** Số bot mong muốn (user chỉnh được) */
-  private targetBotCount = TARGET_DISPLAY_CCU;
+  private targetBotCount = readBotTargetCount();
   private activeBots: BotIdentity[] = [];
   /** botId -> cardId -> amount */
   private botRoundBets = new Map<string, Map<number, number>>();
@@ -128,13 +157,25 @@ export class GameEngine {
   private botLogSeq = 0;
   private lastBotScaleAt = 0;
   private lastBroadcastAt = 0;
+  private lastBroadcastBetDigest = "";
   private lastVipJitterAt = 0;
   /** Quỹ VIP cosmetic */
   private vipPool = 12_694;
   private vipBase = 12_694;
+  /** Hũ Tarot — feed từ cược auth, trả bonus ngẫu nhiên */
+  private jackpotPool = JACKPOT_START;
+  private lastJackpotWin: { name: string; amount: number; round: number } | null =
+    null;
+  private streakHighlights: {
+    name: string;
+    streak: number;
+    at: number;
+    userId?: string;
+  }[] = [];
   /** Người thắng vòng trước (snapshot lúc payout) */
   private lastRoundWinners: {
     playerId: string;
+    userId?: string;
     name: string;
     profit: number;
     payout: number;
@@ -146,6 +187,7 @@ export class GameEngine {
   /** Top 3 ván hiện tại — snapshot lúc bắt đầu revealing */
   private roundTopWinnersRaw: {
     playerId: string;
+    userId?: string;
     name: string;
     profit: number;
     payout: number;
@@ -160,8 +202,10 @@ export class GameEngine {
   private shoutCooldown = new Map<string, number>();
   /** Saint cooldown theo userId */
   private saintCooldown = new Map<string, number>();
-  /** Chat realtime trong phòng (không ghi disk) */
+  /** Chat realtime trong phòng — reset theo ngày UTC */
   private chatLines: ShoutEvent[] = [];
+  private chatDayKey = todayKey();
+  private lastGuestPlayCheckAt = 0;
 
   constructor(broadcast: BroadcastFn) {
     this.broadcast = broadcast;
@@ -169,7 +213,17 @@ export class GameEngine {
   }
 
   getChatLines(): ShoutEvent[] {
+    this.ensureChatDay();
     return [...this.chatLines];
+  }
+
+  /** Hết ngày UTC → xóa lịch sử chat phòng. */
+  private ensureChatDay(): boolean {
+    const key = todayKey();
+    if (this.chatDayKey === key) return false;
+    this.chatDayKey = key;
+    this.chatLines = [];
+    return true;
   }
 
   start() {
@@ -182,7 +236,9 @@ export class GameEngine {
       if (!existsSync(HISTORY_PATH)) return;
       const parsed = JSON.parse(readFileSync(HISTORY_PATH, "utf8")) as HistoryFile;
       if (
-        (parsed?.version !== 1 && parsed?.version !== 2) ||
+        (parsed?.version !== 1 &&
+          parsed?.version !== 2 &&
+          parsed?.version !== 3) ||
         !Array.isArray(parsed.history)
       ) {
         return;
@@ -203,6 +259,12 @@ export class GameEngine {
         }
         if (typeof parsed.vipBase === "number" && Number.isFinite(parsed.vipBase)) {
           this.vipBase = parsed.vipBase;
+        }
+        if (
+          typeof parsed.jackpotPool === "number" &&
+          Number.isFinite(parsed.jackpotPool)
+        ) {
+          this.jackpotPool = Math.max(0, parsed.jackpotPool);
         }
         console.log(
           `[game] Day rollover (${savedDay} → ${today}) · round #1`,
@@ -237,6 +299,19 @@ export class GameEngine {
       if (typeof parsed.vipBase === "number" && Number.isFinite(parsed.vipBase)) {
         this.vipBase = parsed.vipBase;
       }
+      if (
+        typeof parsed.jackpotPool === "number" &&
+        Number.isFinite(parsed.jackpotPool)
+      ) {
+        this.jackpotPool = Math.max(0, parsed.jackpotPool);
+      }
+      if (parsed.lastJackpotWin && typeof parsed.lastJackpotWin.name === "string") {
+        this.lastJackpotWin = {
+          name: parsed.lastJackpotWin.name,
+          amount: Math.floor(Number(parsed.lastJackpotWin.amount) || 0),
+          round: Math.floor(Number(parsed.lastJackpotWin.round) || 0),
+        };
+      }
       if (Array.isArray(parsed.lastRoundWinners)) {
         this.lastRoundWinners = parsed.lastRoundWinners
           .filter(
@@ -270,12 +345,14 @@ export class GameEngine {
     try {
       if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
       const payload: HistoryFile = {
-        version: 2,
+        version: 3,
         nextRound: this.roundNumber,
         roundDayKey: this.roundDayKey,
         history: this.history.slice(0, HISTORY_LIMIT),
         vipPool: this.vipPool,
         vipBase: this.vipBase,
+        jackpotPool: this.jackpotPool,
+        lastJackpotWin: this.lastJackpotWin,
         lastRoundWinners: this.lastRoundWinners.slice(0, 3),
       };
       writeFileSync(HISTORY_TMP, JSON.stringify(payload, null, 2), "utf8");
@@ -323,6 +400,9 @@ export class GameEngine {
     session.winToday = linked.winToday;
     session.guessesToday = linked.guessesToday;
     session.stakeWeek = linked.stakeWeek ?? session.stakeWeek;
+    const streaks = authStore.getTarotStreaks(linked.id);
+    session.tarotLossStreak = streaks.loss;
+    session.tarotWinStreak = streaks.win;
     return session;
   }
 
@@ -341,6 +421,8 @@ export class GameEngine {
         session: PlayerSession;
         kickedSocketIds: string[];
         recoveredOrphan?: boolean;
+        guestPlayExpired?: boolean;
+        guestPlayRemainingMs?: number;
       }
     | { ok: false; reason: string } {
     if (opts?.userId && authStore.isBanned(opts.userId)) {
@@ -395,7 +477,15 @@ export class GameEngine {
       !!carried &&
       [...carried.bets.values()].some((v) => v > 0);
 
-    const guestBalanceHint =
+    let guestPlayExpired = false;
+    let guestPlayRemainingMs = GUEST_PLAY_LIMIT_MS;
+    if (!linked && guestCodeNorm && /^G[A-Z0-9]{7}$/.test(guestCodeNorm)) {
+      const play = guestPlayStore.onGuestJoin(guestCodeNorm);
+      guestPlayExpired = play.expired;
+      guestPlayRemainingMs = play.remainingMs;
+    }
+
+    let guestBalanceHint =
       !linked &&
       opts?.guestBalance != null &&
       Number.isFinite(opts.guestBalance)
@@ -404,6 +494,14 @@ export class GameEngine {
             Math.min(Math.floor(opts.guestBalance), 50_000_000),
           )
         : undefined;
+
+    if (guestPlayExpired) {
+      guestBalanceHint = undefined;
+      if (carried) {
+        carried.balance = STARTING_BALANCE;
+        carried.bets = new Map();
+      }
+    }
 
     const session: PlayerSession = carried
       ? {
@@ -445,15 +543,23 @@ export class GameEngine {
             normalizeAvatar(opts?.avatar) ||
             DEFAULT_AVATAR,
           balance:
-            linked?.balance ??
-            guestBalanceHint ??
-            STARTING_BALANCE,
+            guestPlayExpired
+              ? STARTING_BALANCE
+              : linked?.balance ??
+                guestBalanceHint ??
+                STARTING_BALANCE,
           bets: new Map(),
           guessesToday: linked?.guessesToday ?? 0,
           winToday: linked?.winToday ?? 0,
           dayKey: todayKey(),
           stakeWeek: linked?.stakeWeek ?? 0,
           weekKey: linked?.weekKey ?? weekKey(),
+          tarotLossStreak: linked
+            ? authStore.getTarotStreaks(linked.id).loss
+            : 0,
+          tarotWinStreak: linked
+            ? authStore.getTarotStreaks(linked.id).win
+            : 0,
         };
     this.ensureWeek(session);
     this.players.set(socketId, session);
@@ -464,6 +570,8 @@ export class GameEngine {
       session,
       kickedSocketIds,
       recoveredOrphan: recoveredOrphan || undefined,
+      guestPlayExpired: guestPlayExpired || undefined,
+      guestPlayRemainingMs,
     };
   }
 
@@ -969,7 +1077,7 @@ export class GameEngine {
     if (mode === "vip" && !authStore.isVipUser(player.userId)) {
       return { ok: false, reason: "Cần VIP để chat bay màn hình" };
     }
-    const cost = chatCost(mode);
+    const cost = chatConfigStore.costForMode(mode);
 
     let text: string | null = null;
     const sid = String(opts.id ?? "").trim();
@@ -1024,6 +1132,7 @@ export class GameEngine {
       fly: mode === "vip",
       saint: mode === "saint",
     };
+    this.ensureChatDay();
     this.chatLines.push(event);
     if (this.chatLines.length > CHAT_HISTORY_LIMIT) {
       this.chatLines = this.chatLines.slice(-CHAT_HISTORY_LIMIT);
@@ -1037,7 +1146,15 @@ export class GameEngine {
 
   getLeaderboard(viewerId?: string): LeaderboardEntry[] {
     const day = todayKey();
-    const humanRows = [...this.players.values()].map((p) => {
+    type DayRow = {
+      id: string;
+      name: string;
+      avatar: string;
+      winToday: number;
+      dayKey: string;
+      userId?: string;
+    };
+    const humanRows: DayRow[] = [...this.players.values()].map((p) => {
       this.ensureDay(p);
       return {
         id: p.id,
@@ -1045,9 +1162,10 @@ export class GameEngine {
         avatar: normalizeAvatar(p.avatar),
         winToday: p.winToday,
         dayKey: p.dayKey,
+        userId: p.userId,
       };
     });
-    const botRows = this.activeBots.map((b) => {
+    const botRows: Omit<DayRow, "userId">[] = this.activeBots.map((b) => {
       this.ensureBotDay(b);
       return {
         id: b.id,
@@ -1060,6 +1178,10 @@ export class GameEngine {
 
     const rows = [...humanRows, ...botRows]
       .filter((p) => p.dayKey === day && p.winToday > 0)
+      .filter((p) => {
+        const uid = (p as DayRow).userId;
+        return !hiddenFromLeaderboards(uid);
+      })
       .sort((a, b) => b.winToday - a.winToday)
       .slice(0, LEADERBOARD_LIMIT);
 
@@ -1073,7 +1195,11 @@ export class GameEngine {
   }
 
   getTopAces(viewerId?: string): TopAcePreview[] {
-    return this.lastRoundWinners.map((w, i) => {
+    const visible = this.lastRoundWinners.filter((w) => {
+      const uid = w.userId ?? this.players.get(w.playerId)?.userId;
+      return !hiddenFromLeaderboards(uid);
+    });
+    return visible.map((w, i) => {
       // Người / bot thắng vòng trước — hiện lá đang cược ván này nếu có
       const live = this.players.get(w.playerId);
       const currentPicks: { cardId: number; amount: number }[] = [];
@@ -1092,7 +1218,7 @@ export class GameEngine {
         }
       }
 
-      const linkedUserId = live?.userId;
+      const linkedUserId = w.userId ?? live?.userId;
       const linked = linkedUserId
         ? authStore.getById(linkedUserId)
         : undefined;
@@ -1142,7 +1268,12 @@ export class GameEngine {
   }
 
   getRoundTopWinners(viewerId?: string): RoundTopWinner[] {
-    return this.roundTopWinnersRaw.map((w, i) => ({
+    const visible = this.roundTopWinnersRaw.filter((w) => {
+      if (w.isBot) return true;
+      const uid = w.userId ?? this.players.get(w.playerId)?.userId;
+      return !hiddenFromLeaderboards(uid);
+    });
+    return visible.map((w, i) => ({
       rank: i + 1,
       name: w.name,
       avatar: this.resolveAvatar(w.playerId),
@@ -1206,6 +1337,106 @@ export class GameEngine {
     return biases;
   }
 
+  private collectWarmStreakBiases() {
+    const out: { bets: number[]; lossStreak: number }[] = [];
+    const consider = (p: PlayerSession) => {
+      const loss = p.tarotLossStreak ?? 0;
+      if (loss < WARM_MIN_LOSS_STREAK) return;
+      const bets = CARDS.map((c) => p.bets.get(c.id) ?? 0);
+      if (!bets.some((x) => x > 0)) return;
+      out.push({ bets, lossStreak: loss });
+    };
+    for (const p of this.players.values()) consider(p);
+    for (const p of this.orphans.values()) consider(p);
+    return out;
+  }
+
+  private settleTarotStreaksForPlayer(player: PlayerSession) {
+    let hadBet = false;
+    for (const amt of player.bets.values()) {
+      if (amt > 0) {
+        hadBet = true;
+        break;
+      }
+    }
+    if (!hadBet || this.winningCard == null) return;
+    const won = (player.bets.get(this.winningCard) ?? 0) > 0;
+    if (won) {
+      player.tarotWinStreak = (player.tarotWinStreak ?? 0) + 1;
+      player.tarotLossStreak = 0;
+      if (player.tarotWinStreak >= PUBLIC_WIN_STREAK_MIN) {
+        if (!hiddenFromLeaderboards(player.userId)) {
+          this.streakHighlights.unshift({
+            name: player.name,
+            streak: player.tarotWinStreak,
+            at: Date.now(),
+            userId: player.userId,
+          });
+          if (this.streakHighlights.length > 12) {
+            this.streakHighlights.length = 12;
+          }
+        }
+      }
+    } else {
+      player.tarotLossStreak = (player.tarotLossStreak ?? 0) + 1;
+      player.tarotWinStreak = 0;
+    }
+    if (player.userId) {
+      authStore.setTarotStreaks(
+        player.userId,
+        player.tarotLossStreak ?? 0,
+        player.tarotWinStreak ?? 0,
+      );
+    }
+  }
+
+  private tryJackpotBonus() {
+    if (this.winningCard == null) return;
+    const candidates: JackpotCandidate[] = [];
+    const collect = (player: PlayerSession) => {
+      const stake = player.bets.get(this.winningCard!) ?? 0;
+      if (stake < JACKPOT_MIN_STAKE) return;
+      candidates.push({
+        playerId: player.id,
+        name: player.name,
+        userId: player.userId,
+        stake,
+        balance: player.balance,
+      });
+    };
+    for (const p of this.players.values()) collect(p);
+    for (const p of this.orphans.values()) collect(p);
+    const roll = rollJackpotPayout(this.jackpotPool, candidates);
+    if (!roll) return;
+    const { winner, amount } = roll;
+    this.jackpotPool = Math.max(0, this.jackpotPool - amount);
+    const creditPlayer = (p: PlayerSession) => {
+      if (p.id !== winner.playerId) return;
+      if (p.userId) {
+        const adj = authStore.adjustBalance(p.userId, amount);
+        if (adj.ok) p.balance = adj.user.balance;
+        vaultStore.recordPayoutOut(amount, p.name, p.userId);
+      } else {
+        p.balance += amount;
+      }
+    };
+    for (const p of this.players.values()) creditPlayer(p);
+    for (const p of this.orphans.values()) creditPlayer(p);
+    this.lastJackpotWin = {
+      name: winner.name,
+      amount,
+      round: this.roundNumber,
+    };
+    this.pushLog({
+      botId: "system",
+      botName: "System",
+      cardId: this.winningCard,
+      amount,
+      action: "round_reset",
+      message: `Hũ Tarot · ${winner.name} +${amount} xu (ván #${this.roundNumber})`,
+    });
+  }
+
   getStateFor(playerId?: string): PublicState {
     const displayBets = this.realBets.map((v, i) => v + this.botBets[i]);
     const playerCounts = this.realBettors.map((v, i) => v + this.botBettors[i]);
@@ -1234,12 +1465,21 @@ export class GameEngine {
       winningCard: this.phase === "betting" ? null : this.winningCard,
       onlineReal,
       onlineDisplay,
-      onlinePlayers: this.getOnlinePlayers({ forStaff }),
+      ...(forStaff
+        ? { onlinePlayers: this.getOnlinePlayers({ forStaff: true }) }
+        : {}),
       topAces: this.getTopAces(playerId),
       roundTopWinners: this.getRoundTopWinners(playerId),
       tarotStars: this.getTarotStars(playerId),
       vipPool: Math.round(this.vipPool),
+      jackpotPool: Math.round(this.jackpotPool),
+      lastJackpotWin: this.lastJackpotWin,
+      cardHeat: computeCardHeat(this.history),
+      streakHighlights: this.streakHighlights
+        .filter((h) => !hiddenFromLeaderboards(h.userId))
+        .slice(0, 8),
       chatLines: this.getChatLines(),
+      chatCosts: chatConfigStore.getPublicCosts(),
       // Không lộ bot panel cho client thường — staff lấy qua socket getBotPanel
       botPanel: this.emptyBotPanel(),
     };
@@ -1253,6 +1493,29 @@ export class GameEngine {
         base.yourBets = CARDS.map((c) => p.bets.get(c.id) ?? 0);
         base.guessesToday = p.guessesToday;
         base.winToday = p.winToday;
+        if (p.userId) {
+          const linked = authStore.getById(p.userId);
+          if (linked) {
+            base.viewerAuth = {
+              code: linked.code,
+              isVip: authStore.isVipUser(linked.id),
+              roundsPlayed: authStore.getRoundsPlayed(linked.id),
+              vipGranted: !!linked.vipGranted,
+            };
+          }
+        }
+        const loss = p.tarotLossStreak ?? 0;
+        base.viewerEngagement = {
+          lossStreak: loss,
+          winStreak: p.tarotWinStreak ?? 0,
+          warmActive: loss >= WARM_MIN_LOSS_STREAK,
+        };
+        if (!p.userId && p.guestCode) {
+          base.guestPlayRemainingMs = guestPlayStore.getRemainingMs(
+            p.guestCode,
+          );
+          base.guestPlayLimitMs = GUEST_PLAY_LIMIT_MS;
+        }
       }
     }
     return base;
@@ -1338,6 +1601,14 @@ export class GameEngine {
     }
 
     return [...byKey.values()]
+      .filter((row) => {
+        let userId: string | undefined;
+        if (!row.key.startsWith("socket:")) userId = row.key;
+        else if (row.socketId) {
+          userId = this.players.get(row.socketId)?.userId;
+        }
+        return !hiddenFromLeaderboards(userId);
+      })
       .sort((a, b) => b.stakeWeek - a.stakeWeek)
       .slice(0, LEADERBOARD_LIMIT)
       .map((row, i) => {
@@ -1392,6 +1663,9 @@ export class GameEngine {
     const now = Date.now();
     interStore.tickRotation();
     this.ensureRoundDay();
+    if (this.ensureChatDay()) {
+      this.emitToAll();
+    }
 
     if (now - this.lastBotScaleAt > 30_000) {
       this.scaleBots();
@@ -1407,14 +1681,34 @@ export class GameEngine {
       this.lastVipJitterAt = now;
     }
 
+    if (now - this.lastGuestPlayCheckAt >= 5000) {
+      this.lastGuestPlayCheckAt = now;
+      this.enforceGuestPlayLimits();
+    }
+
     if (now >= this.phaseEndsAt) {
       this.advancePhase();
       return;
     }
 
-    if (now - this.lastBroadcastAt >= 500) {
+    const digest = `${this.realBets.join(",")}|${this.realBettors.join(",")}|${this.phase}`;
+    const idle =
+      this.phase === "betting" && digest === this.lastBroadcastBetDigest;
+    const gap = idle ? 1000 : 500;
+    if (now - this.lastBroadcastAt >= gap) {
       this.lastBroadcastAt = now;
+      this.lastBroadcastBetDigest = digest;
       this.emitToAll();
+    }
+  }
+
+  private enforceGuestPlayLimits() {
+    for (const p of this.players.values()) {
+      if (p.userId || !p.guestCode) continue;
+      if (!guestPlayStore.forceExpireIfNeeded(p.guestCode)) continue;
+      p.balance = STARTING_BALANCE;
+      p.bets.clear();
+      this.syncUser(p);
     }
   }
 
@@ -1432,21 +1726,34 @@ export class GameEngine {
       this.phase = "revealing";
       this.phaseEndsAt = Date.now() + PHASE_MS.revealing;
       const storedMode = interStore.getMode();
-      const interMode = interStore.getEffectiveMode();
       const authBets = this.getAuthBets();
+      const displayStake =
+        this.realBets.reduce((a, b) => a + b, 0) +
+        this.botBets.reduce((a, b) => a + b, 0);
+      const authStake = authBets.reduce((a, b) => a + b, 0);
+      const interMode = interStore.getEffectiveMode({
+        authStake,
+        displayStake,
+      });
       const policyBets = isPolicyMode(interMode) ? authBets : this.realBets;
       const userBiases = this.collectUserBiases();
       const recentWins = this.getHistory(3).map((h) => h.win);
+      const heatHistory = this.getHistory(20).map((h) => h.win);
+      const warmPlayers = this.collectWarmStreakBiases();
+      const engagement = engagementAllowedForMode(interMode)
+        ? { heatHistory, warmPlayers }
+        : undefined;
+      this.jackpotPool = feedJackpotFromStake(authStake, this.jackpotPool);
       this.winningCard = pickWinningCardWithUserBias(
         interMode,
         policyBets,
         userBiases,
         recentWins,
+        engagement,
       );
       const winIdx = (this.winningCard ?? 1) - 1;
       const profits = houseProfitByCard(authBets);
       const expectedHouse = profits[winIdx] ?? 0;
-      const authStake = authBets.reduce((a, b) => a + b, 0);
       this.snapshotRoundTopWinners();
       const modeLabel =
         storedMode === "all" ? `ALL→${interMode}` : interMode;
@@ -1515,6 +1822,7 @@ export class GameEngine {
       const payout = stake * card.multiplier;
       rows.push({
         playerId: player.id,
+        userId: player.userId,
         name: player.name,
         profit: payout - stake,
         payout,
@@ -1566,6 +1874,7 @@ export class GameEngine {
 
       winners.push({
         playerId: player.id,
+        userId: player.userId,
         name: player.name,
         profit,
         payout,
@@ -1668,6 +1977,15 @@ export class GameEngine {
     for (const player of this.orphans.values()) countRound(player);
 
     for (const player of this.players.values()) {
+      this.settleTarotStreaksForPlayer(player);
+    }
+    for (const player of this.orphans.values()) {
+      this.settleTarotStreaksForPlayer(player);
+    }
+    this.tryJackpotBonus();
+    this.saveHistoryToDisk();
+
+    for (const player of this.players.values()) {
       this.syncUser(player);
     }
   }
@@ -1749,6 +2067,20 @@ export class GameEngine {
             chase: true,
           });
         }
+      }
+    }
+
+    // Ít bot (vault mode): mỗi bot ít nhất 1 lệnh cược/ván
+    if (this.activeBots.length <= 2) {
+      const scheduled = new Set(this.botSchedule.map((j) => j.botId));
+      for (const bot of this.activeBots) {
+        if (scheduled.has(bot.id)) continue;
+        this.botSchedule.push({
+          at: start + windowStart + 200 + Math.random() * 400,
+          botId: bot.id,
+          cardId: randomCardId(),
+          amount: Math.max(MIN_BET, randomBotBetAmount()),
+        });
       }
     }
 

@@ -4,7 +4,13 @@ import {
   type InterMode,
   type PolicyMode,
 } from "./interStore.js";
+import {
+  applyEngagementToWeights,
+  type PickEngagement,
+} from "./tarotEngagement.js";
 import type { CardDef } from "./types.js";
+
+export type { PickEngagement } from "./tarotEngagement.js";
 
 export const CARDS: CardDef[] = [
   {
@@ -165,6 +171,17 @@ function resolveWeights(
   );
 }
 
+function weightedPick(weights: number[]): number {
+  const total = weights.reduce((sum, w) => sum + w, 0);
+  if (total <= 0) return CARDS[CARDS.length - 1]!.id;
+  let roll = Math.random() * total;
+  for (let i = 0; i < CARDS.length; i++) {
+    roll -= weights[i]!;
+    if (roll <= 0) return CARDS[i]!.id;
+  }
+  return CARDS[CARDS.length - 1]!.id;
+}
+
 /**
  * Weighted random theo mode Inter (mainadmin).
  * auto / small / big / flat / cool / ép lá — không nhìn stake (cool dùng history).
@@ -174,15 +191,13 @@ export function pickWinningCard(
   mode: InterMode = "auto",
   realBets?: number[],
   recentWins?: number[],
+  engagement?: PickEngagement,
 ): number {
-  const weights = resolveWeights(mode, realBets, recentWins);
-  const total = weights.reduce((sum, w) => sum + w, 0);
-  let roll = Math.random() * total;
-  for (let i = 0; i < CARDS.length; i++) {
-    roll -= weights[i]!;
-    if (roll <= 0) return CARDS[i]!.id;
+  let weights = resolveWeights(mode, realBets, recentWins);
+  if (engagement) {
+    weights = applyEngagementToWeights(weights, engagement);
   }
-  return CARDS[CARDS.length - 1]!.id;
+  return weightedPick(weights);
 }
 
 export type UserRoundBias = {
@@ -200,6 +215,7 @@ export function pickWinningCardWithUserBias(
   policyBets: number[],
   biases: UserRoundBias[],
   recentWins?: number[],
+  engagement?: PickEngagement,
 ): number {
   const winBiases = biases.filter(
     (b) => b.mode === "win" && b.bets.some((x) => x > 0),
@@ -243,7 +259,10 @@ export function pickWinningCardWithUserBias(
       }
     }
     const base = resolveWeights(mode, policyBets, recentWins);
-    const safeWeights = base.map((w, i) => (loseStake[i]! <= 0 ? w : 0));
+    let safeWeights = base.map((w, i) => (loseStake[i]! <= 0 ? w : 0));
+    if (engagement) {
+      safeWeights = applyEngagementToWeights(safeWeights, engagement);
+    }
     const safeTotal = safeWeights.reduce((a, b) => a + b, 0);
     if (safeTotal > 0) {
       let roll = Math.random() * safeTotal;
@@ -269,7 +288,7 @@ export function pickWinningCardWithUserBias(
     return CARDS[best]!.id;
   }
 
-  return pickWinningCard(mode, policyBets, recentWins);
+  return pickWinningCard(mode, policyBets, recentWins, engagement);
 }
 
 /** Xác suất hiển thị cho tab Inter (%). Policy modes cần auth bets ván hiện tại. */

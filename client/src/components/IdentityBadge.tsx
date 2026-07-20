@@ -12,6 +12,7 @@ import { VipFantasyAvatar } from "./VipFantasyAvatar";
 function roleLabel(role?: UserRole | "guest"): string {
   if (role === "mainadmin") return "Mainadmin";
   if (role === "admin") return "Admin";
+  if (role === "deal") return "Deal";
   if (role === "guest") return "Khách";
   return "Player";
 }

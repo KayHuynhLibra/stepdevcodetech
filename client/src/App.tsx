@@ -15,6 +15,7 @@ import { ensureGuestCode, guestPlayPath } from "./guest";
 import LoginPage from "./pages/LoginPage";
 import UserDashboard from "./pages/UserDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
+import DealDashboard from "./pages/DealDashboard";
 import GamePage from "./pages/GamePage";
 import ArcanaWheelPage from "./pages/ArcanaWheelPage";
 
@@ -23,7 +24,7 @@ function RequireAuth({
   role,
 }: {
   children: React.ReactNode;
-  role?: "user" | "admin" | "mainadmin";
+  role?: "user" | "admin" | "mainadmin" | "deal";
 }) {
   const token = getToken();
   const user = getStoredUser();
@@ -38,7 +39,10 @@ function RequireAuth({
   if (role === "admin" && user.role !== "admin") {
     return <Navigate to={homePath(user)} replace />;
   }
-  if (role === "user" && isStaff(user)) {
+  if (role === "deal" && user.role !== "deal") {
+    return <Navigate to={homePath(user)} replace />;
+  }
+  if (role === "user" && (isStaff(user) || user.role === "deal")) {
     return <Navigate to={homePath(user)} replace />;
   }
   return children;
@@ -53,7 +57,7 @@ function RequireOwnCode({
   role,
 }: {
   children: React.ReactNode;
-  role?: "user" | "admin" | "mainadmin";
+  role?: "user" | "admin" | "mainadmin" | "deal";
 }) {
   const { userCode } = useParams();
   const loc = useLocation();
@@ -87,7 +91,10 @@ function RequireOwnCode({
   if (role === "admin" && user.role !== "admin") {
     return <Navigate to={ownDest} replace />;
   }
-  if (role === "user" && isStaff(user)) {
+  if (role === "deal" && user.role !== "deal") {
+    return <Navigate to={ownDest} replace />;
+  }
+  if (role === "user" && (isStaff(user) || user.role === "deal")) {
     return <Navigate to={ownDest} replace />;
   }
 
@@ -210,6 +217,31 @@ export default function App() {
         path="/mainadmin/:userCode/arcana"
         element={
           <RequireOwnCode role="mainadmin">
+            <ArcanaWheelPage />
+          </RequireOwnCode>
+        }
+      />
+
+      <Route
+        path="/deal/:userCode"
+        element={
+          <RequireOwnCode role="deal">
+            <DealDashboard />
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/deal/:userCode/play"
+        element={
+          <RequireOwnCode role="deal">
+            <GamePage />
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/deal/:userCode/arcana"
+        element={
+          <RequireOwnCode role="deal">
             <ArcanaWheelPage />
           </RequireOwnCode>
         }

@@ -11,6 +11,10 @@ export interface SpinResult {
   streakBonusPercent?: number;
   streakBefore?: number;
   streakAfter?: number;
+  nearMiss?: boolean;
+  wheelDisplayWinId?: number;
+  missionCompleted?: boolean;
+  usedBonusSpin?: boolean;
   profit: number;
   seed: string;
   at?: number;

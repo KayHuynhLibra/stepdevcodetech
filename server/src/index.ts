@@ -7,6 +7,7 @@ import { fileURLToPath } from "url";
 import { Server } from "socket.io";
 import {
   authStore,
+  isBalanceOperator,
   isMainAdmin,
   isStaff,
   isUserOutcomeMode,
@@ -25,10 +26,18 @@ import { cardProbabilities } from "./cards.js";
 import { CARDS, GameEngine } from "./game.js";
 import { interStore, isInterMode } from "./interStore.js";
 import { guestIpStore } from "./guestIpStore.js";
+import { guestPlayStore } from "./guestPlayStore.js";
+import {
+  deviceStore,
+  normalizeDeviceId,
+  sanitizeDeviceMeta,
+} from "./deviceStore.js";
 import { lookupIpGeoMany } from "./ipGeo.js";
 import { reportStore } from "./reportStore.js";
 import type { PublicState } from "./types.js";
 import { arcanaWheelStore } from "./arcanaWheelStore.js";
+import { arcanaMissionStore } from "./arcanaMissionStore.js";
+import { chatConfigStore } from "./chatConfigStore.js";
 import { vaultArcana, vaultStore } from "./vaultStore.js";
 
 const PORT = Number(process.env.PORT) || 3001;
@@ -176,6 +185,19 @@ function requireAdmin(
   return user;
 }
 
+function requireBalanceOperator(
+  req: express.Request,
+  res: express.Response,
+): ReturnType<typeof authStore.resolveToken> {
+  const user = requireAuth(req, res);
+  if (!user) return null;
+  if (!isBalanceOperator(user)) {
+    res.status(403).json({ ok: false, reason: "Không có quyền chỉnh xu" });
+    return null;
+  }
+  return user;
+}
+
 function requireMainAdmin(
   req: express.Request,
   res: express.Response,
@@ -230,6 +252,13 @@ app.get("/api/leaderboard", (_req, res) => {
 
 app.post("/api/auth/register", (req, res) => {
   const ip = clientIp(req);
+  const deviceId = normalizeDeviceId(req.body?.deviceId);
+  if (deviceId && deviceStore.isBlocked(deviceId)) {
+    return res.status(403).json({
+      ok: false,
+      reason: deviceStore.blockReason(deviceId) ?? "Thiết bị bị tạm khóa",
+    });
+  }
   if (!rateLimit(`reg:${ip}`, 10, 60_000)) {
     return res.status(429).json({ ok: false, reason: "Quá nhiều lần thử" });
   }
@@ -239,6 +268,15 @@ app.post("/api/auth/register", (req, res) => {
   );
   if (!result.ok) return res.status(400).json(result);
   authStore.recordIp(result.user.id, ip);
+  if (deviceId) {
+    deviceStore.recordTouch({
+      deviceId,
+      ip,
+      meta: sanitizeDeviceMeta(req.body?.device),
+      userId: result.user.id,
+      username: result.user.username,
+    });
+  }
   const guestBalance = Number(req.body?.guestBalance);
   const guestAvatar = String(req.body?.guestAvatar ?? "");
   if (
@@ -263,6 +301,13 @@ app.post("/api/auth/register", (req, res) => {
 
 app.post("/api/auth/login", (req, res) => {
   const ip = clientIp(req);
+  const deviceId = normalizeDeviceId(req.body?.deviceId);
+  if (deviceId && deviceStore.isBlocked(deviceId)) {
+    return res.status(403).json({
+      ok: false,
+      reason: deviceStore.blockReason(deviceId) ?? "Thiết bị bị tạm khóa",
+    });
+  }
   if (!rateLimit(`login:${ip}`, 20, 60_000)) {
     return res.status(429).json({ ok: false, reason: "Quá nhiều lần thử" });
   }
@@ -272,6 +317,15 @@ app.post("/api/auth/login", (req, res) => {
   );
   if (!result.ok) return res.status(401).json(result);
   authStore.recordIp(result.user.id, ip);
+  if (deviceId) {
+    deviceStore.recordTouch({
+      deviceId,
+      ip,
+      meta: sanitizeDeviceMeta(req.body?.device),
+      userId: result.user.id,
+      username: result.user.username,
+    });
+  }
   const guestBalance = Number(req.body?.guestBalance);
   const guestAvatar = String(req.body?.guestAvatar ?? "");
   if (
@@ -571,6 +625,7 @@ app.get("/api/admin/overview", (req, res) => {
     payload.arcanaConfig = arcanaWheelStore.getConfig();
     payload.arcanaRtpPreview = arcanaWheelStore.getRtpPreview();
     payload.inter = buildInterPayload();
+    payload.chatConfig = chatConfigStore.getSnapshot();
     payload.traffic = {
       ...live,
       ...accounts,
@@ -605,14 +660,26 @@ app.post("/api/mainadmin/inter", (req, res) => {
   const me = requireMainAdmin(req, res);
   if (!me) return;
   const mode = req.body?.mode;
-  if (!isInterMode(mode)) {
-    return res.status(400).json({
-      ok: false,
-      reason: "mode phải là all | auto | small | big | app | user | fed | 1…8",
+  if (mode !== undefined && mode !== null && mode !== "") {
+    if (!isInterMode(mode)) {
+      return res.status(400).json({
+        ok: false,
+        reason: "mode phải là all | auto | small | big | app | user | fed | 1…8",
+      });
+    }
+    interStore.setMode(mode, me.username);
+    audit(me, "inter_set", { detail: String(mode) });
+  }
+  if (req.body?.allSlotMinutes != null && req.body?.allSlotMinutes !== "") {
+    const result = interStore.setAllSlotMinutes(
+      Number(req.body.allSlotMinutes),
+      me.username,
+    );
+    if (!result.ok) return res.status(400).json(result);
+    audit(me, "inter_all_slot", {
+      detail: `${result.allSlotMinutes} phút`,
     });
   }
-  interStore.setMode(mode, me.username);
-  audit(me, "inter_set", { detail: String(mode) });
   res.json({
     ok: true,
     inter: buildInterPayload(),
@@ -851,6 +918,7 @@ app.post("/api/arcana-wheel/spin", (req, res) => {
     stake: Number(req.body?.stake),
     pickIds: req.body?.pickIds,
     pickId: req.body?.pickId,
+    useBonusSpin: !!req.body?.useBonusSpin,
   });
   if (!result.ok) return res.status(400).json(result);
   const live = engine.applyAuthBalance(user.id, result.balance);
@@ -865,11 +933,12 @@ app.post("/api/arcana-wheel/spin", (req, res) => {
     luckStreak: result.luckStreak,
     streakBonus: result.streakBonus,
     recent: arcanaWheelStore.getPublicState(user.id).recent,
+    mission: arcanaMissionStore.getProgress(user.id),
   });
 });
 
 app.post("/api/admin/adjust-balance", (req, res) => {
-  const me = requireAdmin(req, res);
+  const me = requireBalanceOperator(req, res);
   if (!me) return;
   const userId = String(req.body?.userId ?? "");
   const delta = Number(req.body?.delta);
@@ -898,7 +967,7 @@ app.post("/api/admin/adjust-balance", (req, res) => {
 
 /** Admin: cộng/trừ xu khách đang ở bàn Tarot (theo socketId hoặc guest code). */
 app.post("/api/admin/guest/adjust-balance", (req, res) => {
-  const me = requireAdmin(req, res);
+  const me = requireBalanceOperator(req, res);
   if (!me) return;
   const socketId = String(req.body?.socketId ?? "").trim();
   const guestCode = String(req.body?.guestCode ?? "").trim();
@@ -924,6 +993,24 @@ app.post("/api/admin/guest/adjust-balance", (req, res) => {
     io.to(sid).emit("balanceUpdate", { balance: result.balance });
   }
   res.json(result);
+});
+
+/** Deal / admin / mainadmin: tra cứu user để chỉnh xu. */
+app.get("/api/deal/lookup", (req, res) => {
+  const me = requireBalanceOperator(req, res);
+  if (!me) return;
+  const q = String(req.query.q ?? "").trim();
+  if (q.length < 1) {
+    return res.status(400).json({ ok: false, reason: "Nhập từ khóa" });
+  }
+  const users = authStore.searchUsers(q, 8).map((u) => ({
+    id: u.id,
+    username: u.username,
+    code: u.code,
+    balance: u.balance,
+    role: u.role,
+  }));
+  res.json({ ok: true, users });
 });
 
 app.post("/api/admin/bots", (req, res) => {
@@ -1073,6 +1160,29 @@ app.post("/api/admin/user-reset-password", (req, res) => {
   });
 });
 
+/** Mainadmin: chỉnh giá chat No / VIP / Saint. */
+app.post("/api/mainadmin/chat-config", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const { noCost, vipCost, saintCost } = req.body ?? {};
+  if (noCost == null && vipCost == null && saintCost == null) {
+    return res.status(400).json({
+      ok: false,
+      reason: "Cần noCost, vipCost hoặc saintCost",
+    });
+  }
+  const result = chatConfigStore.updateConfig(
+    { noCost, vipCost, saintCost },
+    me.username,
+  );
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "chat_cost", {
+    detail: `No ${result.config.noCost} · VIP ${result.config.vipCost} · Saint ${result.config.saintCost}`,
+  });
+  engine.refreshAllClients();
+  res.json({ ok: true, chatConfig: result.config });
+});
+
 /** User: báo cáo tin chat. */
 app.post("/api/chat/report", (req, res) => {
   const user = requireAuth(req, res);
@@ -1140,6 +1250,7 @@ async function enrichIpRows() {
     return {
       ...row,
       geo: geoMap.get(row.ip) ?? null,
+      devices: deviceStore.getByIp(row.ip),
       users: userStats,
       stake24h,
       bets24h,
@@ -1269,6 +1380,49 @@ app.post("/api/mainadmin/ips/clear-guest", async (req, res) => {
   res.json({ ok: true, rows: await enrichIpRows() });
 });
 
+app.post("/api/mainadmin/user-role", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const userId = String(req.body?.userId ?? "").trim();
+  const role = req.body?.role;
+  if (
+    !userId ||
+    (role !== "user" && role !== "deal" && role !== "admin")
+  ) {
+    return res
+      .status(400)
+      .json({ ok: false, reason: "Thiếu userId hoặc role (user|deal|admin)" });
+  }
+  const result = authStore.setUserRole(userId, role);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "user_role", {
+    targetId: userId,
+    targetName: result.user.username,
+    detail: String(role),
+  });
+  res.json({ ok: true, user: result.user });
+});
+
+/** Mainadmin: ẩn/hiện user trên bảng xếp hạng Tarot */
+app.post("/api/mainadmin/user-leaderboard-hide", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const userId = String(req.body?.userId ?? "").trim();
+  const hidden = !!req.body?.hidden;
+  if (!userId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId" });
+  }
+  const result = authStore.setHideFromLeaderboard(userId, hidden);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "user_leaderboard_hide", {
+    targetId: result.user.id,
+    targetName: result.user.username,
+    detail: hidden ? "hide" : "show",
+  });
+  engine.refreshAllClients();
+  res.json(result);
+});
+
 app.post("/api/mainadmin/ips/kick", async (req, res) => {
   const me = requireMainAdmin(req, res);
   if (!me) return;
@@ -1307,6 +1461,53 @@ app.post("/api/mainadmin/ips/block", async (req, res) => {
   });
 });
 
+app.get("/api/mainadmin/devices", async (req, res) => {
+  if (!requireMainAdmin(req, res)) return;
+  const limit = Number(req.query.limit ?? 200);
+  res.json({ ok: true, devices: deviceStore.listForAdmin(limit) });
+});
+
+app.post("/api/mainadmin/devices/block", async (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const deviceId = String(req.body?.deviceId ?? "");
+  const hours = Number(req.body?.hours ?? 0);
+  const note = String(req.body?.note ?? "");
+  const result = deviceStore.setBlock(deviceId, hours, note);
+  if (!result.ok) return res.status(400).json(result);
+  const norm = normalizeDeviceId(deviceId);
+  if (hours > 0 && norm) {
+    kickSocketIds(
+      deviceStore.getSocketIdsForDevice(norm),
+      "Thiết bị bị chặn bởi mainadmin",
+    );
+  }
+  audit(me, hours > 0 ? "device_block" : "device_unblock", {
+    detail: `${norm ?? deviceId} · ${hours}h`,
+  });
+  res.json({
+    ok: true,
+    blockedUntil: result.blockedUntil,
+    rows: await enrichIpRows(),
+    devices: deviceStore.listForAdmin(200),
+  });
+});
+
+app.post("/api/mainadmin/devices/kick", async (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const deviceId = normalizeDeviceId(req.body?.deviceId);
+  if (!deviceId) {
+    return res.status(400).json({ ok: false, reason: "deviceId không hợp lệ" });
+  }
+  kickSocketIds(
+    deviceStore.getSocketIdsForDevice(deviceId),
+    "Bị kick theo thiết bị",
+  );
+  audit(me, "device_kick", { detail: deviceId });
+  res.json({ ok: true });
+});
+
 io.on("connection", (socket) => {
   socket.on(
     "join",
@@ -1316,10 +1517,21 @@ io.on("connection", (socket) => {
       avatar?: string;
       guestCode?: string;
       guestBalance?: number;
+      deviceId?: string;
+      device?: unknown;
     }) => {
       const ip = socketIp(socket);
       if (!rateLimit(`join:${ip}`, 30, 60_000)) {
         socket.emit("joinRejected", { reason: "Quá nhiều lần vào phòng" });
+        return;
+      }
+      const deviceId = normalizeDeviceId(payload?.deviceId);
+      if (deviceId && deviceStore.isBlocked(deviceId)) {
+        socket.emit("joinRejected", {
+          reason:
+            deviceStore.blockReason(deviceId) ??
+            "Thiết bị bị tạm khóa — liên hệ admin",
+        });
         return;
       }
       const token = payload?.token;
@@ -1406,6 +1618,20 @@ io.on("connection", (socket) => {
         });
       }
 
+      if (deviceId) {
+        deviceStore.recordTouch({
+          deviceId,
+          ip,
+          meta: sanitizeDeviceMeta(payload?.device),
+          socketId: socket.id,
+          userId: authUser?.id,
+          username: authUser?.username,
+          guestCode: authUser
+            ? undefined
+            : String(payload?.guestCode ?? "").trim().toUpperCase(),
+        });
+      }
+
       socket.emit("joined", {
         id: joined.session.id,
         name: joined.session.name,
@@ -1413,6 +1639,8 @@ io.on("connection", (socket) => {
         userId: joined.session.userId,
         avatar: joined.session.avatar,
         recoveredBets: !!joined.recoveredOrphan,
+        guestPlayExpired: joined.guestPlayExpired,
+        guestPlayRemainingMs: joined.guestPlayRemainingMs,
       });
       socket.emit("state", engine.getStateFor(socket.id));
     },
@@ -1570,6 +1798,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
+    deviceStore.onDisconnect(socket.id);
     guestIpStore.onDisconnect(socket.id);
     engine.leave(socket.id);
   });

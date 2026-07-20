@@ -22,6 +22,7 @@ import {
   getGuestMergePayload,
   guestPlayPath,
 } from "../guest";
+import { getDevicePayload } from "../device";
 import { AppShell } from "../components/AppShell";
 
 export type AuthPage = "login" | "register" | "recover" | "changePw";
@@ -99,6 +100,7 @@ export default function LoginPage({ page }: { page: AuthPage }) {
       const path =
         page === "login" ? "/api/auth/login" : "/api/auth/register";
       const merge = getGuestMergePayload();
+      const dev = getDevicePayload();
       const data = await api<{
         ok: true;
         user: AuthUser;
@@ -106,7 +108,7 @@ export default function LoginPage({ page }: { page: AuthPage }) {
         guestMerged?: boolean;
       }>(path, {
         method: "POST",
-        body: JSON.stringify({ username, password, ...merge }),
+        body: JSON.stringify({ username, password, ...merge, ...dev }),
       });
       saveSession(data.token, data.user);
       clearGuestMergePending();
@@ -348,7 +350,7 @@ export default function LoginPage({ page }: { page: AuthPage }) {
               to={guestHref}
               className="text-xs font-semibold text-[var(--wood-deep)] underline-offset-2 hover:underline"
             >
-              Vào chơi nhanh (khách) ›
+              Vào chơi nhanh (khách, tối đa 20 phút) ›
             </Link>
           </div>
         </div>

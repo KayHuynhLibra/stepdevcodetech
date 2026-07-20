@@ -29,6 +29,9 @@ export interface PlayerSession {
   /** Tổng xu đã đặt cược trong tuần (Sao bài Tarot) */
   stakeWeek: number;
   weekKey: string;
+  /** Chuỗi thua/thắng Tarot (có cược khi settle) */
+  tarotLossStreak?: number;
+  tarotWinStreak?: number;
 }
 
 export interface RoundResult {
@@ -123,14 +126,40 @@ export interface PublicState {
   winToday?: number;
   onlineReal: number;
   onlineDisplay: number;
-  /** Danh sách nhân vật đang trong phòng */
-  onlinePlayers: OnlinePlayerPublic[];
+  /** Danh sách nhân vật — chỉ gửi khi viewer là admin/mainadmin */
+  onlinePlayers?: OnlinePlayerPublic[];
+  /** VIP/ID viewer đăng nhập (không cần online list) */
+  viewerAuth?: {
+    code?: string;
+    isVip?: boolean;
+    roundsPlayed?: number;
+    vipGranted?: boolean;
+  };
   topAces: TopAcePreview[];
   roundTopWinners: RoundTopWinner[];
   /** Top xu dùng dự đoán tuần này */
   tarotStars: TarotStarEntry[];
   /** Quỹ VIP hiển thị (cosmetic, dao động) */
   vipPool: number;
+  /** Quỹ hũ Tarot thật (cộng dồn từ cược, trả bonus ngẫu nhiên) */
+  jackpotPool: number;
+  lastJackpotWin?: { name: string; amount: number; round: number } | null;
+  cardHeat: {
+    cardId: number;
+    wins: number;
+    level: "hot" | "cold" | "neutral";
+  }[];
+  streakHighlights: { name: string; streak: number; at: number }[];
+  viewerEngagement?: {
+    lossStreak: number;
+    winStreak: number;
+    warmActive: boolean;
+  };
+  /** Khách chơi nhanh — ms còn lại trong phiên 20 phút */
+  guestPlayRemainingMs?: number;
+  guestPlayLimitMs?: number;
+  /** Giá chat theo mode (Saint do admin chỉnh) */
+  chatCosts?: { no: number; vip: number; saint: number };
   /** Chat realtime phòng (gần nhất) */
   chatLines: {
     name: string;
@@ -156,7 +185,7 @@ export const MAX_BET = 1_000_000;
 export const BET_STEP = 10;
 /** Tối đa số lá khác nhau mỗi người được đặt trong 1 ván */
 export const MAX_CARDS_PER_ROUND = 5;
-export const TARGET_DISPLAY_CCU = 25;
+export const TARGET_DISPLAY_CCU = 2;
 export const MIN_BOTS = 0;
 export const MAX_BOTS = 50;
 export const HISTORY_LIMIT = 30;
