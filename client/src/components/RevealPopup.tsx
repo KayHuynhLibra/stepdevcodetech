@@ -166,8 +166,9 @@ export function RevealPopup({
                     }
                   >
                     <img
-                      src={card.image}
-                      alt={card.nameVi}
+                      src={CARD_BACK}
+                      alt=""
+                      decoding="async"
                       className="h-full w-full rounded-[0.45rem] object-cover object-center shadow-lg ring-1 ring-white/20"
                     />
                     <span className="font-play absolute -left-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--gold)] px-1 text-[10px] font-bold text-[#1a1208] tabular-nums shadow ring-1 ring-black/20">
@@ -189,6 +190,7 @@ export function RevealPopup({
                 <img
                   src={CARD_BACK}
                   alt=""
+                  decoding="async"
                   className="h-36 w-[6.5rem] rounded-xl object-cover object-center shadow-[0_0_36px_rgba(212,168,75,0.45)] ring-2 ring-[var(--gold)]/50"
                 />
               </motion.div>
@@ -207,6 +209,7 @@ export function RevealPopup({
                     <img
                       src={winner.image}
                       alt={`#${winner.id} ${winner.nameVi}`}
+                      decoding="async"
                       className="h-40 w-[7.5rem] rounded-[0.7rem] object-cover object-center shadow-[0_0_48px_rgba(212,168,75,0.65)] ring-2 ring-[var(--gold)]"
                     />
                     <span className="font-play absolute -left-1.5 -top-1.5 flex h-8 min-w-8 items-center justify-center rounded-full bg-[var(--gold)] px-1.5 text-base font-bold text-[#1a1208] tabular-nums shadow-[0_0_12px_rgba(212,168,75,0.7)] ring-2 ring-[#1a1208]/30">

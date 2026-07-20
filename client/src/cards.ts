@@ -166,7 +166,7 @@ export interface GameState {
   botPanel?: BotPanelState;
 }
 
-export const CARD_BACK = "/assets/cards/card-back.png?v=5";
+export const CARD_BACK = "/assets/cards/card-back.webp?v=6";
 export const BG_MAIN = "/assets/background/bg-main.png?v=5";
 
 export const CARDS: CardDef[] = [
@@ -177,7 +177,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Nhà Ảo Thuật",
     multiplier: 5,
     weight: 18,
-    image: "/assets/cards/card-01-magician.png?v=5",
+    image: "/assets/cards/card-01-magician.webp?v=6",
   },
   {
     id: 2,
@@ -186,7 +186,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Nữ Tư Tế",
     multiplier: 5,
     weight: 18,
-    image: "/assets/cards/card-02-priestess.png?v=5",
+    image: "/assets/cards/card-02-priestess.webp?v=6",
   },
   {
     id: 3,
@@ -195,7 +195,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Nữ Hoàng",
     multiplier: 6,
     weight: 15,
-    image: "/assets/cards/card-03-empress.png?v=5",
+    image: "/assets/cards/card-03-empress.webp?v=6",
   },
   {
     id: 4,
@@ -204,7 +204,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Hoàng Đế",
     multiplier: 8,
     weight: 12,
-    image: "/assets/cards/card-04-emperor.png?v=5",
+    image: "/assets/cards/card-04-emperor.webp?v=6",
   },
   {
     id: 5,
@@ -213,7 +213,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Đôi Tình Nhân",
     multiplier: 8,
     weight: 12,
-    image: "/assets/cards/card-05-lovers.png?v=5",
+    image: "/assets/cards/card-05-lovers.webp?v=6",
   },
   {
     id: 6,
@@ -222,7 +222,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Chiến Xa",
     multiplier: 10,
     weight: 10,
-    image: "/assets/cards/card-06-chariot.png?v=5",
+    image: "/assets/cards/card-06-chariot.webp?v=6",
   },
   {
     id: 7,
@@ -231,7 +231,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Ngôi Sao",
     multiplier: 15,
     weight: 8,
-    image: "/assets/cards/card-07-star.png?v=5",
+    image: "/assets/cards/card-07-star.webp?v=6",
   },
   {
     id: 8,
@@ -240,7 +240,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Mặt Trời",
     multiplier: 20,
     weight: 7,
-    image: "/assets/cards/card-08-sun.png?v=5",
+    image: "/assets/cards/card-08-sun.webp?v=6",
   },
 ];
 

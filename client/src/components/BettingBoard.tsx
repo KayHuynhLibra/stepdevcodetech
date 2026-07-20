@@ -1,11 +1,6 @@
 import { memo, useMemo } from "react";
 import { CARDS, formatXu, type Phase, type GameState } from "../cards";
 import { usePhaseRemaining } from "../hooks/usePhaseRemaining";
-import {
-  FANTASY_SPARKLE_ANGLES,
-  FANTASY_STAR_ANGLES,
-  fantasyParticleStyle,
-} from "../lib/fantasyParticles";
 
 const MAX_CARDS_PER_ROUND = 5;
 /** Đồng bộ server PHASE_MS.betting — dùng cho thanh tiến trình */
@@ -57,13 +52,7 @@ function BettingBoardInner({
 
   return (
     <div className="board-stack tarot-board-stack mt-4">
-      <div
-        className="tarot-board-ambient pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-[1.25rem]"
-        aria-hidden
-      >
-        <span className="tarot-board-ambient__glow tarot-board-ambient__glow--violet" />
-        <span className="tarot-board-ambient__glow tarot-board-ambient__glow--cyan" />
-      </div>
+      {/* Ambient: static only — no blur/particle layers (perf) */}
 
       <div
         className={`board-timer-frame tarot-board-timer ${urgent ? "board-timer-frame--urgent" : ""}`}
@@ -82,31 +71,6 @@ function BettingBoardInner({
       </div>
 
       <section className="game-task game-task-board tarot-board-deck relative px-2.5 pb-4 pt-3">
-        <div
-          className="tarot-board-deck__fx pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
-          aria-hidden
-        >
-          <span className="tarot-board-deck__blue-veil" />
-          <span className="arcana-aura tarot-board-deck__aura" />
-          <span className="arcana-aura-inner tarot-board-deck__aura tarot-board-deck__aura--inner" />
-          {FANTASY_SPARKLE_ANGLES.map((deg, i) => (
-            <span
-              key={`tb-sp-${deg}`}
-              className="arcana-sparkle tarot-board-deck__sparkle"
-              style={fantasyParticleStyle(deg, 46, i, "sparkle")}
-            />
-          ))}
-          {FANTASY_STAR_ANGLES.map((deg, i) => (
-            <span
-              key={`tb-st-${deg}`}
-              className="arcana-star tarot-board-deck__star"
-              style={fantasyParticleStyle(deg, 50, i, "star")}
-            >
-              ✦
-            </span>
-          ))}
-        </div>
-
         <p className="tarot-board-deck__title play-heading relative z-[1] mb-2 text-center text-[11px] tracking-wide">
           Bàn đặt xu
         </p>
@@ -159,6 +123,8 @@ function BettingBoardInner({
                     alt={card.nameVi}
                     className="tarot-board-card__img"
                     draggable={false}
+                    decoding="async"
+                    loading="eager"
                   />
                   {hasBet && (
                     <span className="tarot-board-card__stake font-play tabular-nums">

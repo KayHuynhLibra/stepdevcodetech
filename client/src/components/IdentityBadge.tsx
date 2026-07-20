@@ -96,12 +96,15 @@ export function IdentityBadge({
       src={avatar}
       alt=""
       size={avatarSize}
+      fx={!compact}
+      decoding="async"
       onError={onAvatarError}
     />
   ) : (
     <img
       src={avatar}
       alt=""
+      decoding="async"
       className={`rounded-full object-cover ${avatarRing} ${
         compact ? "h-9 w-9" : "h-14 w-14"
       }`}

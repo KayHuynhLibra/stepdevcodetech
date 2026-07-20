@@ -13,3 +13,6 @@ studying/
 
 # Bản chụp Version 1 — chỉ local, không push GitHub
 version 1/
+
+.asset-backup/
+

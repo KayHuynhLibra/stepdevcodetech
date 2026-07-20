@@ -21,7 +21,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Nhà Ảo Thuật",
     multiplier: 5,
     weight: 18,
-    image: "/assets/cards/card-01-magician.png",
+    image: "/assets/cards/card-01-magician.webp",
   },
   {
     id: 2,
@@ -30,7 +30,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Nữ Tư Tế",
     multiplier: 5,
     weight: 18,
-    image: "/assets/cards/card-02-priestess.png",
+    image: "/assets/cards/card-02-priestess.webp",
   },
   {
     id: 3,
@@ -39,7 +39,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Nữ Hoàng",
     multiplier: 6,
     weight: 15,
-    image: "/assets/cards/card-03-empress.png",
+    image: "/assets/cards/card-03-empress.webp",
   },
   {
     id: 4,
@@ -48,7 +48,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Hoàng Đế",
     multiplier: 8,
     weight: 12,
-    image: "/assets/cards/card-04-emperor.png",
+    image: "/assets/cards/card-04-emperor.webp",
   },
   {
     id: 5,
@@ -57,7 +57,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Đôi Tình Nhân",
     multiplier: 8,
     weight: 12,
-    image: "/assets/cards/card-05-lovers.png",
+    image: "/assets/cards/card-05-lovers.webp",
   },
   {
     id: 6,
@@ -66,7 +66,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Chiến Xa",
     multiplier: 10,
     weight: 10,
-    image: "/assets/cards/card-06-chariot.png",
+    image: "/assets/cards/card-06-chariot.webp",
   },
   {
     id: 7,
@@ -75,7 +75,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Ngôi Sao",
     multiplier: 15,
     weight: 8,
-    image: "/assets/cards/card-07-star.png",
+    image: "/assets/cards/card-07-star.webp",
   },
   {
     id: 8,
@@ -84,7 +84,7 @@ export const CARDS: CardDef[] = [
     nameVi: "Mặt Trời",
     multiplier: 20,
     weight: 7,
-    image: "/assets/cards/card-08-sun.png",
+    image: "/assets/cards/card-08-sun.webp",
   },
 ];
 

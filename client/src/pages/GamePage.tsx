@@ -1195,6 +1195,7 @@ export default function GamePage() {
             <img
               src="/assets/logo/logo-tarot.png"
               alt="SOFIAORE-TAROT"
+              decoding="async"
               className="h-10 w-10 shrink-0 rounded-full object-cover ring-2 ring-white/80 shadow-md"
             />
             <div className="min-w-0 flex-1">
@@ -1496,6 +1497,8 @@ export default function GamePage() {
                   <img
                     src={card?.image}
                     alt={card?.nameVi ?? `#${row.win}`}
+                    decoding="async"
+                    loading="lazy"
                     className="h-full w-full object-cover"
                   />
                   <span className="font-play absolute left-0.5 top-0.5 z-[1] rounded bg-[var(--wood-deep)]/92 px-1 text-[9px] font-bold leading-tight text-[var(--gold-soft)] tabular-nums shadow-sm">
@@ -1589,6 +1592,7 @@ export default function GamePage() {
                   <img
                     src={item.card.image}
                     alt=""
+                    decoding="async"
                     className="h-10 w-[1.85rem] rounded object-cover"
                   />
                   <p className="font-play max-w-full truncate text-[9px] font-semibold text-amber-700 tabular-nums">
@@ -1741,6 +1745,8 @@ export default function GamePage() {
                           <img
                             src={card.image}
                             alt={card.nameVi}
+                            decoding="async"
+                            loading="lazy"
                             className="h-8 w-[1.35rem] object-cover"
                           />
                           <span
