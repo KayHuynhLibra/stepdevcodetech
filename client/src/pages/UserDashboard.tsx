@@ -82,6 +82,8 @@ export default function UserDashboard() {
   const [newPw, setNewPw] = useState("");
   const [pwBusy, setPwBusy] = useState(false);
   const [recoveryShown, setRecoveryShown] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
 
   useEffect(() => {
     if (!getToken()) {
@@ -97,6 +99,7 @@ export default function UserDashboard() {
           nav(homePath(r.user), { replace: true });
           return;
         }
+        setRenameDraft(r.user.username);
         return api<{ ok: true; bets: BetEntry[] }>(
           "/api/auth/bets?limit=50",
         ).then((b) => setBets(b.bets));
@@ -176,6 +179,31 @@ export default function UserDashboard() {
     }
   };
 
+  const submitRename = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!user || renameBusy) return;
+    const raw = renameDraft.trim();
+    if (!raw || raw === user.username) return;
+    setRenameBusy(true);
+    setMsg(null);
+    setError(null);
+    try {
+      const r = await api<{ ok: true; user: AuthUser }>("/api/auth/rename", {
+        method: "POST",
+        body: JSON.stringify({ username: raw }),
+      });
+      setUser(r.user);
+      setRenameDraft(r.user.username);
+      const token = getToken();
+      if (token) saveSession(token, r.user);
+      setMsg("Đã đổi username — lần sau đăng nhập bằng tên mới");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không đổi được tên");
+    } finally {
+      setRenameBusy(false);
+    }
+  };
+
   const uploadFromDevice = async (file: File) => {
     if (!user || savingAvatar) return;
     setSavingAvatar(true);
@@ -216,6 +244,12 @@ export default function UserDashboard() {
             onAvatarClick={() => {
               document
                 .getElementById("avatar-picker")
+                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            onNameClick={() => {
+              setRenameDraft(user.username);
+              document
+                .getElementById("rename-username")
                 ?.scrollIntoView({ behavior: "smooth", block: "start" });
             }}
           />
@@ -292,6 +326,40 @@ export default function UserDashboard() {
             );
           })}
         </div>
+      </section>
+
+      <section id="rename-username" className="app-panel mt-4 p-3">
+        <p className="play-heading text-sm">Đổi username</p>
+        <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+          3–20 ký tự · chữ, số, gạch dưới · mã ID giữ nguyên · đăng nhập bằng
+          tên mới
+        </p>
+        <form onSubmit={submitRename} className="mt-2 flex gap-2">
+          <input
+            value={renameDraft}
+            onChange={(e) =>
+              setRenameDraft(
+                e.target.value.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 20),
+              )
+            }
+            maxLength={20}
+            autoComplete="username"
+            spellCheck={false}
+            className="app-input flex-1 font-mono text-sm"
+            placeholder={user.username}
+          />
+          <button
+            type="submit"
+            disabled={
+              renameBusy ||
+              !renameDraft.trim() ||
+              renameDraft.trim() === user.username
+            }
+            className="shrink-0 rounded-xl bg-[var(--wood-deep)] px-4 text-xs font-bold text-white disabled:opacity-50"
+          >
+            {renameBusy ? "…" : "Lưu"}
+          </button>
+        </form>
       </section>
 
       <section className="app-panel mt-4 p-3">

@@ -27,7 +27,7 @@ interface IdentityBadgeProps {
   showPath?: boolean;
   /** Mở chọn avatar khi chạm */
   onAvatarClick?: () => void;
-  /** Mở đổi tên khi chạm tên (khách) */
+  /** Mở đổi tên khi chạm tên (khách hoặc user đăng nhập) */
   onNameClick?: () => void;
 }
 

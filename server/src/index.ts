@@ -450,6 +450,24 @@ app.post("/api/auth/avatar", (req, res) => {
   res.json(result);
 });
 
+app.post("/api/auth/rename", (req, res) => {
+  const user = requireAuth(req, res);
+  if (!user) return;
+  if (!rateLimit(`rename:${user.id}`, 8, 60 * 60 * 1000)) {
+    return res.status(429).json({
+      ok: false,
+      reason: "Đổi tên quá nhiều lần — thử lại sau",
+    });
+  }
+  const result = authStore.renameUsername(
+    user.id,
+    String(req.body?.username ?? ""),
+  );
+  if (!result.ok) return res.status(400).json(result);
+  engine.applyAuthUsername(user.id, result.user.username);
+  res.json(result);
+});
+
 /** Upload avatar từ máy (user đã login hoặc khách kèm guestCode). */
 app.post("/api/avatar/upload", (req, res) => {
   const dataUrl = String(req.body?.dataUrl ?? "");

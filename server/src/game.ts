@@ -792,6 +792,25 @@ export class GameEngine {
     return { socketIds, avatar: next };
   }
 
+  /** Đổi username auth → đồng bộ tên hiển thị trên bàn. */
+  applyAuthUsername(
+    userId: string,
+    username: string,
+  ): { socketIds: string[]; name: string } {
+    const next = String(username).slice(0, 20);
+    const socketIds: string[] = [];
+    for (const session of this.players.values()) {
+      if (session.userId !== userId) continue;
+      session.name = next;
+      socketIds.push(session.id);
+    }
+    for (const session of this.orphans.values()) {
+      if (session.userId === userId) session.name = next;
+    }
+    this.emitToAll();
+    return { socketIds, name: next };
+  }
+
   /** Đổi avatar phiên hiện tại (khách hoặc đã login trên socket). */
   setSessionAvatar(
     socketId: string,

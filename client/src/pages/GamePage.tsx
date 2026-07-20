@@ -1235,14 +1235,10 @@ export default function GamePage() {
               compact
               showPath={false}
               onAvatarClick={openAvatarPicker}
-              onNameClick={
-                me
-                  ? undefined
-                  : () => {
-                      setRenameDraft(name);
-                      setRenameOpen((v) => !v);
-                    }
-              }
+              onNameClick={() => {
+                setRenameDraft(me ? me.username : name);
+                setRenameOpen((v) => !v);
+              }}
             />
             {me && !userShowsVip(me) && (
               <p className="mt-1 px-0.5 text-[10px] font-semibold tabular-nums text-amber-200/90">
@@ -1262,11 +1258,43 @@ export default function GamePage() {
               Đã chơi {formatDuration(sessionMs)} · Hôm nay{" "}
               {formatDuration(dayMs)}
             </p>
-            {!me && renameOpen && (
+            {renameOpen && (
               <form
                 className="absolute left-10 right-0 top-[calc(100%-0.15rem)] z-30 flex gap-1 rounded-xl bg-[rgba(232,250,245,0.97)] p-1.5 shadow-lg ring-1 ring-[var(--jade)]/45 backdrop-blur-sm"
                 onSubmit={(e) => {
                   e.preventDefault();
+                  if (me) {
+                    const raw = renameDraft.trim();
+                    if (raw.length < 3) {
+                      showToast("Username 3–20 ký tự, chỉ chữ/số/_");
+                      return;
+                    }
+                    void (async () => {
+                      try {
+                        const r = await api<{ ok: true; user: AuthUser }>(
+                          "/api/auth/rename",
+                          {
+                            method: "POST",
+                            body: JSON.stringify({ username: raw }),
+                          },
+                        );
+                        setMe(r.user);
+                        setName(r.user.username);
+                        const token = getToken();
+                        if (token) saveSession(token, r.user);
+                        setRenameDraft(r.user.username);
+                        setRenameOpen(false);
+                        showToast("Đã đổi username");
+                      } catch (err) {
+                        showToast(
+                          err instanceof Error
+                            ? err.message
+                            : "Không đổi tên được",
+                        );
+                      }
+                    })();
+                    return;
+                  }
                   const raw = renameDraft.trim().slice(0, 16);
                   if (raw.length < 2) {
                     showToast("Tên 2–16 ký tự");
@@ -1296,9 +1324,15 @@ export default function GamePage() {
                 <input
                   autoFocus
                   value={renameDraft}
-                  onChange={(e) => setRenameDraft(e.target.value.slice(0, 16))}
-                  maxLength={16}
-                  placeholder="Tên khách…"
+                  onChange={(e) =>
+                    setRenameDraft(
+                      me
+                        ? e.target.value.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 20)
+                        : e.target.value.slice(0, 16),
+                    )
+                  }
+                  maxLength={me ? 20 : 16}
+                  placeholder={me ? "Username…" : "Tên khách…"}
                   className="app-input !px-2 !py-1.5 text-[11px]"
                 />
                 <button

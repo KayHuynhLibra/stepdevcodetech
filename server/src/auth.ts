@@ -147,6 +147,19 @@ function todayKey(d = new Date()): string {
   return d.toISOString().slice(0, 10);
 }
 
+export function validateUsername(
+  raw: string,
+): { ok: true; username: string } | { ok: false; reason: string } {
+  const name = String(raw ?? "").trim();
+  if (name.length < 3 || name.length > 20) {
+    return { ok: false, reason: "Username 3–20 ký tự" };
+  }
+  if (!/^[a-zA-Z0-9_]+$/.test(name)) {
+    return { ok: false, reason: "Chỉ chữ, số, gạch dưới" };
+  }
+  return { ok: true, username: name };
+}
+
 function hashPassword(password: string, salt: string): string {
   return scryptSync(password, salt, 32).toString("hex");
 }
@@ -542,13 +555,9 @@ export class AuthStore {
     username: string,
     password: string,
   ): { ok: true; user: PublicUser; token: string } | { ok: false; reason: string } {
-    const name = username.trim();
-    if (name.length < 3 || name.length > 20) {
-      return { ok: false, reason: "Username 3–20 ký tự" };
-    }
-    if (!/^[a-zA-Z0-9_]+$/.test(name)) {
-      return { ok: false, reason: "Chỉ chữ, số, gạch dưới" };
-    }
+    const v = validateUsername(username);
+    if (!v.ok) return v;
+    const name = v.username;
     if (password.length < 6) {
       return { ok: false, reason: "Mật khẩu tối thiểu 6 ký tự" };
     }
@@ -1128,6 +1137,31 @@ export class AuthStore {
       return { ok: false, reason: "Avatar không hợp lệ" };
     }
     user.avatar = avatar;
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  /** Đổi username — login bằng tên mới; mã ID không đổi. */
+  renameUsername(
+    userId: string,
+    newUsername: string,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    if (user.banned) {
+      return { ok: false, reason: "Tài khoản bị khóa" };
+    }
+    const v = validateUsername(newUsername);
+    if (!v.ok) return v;
+    if (user.username.toLowerCase() === v.username.toLowerCase()) {
+      return { ok: true, user: toPublic(user) };
+    }
+    if (this.users.has(v.username.toLowerCase())) {
+      return { ok: false, reason: "Username đã tồn tại" };
+    }
+    this.users.delete(user.username.toLowerCase());
+    user.username = v.username;
+    this.users.set(v.username.toLowerCase(), user);
     this.scheduleSave();
     return { ok: true, user: toPublic(user) };
   }
