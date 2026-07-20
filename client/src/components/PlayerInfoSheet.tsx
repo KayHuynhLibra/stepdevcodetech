@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { VIP_ROUNDS_REQUIRED, userShowsVip } from "../auth";
 import { formatXu } from "../cards";
+import { VipFantasyAvatar } from "./VipFantasyAvatar";
 
 export interface PlayerInfoView {
   name: string;
@@ -12,6 +13,9 @@ export interface PlayerInfoView {
   /** Khách chưa login */
   isGuest?: boolean;
   userId?: string;
+  /** Socket session id (Tarot) — admin chỉnh xu khách */
+  socketId?: string;
+  guestCode?: string;
   balance?: number;
   outcomeMode?: "normal" | "win" | "lose";
   isVip?: boolean;
@@ -28,6 +32,11 @@ interface PlayerInfoSheetProps {
   onSetOutcome?: (userId: string, mode: "normal" | "win" | "lose") => void;
   onSetVip?: (userId: string, isVip: boolean) => void;
   onAdjustBalance?: (userId: string, delta: number) => void;
+  onAdjustGuestBalance?: (opts: {
+    socketId?: string;
+    guestCode?: string;
+    delta: number;
+  }) => void;
 }
 
 export function PlayerInfoSheet({
@@ -39,6 +48,7 @@ export function PlayerInfoSheet({
   onSetOutcome,
   onSetVip,
   onAdjustBalance,
+  onAdjustGuestBalance,
 }: PlayerInfoSheetProps) {
   const [delta, setDelta] = useState("");
   const [localMode, setLocalMode] = useState<"normal" | "win" | "lose">(
@@ -73,14 +83,35 @@ export function PlayerInfoSheet({
     roundsPlayed: rounds,
   });
 
-  const canManage = !!(staff && player.userId && !player.isBot);
+  const canManageUser = !!(staff && player.userId && !player.isBot);
+  const canManageGuest = !!(
+    staff &&
+    !player.isBot &&
+    player.isGuest &&
+    (player.guestCode || player.socketId)
+  );
+  const canManage = canManageUser || canManageGuest;
 
   const submitDelta = (e: FormEvent) => {
     e.preventDefault();
-    if (!player.userId || !onAdjustBalance) return;
     const n = Number(delta);
     if (!Number.isFinite(n) || n === 0) return;
-    onAdjustBalance(player.userId, Math.floor(n));
+    const d = Math.floor(n);
+    if (canManageUser && player.userId && onAdjustBalance) {
+      onAdjustBalance(player.userId, d);
+      return;
+    }
+    if (
+      canManageGuest &&
+      onAdjustGuestBalance &&
+      (player.socketId || player.guestCode)
+    ) {
+      onAdjustGuestBalance({
+        socketId: player.socketId,
+        guestCode: player.guestCode,
+        delta: d,
+      });
+    }
   };
 
   return (
@@ -108,11 +139,21 @@ export function PlayerInfoSheet({
         <div
           className={`player-info-hero${showVip ? " player-info-hero--vip" : ""}`}
         >
-          <img
-            src={player.avatar || "/assets/ui/avatar-default.png"}
-            alt=""
-            className="player-info-hero__avatar mx-auto"
-          />
+          <div className="mx-auto flex justify-center">
+            {showVip ? (
+              <VipFantasyAvatar
+                size="lg"
+                src={player.avatar || "/assets/ui/avatar-default.png"}
+                alt=""
+              />
+            ) : (
+              <img
+                src={player.avatar || "/assets/ui/avatar-default.png"}
+                alt=""
+                className="player-info-hero__avatar"
+              />
+            )}
+          </div>
           <div className="player-info-hero__body mt-3">
             <p className="font-play text-lg font-bold text-[var(--cream)] drop-shadow-sm">
               {player.name}
@@ -135,6 +176,14 @@ export function PlayerInfoSheet({
                 title={showVip ? "ID VIP" : "ID"}
               >
                 ID {player.code}
+              </span>
+            )}
+            {player.guestCode && (
+              <span
+                className="identity-chip identity-chip--code mt-1"
+                title="Mã khách"
+              >
+                {player.guestCode}
               </span>
             )}
             {player.userId && !player.isBot && (
@@ -165,7 +214,7 @@ export function PlayerInfoSheet({
 
         {staff && !canManage && (
           <p className="mt-4 rounded-xl bg-white/5 px-3 py-2 text-center text-[11px] text-white/50 ring-1 ring-white/10">
-            Không quản lý được ({player.isBot ? "bot" : "khách"})
+            Không quản lý được ({player.isBot ? "bot" : "khách offline"})
           </p>
         )}
 
@@ -173,6 +222,7 @@ export function PlayerInfoSheet({
           <div className="mt-4 space-y-3 rounded-xl bg-white/5 px-3 py-3 ring-1 ring-[var(--gold)]/30">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--gold-soft)]">
               Xử lý (admin)
+              {canManageGuest && !canManageUser ? " · khách" : ""}
             </p>
             {localBalance != null && (
               <p className="text-xs text-white/70">
@@ -183,6 +233,8 @@ export function PlayerInfoSheet({
               </p>
             )}
 
+            {canManageUser && (
+              <>
             <div>
               <p className="mb-1.5 text-[10px] text-white/45">
                 Mode kết quả ván
@@ -252,6 +304,8 @@ export function PlayerInfoSheet({
                 {localGranted ? "Đang cấp admin" : "Cấp VIP admin"}
               </button>
             </div>
+              </>
+            )}
 
             <div>
               <p className="mb-1.5 text-[10px] text-white/45">Cộng / trừ xu</p>
@@ -262,8 +316,21 @@ export function PlayerInfoSheet({
                     type="button"
                     disabled={busy}
                     onClick={() => {
-                      if (!player.userId || !onAdjustBalance) return;
-                      onAdjustBalance(player.userId, n);
+                      if (canManageUser && player.userId && onAdjustBalance) {
+                        onAdjustBalance(player.userId, n);
+                        return;
+                      }
+                      if (
+                        canManageGuest &&
+                        onAdjustGuestBalance &&
+                        (player.socketId || player.guestCode)
+                      ) {
+                        onAdjustGuestBalance({
+                          socketId: player.socketId,
+                          guestCode: player.guestCode,
+                          delta: n,
+                        });
+                      }
                     }}
                     className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-white/85 ring-1 ring-white/15 disabled:opacity-45"
                   >

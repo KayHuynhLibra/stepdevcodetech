@@ -8,6 +8,7 @@ interface ResultSummaryPopupProps {
   profit: number;
   payout: number;
   topWinners: RoundTopWinner[];
+  onClose?: () => void;
 }
 
 const PODIUM_ORDER = [2, 1, 3] as const;
@@ -131,6 +132,7 @@ export function ResultSummaryPopup({
   profit,
   payout,
   topWinners,
+  onClose,
 }: ResultSummaryPopupProps) {
   const winner = CARDS.find((c) => c.id === winningCardId);
   const byRank = (rank: number) =>
@@ -185,13 +187,18 @@ export function ResultSummaryPopup({
     <AnimatePresence>
       {open && winner && (
         <div className="fixed inset-0 z-[75] flex items-end justify-center">
-          <motion.div
+          <motion.button
+            type="button"
             className={`absolute inset-0 backdrop-blur-[2px] ${theme.scrim}`}
+            aria-label="Đóng"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            onClick={() => onClose?.()}
           />
           <motion.div
+            role="dialog"
+            aria-modal="true"
             className={`relative z-10 w-full max-w-md overflow-hidden rounded-t-3xl px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-12px_48px_rgba(0,0,0,0.45)] ring-1 ${theme.panelRing}`}
             style={{
               maxHeight: "72vh",
@@ -205,6 +212,11 @@ export function ResultSummaryPopup({
             <div
               className={`mx-auto mb-2 h-1 w-10 rounded-full bg-gradient-to-r from-transparent ${theme.handle} to-transparent`}
             />
+            {onClose && (
+              <p className="mb-2 text-center text-[10px] font-semibold text-white/35">
+                Chạm nền để đóng
+              </p>
+            )}
 
             {/* Lá mở thưởng */}
             <div className="relative flex flex-col items-center">

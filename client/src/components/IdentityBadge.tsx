@@ -1,3 +1,4 @@
+import type { SyntheticEvent } from "react";
 import {
   homePath,
   playPath,
@@ -6,6 +7,7 @@ import {
   type UserRole,
 } from "../auth";
 import { normalizeAvatar, DEFAULT_AVATAR } from "../avatars";
+import { VipFantasyAvatar } from "./VipFantasyAvatar";
 
 function roleLabel(role?: UserRole | "guest"): string {
   if (role === "mainadmin") return "Mainadmin";
@@ -61,7 +63,7 @@ export function IdentityBadge({
   }`;
 
   const avatarRing = isVip
-    ? "ring-[3px] ring-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.45)]"
+    ? ""
     : "ring-2 ring-[var(--gold)]/55 shadow";
 
   const nameClass = `truncate font-play text-[var(--play-ink)] ${
@@ -72,6 +74,32 @@ export function IdentityBadge({
       : ""
   }`;
 
+  const avatarSize = compact ? "sm" : "md";
+
+  const onAvatarError = (e: SyntheticEvent<HTMLImageElement>) => {
+    const el = e.currentTarget;
+    if (el.src.includes("avatar-default")) return;
+    el.src = DEFAULT_AVATAR;
+  };
+
+  const avatarNode = isVip ? (
+    <VipFantasyAvatar
+      src={avatar}
+      alt=""
+      size={avatarSize}
+      onError={onAvatarError}
+    />
+  ) : (
+    <img
+      src={avatar}
+      alt=""
+      className={`rounded-full object-cover ${avatarRing} ${
+        compact ? "h-9 w-9" : "h-14 w-14"
+      }`}
+      onError={onAvatarError}
+    />
+  );
+
   return (
     <div className={className}>
       {onAvatarClick ? (
@@ -81,37 +109,13 @@ export function IdentityBadge({
           className="relative shrink-0 active:scale-[0.97]"
           title="Đổi avatar"
         >
-          <img
-            src={avatar}
-            alt=""
-            className={`rounded-full object-cover ${avatarRing} ${
-              compact ? "h-9 w-9" : "h-14 w-14"
-            }`}
-            onError={(e) => {
-              const el = e.currentTarget;
-              if (el.src.includes("avatar-default")) return;
-              el.src = DEFAULT_AVATAR;
-            }}
-          />
-          <span className="absolute -bottom-0.5 -right-0.5 rounded-full bg-[var(--wood-deep)] px-1 text-[8px] font-bold leading-tight text-[var(--cream)] ring-1 ring-[var(--gold)]/50">
+          {avatarNode}
+          <span className="absolute -bottom-0.5 -right-0.5 z-10 rounded-full bg-[var(--wood-deep)] px-1 text-[8px] font-bold leading-tight text-[var(--cream)] ring-1 ring-[var(--gold)]/50">
             Đổi
           </span>
         </button>
       ) : (
-        <span className="relative shrink-0">
-          <img
-            src={avatar}
-            alt=""
-            className={`rounded-full object-cover ${avatarRing} ${
-              compact ? "h-9 w-9" : "h-14 w-14"
-            }`}
-            onError={(e) => {
-              const el = e.currentTarget;
-              if (el.src.includes("avatar-default")) return;
-              el.src = DEFAULT_AVATAR;
-            }}
-          />
-        </span>
+        <span className="relative shrink-0">{avatarNode}</span>
       )}
       <div className="min-w-0 flex-1">
         {onNameClick ? (

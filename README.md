@@ -85,3 +85,7 @@ Optional: disable GitHub Pages on the repo so the old portfolio is not published
 | `npm run migrate:scale10` | One-shot ÷10 money migrate on `server/data` |
 | `npm run backup:data` | Copy `server/data/*.json` → `server/data/backups/<stamp>/` |
 | `npm run install:all` | npm install |
+
+## Tài liệu kiến trúc & design system
+
+Bản đồ triển khai, design system, **UI pattern catalog (sơ đồ)**, routing, API/Socket, data JSON và checklist phát triển tính năng: [studying/README.md](studying/README.md) (cập nhật 20/07/2026).

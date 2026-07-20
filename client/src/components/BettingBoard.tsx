@@ -1,4 +1,9 @@
 import { CARDS, formatXu, type Phase } from "../cards";
+import {
+  FANTASY_SPARKLE_ANGLES,
+  FANTASY_STAR_ANGLES,
+  fantasyParticleStyle,
+} from "../lib/fantasyParticles";
 
 const MAX_CARDS_PER_ROUND = 5;
 /** Đồng bộ server PHASE_MS.betting — dùng cho thanh tiến trình */
@@ -36,10 +41,17 @@ export function BettingBoard({
   );
 
   return (
-    <div className="board-stack mt-4">
-      {/* Khung đếm ngược — glass modern */}
+    <div className="board-stack tarot-board-stack mt-4">
       <div
-        className={`board-timer-frame ${urgent ? "board-timer-frame--urgent" : ""}`}
+        className="tarot-board-ambient pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-[1.25rem]"
+        aria-hidden
+      >
+        <span className="tarot-board-ambient__glow tarot-board-ambient__glow--violet" />
+        <span className="tarot-board-ambient__glow tarot-board-ambient__glow--cyan" />
+      </div>
+
+      <div
+        className={`board-timer-frame tarot-board-timer ${urgent ? "board-timer-frame--urgent" : ""}`}
         style={{ ["--timer-pct" as string]: `${timerPct}%` }}
         aria-live="polite"
       >
@@ -54,14 +66,44 @@ export function BettingBoard({
         </div>
       </div>
 
-      <section className="game-task game-task-board relative px-2.5 pb-4 pt-3">
-        <div className="grid grid-cols-4 gap-x-2 gap-y-3">
+      <section className="game-task game-task-board tarot-board-deck relative px-2.5 pb-4 pt-3">
+        <div
+          className="tarot-board-deck__fx pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
+          aria-hidden
+        >
+          <span className="tarot-board-deck__blue-veil" />
+          <span className="arcana-aura tarot-board-deck__aura" />
+          <span className="arcana-aura-inner tarot-board-deck__aura tarot-board-deck__aura--inner" />
+          {FANTASY_SPARKLE_ANGLES.map((deg, i) => (
+            <span
+              key={`tb-sp-${deg}`}
+              className="arcana-sparkle tarot-board-deck__sparkle"
+              style={fantasyParticleStyle(deg, 46, i, "sparkle")}
+            />
+          ))}
+          {FANTASY_STAR_ANGLES.map((deg, i) => (
+            <span
+              key={`tb-st-${deg}`}
+              className="arcana-star tarot-board-deck__star"
+              style={fantasyParticleStyle(deg, 50, i, "star")}
+            >
+              ✦
+            </span>
+          ))}
+        </div>
+
+        <p className="tarot-board-deck__title play-heading relative z-[1] mb-2 text-center text-[11px] tracking-wide">
+          Bàn đặt xu
+        </p>
+
+        <div className="relative z-[1] grid grid-cols-4 gap-x-2 gap-y-3">
           {CARDS.map((card) => {
             const idx = card.id - 1;
             const people = playerCounts[idx] ?? 0;
             const mine = yourBets[idx] ?? 0;
             const isWin = showWin && winningCardId === card.id;
             const lockedOut = canBet && atCardLimit && mine <= 0;
+            const hasBet = mine > 0;
 
             return (
               <button
@@ -69,32 +111,37 @@ export function BettingBoard({
                 type="button"
                 disabled={!canBet || lockedOut}
                 onClick={() => onPick(card.id)}
-                className={`flex flex-col items-center ${
-                  lockedOut ? "opacity-40" : "disabled:opacity-95"
-                } ${canBet && !lockedOut ? "active:scale-[0.96]" : ""}`}
+                className={`tarot-board-card flex flex-col items-center ${
+                  lockedOut ? "tarot-board-card--locked" : ""
+                } ${canBet && !lockedOut ? "tarot-board-card--active" : ""}`}
               >
-                <span className="font-play board-meta mb-0.5 text-base font-bold tabular-nums">
+                <span className="tarot-board-card__index font-play tabular-nums">
                   {card.id}
                 </span>
 
                 <div
-                  className={`relative aspect-[3/4] w-full overflow-hidden rounded-[0.65rem] ${
+                  className={`tarot-board-card__frame relative aspect-[3/4] w-full ${
                     isWin
-                      ? "ring-2 ring-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.55)]"
-                      : mine > 0
-                        ? "ring-2 ring-amber-500/80"
-                        : "ring-1 ring-black/5"
+                      ? "tarot-board-card__frame--win"
+                      : hasBet
+                        ? "tarot-board-card__frame--bet"
+                        : ""
                   }`}
                 >
                   <img
                     src={card.image}
                     alt={card.nameVi}
-                    className="absolute inset-0 h-full w-full scale-[1.08] object-cover object-center"
+                    className="tarot-board-card__img"
                     draggable={false}
                   />
-                  {mine > 0 && (
-                    <span className="absolute right-0.5 top-0.5 z-[1] rounded bg-amber-400 px-1 text-[8px] font-bold text-[#1a1208]">
+                  {hasBet && (
+                    <span className="tarot-board-card__stake font-play tabular-nums">
                       {formatXu(mine)}
+                    </span>
+                  )}
+                  {isWin && (
+                    <span className="tarot-board-card__win-badge" aria-hidden>
+                      ✦
                     </span>
                   )}
                 </div>
@@ -103,7 +150,7 @@ export function BettingBoard({
                   x{card.multiplier}
                 </div>
 
-                <p className="board-meta mt-0.5 text-[11px] font-semibold tabular-nums opacity-90">
+                <p className="tarot-board-card__players board-meta mt-0.5 text-[11px] font-semibold tabular-nums">
                   {people} người
                 </p>
               </button>

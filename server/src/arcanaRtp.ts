@@ -75,11 +75,31 @@ function optimalPickIds(slots: ArcanaRtpSlot[], k: number): number[] {
     .map((s) => s.id);
 }
 
+export interface StreakRtpOptions {
+  enabled: boolean;
+  minStreak: number;
+  percentPerStep: number;
+  capPercent: number;
+}
+
+function streakBonusPct(
+  streakBefore: number,
+  won: boolean,
+  streak: StreakRtpOptions,
+): number {
+  if (!won || !streak.enabled) return 0;
+  const min = Math.max(1, Math.floor(streak.minStreak));
+  if (streakBefore < min) return 0;
+  const steps = streakBefore - min + 1;
+  return Math.min(streak.capPercent, steps * streak.percentPerStep);
+}
+
 export function computeRtpPreview(
   slots: ArcanaRtpSlot[],
   pickMin: number,
   pickMax: number,
   payoutScale: number,
+  streak?: StreakRtpOptions,
 ): RtpPickRow[] {
   const min = Math.max(1, Math.floor(pickMin));
   const max = Math.max(min, Math.floor(pickMax));
@@ -88,11 +108,26 @@ export function computeRtpPreview(
   for (let k = min; k <= max; k++) {
     const seq = rtpForPickIds(slots, sequentialPickIds(slots, k), scale);
     const opt = rtpForPickIds(slots, optimalPickIds(slots, k), scale);
+    let rtpSeq = seq.rtp;
+    let rtpOpt = opt.rtp;
+    if (streak?.enabled) {
+      rtpSeq =
+        simulateRtp(
+          slots,
+          sequentialPickIds(slots, k),
+          scale,
+          5000,
+          streak,
+        ) / 100;
+      rtpOpt =
+        simulateRtp(slots, optimalPickIds(slots, k), scale, 5000, streak) /
+        100;
+    }
     rows.push({
       pickCount: k,
       winProbability: Math.round(opt.winProbability * 1000) / 10,
-      rtpSequential: Math.round(seq.rtp * 1000) / 10,
-      rtpOptimal: Math.round(opt.rtp * 1000) / 10,
+      rtpSequential: Math.round(rtpSeq * 1000) / 10,
+      rtpOptimal: Math.round(rtpOpt * 1000) / 10,
     });
   }
   return rows;
@@ -104,12 +139,15 @@ export function simulateRtp(
   pickIds: number[],
   payoutScale: number,
   rounds = 10_000,
+  streak?: StreakRtpOptions,
 ): number {
   const W = totalWeight(slots);
   if (W <= 0 || pickIds.length === 0 || rounds <= 0) return 0;
   let payoutTotal = 0;
   const stake = RTP_REFERENCE_STAKE;
+  let luckStreak = 0;
   for (let i = 0; i < rounds; i++) {
+    const streakBefore = luckStreak;
     let r = Math.floor(Math.random() * W);
     let winSlot = slots[0]!;
     for (const slot of slots) {
@@ -120,13 +158,22 @@ export function simulateRtp(
       }
       r -= w;
     }
-    if (pickIds.includes(winSlot.id)) {
-      payoutTotal += computeArcanaPayout(
+    const won = pickIds.includes(winSlot.id);
+    if (won) {
+      const base = computeArcanaPayout(
         stake,
         winSlot.ratio,
         pickIds.length,
         payoutScale,
       );
+      const pct = streak
+        ? streakBonusPct(streakBefore, true, streak)
+        : 0;
+      payoutTotal +=
+        pct > 0 ? Math.floor(base * (1 + pct / 100)) : base;
+      luckStreak = Math.max(0, luckStreak) + 1;
+    } else {
+      luckStreak = Math.min(0, luckStreak) - 1;
     }
   }
   return Math.round((payoutTotal / rounds / stake) * 1000) / 10;

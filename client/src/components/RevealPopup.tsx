@@ -45,6 +45,19 @@ export function RevealPopup({
   onWinRef.current = onWinSfx;
   onLoseRef.current = onLoseSfx;
 
+  const timersRef = useRef<number[]>([]);
+
+  const clearTimers = () => {
+    for (const id of timersRef.current) window.clearTimeout(id);
+    timersRef.current = [];
+  };
+
+  const dismiss = () => {
+    clearTimers();
+    setStage("done");
+    onDoneRef.current?.();
+  };
+
   const winner: CardDef | undefined = CARDS.find((c) => c.id === winningCardId);
   const payout =
     winner && yourStake > 0 ? yourStake * winner.multiplier : 0;
@@ -78,13 +91,10 @@ export function RevealPopup({
     // Parent closes when phase leaves revealing; keep short safety
     const t5 = window.setTimeout(() => onDoneRef.current?.(), 4800);
 
+    timersRef.current = [t1, t2, t3, tResult, t4, t5];
+
     return () => {
-      window.clearTimeout(t1);
-      window.clearTimeout(t2);
-      window.clearTimeout(t3);
-      window.clearTimeout(tResult);
-      window.clearTimeout(t4);
-      window.clearTimeout(t5);
+      clearTimers();
     };
   }, [open, winningCardId, yourStake]);
 
@@ -92,24 +102,27 @@ export function RevealPopup({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center">
-      <motion.div
-        className="absolute inset-0 bg-black/80"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.25 }}
+      <button
+        type="button"
+        className="reveal-popup-backdrop absolute inset-0 z-0 bg-black/80"
+        aria-label="Đóng"
+        onClick={dismiss}
       />
       {/* vignette */}
       <div
-        className="pointer-events-none absolute inset-0"
+        className="pointer-events-none absolute inset-0 z-[1]"
         style={{
           background:
             "radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.65) 100%)",
         }}
       />
 
-      <div className="relative z-10 flex flex-col items-center px-4">
-        <p className="mb-4 font-display text-sm tracking-[0.25em] text-[var(--gold-soft)] uppercase">
+      <div className="relative z-10 flex flex-col items-center px-4 pointer-events-none">
+        <p className="mb-1 font-display text-sm tracking-[0.25em] text-[var(--gold-soft)] uppercase">
           {stage === "flip" || stage === "done" ? "Kết quả" : "Đang rút bài…"}
+        </p>
+        <p className="reveal-popup-hint mb-3 text-[10px] font-semibold text-white/40">
+          Chạm nền để đóng
         </p>
 
         <div className="relative h-56 w-52">

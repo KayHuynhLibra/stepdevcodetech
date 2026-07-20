@@ -510,6 +510,431 @@
   );
 }
 
+/* ---- Bàn đặt xu Tarot: luxury + fantasy ---- */
+.tarot-board-stack {
+  position: relative;
+}
+
+.tarot-board-ambient__glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(28px);
+  opacity: 0.55;
+  animation: tarot-ambient-drift 8s ease-in-out infinite;
+}
+
+.tarot-board-ambient__glow--violet {
+  width: 55%;
+  height: 40%;
+  top: 8%;
+  left: -8%;
+  background: radial-gradient(circle, rgba(120, 80, 220, 0.35), transparent 70%);
+}
+
+.tarot-board-ambient__glow--cyan {
+  width: 50%;
+  height: 38%;
+  bottom: 5%;
+  right: -10%;
+  background: radial-gradient(circle, rgba(60, 200, 220, 0.28), transparent 70%);
+  animation-delay: -3s;
+}
+
+@keyframes tarot-ambient-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.45; }
+  50% { transform: translate(4%, -3%) scale(1.08); opacity: 0.65; }
+}
+
+.tarot-board-timer {
+  border: 2px solid rgba(232, 176, 80, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(255, 230, 170, 0.25),
+    0 0 20px rgba(120, 80, 220, 0.15),
+    0 0 24px rgba(80, 200, 220, 0.12),
+    0 6px 18px rgba(6, 20, 18, 0.28);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.tarot-board-deck {
+  border-width: 2px;
+  border-color: rgba(255, 214, 120, 0.85);
+  box-shadow:
+    0 0 0 2px rgba(58, 34, 16, 0.9),
+    0 0 0 4px rgba(232, 176, 80, 0.45),
+    0 0 28px rgba(120, 80, 220, 0.2),
+    0 0 36px rgba(255, 176, 64, 0.22),
+    0 14px 36px rgba(24, 12, 4, 0.55);
+}
+
+.tarot-board-deck__title {
+  color: rgba(255, 236, 200, 0.92);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 0 12px rgba(255, 200, 80, 0.35);
+}
+
+/* Lót mờ ánh xanh trên nền bàn 8 lá */
+.tarot-board-deck__blue-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(
+      ellipse 85% 70% at 50% 55%,
+      rgba(100, 200, 230, 0.14) 0%,
+      rgba(70, 160, 210, 0.08) 45%,
+      transparent 72%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(80, 190, 220, 0.1) 0%,
+      rgba(50, 130, 180, 0.06) 55%,
+      rgba(30, 90, 140, 0.04) 100%
+    );
+  box-shadow: inset 0 0 40px rgba(80, 200, 240, 0.06);
+  opacity: 0.88;
+}
+
+.tarot-board-deck__aura {
+  inset: -14%;
+  z-index: 0;
+  opacity: 0.9;
+}
+
+.tarot-board-deck__aura--inner {
+  inset: -8%;
+  opacity: 0.85;
+}
+
+.tarot-board-deck__sparkle,
+.tarot-board-deck__star {
+  z-index: 1;
+  opacity: 0.9;
+}
+
+.tarot-board-deck__sparkle {
+  width: 3px;
+  height: 3px;
+}
+
+.tarot-board-deck__star {
+  font-size: 8px;
+}
+
+.tarot-board-card {
+  transition: transform 0.15s ease;
+}
+
+.tarot-board-card--active:active {
+  transform: scale(0.96);
+}
+
+.tarot-board-card--locked {
+  opacity: 0.38;
+}
+
+.tarot-board-card__index {
+  margin-bottom: 0.15rem;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--gold-bright);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+.tarot-board-card__frame {
+  overflow: hidden;
+  border-radius: 0.55rem;
+  border: 2px solid rgba(255, 214, 120, 0.55);
+  background: rgba(20, 12, 6, 0.35);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.35),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.tarot-board-card__frame--bet {
+  border-color: rgba(255, 200, 80, 0.95);
+  box-shadow:
+    0 0 0 1px rgba(255, 230, 170, 0.4),
+    0 0 14px rgba(255, 176, 64, 0.45),
+    0 0 18px rgba(120, 80, 220, 0.15),
+    0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.tarot-board-card__frame--win {
+  border-color: #ffd878;
+  animation: tarot-card-win-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes tarot-card-win-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px rgba(255, 230, 170, 0.5),
+      0 0 16px rgba(255, 200, 80, 0.55),
+      0 0 24px rgba(140, 100, 255, 0.25);
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px rgba(255, 240, 200, 0.7),
+      0 0 24px rgba(255, 200, 80, 0.7),
+      0 0 32px rgba(80, 220, 240, 0.35);
+  }
+}
+
+.tarot-board-card__img {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+  object-position: center;
+  transform: scale(1.06);
+  filter: contrast(1.02) saturate(1.05);
+}
+
+.tarot-board-card__stake {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  z-index: 4;
+  max-width: calc(100% - 6px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.3rem;
+  font-size: 7px;
+  font-weight: 800;
+  color: #1a1208;
+  background: linear-gradient(180deg, #ffe08a 0%, #ffb040 100%);
+  border: 1px solid rgba(255, 240, 200, 0.8);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.tarot-board-card__win-badge {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  font-size: 1.25rem;
+  color: rgba(255, 230, 170, 0.95);
+  text-shadow: 0 0 12px rgba(140, 100, 255, 0.8);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.tarot-board-card__players {
+  opacity: 0.92;
+}
+
+/* Bet sheet — luxury gold + fantasy glow */
+.reveal-popup-hint {
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+.bet-sheet-backdrop {
+  background: rgba(8, 6, 12, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.bet-sheet-hero {
+  width: 6.75rem;
+  height: 9rem;
+}
+
+.bet-sheet-hero__aura {
+  position: absolute;
+  inset: -20px;
+  border-radius: 50%;
+  z-index: 0;
+}
+
+.bet-sheet-hero__aura--inner {
+  inset: -12px;
+}
+
+.bet-sheet-hero__star {
+  position: absolute;
+  z-index: 3;
+  font-size: 11px;
+  color: rgba(200, 180, 255, 0.85);
+  text-shadow: 0 0 8px rgba(140, 100, 255, 0.7);
+  animation: arcana-star-float 3.2s ease-in-out infinite;
+}
+
+.bet-sheet-hero__star--tl {
+  left: -6px;
+  top: 4px;
+}
+
+.bet-sheet-hero__star--br {
+  right: -4px;
+  bottom: 8px;
+  animation-delay: 0.6s;
+}
+
+.bet-sheet-hero__card {
+  position: relative;
+  z-index: 2;
+  height: 9rem;
+  width: 6.75rem;
+  border-radius: 0.65rem;
+  object-fit: cover;
+  object-position: center;
+  border: 3px solid rgba(255, 214, 120, 0.92);
+  box-shadow:
+    0 0 0 1px rgba(58, 34, 16, 0.8),
+    0 8px 28px rgba(0, 0, 0, 0.45),
+    0 0 20px rgba(120, 80, 220, 0.2);
+}
+
+.bet-sheet-hero__id {
+  position: absolute;
+  left: -4px;
+  top: -4px;
+  z-index: 4;
+  display: flex;
+  height: 1.5rem;
+  width: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #fff8e7;
+  background: linear-gradient(145deg, #5d3a1a, #3a2210);
+  border: 2px solid rgba(255, 214, 120, 0.85);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.bet-sheet-panel {
+  background: linear-gradient(
+    180deg,
+    rgba(42, 28, 14, 0.97) 0%,
+    rgba(26, 16, 8, 0.98) 100%
+  );
+  border: 3px solid rgba(232, 176, 80, 0.75);
+  box-shadow:
+    0 -12px 40px rgba(0, 0, 0, 0.45),
+    0 0 32px rgba(120, 80, 220, 0.12);
+  color: #fff4e0;
+}
+
+.bet-sheet-panel__rim {
+  border: 1px solid rgba(255, 230, 170, 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.bet-sheet-ribbon__text {
+  padding: 0.4rem 0.75rem;
+  color: #fff8e7;
+  background: linear-gradient(90deg, #3a2210, #5d3a1a, #3a2210);
+  border: 1px solid rgba(255, 214, 120, 0.65);
+  clip-path: polygon(3% 0, 97% 0, 100% 50%, 97% 100%, 3% 100%, 0 50%);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.bet-sheet-meta {
+  color: rgba(255, 236, 200, 0.75);
+}
+
+.bet-sheet-status {
+  border-radius: 0.5rem;
+  border: 1px solid rgba(232, 176, 80, 0.35);
+  background: rgba(0, 0, 0, 0.25);
+  color: rgba(255, 244, 224, 0.9);
+  box-shadow: inset 0 0 20px rgba(120, 80, 220, 0.08);
+}
+
+.bet-sheet-status--error {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
+.bet-sheet-status--warn {
+  color: #fde68a;
+}
+
+.bet-sheet-chip {
+  border-radius: 0.45rem;
+  border: 2px solid rgba(255, 214, 120, 0.55);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 248, 232, 0.12) 0%,
+    rgba(0, 0, 0, 0.2) 100%
+  );
+  padding: 0.55rem 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #ffe6a8;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.bet-sheet-chip:not(:disabled):active {
+  transform: scale(0.97);
+  border-color: rgba(255, 230, 170, 0.85);
+}
+
+.bet-sheet-chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.bet-sheet-confirm {
+  border-radius: 0.75rem;
+  border: 2px solid rgba(255, 230, 170, 0.5);
+  color: #1a1208;
+  background: linear-gradient(
+    145deg,
+    #ffe08a 0%,
+    #ffb040 45%,
+    #e09830 100%
+  );
+  box-shadow:
+    0 4px 16px rgba(255, 176, 64, 0.35),
+    0 0 20px rgba(120, 80, 220, 0.15);
+}
+
+.bet-sheet-confirm:not(.bet-sheet-confirm--disabled):active {
+  transform: scale(0.98);
+}
+
+.bet-sheet-confirm--disabled {
+  cursor: not-allowed;
+  border-color: rgba(120, 120, 120, 0.3);
+  background: #4a4a4a;
+  color: #9ca3af;
+  box-shadow: none;
+}
+
+.tarot-recent-strip__scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(58, 34, 16, 0.5) rgba(255, 248, 232, 0.5);
+}
+
+.tarot-recent-strip__scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.tarot-recent-strip__scroll::-webkit-scrollbar-track {
+  margin: 0 2px;
+  border-radius: 999px;
+  background: rgba(232, 176, 80, 0.12);
+}
+
+.tarot-recent-strip__scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(58, 34, 16, 0.45);
+}
+
 /* Khung Cao thủ + Sao bài — gỗ đêm + viền vàng */
 .game-task-aces,
 .game-task-stars {
@@ -987,11 +1412,71 @@ input {
   border: 3px solid rgba(232, 176, 80, 0.55);
 }
 
-.player-info-hero--vip .player-info-hero__avatar {
+.player-info-hero--vip .player-info-hero__avatar,
+.player-info-hero--vip .vip-fantasy-avatar__img--fx {
   border-color: rgba(255, 214, 120, 0.95);
   box-shadow:
     0 0 0 3px rgba(255, 200, 80, 0.35),
-    0 8px 22px rgba(180, 110, 20, 0.45);
+    0 8px 22px rgba(180, 110, 20, 0.45),
+    0 0 18px rgba(120, 80, 220, 0.25);
+}
+
+/* VIP profile avatar — fantasy aura (thử) */
+.vip-fantasy-avatar {
+  position: relative;
+  isolation: isolate;
+}
+
+.vip-fantasy-avatar__aura {
+  z-index: 0;
+}
+
+.vip-fantasy-avatar__img {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+}
+
+.vip-fantasy-avatar__img--fx {
+  border: 3px solid rgba(255, 214, 120, 0.92);
+  box-shadow:
+    0 0 0 2px rgba(140, 100, 255, 0.35),
+    0 0 14px rgba(80, 200, 220, 0.35),
+    0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.vip-fantasy-avatar__sparkle {
+  z-index: 3;
+  width: 3px;
+  height: 3px;
+}
+
+.vip-fantasy-avatar--sm .vip-fantasy-avatar__sparkle {
+  width: 2px;
+  height: 2px;
+}
+
+.vip-fantasy-avatar__star {
+  z-index: 3;
+  font-size: 7px;
+}
+
+.vip-fantasy-avatar--sm .vip-fantasy-avatar__star {
+  font-size: 6px;
+}
+
+.vip-fantasy-avatar--lg .vip-fantasy-avatar__star {
+  font-size: 9px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vip-fantasy-avatar .arcana-aura,
+  .vip-fantasy-avatar .arcana-aura-inner,
+  .vip-fantasy-avatar .arcana-sparkle,
+  .vip-fantasy-avatar .arcana-star {
+    animation: none !important;
+  }
 }
 
 .player-info-hero__body {
@@ -1113,8 +1598,524 @@ input {
   user-select: none;
 }
 
+/* ---- Fantasy Aura ---- */
+.arcana-aura {
+  z-index: -1;
+  background: radial-gradient(
+    circle,
+    rgba(120, 80, 220, 0.18) 0%,
+    rgba(60, 180, 200, 0.12) 40%,
+    transparent 72%
+  );
+  animation: arcana-aura-breathe 4.5s ease-in-out infinite;
+}
+
+.arcana-aura-inner {
+  z-index: -1;
+  background: radial-gradient(
+    circle,
+    rgba(200, 170, 255, 0.12) 0%,
+    rgba(80, 220, 200, 0.08) 35%,
+    transparent 65%
+  );
+  animation: arcana-aura-breathe 3.2s ease-in-out infinite reverse;
+}
+
+.arcana-wheel-wrap--spinning .arcana-aura {
+  animation-duration: 1.8s;
+  background: radial-gradient(
+    circle,
+    rgba(140, 100, 255, 0.3) 0%,
+    rgba(60, 200, 220, 0.2) 40%,
+    transparent 72%
+  );
+}
+
+.arcana-wheel-wrap--spinning .arcana-aura-inner {
+  animation-duration: 1.2s;
+}
+
+@keyframes arcana-aura-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.7; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+
+/* ---- Ornate ring ---- */
+.arcana-wheel-ornate {
+  filter: drop-shadow(0 10px 24px rgba(100, 60, 180, 0.25))
+    drop-shadow(0 4px 12px rgba(0, 0, 0, 0.4));
+}
+
+.arcana-wheel-outer-ring {
+  box-shadow:
+    0 0 0 3px rgba(6, 36, 30, 0.95),
+    0 0 0 6px rgba(212, 175, 55, 0.5),
+    0 0 0 8px rgba(120, 80, 220, 0.25),
+    inset 0 0 24px rgba(212, 175, 55, 0.18),
+    inset 0 0 40px rgba(100, 60, 200, 0.08);
+  z-index: 5;
+}
+
+/* ---- Shimmer conic ---- */
+.arcana-wheel-ring-shimmer {
+  z-index: 6;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(180, 140, 255, 0.3) 30deg,
+    transparent 70deg,
+    rgba(255, 230, 160, 0.3) 120deg,
+    transparent 160deg,
+    rgba(80, 220, 200, 0.25) 210deg,
+    transparent 250deg,
+    rgba(180, 140, 255, 0.28) 300deg,
+    transparent 340deg
+  );
+  opacity: 0.5;
+  animation: arcana-ring-spin 10s linear infinite;
+  mask: radial-gradient(circle, transparent 60%, #000 63%, #000 100%);
+  -webkit-mask: radial-gradient(circle, transparent 60%, #000 63%, #000 100%);
+}
+
+.arcana-wheel-wrap--spinning .arcana-wheel-ring-shimmer {
+  opacity: 1;
+  animation-duration: 2.5s;
+}
+
+/* ---- Sparkles (dot) ---- */
+.arcana-sparkle {
+  position: absolute;
+  z-index: 15;
+  width: 4px;
+  height: 4px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, rgba(180, 150, 255, 0.9) 45%, transparent 75%);
+  box-shadow: 0 0 4px rgba(180, 150, 255, 0.6);
+  animation: arcana-sparkle 2.6s ease-in-out infinite;
+  animation-delay: calc(var(--sparkle-i, 0) * 0.32s);
+}
+
+.arcana-wheel-wrap--spinning .arcana-sparkle {
+  animation-duration: 0.7s;
+  box-shadow: 0 0 8px rgba(180, 150, 255, 0.8);
+}
+
+/* ---- Stars (unicode particle) ---- */
+.arcana-star {
+  position: absolute;
+  z-index: 15;
+  font-size: 8px;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+  color: rgba(200, 180, 255, 0.7);
+  text-shadow: 0 0 6px rgba(140, 100, 255, 0.7), 0 0 12px rgba(80, 200, 220, 0.4);
+  animation: arcana-star-float 3.4s ease-in-out infinite;
+  animation-delay: calc(var(--star-i, 0) * 0.48s);
+}
+
+.arcana-wheel-wrap--spinning .arcana-star {
+  animation-duration: 1.2s;
+  color: rgba(220, 200, 255, 0.95);
+  text-shadow: 0 0 10px rgba(160, 120, 255, 0.9), 0 0 20px rgba(80, 220, 240, 0.6);
+}
+
+@keyframes arcana-star-float {
+  0%, 100% {
+    opacity: 0.2;
+    transform: translate(-50%, -50%) scale(0.7) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.15) rotate(30deg);
+  }
+}
+
+/* ---- Pointer glow ---- */
+.arcana-pointer {
+  filter: drop-shadow(0 2px 6px rgba(212, 175, 55, 0.6))
+    drop-shadow(0 0 10px rgba(140, 100, 255, 0.35));
+}
+
+.arcana-wheel-mult {
+  color: #f5e6c8;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(212, 175, 55, 0.45);
+}
+
+.arcana-rarity--wheel.arcana-rarity--high {
+  background: rgba(40, 28, 8, 0.85);
+  color: #ffd878;
+  box-shadow: 0 0 6px rgba(255, 200, 80, 0.5);
+}
+
+.arcana-rarity--wheel.arcana-rarity--mid {
+  background: rgba(8, 32, 28, 0.88);
+  color: #9ef0d0;
+  box-shadow: 0 0 4px rgba(100, 220, 170, 0.35);
+}
+
+.arcana-rarity--wheel.arcana-rarity--low {
+  background: rgba(20, 24, 28, 0.88);
+  color: #c8d4dc;
+  box-shadow: 0 0 2px rgba(200, 210, 220, 0.25);
+}
+
+/* ---- Pick deck (chọn nhân vật) ---- */
+.arcana-pick-section {
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.arcana-pick-card {
+  border-radius: 0.75rem;
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(0, 0, 0, 0.08) 100%
+  );
+  backdrop-filter: blur(4px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.arcana-pick-card:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.arcana-pick-card--high {
+  border-color: rgba(255, 200, 80, 0.25);
+  background: linear-gradient(
+    165deg,
+    rgba(60, 40, 10, 0.15) 0%,
+    rgba(0, 0, 0, 0.06) 100%
+  );
+}
+
+.arcana-pick-card--mid {
+  border-color: rgba(100, 220, 170, 0.18);
+}
+
+.arcana-pick-card--low {
+  border-color: rgba(200, 210, 220, 0.12);
+}
+
+.arcana-pick-card--selected {
+  border-color: rgba(80, 220, 160, 0.65);
+  background: linear-gradient(
+    165deg,
+    rgba(40, 120, 100, 0.2) 0%,
+    rgba(20, 60, 50, 0.12) 100%
+  );
+  box-shadow:
+    0 0 12px rgba(80, 200, 160, 0.2),
+    inset 0 0 16px rgba(80, 200, 160, 0.06);
+  animation: arcana-pick-glow 2s ease-in-out infinite;
+}
+
+.arcana-pick-card--selected.arcana-pick-card--high {
+  border-color: rgba(255, 200, 80, 0.7);
+  box-shadow:
+    0 0 14px rgba(255, 200, 80, 0.25),
+    inset 0 0 16px rgba(255, 200, 80, 0.06);
+}
+
+@keyframes arcana-pick-glow {
+  0%, 100% { box-shadow: 0 0 10px rgba(80, 200, 160, 0.15), inset 0 0 12px rgba(80, 200, 160, 0.04); }
+  50% { box-shadow: 0 0 18px rgba(80, 200, 160, 0.3), inset 0 0 20px rgba(80, 200, 160, 0.08); }
+}
+
+.arcana-pick-badge {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--jade-deep), #2a7a5a);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  z-index: 2;
+}
+
+.arcana-pick-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid rgba(212, 175, 55, 0.35);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    inset 0 0 8px rgba(212, 175, 55, 0.1);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.arcana-pick-card--selected .arcana-pick-avatar {
+  border-color: rgba(80, 220, 160, 0.7);
+  box-shadow:
+    0 0 10px rgba(80, 200, 160, 0.3),
+    inset 0 0 8px rgba(80, 200, 160, 0.1);
+}
+
+.arcana-pick-card--selected.arcana-pick-card--high .arcana-pick-avatar {
+  border-color: rgba(255, 200, 80, 0.7);
+  box-shadow:
+    0 0 10px rgba(255, 200, 80, 0.3),
+    inset 0 0 8px rgba(255, 200, 80, 0.1);
+}
+
+.arcana-pick-ratio {
+  color: var(--gold);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arcana-pick-card--selected {
+    animation: none !important;
+  }
+}
+
+.arcana-streak-block {
+  max-width: 24rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.arcana-streak-frame {
+  position: relative;
+  padding: 0.75rem 0.85rem 0.65rem;
+  border-radius: 1rem;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(12, 32, 28, 0.55) 45%,
+    rgba(8, 20, 18, 0.75) 100%
+  );
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.arcana-streak-frame--sheet {
+  padding: 0.65rem 0.75rem;
+}
+
+.arcana-streak-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.arcana-streak-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.75rem;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.arcana-streak-stat--hot {
+  border-color: rgba(100, 220, 170, 0.25);
+  box-shadow: inset 0 0 20px rgba(80, 200, 160, 0.08);
+}
+
+.arcana-streak-stat--cold {
+  border-color: rgba(248, 113, 113, 0.2);
+}
+
+.arcana-streak-stat--bonus {
+  border-color: rgba(212, 175, 55, 0.2);
+}
+
+.arcana-streak-stat-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.arcana-streak-stat-value {
+  font-family: var(--font-play, inherit);
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.arcana-streak-bar {
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.arcana-streak-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    rgba(212, 175, 55, 0.6),
+    rgba(255, 230, 160, 0.95)
+  );
+  transition: width 0.35s ease;
+}
+
+.arcana-streak-ticker {
+  overflow: hidden;
+  mask-image: linear-gradient(
+    90deg,
+    transparent,
+    #000 8%,
+    #000 92%,
+    transparent
+  );
+}
+
+.arcana-streak-ticker-track {
+  display: flex;
+  width: max-content;
+  animation: arcana-ticker 18s linear infinite;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(240, 215, 140, 0.85);
+  white-space: nowrap;
+}
+
+.arcana-streak-ticker-track span {
+  padding-right: 2rem;
+}
+
+@keyframes arcana-ticker {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes arcana-ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes arcana-sparkle {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arcana-streak-ticker-track,
+  .arcana-wheel-ring-shimmer,
+  .arcana-sparkle,
+  .arcana-star,
+  .arcana-aura,
+  .arcana-aura-inner {
+    animation: none !important;
+  }
+
+  .arcana-wheel-ring-shimmer {
+    opacity: 0.35;
+  }
+
+  .arcana-aura,
+  .arcana-aura-inner {
+    opacity: 0.5;
+  }
+
+  .tarot-board-ambient__glow,
+  .tarot-board-card__frame--win,
+  .bet-sheet-hero__star {
+    animation: none !important;
+  }
+
+  .tarot-board-deck__sparkle,
+  .tarot-board-deck__star {
+    animation: none !important;
+    opacity: 0.4;
+  }
+}
+
 .arcana-wheel-disc {
   will-change: transform;
   backface-visibility: hidden;
+}
+
+.arcana-paytable th,
+.arcana-paytable td {
+  vertical-align: middle;
+}
+
+.arcana-streak-panel {
+  box-shadow: inset 0 0 0 1px rgba(212, 175, 55, 0.2);
+}
+
+.arcana-info-btn {
+  line-height: 1.2;
+}
+
+.arcana-rarity {
+  display: inline-block;
+  border-radius: 9999px;
+  padding: 0 0.35rem;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.arcana-rarity--high {
+  background: rgba(180, 120, 40, 0.25);
+  color: #8b5a14;
+  box-shadow: 0 0 0 1px rgba(212, 175, 55, 0.45);
+}
+
+.arcana-rarity--mid {
+  background: rgba(80, 120, 100, 0.2);
+  color: var(--jade-deep);
+}
+
+.arcana-rarity--low {
+  background: rgba(60, 80, 75, 0.12);
+  color: var(--play-muted);
+}
+
+.arcana-seg-label--pulse {
+  animation: arcana-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes arcana-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(80, 200, 160, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 10px 3px rgba(80, 200, 160, 0.55);
+  }
 }
 

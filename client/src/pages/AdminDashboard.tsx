@@ -264,6 +264,10 @@ interface ArcanaConfig {
   pickMax?: number;
   maxStake?: number;
   payoutScale?: number;
+  streakBonusEnabled?: boolean;
+  streakBonusMinStreak?: number;
+  streakBonusPercentPerStep?: number;
+  streakBonusCapPercent?: number;
   slots: ArcanaSlotAdmin[];
   updatedAt: number;
   updatedBy?: string;
@@ -404,6 +408,13 @@ interface Overview {
     text: string;
     status: "open" | "done";
   }[];
+  liveGuests?: {
+    socketId: string;
+    guestCode?: string;
+    name: string;
+    balance: number;
+    inOrphan: boolean;
+  }[];
 }
 
 function cardName(id: number) {
@@ -440,6 +451,9 @@ export default function AdminDashboard() {
     userId: "",
     delta: "100",
   });
+  const [guestAdjust, setGuestAdjust] = useState<{ key: string; delta: string }>(
+    { key: "", delta: "" },
+  );
   const [vaultDelta, setVaultDelta] = useState("10000");
   const [vaultSet, setVaultSet] = useState("");
   const [vaultNote, setVaultNote] = useState("");
@@ -657,6 +671,27 @@ export default function AdminDashboard() {
         }),
       });
       setMsg("Đã cập nhật số dư user");
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi");
+    }
+  };
+
+  const applyGuestAdjust = async (e: FormEvent) => {
+    e.preventDefault();
+    const key = guestAdjust.key.trim();
+    const delta = Number(guestAdjust.delta);
+    if (!key || !Number.isFinite(delta) || delta === 0) {
+      setMsg("Chọn khách và nhập delta");
+      return;
+    }
+    try {
+      await api("/api/admin/guest/adjust-balance", {
+        method: "POST",
+        body: JSON.stringify({ socketId: key, delta }),
+      });
+      setMsg("Đã cập nhật số dư khách (bàn Tarot)");
+      setGuestAdjust({ key: "", delta: "" });
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi");
@@ -1181,6 +1216,47 @@ export default function AdminDashboard() {
         body: JSON.stringify({ payoutScale }),
       });
       setMsg("Đã lưu hệ số thưởng (payoutScale)");
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi");
+    } finally {
+      setArcanaBusy(false);
+    }
+  };
+
+  const saveArcanaStreakBonus = async () => {
+    if (!data?.arcanaConfig) return;
+    const enabled = (
+      document.getElementById("arcana-streak-enabled") as HTMLInputElement | null
+    )?.checked;
+    const minStreak = Number(
+      (document.getElementById("arcana-streak-min") as HTMLInputElement | null)
+        ?.value,
+    );
+    const perStep = Number(
+      (document.getElementById("arcana-streak-step") as HTMLInputElement | null)
+        ?.value,
+    );
+    const cap = Number(
+      (document.getElementById("arcana-streak-cap") as HTMLInputElement | null)
+        ?.value,
+    );
+    if (!Number.isFinite(minStreak) || minStreak < 1) {
+      setMsg("Chuỗi tối thiểu phải >= 1");
+      return;
+    }
+    setArcanaBusy(true);
+    try {
+      await api("/api/mainadmin/arcana/config", {
+        method: "PATCH",
+        body: JSON.stringify({
+          streakBonusEnabled: enabled,
+          streakBonusMinStreak: minStreak,
+          streakBonusPercentPerStep: perStep,
+          streakBonusCapPercent: cap,
+        }),
+      });
+      setMsg("Đã lưu cấu hình chuỗi vận");
       await load();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Lỗi");
@@ -1906,6 +1982,56 @@ export default function AdminDashboard() {
                 ))}
               </div>
             </form>
+          </section>
+
+          <section className="app-panel mt-4 p-3">
+            <p className="play-heading text-sm">
+              Cộng / trừ xu khách (Tarot online)
+            </p>
+            <p className="mt-1 text-[10px] text-white/45">
+              Chỉ khách đang ở bàn hoặc orphan ván hiện tại. Arcana cần đăng
+              nhập.
+            </p>
+            <form onSubmit={applyGuestAdjust} className="mt-2 space-y-2">
+              <select
+                value={guestAdjust.key}
+                onChange={(e) =>
+                  setGuestAdjust((a) => ({ ...a, key: e.target.value }))
+                }
+                className="app-input"
+              >
+                <option value="">Chọn khách online…</option>
+                {(data.liveGuests ?? []).map((g) => (
+                  <option key={g.socketId} value={g.socketId}>
+                    {g.name}
+                    {g.guestCode ? ` · ${g.guestCode}` : ""} (
+                    {formatXu(g.balance)} xu)
+                    {g.inOrphan ? " · orphan" : ""}
+                  </option>
+                ))}
+              </select>
+              <div className="flex gap-2">
+                <input
+                  value={guestAdjust.delta}
+                  onChange={(e) =>
+                    setGuestAdjust((a) => ({ ...a, delta: e.target.value }))
+                  }
+                  placeholder="Delta (+/-)"
+                  className="app-input flex-1"
+                />
+                <button
+                  type="submit"
+                  className="rounded-xl bg-[var(--wood-deep)] px-4 text-xs font-bold text-white"
+                >
+                  Cập nhật
+                </button>
+              </div>
+            </form>
+            {(data.liveGuests?.length ?? 0) === 0 && (
+              <p className="mt-2 text-[11px] text-white/40">
+                Không có khách trên bàn Tarot.
+              </p>
+            )}
           </section>
 
           <section className="app-panel mt-4 p-3">
@@ -3313,10 +3439,10 @@ export default function AdminDashboard() {
             )}
           </section>
           <section className="app-panel mt-3 space-y-2 p-3">
-            <p className="play-heading text-sm">Cân bằng RTP (v4)</p>
+            <p className="play-heading text-sm">Cân bằng RTP (v5)</p>
             <p className="text-[11px] text-[var(--play-muted)]">
-              Thưởng khi trúng = cược × tỷ lệ × payoutScale ÷ số ô chọn. RTP %
-              = kỳ vọng hoàn trả / cược (100% = hòa vốn).
+              Thưởng khi trúng = cược × hệ số × payoutScale ÷ số ô chọn; có thể
+              +% chuỗi vận khi thắng liên tiếp. RTP % = kỳ vọng hoàn trả / cược.
             </p>
             <div className="flex flex-wrap items-end gap-2">
               <label className="text-xs font-semibold text-[var(--play-muted)]">
@@ -3339,6 +3465,69 @@ export default function AdminDashboard() {
               >
                 Lưu scale
               </button>
+            </div>
+            <div className="mt-3 rounded-lg bg-white/60 p-2.5 ring-1 ring-[var(--wood-deep)]/10">
+              <p className="text-xs font-bold text-[var(--play-ink)]">
+                Chuỗi vận — thưởng thêm khi thắng
+              </p>
+              <p className="mt-1 text-[10px] text-[var(--play-muted)]">
+                Chuỗi thắng trước lượt quay ≥ ngưỡng → thắng lượt đó +% trên
+                thưởng gốc. Chuỗi thua chỉ hiển thị.
+              </p>
+              <label className="mt-2 flex items-center gap-2 text-xs font-semibold">
+                <input
+                  id="arcana-streak-enabled"
+                  type="checkbox"
+                  defaultChecked={data.arcanaConfig.streakBonusEnabled !== false}
+                  className="h-4 w-4 accent-[var(--jade-deep)]"
+                />
+                Bật thưởng chuỗi vận
+              </label>
+              <div className="mt-2 flex flex-wrap items-end gap-2">
+                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                  Ngưỡng
+                  <input
+                    id="arcana-streak-min"
+                    type="number"
+                    min={1}
+                    max={20}
+                    defaultValue={data.arcanaConfig.streakBonusMinStreak ?? 3}
+                    className="app-input mt-0.5 w-20"
+                  />
+                </label>
+                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                  +% / bước
+                  <input
+                    id="arcana-streak-step"
+                    type="number"
+                    min={0}
+                    max={50}
+                    defaultValue={
+                      data.arcanaConfig.streakBonusPercentPerStep ?? 5
+                    }
+                    className="app-input mt-0.5 w-20"
+                  />
+                </label>
+                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                  Trần %
+                  <input
+                    id="arcana-streak-cap"
+                    type="number"
+                    min={0}
+                    max={100}
+                    defaultValue={data.arcanaConfig.streakBonusCapPercent ?? 15}
+                    className="app-input mt-0.5 w-20"
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={arcanaBusy}
+                  onClick={() => void saveArcanaStreakBonus()}
+                  className="rounded-lg bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-[var(--gold-soft)]"
+                >
+                  Lưu chuỗi vận
+                </button>
+              </div>
             </div>
             {data.arcanaRtpPreview && data.arcanaRtpPreview.length > 0 && (
               <div className="overflow-x-auto">

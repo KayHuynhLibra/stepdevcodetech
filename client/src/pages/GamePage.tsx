@@ -57,6 +57,7 @@ import {
   ensureGuestCode,
   getGuestAvatar,
   getGuestCode,
+  getGuestBalanceHint,
   getGuestName,
   setGuestAvatar,
   setGuestBalanceHint,
@@ -198,11 +199,14 @@ export default function GamePage() {
   }, [renameOpen]);
 
   useEffect(() => {
-    const s = io(SOCKET_URL, { transports: ["websocket", "polling"] });
+    const s = io(SOCKET_URL, {
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: 20,
+    });
     setSocket(s);
 
-    s.on("connect", () => {
-      setConnected(true);
+    const emitJoin = () => {
       const auth = getStoredUser();
       const token = getToken();
       const guestCode = ensureGuestCode();
@@ -222,7 +226,31 @@ export default function GamePage() {
         token: token ?? undefined,
         avatar,
         guestCode: auth ? undefined : guestCode,
+        guestBalance: auth ? undefined : getGuestBalanceHint(),
       });
+    };
+
+    s.on("connect", () => {
+      setConnected(true);
+      void (async () => {
+        const token = getToken();
+        const stored = getStoredUser();
+        if (token && stored) {
+          try {
+            const r = await api<{ ok: true; user: AuthUser }>("/api/auth/me");
+            setMe(r.user);
+            saveSession(token, r.user);
+          } catch {
+            clearSession();
+            setMe(null);
+            showToast(
+              "Phiên đăng nhập hết hạn — đăng nhập lại để khôi phục cược ván này",
+            );
+            return;
+          }
+        }
+        emitJoin();
+      })();
     });
 
     s.on("disconnect", () => {
@@ -236,11 +264,15 @@ export default function GamePage() {
         name: string;
         balance: number;
         userId?: string;
+        recoveredBets?: boolean;
       }) => {
         setName(payload.name);
         prevBalance.current = payload.balance;
         setSessionAuthed(!!payload.userId);
         if (!payload.userId) setGuestBalanceHint(payload.balance);
+        if (payload.recoveredBets) {
+          showToast("Đã khôi phục cược ván đang chơi");
+        }
         // Token hết hạn phía server nhưng localStorage còn → nhắc đăng nhập lại
         if (getToken() && getStoredUser() && !payload.userId) {
           showToast("Phiên hết hạn — đăng nhập lại để chat & lưu cược");
@@ -662,6 +694,7 @@ export default function GamePage() {
       const base = enrichPlayerInfo(info);
       setProfile(base);
       setSheet("playerInfo");
+      if (base.isGuest || base.guestCode) return;
       void (async () => {
         const card = await fetchPlayerCard(base);
         if (!card) return;
@@ -700,6 +733,8 @@ export default function GamePage() {
         guessesToday: p.guessesToday,
         isGuest: !p.isBot && !p.code && !p.userId,
         userId: p.userId,
+        socketId: p.id,
+        guestCode: p.guestCode,
         balance: p.balance,
         outcomeMode: p.outcomeMode,
         isVip: p.isVip,
@@ -814,6 +849,42 @@ export default function GamePage() {
       }
       showToast(
         `${delta > 0 ? "+" : ""}${formatXu(delta)} → ${formatXu(r.user.balance)} xu`,
+      );
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Lỗi");
+    } finally {
+      setAdminBusy(false);
+    }
+  };
+
+  const adminAdjustGuestBalance = async (opts: {
+    socketId?: string;
+    guestCode?: string;
+    delta: number;
+  }) => {
+    setAdminBusy(true);
+    try {
+      const r = await api<{
+        ok: true;
+        balance: number;
+        name: string;
+        guestCode?: string;
+      }>("/api/admin/guest/adjust-balance", {
+        method: "POST",
+        body: JSON.stringify(opts),
+      });
+      setProfile((prev) => {
+        if (!prev) return prev;
+        const sameSocket = opts.socketId && prev.socketId === opts.socketId;
+        const sameCode =
+          opts.guestCode &&
+          prev.guestCode &&
+          prev.guestCode.toUpperCase() === opts.guestCode.toUpperCase();
+        if (!sameSocket && !sameCode) return prev;
+        return { ...prev, balance: r.balance };
+      });
+      showToast(
+        `${opts.delta > 0 ? "+" : ""}${formatXu(opts.delta)} → ${formatXu(r.balance)} xu (${r.name})`,
       );
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Lỗi");
@@ -1653,6 +1724,7 @@ export default function GamePage() {
         profit={profitAmount}
         payout={payoutAmount}
         topWinners={topWinners}
+        onClose={() => setResultOpen(false)}
       />
 
       <BetSheet
@@ -1731,6 +1803,7 @@ export default function GamePage() {
         onSetOutcome={adminSetOutcome}
         onSetVip={adminSetVip}
         onAdjustBalance={adminAdjustBalance}
+        onAdjustGuestBalance={adminAdjustGuestBalance}
       />
 
       <HistorySheet

@@ -99,6 +99,17 @@ export function setGuestBalanceHint(balance: number) {
   }
 }
 
+/** Số dư khách lưu local — gửi lại server khi reconnect. */
+export function getGuestBalanceHint(): number | undefined {
+  try {
+    const bal = Number(localStorage.getItem(GUEST_BALANCE_KEY));
+    if (!Number.isFinite(bal) || bal < 0) return undefined;
+    return Math.floor(bal);
+  } catch {
+    return undefined;
+  }
+}
+
 export function getGuestMergePayload(): {
   guestBalance?: number;
   guestAvatar?: string;

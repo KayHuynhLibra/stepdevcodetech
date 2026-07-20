@@ -556,6 +556,7 @@ app.get("/api/admin/overview", (req, res) => {
   payload.couponRedemptions = couponStore.recentRedemptions(40);
   payload.audit = auditStore.list(80);
   payload.reports = reportStore.list(60);
+  payload.liveGuests = engine.listLiveGuestsForAdmin();
 
   if (isMainAdmin(me)) {
     const vault = vaultStore.getSnapshot();
@@ -782,6 +783,10 @@ app.patch("/api/mainadmin/arcana/config", (req, res) => {
       enabled: req.body?.enabled,
       betTiers: req.body?.betTiers,
       payoutScale: req.body?.payoutScale,
+      streakBonusEnabled: req.body?.streakBonusEnabled,
+      streakBonusMinStreak: req.body?.streakBonusMinStreak,
+      streakBonusPercentPerStep: req.body?.streakBonusPercentPerStep,
+      streakBonusCapPercent: req.body?.streakBonusCapPercent,
       slots: req.body?.slots,
     },
     me.username,
@@ -818,7 +823,7 @@ app.get("/api/arcana-wheel", (req, res) => {
   if (!user) return;
   res.json({
     ok: true,
-    ...arcanaWheelStore.getPublicState(),
+    ...arcanaWheelStore.getPublicState(user.id),
     balance: user.balance,
   });
 });
@@ -857,7 +862,9 @@ app.post("/api/arcana-wheel/spin", (req, res) => {
     spin: result.spin,
     slot: result.slot,
     balance: result.balance,
-    recent: arcanaWheelStore.getPublicState().recent,
+    luckStreak: result.luckStreak,
+    streakBonus: result.streakBonus,
+    recent: arcanaWheelStore.getPublicState(user.id).recent,
   });
 });
 
@@ -885,6 +892,36 @@ app.post("/api/admin/adjust-balance", (req, res) => {
   const live = engine.applyAuthBalance(userId, result.user.balance);
   for (const sid of live.socketIds) {
     io.to(sid).emit("balanceUpdate", { balance: live.balance });
+  }
+  res.json(result);
+});
+
+/** Admin: cộng/trừ xu khách đang ở bàn Tarot (theo socketId hoặc guest code). */
+app.post("/api/admin/guest/adjust-balance", (req, res) => {
+  const me = requireAdmin(req, res);
+  if (!me) return;
+  const socketId = String(req.body?.socketId ?? "").trim();
+  const guestCode = String(req.body?.guestCode ?? "").trim();
+  const delta = Number(req.body?.delta);
+  if ((!socketId && !guestCode) || !Number.isFinite(delta)) {
+    return res
+      .status(400)
+      .json({ ok: false, reason: "Thiếu socketId/guestCode hoặc delta" });
+  }
+  const result = engine.adjustGuestBalance({ socketId, guestCode, delta });
+  if (!result.ok) return res.status(400).json(result);
+  vaultStore.recordAdminAdjust(
+    Math.floor(delta),
+    me.username,
+    result.guestCode ?? socketId,
+    `${result.name} (khách)`,
+  );
+  audit(me, "adjust_balance_guest", {
+    targetName: result.name,
+    detail: `${Math.floor(delta)} · ${result.guestCode ?? socketId}`,
+  });
+  for (const sid of result.socketIds) {
+    io.to(sid).emit("balanceUpdate", { balance: result.balance });
   }
   res.json(result);
 });
@@ -1278,6 +1315,7 @@ io.on("connection", (socket) => {
       token?: string;
       avatar?: string;
       guestCode?: string;
+      guestBalance?: number;
     }) => {
       const ip = socketIp(socket);
       if (!rateLimit(`join:${ip}`, 30, 60_000)) {
@@ -1302,8 +1340,8 @@ io.on("connection", (socket) => {
         socket.emit("joinRejected", {
           reason: "Phiên đăng nhập hết hạn — đăng nhập lại",
         });
+        return;
       }
-
       if (!authUser) {
         if (guestIpStore.isBlocked(ip)) {
           socket.emit("joinRejected", {
@@ -1330,6 +1368,8 @@ io.on("connection", (socket) => {
         name: payload?.name,
         userId: authUser?.id,
         avatar: payload?.avatar,
+        guestCode: authUser ? undefined : payload?.guestCode,
+        guestBalance: authUser ? undefined : Number(payload?.guestBalance),
       });
       if (!joined.ok) {
         socket.emit("joinRejected", { reason: joined.reason });
@@ -1372,6 +1412,7 @@ io.on("connection", (socket) => {
         balance: joined.session.balance,
         userId: joined.session.userId,
         avatar: joined.session.avatar,
+        recoveredBets: !!joined.recoveredOrphan,
       });
       socket.emit("state", engine.getStateFor(socket.id));
     },

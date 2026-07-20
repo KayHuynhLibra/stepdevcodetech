@@ -14,6 +14,8 @@ export interface PlayerSession {
   id: string;
   /** Linked auth user id (if logged in) */
   userId?: string;
+  /** Mã khách (localStorage) — khôi phục cược khi reconnect */
+  guestCode?: string;
   name: string;
   avatar: string;
   balance: number;
@@ -100,6 +102,8 @@ export interface OnlinePlayerPublic {
   /** Chỉ gửi khi viewer là staff */
   balance?: number;
   outcomeMode?: "normal" | "win" | "lose";
+  /** Khách chưa login — staff only */
+  guestCode?: string;
 }
 
 export interface PublicState {
@@ -147,7 +151,7 @@ export const PHASE_MS = {
 export const STARTING_BALANCE = 20_000;
 export const MIN_BET = 10;
 /** Trần xu trên 1 lá trong 1 ván. */
-export const MAX_BET = 100_000;
+export const MAX_BET = 1_000_000;
 /** Bước tăng xu khi đặt cược */
 export const BET_STEP = 10;
 /** Tối đa số lá khác nhau mỗi người được đặt trong 1 ván */

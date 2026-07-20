@@ -112,10 +112,10 @@ export class GameEngine {
   private players = new Map<string, PlayerSession>();
   /** User disconnect giữa revealing/payout — vẫn nhận thưởng */
   private orphans = new Map<string, PlayerSession>();
-  private realBets = new Array(8).fill(0) as number[];
-  private realBettors = new Array(8).fill(0) as number[];
-  private botBets = new Array(8).fill(0) as number[];
-  private botBettors = new Array(8).fill(0) as number[];
+  private realBets = new Array(CARDS.length).fill(0) as number[];
+  private realBettors = new Array(CARDS.length).fill(0) as number[];
+  private botBets = new Array(CARDS.length).fill(0) as number[];
+  private botBettors = new Array(CARDS.length).fill(0) as number[];
 
   private identityPool = createIdentityPool(50);
   /** Số bot mong muốn (user chỉnh được) */
@@ -328,9 +328,20 @@ export class GameEngine {
 
   join(
     socketId: string,
-    opts?: { name?: string; userId?: string; avatar?: string },
+    opts?: {
+      name?: string;
+      userId?: string;
+      avatar?: string;
+      guestCode?: string;
+      guestBalance?: number;
+    },
   ):
-    | { ok: true; session: PlayerSession; kickedSocketIds: string[] }
+    | {
+        ok: true;
+        session: PlayerSession;
+        kickedSocketIds: string[];
+        recoveredOrphan?: boolean;
+      }
     | { ok: false; reason: string } {
     if (opts?.userId && authStore.isBanned(opts.userId)) {
       const u = authStore.getById(opts.userId);
@@ -351,6 +362,9 @@ export class GameEngine {
     }
 
     const linked = opts?.userId ? authStore.getById(opts.userId) : undefined;
+    const guestCodeNorm = opts?.guestCode
+      ? String(opts.guestCode).trim().toUpperCase()
+      : "";
     const kickedSocketIds: string[] = [];
     let carried: PlayerSession | undefined;
 
@@ -362,19 +376,45 @@ export class GameEngine {
           this.leave(sid, { replaced: true });
         }
       }
-      for (const [oid, o] of this.orphans) {
+      for (const [oid, o] of [...this.orphans]) {
         if (o.userId === linked.id) {
           this.orphans.delete(oid);
           carried = o;
-          break;
+        }
+      }
+    } else if (guestCodeNorm && /^G[A-Z0-9]{7}$/.test(guestCodeNorm)) {
+      for (const [oid, o] of [...this.orphans]) {
+        if (!o.userId && o.guestCode === guestCodeNorm) {
+          this.orphans.delete(oid);
+          carried = o;
         }
       }
     }
+
+    const recoveredOrphan =
+      !!carried &&
+      [...carried.bets.values()].some((v) => v > 0);
+
+    const guestBalanceHint =
+      !linked &&
+      opts?.guestBalance != null &&
+      Number.isFinite(opts.guestBalance)
+        ? Math.max(
+            0,
+            Math.min(Math.floor(opts.guestBalance), 50_000_000),
+          )
+        : undefined;
 
     const session: PlayerSession = carried
       ? {
           ...carried,
           id: socketId,
+          userId: linked?.id ?? carried.userId,
+          guestCode:
+            carried.guestCode ||
+            (guestCodeNorm && /^G[A-Z0-9]{7}$/.test(guestCodeNorm)
+              ? guestCodeNorm
+              : undefined),
           name: (
             linked?.username ||
             carried.name ||
@@ -391,6 +431,10 @@ export class GameEngine {
       : {
           id: socketId,
           userId: linked?.id,
+          guestCode:
+            guestCodeNorm && /^G[A-Z0-9]{7}$/.test(guestCodeNorm)
+              ? guestCodeNorm
+              : undefined,
           name: (
             linked?.username ||
             opts?.name?.trim() ||
@@ -400,7 +444,10 @@ export class GameEngine {
             normalizeAvatar(linked?.avatar) ||
             normalizeAvatar(opts?.avatar) ||
             DEFAULT_AVATAR,
-          balance: linked?.balance ?? STARTING_BALANCE,
+          balance:
+            linked?.balance ??
+            guestBalanceHint ??
+            STARTING_BALANCE,
           bets: new Map(),
           guessesToday: linked?.guessesToday ?? 0,
           winToday: linked?.winToday ?? 0,
@@ -410,8 +457,14 @@ export class GameEngine {
         };
     this.ensureWeek(session);
     this.players.set(socketId, session);
+    if (session.userId) this.syncUser(session);
     this.emitToAll();
-    return { ok: true, session, kickedSocketIds };
+    return {
+      ok: true,
+      session,
+      kickedSocketIds,
+      recoveredOrphan: recoveredOrphan || undefined,
+    };
   }
 
   /** Socket ids của user đang online — để kick khi ban. */
@@ -425,8 +478,8 @@ export class GameEngine {
 
   /**
    * Rời bàn:
-   * - betting + có cược → hoàn xu + hoàn vault + trừ realBets
-   * - revealing/payout + có cược → giữ orphan để nhận thưởng
+   * - Có cược → giữ orphan đến hết ván (trả thưởng / ghi lịch sử), không hoàn khi mất socket
+   * - Không cược → chỉ gỡ khỏi phòng
    */
   leave(socketId: string, opts?: { replaced?: boolean }) {
     const session = this.players.get(socketId);
@@ -434,9 +487,18 @@ export class GameEngine {
 
     const hasBets = [...session.bets.values()].some((v) => v > 0);
 
-    if (hasBets && this.phase === "betting") {
-      this.refundSessionBets(session);
-    } else if (hasBets && this.phase !== "betting") {
+    if (hasBets) {
+      if (session.userId) {
+        for (const [k, o] of this.orphans) {
+          if (o.userId === session.userId) this.orphans.delete(k);
+        }
+      } else if (session.guestCode) {
+        for (const [k, o] of this.orphans) {
+          if (!o.userId && o.guestCode === session.guestCode) {
+            this.orphans.delete(k);
+          }
+        }
+      }
       this.orphans.set(session.id, session);
     }
 
@@ -477,6 +539,111 @@ export class GameEngine {
         `[game] Refund ${refunded} xu → ${session.name} (leave betting)`,
       );
     }
+  }
+
+  /** Khách đang trong bàn (online hoặc orphan ván) — cho admin. */
+  listLiveGuestsForAdmin(): {
+    socketId: string;
+    guestCode?: string;
+    name: string;
+    balance: number;
+    inOrphan: boolean;
+  }[] {
+    const rows: {
+      socketId: string;
+      guestCode?: string;
+      name: string;
+      balance: number;
+      inOrphan: boolean;
+    }[] = [];
+    for (const p of this.players.values()) {
+      if (p.userId) continue;
+      rows.push({
+        socketId: p.id,
+        guestCode: p.guestCode,
+        name: p.name,
+        balance: p.balance,
+        inOrphan: false,
+      });
+    }
+    for (const p of this.orphans.values()) {
+      if (p.userId) continue;
+      if (this.players.has(p.id)) continue;
+      rows.push({
+        socketId: p.id,
+        guestCode: p.guestCode,
+        name: p.name,
+        balance: p.balance,
+        inOrphan: true,
+      });
+    }
+    rows.sort((a, b) => a.name.localeCompare(b.name, "vi"));
+    return rows;
+  }
+
+  private findGuestSession(opts: {
+    socketId?: string;
+    guestCode?: string;
+  }): PlayerSession | undefined {
+    const sid = opts.socketId ? String(opts.socketId).trim() : "";
+    if (sid) {
+      const live = this.players.get(sid);
+      if (live && !live.userId) return live;
+      const orphan = this.orphans.get(sid);
+      if (orphan && !orphan.userId) return orphan;
+    }
+    const code = opts.guestCode
+      ? String(opts.guestCode).trim().toUpperCase()
+      : "";
+    if (code && /^G[A-Z0-9]{7}$/.test(code)) {
+      for (const p of this.players.values()) {
+        if (!p.userId && p.guestCode === code) return p;
+      }
+      for (const p of this.orphans.values()) {
+        if (!p.userId && p.guestCode === code) return p;
+      }
+    }
+    return undefined;
+  }
+
+  /** Admin cộng/trừ xu session khách (Tarot bàn hiện tại). */
+  adjustGuestBalance(opts: {
+    socketId?: string;
+    guestCode?: string;
+    delta: number;
+  }):
+    | {
+        ok: true;
+        balance: number;
+        name: string;
+        guestCode?: string;
+        socketIds: string[];
+      }
+    | { ok: false; reason: string } {
+    const session = this.findGuestSession(opts);
+    if (!session) {
+      return { ok: false, reason: "Không tìm thấy khách (online/orphan)" };
+    }
+    if (session.userId) {
+      return { ok: false, reason: "Đây là tài khoản đăng nhập — dùng adjust user" };
+    }
+    const delta = Math.floor(opts.delta);
+    if (!Number.isFinite(delta) || delta === 0) {
+      return { ok: false, reason: "Delta không hợp lệ" };
+    }
+    session.balance = Math.max(0, session.balance + delta);
+    const socketIds: string[] = [];
+    if (this.players.has(session.id)) {
+      socketIds.push(session.id);
+      this.broadcast(this.getStateFor(session.id), session.id);
+    }
+    return {
+      ok: true,
+      balance: session.balance,
+      name: session.name,
+      guestCode: session.guestCode,
+      socketIds,
+    };
   }
 
   /** Admin chỉnh xu auth → đồng bộ session đang online (trả socket ids đã cập nhật). */
@@ -585,7 +752,7 @@ export class GameEngine {
    * Khách không tính vì không ghi vault.
    */
   getAuthBets(): number[] {
-    const bets = new Array(8).fill(0) as number[];
+    const bets = new Array(CARDS.length).fill(0) as number[];
     const add = (p: PlayerSession) => {
       if (!p.userId) return;
       for (const [cardId, amt] of p.bets.entries()) {
@@ -603,7 +770,7 @@ export class GameEngine {
       activeCount: this.activeBots.length,
       bots: [],
       logs: [],
-      botBetsTotal: new Array(8).fill(0),
+      botBetsTotal: new Array(CARDS.length).fill(0),
     };
   }
 
@@ -1012,6 +1179,9 @@ export class GameEngine {
       if (forStaff && linked) {
         row.balance = linked.balance;
         row.outcomeMode = authStore.getOutcomeMode(linked.id);
+      } else if (forStaff && !linked) {
+        row.balance = p.balance;
+        if (p.guestCode) row.guestCode = p.guestCode;
       }
       humans.push(row);
     }
@@ -1417,7 +1587,10 @@ export class GameEngine {
     };
 
     for (const player of this.players.values()) payHuman(player);
-    for (const player of this.orphans.values()) payHuman(player);
+    for (const player of this.orphans.values()) {
+      payHuman(player);
+      this.syncUser(player);
+    }
 
     for (const bot of this.activeBots) {
       this.ensureBotDay(bot);
@@ -1503,10 +1676,10 @@ export class GameEngine {
     this.phase = "betting";
     this.phaseEndsAt = Date.now() + PHASE_MS.betting;
     this.winningCard = null;
-    this.realBets = new Array(8).fill(0);
-    this.realBettors = new Array(8).fill(0);
-    this.botBets = new Array(8).fill(0);
-    this.botBettors = new Array(8).fill(0);
+    this.realBets = new Array(CARDS.length).fill(0);
+    this.realBettors = new Array(CARDS.length).fill(0);
+    this.botBets = new Array(CARDS.length).fill(0);
+    this.botBettors = new Array(CARDS.length).fill(0);
     this.botRoundBets.clear();
     this.orphans.clear();
     for (const p of this.players.values()) {
@@ -1614,7 +1787,7 @@ export class GameEngine {
       }
 
       let cardId = job.chase ? this.pickChaseCardId() : job.cardId;
-      if (!cardId || cardId < 1 || cardId > 8) cardId = randomCardId();
+      if (!cardId || cardId < 1 || cardId > CARDS.length) cardId = randomCardId();
 
       const prevOnCard = map.get(cardId) ?? 0;
       if (prevOnCard <= 0) {
