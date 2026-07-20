@@ -9,16 +9,21 @@ import {
 } from "./avatars.js";
 import { STARTING_BALANCE, weekKey } from "./types.js";
 
-export type UserRole = "user" | "admin" | "mainadmin" | "deal";
+export type UserRole = "user" | "admin" | "mainadmin" | "deal" | "onl";
 
 /** Đủ số ván lifetime → VIP tự động */
 export const VIP_ROUNDS_REQUIRED = 10_000;
+
+/** Tối đa số lần đổi username / tài khoản (lifetime). */
+export const USERNAME_RENAME_MAX = 5;
 
 export interface UserRecord {
   id: string;
   /** Mã user công khai, duy nhất (vd U7K2M9AB) — dùng trong URL */
   code: string;
   username: string;
+  /** Tên hiển thị trong game (nickname); login vẫn dùng username */
+  nickname?: string;
   passwordHash: string;
   salt: string;
   role: UserRole;
@@ -60,6 +65,8 @@ export interface UserRecord {
   ipHistory?: IpHistoryEntry[];
   /** Mainadmin: không hiện trên BXH Tarot (ngày/tuần/top ván/ace/streak) */
   hideFromLeaderboard?: boolean;
+  /** Số lần đã đổi username (tối đa USERNAME_RENAME_MAX) */
+  usernameRenames?: number;
 }
 
 /** Lịch sử IP theo user — không lộ ra PublicUser / client player */
@@ -78,6 +85,9 @@ export interface PublicUser {
   id: string;
   code: string;
   username: string;
+  nickname?: string;
+  /** Tên chính trên bàn / BXH — nickname hợp lệ hoặc username */
+  displayName: string;
   role: UserRole;
   avatar: string;
   balance: number;
@@ -100,6 +110,8 @@ export interface PublicUser {
   recoveryCode?: string;
   /** Chỉ admin list — mainadmin bật ẩn BXH */
   hideFromLeaderboard?: boolean;
+  usernameRenamesUsed: number;
+  usernameRenamesLeft: number;
 }
 
 /** Trần xu mang từ guest → account */
@@ -160,6 +172,36 @@ export function validateUsername(
   return { ok: true, username: name };
 }
 
+export const NICKNAME_MAX_LEN = 12;
+export const NICKNAME_MIN_LEN = 2;
+
+export function normalizeNicknameInput(raw: string): string {
+  return String(raw ?? "")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim()
+    .slice(0, NICKNAME_MAX_LEN);
+}
+
+export function validateNickname(
+  raw: string,
+): { ok: true; nickname: string } | { ok: false; reason: string } {
+  const next = normalizeNicknameInput(raw);
+  if (next.length === 0) return { ok: true, nickname: "" };
+  if (next.length < NICKNAME_MIN_LEN) {
+    return { ok: false, reason: `Nickname ${NICKNAME_MIN_LEN}–${NICKNAME_MAX_LEN} ký tự` };
+  }
+  return { ok: true, nickname: next };
+}
+
+export function userDisplayName(u: {
+  username: string;
+  nickname?: string | null;
+}): string {
+  const nick = normalizeNicknameInput(String(u.nickname ?? ""));
+  if (nick.length >= 2) return nick;
+  return String(u.username ?? "").slice(0, 20);
+}
+
 function hashPassword(password: string, salt: string): string {
   return scryptSync(password, salt, 32).toString("hex");
 }
@@ -210,10 +252,16 @@ function toPublic(u: UserRecord, opts?: { includeRecovery?: boolean }): PublicUs
   const vipGranted = !!u.vipGranted;
   const mutedUntil = Math.max(0, Math.floor(u.mutedUntil ?? 0));
   const muted = mutedUntil > Date.now();
+  const renamesUsed = Math.max(
+    0,
+    Math.min(USERNAME_RENAME_MAX, Math.floor(u.usernameRenames ?? 0)),
+  );
   const pub: PublicUser = {
     id: u.id,
     code: u.code,
     username: u.username,
+    nickname: u.nickname?.trim() ? u.nickname.trim() : undefined,
+    displayName: userDisplayName(u),
     role: u.role,
     avatar: u.avatar,
     balance: u.balance,
@@ -231,6 +279,8 @@ function toPublic(u: UserRecord, opts?: { includeRecovery?: boolean }): PublicUs
     mutedUntil,
     muted,
     hideFromLeaderboard: !!u.hideFromLeaderboard,
+    usernameRenamesUsed: renamesUsed,
+    usernameRenamesLeft: Math.max(0, USERNAME_RENAME_MAX - renamesUsed),
   };
   if (opts?.includeRecovery && u.recoveryCode) {
     pub.recoveryCode = u.recoveryCode;
@@ -263,7 +313,8 @@ function isUserRecord(u: unknown): u is UserRecord {
     r.role === "user" ||
     r.role === "admin" ||
     r.role === "mainadmin" ||
-    r.role === "deal";
+    r.role === "deal" ||
+    r.role === "onl";
   return (
     typeof r.id === "string" &&
     typeof r.username === "string" &&
@@ -702,7 +753,7 @@ export class AuthStore {
   /** Mainadmin: đổi role user / deal / admin (không đụng mainadmin). */
   setUserRole(
     userId: string,
-    role: "user" | "deal" | "admin",
+    role: "user" | "deal" | "admin" | "onl",
   ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
     const user = this.byId.get(userId);
     if (!user) return { ok: false, reason: "Không tìm thấy user" };
@@ -1006,6 +1057,7 @@ export class AuthStore {
     | {
         userId: string;
         username: string;
+        displayName: string;
         code: string;
         avatar: string;
         isVip: boolean;
@@ -1027,6 +1079,7 @@ export class AuthStore {
     return {
       userId: user.id,
       username: user.username,
+      displayName: userDisplayName(user),
       code: user.code,
       avatar: normalizeAvatar(user.avatar),
       isVip: computeIsVip(user),
@@ -1156,12 +1209,38 @@ export class AuthStore {
     if (user.username.toLowerCase() === v.username.toLowerCase()) {
       return { ok: true, user: toPublic(user) };
     }
+    const renamesUsed = Math.max(0, Math.floor(user.usernameRenames ?? 0));
+    if (renamesUsed >= USERNAME_RENAME_MAX) {
+      return {
+        ok: false,
+        reason: `Đã đổi username tối đa ${USERNAME_RENAME_MAX} lần`,
+      };
+    }
     if (this.users.has(v.username.toLowerCase())) {
       return { ok: false, reason: "Username đã tồn tại" };
     }
     this.users.delete(user.username.toLowerCase());
     user.username = v.username;
+    user.usernameRenames = renamesUsed + 1;
     this.users.set(v.username.toLowerCase(), user);
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  /** Đổi nickname hiển thị trong game — để trống = dùng username. */
+  setNickname(
+    userId: string,
+    raw: string,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    if (user.banned) {
+      return { ok: false, reason: "Tài khoản bị khóa" };
+    }
+    const v = validateNickname(raw);
+    if (!v.ok) return v;
+    if (v.nickname) user.nickname = v.nickname;
+    else delete user.nickname;
     this.scheduleSave();
     return { ok: true, user: toPublic(user) };
   }
@@ -1225,7 +1304,7 @@ export class AuthStore {
       if (u.weekKey !== wk || u.stakeWeek <= 0) continue;
       out.push({
         id: u.id,
-        username: u.username,
+        username: userDisplayName(u),
         avatar: normalizeAvatar(u.avatar),
         stakeWeek: u.stakeWeek,
       });
@@ -1238,6 +1317,16 @@ export const authStore = new AuthStore();
 
 export function isStaff(user: { role: UserRole }): boolean {
   return user.role === "admin" || user.role === "mainadmin";
+}
+
+/** Xem số online + danh sách người chơi (không gồm công cụ admin). */
+export function canSeeOnline(user: { role: UserRole } | null | undefined): boolean {
+  if (!user) return false;
+  return isStaff(user) || user.role === "onl";
+}
+
+export function isOnlineViewer(user: { role: UserRole } | null | undefined): boolean {
+  return user?.role === "onl";
 }
 
 export function isMainAdmin(user: { role: UserRole }): boolean {

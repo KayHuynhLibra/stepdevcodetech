@@ -2,6 +2,7 @@ import type { SyntheticEvent } from "react";
 import {
   homePath,
   playPath,
+  userDisplayName,
   userShowsVip,
   type AuthUser,
   type UserRole,
@@ -13,6 +14,7 @@ function roleLabel(role?: UserRole | "guest"): string {
   if (role === "mainadmin") return "Mainadmin";
   if (role === "admin") return "Admin";
   if (role === "deal") return "Deal";
+  if (role === "onl") return "Onl";
   if (role === "guest") return "Khách";
   return "Player";
 }
@@ -43,7 +45,13 @@ export function IdentityBadge({
   onNameClick,
 }: IdentityBadgeProps) {
   const isGuest = !user;
-  const name = user?.username || guestName || "Khách";
+  const name = user
+    ? userDisplayName(user)
+    : guestName || "Khách";
+  const loginHint =
+    user && user.nickname?.trim() && user.nickname.trim().length >= 2
+      ? user.username
+      : null;
   const code = user?.code || (guestCode ? guestCode.toUpperCase() : "");
   const role = isGuest ? "guest" : user!.role;
   const avatar = user
@@ -130,6 +138,16 @@ export function IdentityBadge({
           </button>
         ) : (
           <p className={nameClass}>{name}</p>
+        )}
+        {loginHint && (
+          <p
+            className={`truncate font-mono text-[9px] text-[var(--play-muted)] ${
+              compact ? "mt-0" : "mt-0.5"
+            }`}
+            title="Username đăng nhập"
+          >
+            @{loginHint}
+          </p>
         )}
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
           <span className="identity-chip identity-chip--role">

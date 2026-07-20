@@ -11,6 +11,7 @@ import {
   isMainAdmin,
   isStaff,
   isUserOutcomeMode,
+  userDisplayName,
   VIP_ROUNDS_REQUIRED,
 } from "./auth.js";
 import { auditStore } from "./auditStore.js";
@@ -22,6 +23,7 @@ import {
 } from "./avatars.js";
 import { betStore, PER_USER_BET_CAP } from "./betStore.js";
 import { couponStore } from "./couponStore.js";
+import { inviteStore } from "./inviteStore.js";
 import { cardProbabilities } from "./cards.js";
 import { CARDS, GameEngine } from "./game.js";
 import { interStore, isInterMode } from "./interStore.js";
@@ -271,11 +273,22 @@ app.post("/api/auth/register", (req, res) => {
   if (!rateLimit(`reg:${ip}`, 10, 60_000)) {
     return res.status(429).json({ ok: false, reason: "Quá nhiều lần thử" });
   }
+  const invitePreview = inviteStore.preview(String(req.body?.inviteCode ?? ""));
+  if (!invitePreview.ok) {
+    return res.status(400).json(invitePreview);
+  }
   const result = authStore.register(
     String(req.body?.username ?? ""),
     String(req.body?.password ?? ""),
   );
   if (!result.ok) return res.status(400).json(result);
+  const consumed = inviteStore.consume(invitePreview.code);
+  if (!consumed.ok) {
+    // User đã tạo nhưng mã vừa hết lượt (race) — vẫn giữ account, log cảnh báo
+    console.warn(
+      `[invite] consume failed after register user=${result.user.username}: ${consumed.reason}`,
+    );
+  }
   authStore.recordIp(result.user.id, ip);
   if (deviceId) {
     deviceStore.recordTouch({
@@ -453,18 +466,30 @@ app.post("/api/auth/avatar", (req, res) => {
 app.post("/api/auth/rename", (req, res) => {
   const user = requireAuth(req, res);
   if (!user) return;
-  if (!rateLimit(`rename:${user.id}`, 8, 60 * 60 * 1000)) {
-    return res.status(429).json({
-      ok: false,
-      reason: "Đổi tên quá nhiều lần — thử lại sau",
-    });
-  }
   const result = authStore.renameUsername(
     user.id,
     String(req.body?.username ?? ""),
   );
   if (!result.ok) return res.status(400).json(result);
-  engine.applyAuthUsername(user.id, result.user.username);
+  engine.applyAuthDisplayName(user.id);
+  res.json(result);
+});
+
+app.post("/api/auth/nickname", (req, res) => {
+  const user = requireAuth(req, res);
+  if (!user) return;
+  if (!rateLimit(`nickname:${user.id}`, 12, 60 * 60 * 1000)) {
+    return res.status(429).json({
+      ok: false,
+      reason: "Đổi nickname quá nhiều lần — thử lại sau",
+    });
+  }
+  const result = authStore.setNickname(
+    user.id,
+    String(req.body?.nickname ?? ""),
+  );
+  if (!result.ok) return res.status(400).json(result);
+  engine.applyAuthDisplayName(user.id);
   res.json(result);
 });
 
@@ -512,7 +537,7 @@ app.get("/api/topups", (_req, res) => {
     return {
       rank: i + 1,
       userId: row.userId,
-      name: u?.username || row.username,
+      name: u ? userDisplayName(u) : row.username,
       avatar: normalizeAvatar(u?.avatar),
       code: u?.code ?? null,
       totalAmount: row.totalAmount,
@@ -653,6 +678,7 @@ app.get("/api/admin/overview", (req, res) => {
     payload.arcanaRtpPreview = arcanaWheelStore.getRtpPreview();
     payload.inter = buildInterPayload();
     payload.chatConfig = chatConfigStore.getSnapshot();
+    payload.invites = inviteStore.list();
     payload.traffic = {
       ...live,
       ...accounts,
@@ -1414,6 +1440,40 @@ app.post("/api/mainadmin/ips/clear-guest", async (req, res) => {
   res.json({ ok: true, rows: await enrichIpRows() });
 });
 
+app.get("/api/mainadmin/invites", (req, res) => {
+  if (!requireMainAdmin(req, res)) return;
+  res.json({ ok: true, invites: inviteStore.list() });
+});
+
+app.post("/api/mainadmin/invites", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const result = inviteStore.create({
+    code: req.body?.code != null ? String(req.body.code) : undefined,
+    maxUses: Number(req.body?.maxUses),
+    note: req.body?.note != null ? String(req.body.note) : undefined,
+    createdBy: me.username,
+  });
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "invite_create", {
+    detail: `${result.invite.code} · max ${result.invite.maxUses}`,
+  });
+  res.json({ ok: true, invite: result.invite, invites: inviteStore.list() });
+});
+
+app.post("/api/mainadmin/invites/toggle", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const code = String(req.body?.code ?? "");
+  const enabled = !!req.body?.enabled;
+  const result = inviteStore.setEnabled(code, enabled);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "invite_toggle", {
+    detail: `${result.invite.code} → ${enabled ? "on" : "off"}`,
+  });
+  res.json({ ok: true, invite: result.invite, invites: inviteStore.list() });
+});
+
 app.post("/api/mainadmin/user-role", (req, res) => {
   const me = requireMainAdmin(req, res);
   if (!me) return;
@@ -1421,7 +1481,10 @@ app.post("/api/mainadmin/user-role", (req, res) => {
   const role = req.body?.role;
   if (
     !userId ||
-    (role !== "user" && role !== "deal" && role !== "admin")
+    (role !== "user" &&
+      role !== "deal" &&
+      role !== "admin" &&
+      role !== "onl")
   ) {
     return res
       .status(400)

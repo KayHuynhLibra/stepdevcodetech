@@ -1,10 +1,13 @@
-export type UserRole = "user" | "admin" | "mainadmin" | "deal";
+export type UserRole = "user" | "admin" | "mainadmin" | "deal" | "onl";
 
 export interface AuthUser {
   id: string;
   /** Mã user duy nhất (vd U7K2M9AB) */
   code: string;
   username: string;
+  nickname?: string;
+  /** Tên hiển thị chính trong game */
+  displayName?: string;
   role: UserRole;
   avatar: string;
   balance: number;
@@ -28,10 +31,14 @@ export interface AuthUser {
   recoveryCode?: string;
   /** Mainadmin: ẩn khỏi BXH (chỉ trong admin list) */
   hideFromLeaderboard?: boolean;
+  usernameRenamesUsed?: number;
+  usernameRenamesLeft?: number;
 }
 
 /** Ngưỡng VIP tự động — đồng bộ server */
 export const VIP_ROUNDS_REQUIRED = 10_000;
+
+export const USERNAME_RENAME_MAX = 5;
 
 const TOKEN_KEY = "tarot_token";
 const USER_KEY = "tarot_user";
@@ -63,8 +70,36 @@ export function userShowsVip(
   return (user.roundsPlayed ?? 0) >= VIP_ROUNDS_REQUIRED;
 }
 
+/** Tên chính trên bàn — nickname hoặc username. */
+export function userDisplayName(
+  user:
+    | Pick<AuthUser, "username" | "nickname" | "displayName">
+    | null
+    | undefined,
+): string {
+  if (!user) return "";
+  if (user.displayName?.trim()) return user.displayName.trim();
+  const nick = String(user.nickname ?? "").trim();
+  if (nick.length >= 2) return nick.slice(0, 12);
+  return user.username;
+}
+
 export function isStaff(user: { role: UserRole } | null | undefined): boolean {
   return user?.role === "admin" || user?.role === "mainadmin";
+}
+
+/** Staff hoặc role Onl — thấy số người online trên bàn. */
+export function canSeeOnline(
+  user: { role: UserRole } | null | undefined,
+): boolean {
+  if (!user) return false;
+  return isStaff(user) || user.role === "onl";
+}
+
+export function isOnlineViewer(
+  user: { role: UserRole } | null | undefined,
+): boolean {
+  return user?.role === "onl";
 }
 
 export function isBalanceOperator(

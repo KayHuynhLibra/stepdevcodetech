@@ -14,6 +14,8 @@ import {
   saveSession,
   userShowsVip,
   VIP_ROUNDS_REQUIRED,
+  USERNAME_RENAME_MAX,
+  userDisplayName,
   type AuthUser,
 } from "../auth";
 import {
@@ -84,6 +86,8 @@ export default function UserDashboard() {
   const [recoveryShown, setRecoveryShown] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
+  const [nicknameDraft, setNicknameDraft] = useState("");
+  const [nicknameBusy, setNicknameBusy] = useState(false);
 
   useEffect(() => {
     if (!getToken()) {
@@ -100,6 +104,7 @@ export default function UserDashboard() {
           return;
         }
         setRenameDraft(r.user.username);
+        setNicknameDraft(r.user.nickname ?? "");
         return api<{ ok: true; bets: BetEntry[] }>(
           "/api/auth/bets?limit=50",
         ).then((b) => setBets(b.bets));
@@ -204,6 +209,35 @@ export default function UserDashboard() {
     }
   };
 
+  const submitNickname = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!user || nicknameBusy) return;
+    const raw = nicknameDraft.trim();
+    if (raw.length > 0 && raw.length < 2) return;
+    setNicknameBusy(true);
+    setMsg(null);
+    setError(null);
+    try {
+      const r = await api<{ ok: true; user: AuthUser }>("/api/auth/nickname", {
+        method: "POST",
+        body: JSON.stringify({ nickname: raw }),
+      });
+      setUser(r.user);
+      setNicknameDraft(r.user.nickname ?? "");
+      const token = getToken();
+      if (token) saveSession(token, r.user);
+      setMsg(
+        raw
+          ? "Đã lưu nickname — hiện trên bàn chơi"
+          : "Đã xóa nickname — hiện username",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không lưu nickname");
+    } finally {
+      setNicknameBusy(false);
+    }
+  };
+
   const uploadFromDevice = async (file: File) => {
     if (!user || savingAvatar) return;
     setSavingAvatar(true);
@@ -247,9 +281,8 @@ export default function UserDashboard() {
                 ?.scrollIntoView({ behavior: "smooth", block: "start" });
             }}
             onNameClick={() => {
-              setRenameDraft(user.username);
               document
-                .getElementById("rename-username")
+                .getElementById("nickname-display")
                 ?.scrollIntoView({ behavior: "smooth", block: "start" });
             }}
           />
@@ -328,11 +361,44 @@ export default function UserDashboard() {
         </div>
       </section>
 
+      <section id="nickname-display" className="app-panel mt-4 p-3">
+        <p className="play-heading text-sm">Nickname (tên trong game)</p>
+        <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+          2–12 ký tự · ký tự đặc biệt OK · hiện trên bàn, chat, BXH · để trống =
+          dùng username · đăng nhập vẫn bằng <strong>@{user.username}</strong>
+        </p>
+        <p className="mt-1 text-xs font-bold text-[var(--play-ink)]">
+          Đang hiện: {userDisplayName(user)}
+        </p>
+        <form onSubmit={submitNickname} className="mt-2 flex gap-2">
+          <input
+            value={nicknameDraft}
+            onChange={(e) => setNicknameDraft(e.target.value.slice(0, 12))}
+            maxLength={12}
+            spellCheck={false}
+            className="app-input flex-1 text-sm"
+            placeholder="Nickname…"
+          />
+          <button
+            type="submit"
+            disabled={nicknameBusy}
+            className="shrink-0 rounded-xl bg-[var(--wood-deep)] px-4 text-xs font-bold text-white disabled:opacity-50"
+          >
+            {nicknameBusy ? "…" : "Lưu"}
+          </button>
+        </form>
+      </section>
+
       <section id="rename-username" className="app-panel mt-4 p-3">
-        <p className="play-heading text-sm">Đổi username</p>
+        <p className="play-heading text-sm">Username đăng nhập</p>
         <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
           3–20 ký tự · chữ, số, gạch dưới · mã ID giữ nguyên · đăng nhập bằng
-          tên mới
+          tên mới · còn{" "}
+          <strong>
+            {user.usernameRenamesLeft ?? USERNAME_RENAME_MAX}/
+            {USERNAME_RENAME_MAX}
+          </strong>{" "}
+          lần đổi
         </p>
         <form onSubmit={submitRename} className="mt-2 flex gap-2">
           <input
@@ -345,7 +411,8 @@ export default function UserDashboard() {
             maxLength={20}
             autoComplete="username"
             spellCheck={false}
-            className="app-input flex-1 font-mono text-sm"
+            disabled={(user.usernameRenamesLeft ?? USERNAME_RENAME_MAX) <= 0}
+            className="app-input flex-1 font-mono text-sm disabled:opacity-50"
             placeholder={user.username}
           />
           <button
@@ -353,7 +420,8 @@ export default function UserDashboard() {
             disabled={
               renameBusy ||
               !renameDraft.trim() ||
-              renameDraft.trim() === user.username
+              renameDraft.trim() === user.username ||
+              (user.usernameRenamesLeft ?? USERNAME_RENAME_MAX) <= 0
             }
             className="shrink-0 rounded-xl bg-[var(--wood-deep)] px-4 text-xs font-bold text-white disabled:opacity-50"
           >

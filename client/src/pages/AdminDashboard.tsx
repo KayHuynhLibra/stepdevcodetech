@@ -29,12 +29,23 @@ type TabId =
   | "vault"
   | "traffic"
   | "coupons"
+  | "invites"
   | "inter"
   | "mod"
   | "ips"
   | "chat"
   | "tools"
   | "arcana";
+
+interface InviteRow {
+  code: string;
+  maxUses: number;
+  usedCount: number;
+  enabled: boolean;
+  note?: string;
+  createdAt: number;
+  createdBy: string;
+}
 
 interface IpRow {
   ip: string;
@@ -423,6 +434,7 @@ interface Overview {
     oncePerUser: boolean;
     redeemCount: number;
   }[];
+  invites?: InviteRow[];
   couponRedemptions?: {
     id: string;
     at: number;
@@ -560,6 +572,12 @@ export default function AdminDashboard() {
     enabled: true,
   });
   const [couponBusy, setCouponBusy] = useState(false);
+  const [inviteForm, setInviteForm] = useState({
+    code: "",
+    maxUses: "10",
+    note: "",
+  });
+  const [inviteBusy, setInviteBusy] = useState(false);
   const [codeDrafts, setCodeDrafts] = useState<Record<string, string>>({});
   const [codeBusyId, setCodeBusyId] = useState<string | null>(null);
   const [ipRows, setIpRows] = useState<IpRow[]>([]);
@@ -889,7 +907,7 @@ export default function AdminDashboard() {
 
   const setUserRole = async (
     userId: string,
-    role: "user" | "deal" | "admin",
+    role: "user" | "deal" | "admin" | "onl",
   ) => {
     try {
       await api("/api/mainadmin/user-role", {
@@ -901,7 +919,9 @@ export default function AdminDashboard() {
           ? "Đã cấp role Deal"
           : role === "admin"
             ? "Đã cấp admin"
-            : "Đã chuyển về user",
+            : role === "onl"
+              ? "Đã cấp role Onl (xem online)"
+              : "Đã chuyển về user",
       );
       await load();
     } catch (err) {
@@ -1137,6 +1157,56 @@ export default function AdminDashboard() {
     } finally {
       setCouponBusy(false);
     }
+  };
+
+  const createInvite = async (e: FormEvent) => {
+    e.preventDefault();
+    setInviteBusy(true);
+    try {
+      const r = await api<{ ok: true; invite: InviteRow; invites: InviteRow[] }>(
+        "/api/mainadmin/invites",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            code: inviteForm.code.trim() || undefined,
+            maxUses: Number(inviteForm.maxUses),
+            note: inviteForm.note.trim() || undefined,
+          }),
+        },
+      );
+      setMsg(`Đã tạo mã thành viên ${r.invite.code}`);
+      setInviteForm({ code: "", maxUses: "10", note: "" });
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi mã thành viên");
+    } finally {
+      setInviteBusy(false);
+    }
+  };
+
+  const toggleInvite = async (code: string, enabled: boolean) => {
+    setInviteBusy(true);
+    try {
+      await api("/api/mainadmin/invites/toggle", {
+        method: "POST",
+        body: JSON.stringify({ code, enabled }),
+      });
+      setMsg(enabled ? `Đã bật ${code}` : `Đã tắt ${code}`);
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi toggle mã");
+    } finally {
+      setInviteBusy(false);
+    }
+  };
+
+  const randomInviteCode = () => {
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let out = "";
+    for (let i = 0; i < 8; i++) {
+      out += alphabet[Math.floor(Math.random() * alphabet.length)];
+    }
+    setInviteForm((f) => ({ ...f, code: out }));
   };
 
   const toggleCoupon = async (code: string, enabled: boolean) => {
@@ -1525,6 +1595,7 @@ export default function AdminDashboard() {
     { id: "users", label: "User & Bot", show: true },
     { id: "mod", label: "Mod", show: true },
     { id: "coupons", label: "Coupon ẩn", show: true },
+    { id: "invites", label: "Mã TV", show: main },
     {
       id: "vault",
       label: managedGame === "arcana" ? "Kho Arcana" : "Kho Tarot",
@@ -2504,6 +2575,24 @@ export default function AdminDashboard() {
                                 Thu Deal
                               </button>
                             )}
+                            {u.role !== "onl" && (
+                              <button
+                                type="button"
+                                onClick={() => setUserRole(u.id, "onl")}
+                                className="rounded-full bg-sky-700 px-2.5 py-1 text-[10px] font-bold text-white"
+                              >
+                                Cấp Onl
+                              </button>
+                            )}
+                            {u.role === "onl" && (
+                              <button
+                                type="button"
+                                onClick={() => setUserRole(u.id, "user")}
+                                className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-sky-600/40"
+                              >
+                                Thu Onl
+                              </button>
+                            )}
                           </>
                         )}
                     </div>
@@ -3029,6 +3118,137 @@ export default function AdminDashboard() {
             ))}
           </ul>
         </section>
+      )}
+
+      {tab === "invites" && main && (
+        <>
+          <section className="app-panel mt-4 p-3">
+            <p className="play-heading text-sm">Tạo mã thành viên</p>
+            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+              Đúng 8 ký tự (A–Z / 0–9). Để trống mã → hệ thống random. Mỗi mã
+              dùng được nhiều lần tới max. Đăng ký bắt buộc nhập mã.
+            </p>
+            <form onSubmit={createInvite} className="mt-3 space-y-2">
+              <div className="flex flex-wrap gap-2">
+                <input
+                  value={inviteForm.code}
+                  onChange={(e) =>
+                    setInviteForm((f) => ({
+                      ...f,
+                      code: e.target.value
+                        .toUpperCase()
+                        .replace(/[^A-Z0-9]/g, "")
+                        .slice(0, 8),
+                    }))
+                  }
+                  placeholder="Mã 8 ký tự (tuỳ chọn)"
+                  maxLength={8}
+                  spellCheck={false}
+                  className="app-input !py-1.5 font-mono text-xs uppercase"
+                />
+                <button
+                  type="button"
+                  onClick={randomInviteCode}
+                  disabled={inviteBusy}
+                  className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20 disabled:opacity-45"
+                >
+                  Random
+                </button>
+                <input
+                  value={inviteForm.maxUses}
+                  onChange={(e) =>
+                    setInviteForm((f) => ({ ...f, maxUses: e.target.value }))
+                  }
+                  placeholder="Max lần dùng"
+                  type="number"
+                  min={1}
+                  max={1_000_000}
+                  className="app-input !w-28 !py-1.5 text-xs"
+                  required
+                />
+              </div>
+              <input
+                value={inviteForm.note}
+                onChange={(e) =>
+                  setInviteForm((f) => ({ ...f, note: e.target.value }))
+                }
+                placeholder="Ghi chú (tuỳ chọn)"
+                className="app-input !py-1.5 text-xs"
+              />
+              <button
+                type="submit"
+                disabled={inviteBusy || !inviteForm.maxUses.trim()}
+                className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white disabled:opacity-45"
+              >
+                Tạo mã
+              </button>
+            </form>
+          </section>
+
+          <section className="app-panel mt-4 p-3">
+            <p className="play-heading text-sm">Danh sách mã thành viên</p>
+            <ul className="mt-3 space-y-2">
+              {(data.invites ?? []).length === 0 ? (
+                <li className="text-xs text-[var(--play-muted)]">
+                  Chưa có mã — tạo mã trước khi mở đăng ký
+                </li>
+              ) : (
+                (data.invites ?? []).map((inv) => {
+                  const exhausted = inv.usedCount >= inv.maxUses;
+                  return (
+                    <li
+                      key={inv.code}
+                      className="rounded-lg bg-white/80 px-3 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-mono text-sm font-bold tracking-wide text-[var(--play-ink)]">
+                            {inv.code}
+                          </p>
+                          <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
+                            {inv.usedCount}/{inv.maxUses} lần
+                            {exhausted ? " · hết lượt" : ""}
+                            {inv.note ? ` · ${inv.note}` : ""}
+                            {inv.createdBy
+                              ? ` · bởi ${inv.createdBy}`
+                              : ""}
+                            {" · "}
+                            {new Date(inv.createdAt).toLocaleString("vi-VN")}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                              inv.enabled && !exhausted
+                                ? "bg-emerald-100 text-emerald-900"
+                                : "bg-rose-100 text-rose-800"
+                            }`}
+                          >
+                            {inv.enabled
+                              ? exhausted
+                                ? "Hết"
+                                : "Bật"
+                              : "Tắt"}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={inviteBusy}
+                            onClick={() =>
+                              void toggleInvite(inv.code, !inv.enabled)
+                            }
+                            className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20 disabled:opacity-45"
+                          >
+                            {inv.enabled ? "Tắt" : "Bật"}
+                          </button>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          </section>
+        </>
       )}
 
       {tab === "coupons" && (

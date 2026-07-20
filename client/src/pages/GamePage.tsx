@@ -50,7 +50,9 @@ import {
   homePath,
   isBalanceOperator,
   isStaff,
+  canSeeOnline,
   saveSession,
+  userDisplayName,
   userShowsVip,
   VIP_ROUNDS_REQUIRED,
   type AuthUser,
@@ -154,8 +156,11 @@ export default function GamePage() {
   >([]);
 
   const staffViewer = isStaff(me);
+  const onlineViewer = canSeeOnline(me);
   const staffViewerRef = useRef(staffViewer);
+  const onlineViewerRef = useRef(onlineViewer);
   staffViewerRef.current = staffViewer;
+  onlineViewerRef.current = onlineViewer;
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -210,10 +215,10 @@ export default function GamePage() {
       const auth = getStoredUser();
       const token = getToken();
       const guestCode = ensureGuestCode();
-      const saved =
-        auth?.username ||
-        getGuestName() ||
-        `Khach-${guestCode.slice(-4)}`;
+      const saved = auth
+        ? userDisplayName(auth)
+        : getGuestName() ||
+          `Khach-${guestCode.slice(-4)}`;
       if (!auth) setGuestName(saved);
       setMe(auth);
       setName(saved);
@@ -319,7 +324,7 @@ export default function GamePage() {
     s.on("state", (payload: GameState) => {
       setState((prev) =>
         mergeGameState(prev, payload, {
-          trackOnlinePlayers: staffViewerRef.current,
+          trackOnlinePlayers: onlineViewerRef.current,
         }),
       );
     });
@@ -417,7 +422,7 @@ export default function GamePage() {
 
   // Popup đang mở: cập nhật ID/VIP khi phòng refresh (admin vừa đổi)
   useEffect(() => {
-    if (!isStaff(me)) return;
+    if (!canSeeOnline(me)) return;
     const online = state?.onlinePlayers;
     if (!online?.length) return;
     setProfile((prev) => {
@@ -650,7 +655,7 @@ export default function GamePage() {
 
   const enrichPlayerInfo = useCallback(
     (partial: PlayerInfoView): PlayerInfoView => {
-      if (!isStaff(me)) {
+      if (!canSeeOnline(me)) {
         return {
           ...partial,
           isGuest:
@@ -674,7 +679,7 @@ export default function GamePage() {
             (!partial.isBot && !partial.code && !partial.userId),
         };
       }
-      return {
+      const base = {
         ...partial,
         name: match.name || partial.name,
         avatar: match.avatar || partial.avatar,
@@ -683,12 +688,16 @@ export default function GamePage() {
         winToday: match.winToday ?? partial.winToday,
         guessesToday: match.guessesToday ?? partial.guessesToday,
         userId: match.userId ?? partial.userId,
-        balance: match.balance ?? partial.balance,
-        outcomeMode: match.outcomeMode ?? partial.outcomeMode,
         isVip: match.isVip ?? partial.isVip,
         roundsPlayed: match.roundsPlayed ?? partial.roundsPlayed,
         vipGranted: match.vipGranted ?? partial.vipGranted,
         isGuest: !match.isBot && !match.code && !match.userId,
+      };
+      if (!isStaff(me)) return base;
+      return {
+        ...base,
+        balance: match.balance ?? partial.balance,
+        outcomeMode: match.outcomeMode ?? partial.outcomeMode,
       };
     },
     [state?.onlinePlayers, me],
@@ -707,6 +716,7 @@ export default function GamePage() {
         ok: true;
         card: {
           userId: string;
+          displayName?: string;
           username: string;
           code: string;
           avatar: string;
@@ -739,7 +749,7 @@ export default function GamePage() {
           if (!same) return prev;
           return {
             ...prev,
-            name: card.username || prev.name,
+            name: card.displayName || card.username || prev.name,
             avatar: card.avatar || prev.avatar,
             code: card.code,
             userId: card.userId,
@@ -1236,7 +1246,9 @@ export default function GamePage() {
               showPath={false}
               onAvatarClick={openAvatarPicker}
               onNameClick={() => {
-                setRenameDraft(me ? me.username : name);
+                setRenameDraft(
+                  me ? userDisplayName(me) : name,
+                );
                 setRenameOpen((v) => !v);
               }}
             />
@@ -1265,31 +1277,35 @@ export default function GamePage() {
                   e.preventDefault();
                   if (me) {
                     const raw = renameDraft.trim();
-                    if (raw.length < 3) {
-                      showToast("Username 3–20 ký tự, chỉ chữ/số/_");
+                    if (raw.length > 0 && raw.length < 2) {
+                      showToast("Nickname 2–12 ký tự (để trống = dùng username)");
                       return;
                     }
                     void (async () => {
                       try {
                         const r = await api<{ ok: true; user: AuthUser }>(
-                          "/api/auth/rename",
+                          "/api/auth/nickname",
                           {
                             method: "POST",
-                            body: JSON.stringify({ username: raw }),
+                            body: JSON.stringify({ nickname: raw }),
                           },
                         );
                         setMe(r.user);
-                        setName(r.user.username);
+                        setName(userDisplayName(r.user));
                         const token = getToken();
                         if (token) saveSession(token, r.user);
-                        setRenameDraft(r.user.username);
+                        setRenameDraft(userDisplayName(r.user));
                         setRenameOpen(false);
-                        showToast("Đã đổi username");
+                        showToast(
+                          raw
+                            ? "Đã đổi nickname"
+                            : "Đã xóa nickname — hiện username",
+                        );
                       } catch (err) {
                         showToast(
                           err instanceof Error
                             ? err.message
-                            : "Không đổi tên được",
+                            : "Không đổi nickname được",
                         );
                       }
                     })();
@@ -1327,12 +1343,12 @@ export default function GamePage() {
                   onChange={(e) =>
                     setRenameDraft(
                       me
-                        ? e.target.value.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 20)
+                        ? e.target.value.slice(0, 12)
                         : e.target.value.slice(0, 16),
                     )
                   }
-                  maxLength={me ? 20 : 16}
-                  placeholder={me ? "Username…" : "Tên khách…"}
+                  maxLength={me ? 12 : 16}
+                  placeholder={me ? "Nickname…" : "Tên khách…"}
                   className="app-input !px-2 !py-1.5 text-[11px]"
                 />
                 <button
@@ -1403,7 +1419,7 @@ export default function GamePage() {
         </header>
 
         {/* ===== ZONE 2: Đồng bộ phòng — admin mở list người chơi ===== */}
-        {staffViewer ? (
+        {onlineViewer ? (
         <button
           type="button"
           onClick={() => connected && setSheet("players")}
@@ -1853,7 +1869,7 @@ export default function GamePage() {
         }}
         onConfirm={confirmBet}
       />
-      {staffViewer && (
+      {onlineViewer && (
       <PlayersSheet
         open={sheet === "players"}
         players={state?.onlinePlayers ?? []}

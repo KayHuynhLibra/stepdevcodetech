@@ -40,6 +40,7 @@ export default function LoginPage({ page }: { page: AuthPage }) {
   const [password, setPassword] = useState("");
   const [nextPassword, setNextPassword] = useState("");
   const [recoveryCode, setRecoveryCode] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(
     () => (location.state as { info?: string } | null)?.info ?? null,
@@ -108,7 +109,15 @@ export default function LoginPage({ page }: { page: AuthPage }) {
         guestMerged?: boolean;
       }>(path, {
         method: "POST",
-        body: JSON.stringify({ username, password, ...merge, ...dev }),
+        body: JSON.stringify({
+          username,
+          password,
+          ...(page === "register"
+            ? { inviteCode: inviteCode.trim().toUpperCase() }
+            : {}),
+          ...merge,
+          ...dev,
+        }),
       });
       saveSession(data.token, data.user);
       clearGuestMergePending();
@@ -217,6 +226,31 @@ export default function LoginPage({ page }: { page: AuthPage }) {
                   className="app-input mt-1"
                   required
                 />
+              </label>
+            )}
+            {page === "register" && (
+              <label className="block text-xs font-semibold text-[var(--play-muted)]">
+                Mã thành viên (8 ký tự)
+                <input
+                  value={inviteCode}
+                  onChange={(e) =>
+                    setInviteCode(
+                      e.target.value
+                        .toUpperCase()
+                        .replace(/[^A-Z0-9]/g, "")
+                        .slice(0, 8),
+                    )
+                  }
+                  maxLength={8}
+                  spellCheck={false}
+                  autoComplete="off"
+                  className="app-input mt-1 font-mono uppercase tracking-wider"
+                  required
+                  minLength={8}
+                />
+                <span className="mt-1 block text-[10px] font-medium text-[var(--play-muted)]">
+                  Bắt buộc — lấy mã từ admin
+                </span>
               </label>
             )}
             {page === "recover" && (

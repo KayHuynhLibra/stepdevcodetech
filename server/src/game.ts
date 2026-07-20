@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { authStore, isStaff } from "./auth.js";
+import { authStore, canSeeOnline, isStaff, userDisplayName } from "./auth.js";
 import { DEFAULT_AVATAR, normalizeAvatar } from "./avatars.js";
 import { betStore } from "./betStore.js";
 import {
@@ -400,7 +400,7 @@ export class GameEngine {
     }
     this.ensureDay(session);
     session.userId = linked.id;
-    session.name = linked.username.slice(0, 20);
+    session.name = userDisplayName(linked).slice(0, 20);
     session.avatar = normalizeAvatar(linked.avatar) || session.avatar;
     session.balance = linked.balance;
     session.winToday = linked.winToday;
@@ -520,7 +520,7 @@ export class GameEngine {
               ? guestCodeNorm
               : undefined),
           name: (
-            linked?.username ||
+            (linked ? userDisplayName(linked) : "") ||
             carried.name ||
             opts?.name?.trim() ||
             `Khach${Math.floor(Math.random() * 9000) + 1000}`
@@ -540,7 +540,7 @@ export class GameEngine {
               ? guestCodeNorm
               : undefined,
           name: (
-            linked?.username ||
+            (linked ? userDisplayName(linked) : "") ||
             opts?.name?.trim() ||
             `Khach${Math.floor(Math.random() * 9000) + 1000}`
           ).slice(0, 20),
@@ -792,12 +792,12 @@ export class GameEngine {
     return { socketIds, avatar: next };
   }
 
-  /** Đổi username auth → đồng bộ tên hiển thị trên bàn. */
-  applyAuthUsername(
+  /** Đồng bộ tên hiển thị auth (nickname hoặc username) lên bàn. */
+  applyAuthDisplayName(
     userId: string,
-    username: string,
   ): { socketIds: string[]; name: string } {
-    const next = String(username).slice(0, 20);
+    const u = authStore.getById(userId);
+    const next = u ? userDisplayName(u).slice(0, 20) : "";
     const socketIds: string[] = [];
     for (const session of this.players.values()) {
       if (session.userId !== userId) continue;
@@ -809,6 +809,14 @@ export class GameEngine {
     }
     this.emitToAll();
     return { socketIds, name: next };
+  }
+
+  /** @deprecated — dùng applyAuthDisplayName */
+  applyAuthUsername(
+    userId: string,
+    _username: string,
+  ): { socketIds: string[]; name: string } {
+    return this.applyAuthDisplayName(userId);
   }
 
   /** Đổi avatar phiên hiện tại (khách hoặc đã login trên socket). */
@@ -1444,12 +1452,16 @@ export class GameEngine {
     const displayBets = this.realBets.map((v, i) => v + this.botBets[i]);
     const playerCounts = this.realBettors.map((v, i) => v + this.botBettors[i]);
 
-    let forStaff = false;
+    let seeOnline = false;
+    let seeOnlineStaffExtras = false;
     if (playerId) {
       const viewer = this.players.get(playerId);
       if (viewer?.userId) {
         const vu = authStore.getById(viewer.userId);
-        if (vu && isStaff(vu)) forStaff = true;
+        if (vu) {
+          seeOnline = canSeeOnline(vu);
+          seeOnlineStaffExtras = isStaff(vu);
+        }
       }
     }
 
@@ -1463,11 +1475,13 @@ export class GameEngine {
       playerCounts,
       history: this.getHistory(10),
       winningCard: this.phase === "betting" ? null : this.winningCard,
-      ...(forStaff
+      ...(seeOnline
         ? {
             onlineReal: this.players.size,
             onlineDisplay: this.players.size,
-            onlinePlayers: this.getOnlinePlayers({ forStaff: true }),
+            onlinePlayers: this.getOnlinePlayers({
+              forStaff: seeOnlineStaffExtras,
+            }),
           }
         : {}),
       topAces: this.getTopAces(playerId),
