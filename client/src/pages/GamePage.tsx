@@ -49,6 +49,7 @@ import {
   homePath,
   isStaff,
   saveSession,
+  userShowsVip,
   VIP_ROUNDS_REQUIRED,
   type AuthUser,
 } from "../auth";
@@ -243,6 +244,15 @@ export default function GamePage() {
         // Token hết hạn phía server nhưng localStorage còn → nhắc đăng nhập lại
         if (getToken() && getStoredUser() && !payload.userId) {
           showToast("Phiên hết hạn — đăng nhập lại để chat & lưu cược");
+        }
+        if (payload.userId && getToken()) {
+          void api<{ ok: true; user: AuthUser }>("/api/auth/me")
+            .then((r) => {
+              setMe(r.user);
+              const t = getToken();
+              if (t) saveSession(t, r.user);
+            })
+            .catch(() => {});
         }
       },
     );
@@ -588,7 +598,9 @@ export default function GamePage() {
       const match = online.find((p) =>
         partial.userId
           ? p.userId === partial.userId
-          : p.name === partial.name && p.avatar === partial.avatar,
+          : partial.code
+            ? p.code === partial.code
+            : p.name === partial.name && p.avatar === partial.avatar,
       );
       if (!match) {
         return {
@@ -618,12 +630,63 @@ export default function GamePage() {
     [state?.onlinePlayers],
   );
 
+  const fetchPlayerCard = useCallback(async (info: PlayerInfoView) => {
+    if (info.isBot) return null;
+    const q = info.userId
+      ? `userId=${encodeURIComponent(info.userId)}`
+      : info.code
+        ? `code=${encodeURIComponent(info.code)}`
+        : "";
+    if (!q) return null;
+    try {
+      const r = await api<{
+        ok: true;
+        card: {
+          userId: string;
+          username: string;
+          code: string;
+          avatar: string;
+          isVip: boolean;
+          vipGranted: boolean;
+          roundsPlayed: number;
+        };
+      }>(`/api/players/card?${q}`);
+      return r.card;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const openPlayerInfo = useCallback(
     (info: PlayerInfoView) => {
-      setProfile(enrichPlayerInfo(info));
+      const base = enrichPlayerInfo(info);
+      setProfile(base);
       setSheet("playerInfo");
+      void (async () => {
+        const card = await fetchPlayerCard(base);
+        if (!card) return;
+        setProfile((prev) => {
+          if (!prev) return prev;
+          const same =
+            (base.userId && prev.userId === base.userId) ||
+            (base.code && prev.code === base.code) ||
+            (prev.name === base.name && prev.avatar === base.avatar);
+          if (!same) return prev;
+          return {
+            ...prev,
+            name: card.username || prev.name,
+            avatar: card.avatar || prev.avatar,
+            code: card.code,
+            userId: card.userId,
+            isVip: card.isVip,
+            vipGranted: card.vipGranted,
+            roundsPlayed: card.roundsPlayed,
+            isGuest: false,
+          };
+        });
+      })();
     },
-    [enrichPlayerInfo],
+    [enrichPlayerInfo, fetchPlayerCard],
   );
 
   const openOnlinePlayer = useCallback(
@@ -1078,13 +1141,13 @@ export default function GamePage() {
                     }
               }
             />
-            {me && !me.isVip && (
+            {me && !userShowsVip(me) && (
               <p className="mt-1 px-0.5 text-[10px] font-semibold tabular-nums text-amber-200/90">
                 VIP {(me.roundsPlayed ?? 0).toLocaleString("vi-VN")}/
                 {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván
               </p>
             )}
-            {me?.isVip && (
+            {me && userShowsVip(me) && (
               <p className="mt-1 px-0.5 text-[10px] font-extrabold text-amber-300">
                 VIP
               </p>
@@ -1434,6 +1497,9 @@ export default function GamePage() {
                       name: ace.name,
                       avatar: ace.avatar,
                       winToday: ace.winToday,
+                      userId: ace.userId,
+                      code: ace.code,
+                      isVip: ace.isVip,
                     })
                   }
                   className="shrink-0"
@@ -1529,6 +1595,9 @@ export default function GamePage() {
                     openPlayerInfo({
                       name: star.name,
                       avatar: star.avatar,
+                      userId: star.userId,
+                      code: star.code,
+                      isVip: star.isVip,
                     })
                   }
                   className="shrink-0"

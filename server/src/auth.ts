@@ -923,6 +923,43 @@ export class AuthStore {
     return this.byId.get(id);
   }
 
+  /** Thẻ công khai (avatar, ID, VIP) — popup profile / tra cứu nhẹ. */
+  getPublicCard(opts: {
+    userId?: string;
+    code?: string;
+  }):
+    | {
+        userId: string;
+        username: string;
+        code: string;
+        avatar: string;
+        isVip: boolean;
+        vipGranted: boolean;
+        roundsPlayed: number;
+      }
+    | null {
+    const id = String(opts.userId ?? "").trim();
+    const code = String(opts.code ?? "")
+      .trim()
+      .toUpperCase();
+    const user = id
+      ? this.byId.get(id)
+      : code
+        ? this.getByCode(code)
+        : undefined;
+    if (!user) return null;
+    ensureDay(user);
+    return {
+      userId: user.id,
+      username: user.username,
+      code: user.code,
+      avatar: normalizeAvatar(user.avatar),
+      isVip: computeIsVip(user),
+      vipGranted: !!user.vipGranted,
+      roundsPlayed: Math.max(0, Math.floor(user.roundsPlayed ?? 0)),
+    };
+  }
+
   /**
    * Ghi IP vào account (login / join). Không đưa vào toPublic — chỉ API mainadmin.
    */

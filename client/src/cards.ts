@@ -44,6 +44,9 @@ export interface TarotStarEntry {
   avatar: string;
   stakeWeek: number;
   isYou?: boolean;
+  userId?: string;
+  code?: string;
+  isVip?: boolean;
 }
 
 export interface TopAcePreview {
@@ -52,6 +55,9 @@ export interface TopAcePreview {
   avatar: string;
   winToday: number;
   isYou?: boolean;
+  userId?: string;
+  code?: string;
+  isVip?: boolean;
   chosenCards: { cardId: number; amount: number }[];
 }
 

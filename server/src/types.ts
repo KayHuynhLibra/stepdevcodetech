@@ -49,6 +49,9 @@ export interface TarotStarEntry {
   avatar: string;
   stakeWeek: number;
   isYou?: boolean;
+  userId?: string;
+  code?: string;
+  isVip?: boolean;
 }
 
 /** Top 3 cao thủ + lá đang cược ván này (nếu có) */
@@ -58,6 +61,9 @@ export interface TopAcePreview {
   avatar: string;
   winToday: number;
   isYou?: boolean;
+  userId?: string;
+  code?: string;
+  isVip?: boolean;
   /** Lá đã chọn trong ván hiện tại */
   chosenCards: { cardId: number; amount: number }[];
 }

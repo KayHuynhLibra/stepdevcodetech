@@ -925,6 +925,11 @@ export class GameEngine {
         }
       }
 
+      const linkedUserId = live?.userId;
+      const linked = linkedUserId
+        ? authStore.getById(linkedUserId)
+        : undefined;
+
       return {
         rank: i + 1,
         name: w.name,
@@ -932,6 +937,9 @@ export class GameEngine {
         // Thưởng vòng trước = số xu nhận từ lá thắng (stake × hệ số)
         winToday: w.payout,
         isYou: w.playerId === viewerId,
+        userId: linked?.id,
+        code: linked?.code,
+        isVip: linked ? authStore.isVipUser(linked.id) : undefined,
         // Chỉ hiện lá đã đặt cho ván mới; chưa đặt → rỗng
         chosenCards: currentPicks,
       };
@@ -1162,13 +1170,25 @@ export class GameEngine {
     return [...byKey.values()]
       .sort((a, b) => b.stakeWeek - a.stakeWeek)
       .slice(0, LEADERBOARD_LIMIT)
-      .map((row, i) => ({
-        rank: i + 1,
-        name: row.name,
-        avatar: row.avatar,
-        stakeWeek: row.stakeWeek,
-        isYou: row.socketId === viewerId,
-      }));
+      .map((row, i) => {
+        let userId: string | undefined;
+        if (!row.key.startsWith("socket:")) {
+          userId = row.key;
+        } else if (row.socketId) {
+          userId = this.players.get(row.socketId)?.userId;
+        }
+        const linked = userId ? authStore.getById(userId) : undefined;
+        return {
+          rank: i + 1,
+          name: row.name,
+          avatar: row.avatar,
+          stakeWeek: row.stakeWeek,
+          isYou: row.socketId === viewerId,
+          userId: linked?.id,
+          code: linked?.code,
+          isVip: linked ? authStore.isVipUser(linked.id) : undefined,
+        };
+      });
   }
 
   private botStakeOnCard(botId: string, cardId: number): number {

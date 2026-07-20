@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { VIP_ROUNDS_REQUIRED } from "../auth";
+import { VIP_ROUNDS_REQUIRED, userShowsVip } from "../auth";
 import { formatXu } from "../cards";
 
 export interface PlayerInfoView {
@@ -67,6 +67,11 @@ export function PlayerInfoSheet({
 
   const rounds = player.roundsPlayed ?? 0;
   const autoVip = rounds >= VIP_ROUNDS_REQUIRED;
+  const showVip = userShowsVip({
+    isVip: player.isVip,
+    vipGranted: player.vipGranted,
+    roundsPlayed: rounds,
+  });
 
   const canManage = !!(staff && player.userId && !player.isBot);
 
@@ -101,7 +106,7 @@ export function PlayerInfoSheet({
         </div>
 
         <div
-          className={`player-info-hero${player.isVip ? " player-info-hero--vip" : ""}`}
+          className={`player-info-hero${showVip ? " player-info-hero--vip" : ""}`}
         >
           <img
             src={player.avatar || "/assets/ui/avatar-default.png"}
@@ -116,7 +121,7 @@ export function PlayerInfoSheet({
               <span className="identity-chip identity-chip--role !text-[9px]">
                 {kind}
               </span>
-              {player.isVip && (
+              {showVip && (
                 <span className="rounded-full bg-amber-400 px-2.5 py-0.5 text-[10px] font-extrabold text-[#1a1208] shadow ring-1 ring-amber-200/80">
                   VIP
                 </span>
@@ -125,9 +130,9 @@ export function PlayerInfoSheet({
             {player.code && (
               <span
                 className={`identity-chip identity-chip--code${
-                  player.isVip ? " identity-chip--code-vip" : ""
+                  showVip ? " identity-chip--code-vip" : ""
                 }`}
-                title={player.isVip ? "ID VIP" : "ID"}
+                title={showVip ? "ID VIP" : "ID"}
               >
                 ID {player.code}
               </span>
@@ -221,7 +226,7 @@ export function PlayerInfoSheet({
               </p>
               <p className="mb-1.5 text-[10px] text-white/40 tabular-nums">
                 {rounds.toLocaleString("vi-VN")} ván
-                {player.isVip
+                {showVip
                   ? localGranted
                     ? " · đang VIP (cấp thủ công)"
                     : autoVip

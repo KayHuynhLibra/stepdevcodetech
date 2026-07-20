@@ -1,4 +1,10 @@
-import { homePath, playPath, type AuthUser, type UserRole } from "../auth";
+import {
+  homePath,
+  playPath,
+  userShowsVip,
+  type AuthUser,
+  type UserRole,
+} from "../auth";
 import { normalizeAvatar, DEFAULT_AVATAR } from "../avatars";
 
 function roleLabel(role?: UserRole | "guest"): string {
@@ -42,10 +48,21 @@ export function IdentityBadge({
     : normalizeAvatar(guestAvatar) || DEFAULT_AVATAR;
   const path = user ? homePath(user) : guestCode ? `/guest/${guestCode}` : "/play";
   const play = user ? playPath(user) : guestCode ? `/guest/${guestCode}/play` : "/play";
+  const isVip = userShowsVip(user);
 
   const className = `flex w-full items-center gap-2 text-left ${
-    compact ? "" : "rounded-xl bg-[rgba(255,248,232,0.78)] px-2.5 py-2 ring-1 ring-[var(--gold)]/35"
+    compact
+      ? ""
+      : `rounded-xl px-2.5 py-2 ring-1 ${
+          isVip
+            ? "bg-gradient-to-br from-amber-50/95 via-[rgba(255,248,232,0.92)] to-amber-100/80 ring-amber-300/70 shadow-[0_2px_14px_rgba(180,110,20,0.12)]"
+            : "bg-[rgba(255,248,232,0.78)] ring-[var(--gold)]/35"
+        }`
   }`;
+
+  const avatarRing = isVip
+    ? "ring-[3px] ring-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.45)]"
+    : "ring-2 ring-[var(--gold)]/55 shadow";
 
   const nameClass = `truncate font-play text-[var(--play-ink)] ${
     compact ? "text-sm" : "text-base"
@@ -67,7 +84,7 @@ export function IdentityBadge({
           <img
             src={avatar}
             alt=""
-            className={`rounded-full object-cover ring-2 ring-[var(--gold)]/55 shadow ${
+            className={`rounded-full object-cover ${avatarRing} ${
               compact ? "h-9 w-9" : "h-14 w-14"
             }`}
             onError={(e) => {
@@ -85,7 +102,7 @@ export function IdentityBadge({
           <img
             src={avatar}
             alt=""
-            className={`rounded-full object-cover ring-2 ring-[var(--gold)]/55 shadow ${
+            className={`rounded-full object-cover ${avatarRing} ${
               compact ? "h-9 w-9" : "h-14 w-14"
             }`}
             onError={(e) => {
@@ -113,12 +130,17 @@ export function IdentityBadge({
           <span className="identity-chip identity-chip--role">
             {roleLabel(role)}
           </span>
+          {isVip && (
+            <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-[#1a1208] shadow ring-1 ring-amber-200/80">
+              VIP
+            </span>
+          )}
           {code && (
             <span
               className={`identity-chip identity-chip--code identity-chip--code-lg${
-                user?.isVip ? " identity-chip--code-vip" : ""
+                isVip ? " identity-chip--code-vip" : ""
               }`}
-              title={user?.isVip ? "ID VIP — hiện với người chơi khác" : "ID người chơi"}
+              title={isVip ? "ID VIP — hiện với người chơi khác" : "ID người chơi"}
             >
               ID {code}
             </span>

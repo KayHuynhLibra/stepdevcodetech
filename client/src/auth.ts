@@ -49,6 +49,18 @@ export function postAuthPath(
   return homePath(user);
 }
 
+export function userShowsVip(
+  user:
+    | Pick<AuthUser, "isVip" | "vipGranted" | "roundsPlayed">
+    | null
+    | undefined,
+): boolean {
+  if (!user) return false;
+  if (user.isVip) return true;
+  if (user.vipGranted) return true;
+  return (user.roundsPlayed ?? 0) >= VIP_ROUNDS_REQUIRED;
+}
+
 export function isStaff(user: { role: UserRole } | null | undefined): boolean {
   return user?.role === "admin" || user?.role === "mainadmin";
 }

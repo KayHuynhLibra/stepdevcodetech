@@ -340,6 +340,26 @@ app.get("/api/auth/me", (req, res) => {
   res.json({ ok: true, user });
 });
 
+/** Thẻ profile công khai (VIP + ID) — dùng khi mở popup người chơi. */
+app.get("/api/players/card", (req, res) => {
+  const ip = clientIp(req);
+  if (!rateLimit(`player-card:${ip}`, 120, 60_000)) {
+    return res.status(429).json({ ok: false, reason: "Quá nhiều lần tra cứu" });
+  }
+  const userId = String(req.query.userId ?? "").trim();
+  const code = String(req.query.code ?? "").trim();
+  if (!userId && !code) {
+    return res
+      .status(400)
+      .json({ ok: false, reason: "Thiếu userId hoặc code" });
+  }
+  const card = authStore.getPublicCard({ userId, code });
+  if (!card) {
+    return res.status(404).json({ ok: false, reason: "Không tìm thấy" });
+  }
+  res.json({ ok: true, card });
+});
+
 app.get("/api/auth/bets", (req, res) => {
   const user = requireAuth(req, res);
   if (!user) return;

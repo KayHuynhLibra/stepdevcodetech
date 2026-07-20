@@ -12,6 +12,7 @@ import {
   playPath,
   arcanaPath,
   saveSession,
+  userShowsVip,
   VIP_ROUNDS_REQUIRED,
   type AuthUser,
 } from "../auth";
@@ -106,6 +107,21 @@ export default function UserDashboard() {
         nav("/login", { replace: true });
       });
   }, [nav]);
+
+  useEffect(() => {
+    const refreshMe = () => {
+      if (document.visibilityState !== "visible" || !getToken()) return;
+      void api<{ ok: true; user: AuthUser }>("/api/auth/me")
+        .then((r) => {
+          setUser(r.user);
+          const token = getToken();
+          if (token) saveSession(token, r.user);
+        })
+        .catch(() => {});
+    };
+    document.addEventListener("visibilitychange", refreshMe);
+    return () => document.removeEventListener("visibilitychange", refreshMe);
+  }, []);
 
   const logout = () => {
     clearSession();
@@ -309,10 +325,10 @@ export default function UserDashboard() {
           ["Đã đoán hôm nay", String(user.guessesToday), false],
           [
             "VIP",
-            user.isVip
+            userShowsVip(user)
               ? "VIP"
               : `${(user.roundsPlayed ?? 0).toLocaleString("vi-VN")}/${VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván`,
-            false,
+            userShowsVip(user),
           ],
         ].map(([label, value, accent]) => (
           <div
