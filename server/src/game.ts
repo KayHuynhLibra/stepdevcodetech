@@ -11,7 +11,7 @@ import {
   pickWinningCardWithUserBias,
   type UserRoundBias,
 } from "./cards.js";
-import { interStore, isPolicyMode } from "./interStore.js";
+import { interStore, isPackMode, isPolicyMode } from "./interStore.js";
 import {
   computeCardHeat,
   engagementAllowedForMode,
@@ -27,6 +27,7 @@ import {
   CHASER_BOT_COUNT,
   createIdentityPool,
   randomBotBetAmount,
+  randomBotBetsPerRound,
   randomCardId,
   randomChaserBetAmount,
   type BotIdentity,
@@ -89,6 +90,10 @@ type BroadcastFn = (state: PublicState, playerId?: string) => void;
 
 function hiddenFromLeaderboards(userId?: string | null): boolean {
   return authStore.isHiddenFromLeaderboard(userId);
+}
+
+function isBotPlayerId(playerId: string): boolean {
+  return playerId.startsWith("bot-");
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -319,7 +324,8 @@ export class GameEngine {
               w &&
               typeof w.name === "string" &&
               typeof w.profit === "number" &&
-              typeof w.payout === "number",
+              typeof w.payout === "number" &&
+              !isBotPlayerId(String(w.playerId ?? "")),
           )
           .slice(0, 3)
           .map((w) => ({
@@ -1165,23 +1171,9 @@ export class GameEngine {
         userId: p.userId,
       };
     });
-    const botRows: Omit<DayRow, "userId">[] = this.activeBots.map((b) => {
-      this.ensureBotDay(b);
-      return {
-        id: b.id,
-        name: b.name,
-        avatar: normalizeAvatar(b.avatar),
-        winToday: b.winToday,
-        dayKey: b.dayKey,
-      };
-    });
-
-    const rows = [...humanRows, ...botRows]
+    const rows = humanRows
       .filter((p) => p.dayKey === day && p.winToday > 0)
-      .filter((p) => {
-        const uid = (p as DayRow).userId;
-        return !hiddenFromLeaderboards(uid);
-      })
+      .filter((p) => !hiddenFromLeaderboards(p.userId))
       .sort((a, b) => b.winToday - a.winToday)
       .slice(0, LEADERBOARD_LIMIT);
 
@@ -1196,11 +1188,12 @@ export class GameEngine {
 
   getTopAces(viewerId?: string): TopAcePreview[] {
     const visible = this.lastRoundWinners.filter((w) => {
+      if (isBotPlayerId(w.playerId)) return false;
       const uid = w.userId ?? this.players.get(w.playerId)?.userId;
       return !hiddenFromLeaderboards(uid);
     });
     return visible.map((w, i) => {
-      // Người / bot thắng vòng trước — hiện lá đang cược ván này nếu có
+      // Người thắng vòng trước — hiện lá đang cược ván này nếu có
       const live = this.players.get(w.playerId);
       const currentPicks: { cardId: number; amount: number }[] = [];
       if (live) {
@@ -1208,14 +1201,6 @@ export class GameEngine {
           if (amount > 0) currentPicks.push({ cardId, amount });
         }
         currentPicks.sort((a, b) => a.cardId - b.cardId);
-      } else {
-        const botMap = this.botRoundBets.get(w.playerId);
-        if (botMap) {
-          for (const [cardId, amount] of botMap.entries()) {
-            if (amount > 0) currentPicks.push({ cardId, amount });
-          }
-          currentPicks.sort((a, b) => a.cardId - b.cardId);
-        }
       }
 
       const linkedUserId = w.userId ?? live?.userId;
@@ -1269,7 +1254,7 @@ export class GameEngine {
 
   getRoundTopWinners(viewerId?: string): RoundTopWinner[] {
     const visible = this.roundTopWinnersRaw.filter((w) => {
-      if (w.isBot) return true;
+      if (w.isBot || isBotPlayerId(w.playerId)) return false;
       const uid = w.userId ?? this.players.get(w.playerId)?.userId;
       return !hiddenFromLeaderboards(uid);
     });
@@ -1282,7 +1267,6 @@ export class GameEngine {
       payout: w.payout,
       winningCardId: w.winningCardId,
       isYou: w.playerId === viewerId,
-      isBot: w.isBot,
     }));
   }
 
@@ -1440,9 +1424,6 @@ export class GameEngine {
   getStateFor(playerId?: string): PublicState {
     const displayBets = this.realBets.map((v, i) => v + this.botBets[i]);
     const playerCounts = this.realBettors.map((v, i) => v + this.botBettors[i]);
-    const onlineReal = this.players.size;
-    /** Chỉ đếm người thật — không cộng bot */
-    const onlineDisplay = onlineReal;
 
     let forStaff = false;
     if (playerId) {
@@ -1463,10 +1444,12 @@ export class GameEngine {
       playerCounts,
       history: this.getHistory(10),
       winningCard: this.phase === "betting" ? null : this.winningCard,
-      onlineReal,
-      onlineDisplay,
       ...(forStaff
-        ? { onlinePlayers: this.getOnlinePlayers({ forStaff: true }) }
+        ? {
+            onlineReal: this.players.size,
+            onlineDisplay: this.players.size,
+            onlinePlayers: this.getOnlinePlayers({ forStaff: true }),
+          }
         : {}),
       topAces: this.getTopAces(playerId),
       roundTopWinners: this.getRoundTopWinners(playerId),
@@ -1586,17 +1569,6 @@ export class GameEngine {
         name: u.username,
         avatar: u.avatar,
         stakeWeek: u.stakeWeek,
-      });
-    }
-
-    for (const b of this.activeBots) {
-      this.ensureBotWeek(b);
-      if (b.weekKey !== wk || b.stakeWeek <= 0) continue;
-      byKey.set(b.id, {
-        key: b.id,
-        name: b.name,
-        avatar: normalizeAvatar(b.avatar),
-        stakeWeek: b.stakeWeek,
       });
     }
 
@@ -1756,7 +1728,11 @@ export class GameEngine {
       const expectedHouse = profits[winIdx] ?? 0;
       this.snapshotRoundTopWinners();
       const modeLabel =
-        storedMode === "all" ? `ALL→${interMode}` : interMode;
+        storedMode === "all"
+          ? `ALL→${interMode}`
+          : isPackMode(storedMode)
+            ? `${storedMode.toUpperCase()}→${interMode}`
+            : interMode;
       const biasNote =
         userBiases.length > 0
           ? ` · userBias[${userBiases.map((b) => b.mode).join(",")}]`
@@ -1774,7 +1750,12 @@ export class GameEngine {
             : "") +
           `${biasNote})`,
       });
-      if (isPolicyMode(interMode) || storedMode === "all" || userBiases.length) {
+      if (
+        isPolicyMode(interMode) ||
+        storedMode === "all" ||
+        isPackMode(storedMode) ||
+        userBiases.length
+      ) {
         console.log(
           `[inter:${modeLabel}] win=#${this.winningCard} authBets=[${authBets.join(",")}] profits=[${profits.map((p) => Math.round(p)).join(",")}] → house~${Math.round(expectedHouse)}${biasNote}`,
         );
@@ -1929,8 +1910,10 @@ export class GameEngine {
     }
 
     winners.sort((a, b) => b.profit - a.profit);
-    // Top 3 thắng vòng trước (người + bot) — hiện ở "Cao thủ dự đoán"
-    this.lastRoundWinners = winners.slice(0, 3);
+    // Top 3 vòng trước — chỉ người thật (bot không lên Cao thủ)
+    this.lastRoundWinners = winners
+      .filter((w) => !isBotPlayerId(w.playerId))
+      .slice(0, 3);
 
     const betRows: Parameters<typeof betStore.recordRoundBets>[0] = [];
     const recordBets = (player: PlayerSession) => {
@@ -2035,18 +2018,23 @@ export class GameEngine {
     const normals = this.activeBots.filter((b) => !b.isChaser);
     const chasers = this.activeBots.filter((b) => b.isChaser).slice(0, CHASER_BOT_COUNT);
 
-    // Bot thường — rải đều trong cửa sổ đặt cược
+    // Bot thường — mỗi bot 1–4 lệnh, mệnh giá ngẫu nhiên, rải thời gian
     if (normals.length > 0) {
-      const betCount = Math.max(normals.length, normals.length * 2);
-      for (let i = 0; i < betCount; i++) {
-        const bot = normals[i % normals.length]!;
-        const t = start + windowStart + Math.random() * (windowEnd - windowStart);
-        this.botSchedule.push({
-          at: t,
-          botId: bot.id,
-          cardId: randomCardId(),
-          amount: randomBotBetAmount(),
-        });
+      for (const bot of normals) {
+        const nBets = randomBotBetsPerRound();
+        for (let j = 0; j < nBets; j++) {
+          const t =
+            start +
+            windowStart +
+            ((j + Math.random() * 0.85) / Math.max(1, nBets)) *
+              (windowEnd - windowStart);
+          this.botSchedule.push({
+            at: t,
+            botId: bot.id,
+            cardId: randomCardId(),
+            amount: randomBotBetAmount(),
+          });
+        }
       }
     }
 
@@ -2055,7 +2043,7 @@ export class GameEngine {
       const chaseStart = start + remaining * 0.28;
       const chaseEnd = start + Math.max(remaining * 0.28 + 600, remaining - 1200);
       const chaseWindow = Math.max(400, chaseEnd - chaseStart);
-      const betsPerChaser = 4;
+      const betsPerChaser = 2 + Math.floor(Math.random() * 3);
       for (const bot of chasers) {
         for (let i = 0; i < betsPerChaser; i++) {
           const t = chaseStart + ((i + 0.15 + Math.random() * 0.7) / betsPerChaser) * chaseWindow;
@@ -2166,8 +2154,8 @@ export class GameEngine {
         amount: betAmt,
         action: "bet",
         message: job.chase
-          ? `${bot.name} dí cầu lớn ${betAmt} xu → ${card?.nameVi ?? `#${cardId}`}`
-          : `${bot.name} đặt ${betAmt} xu → ${card?.nameVi ?? `#${cardId}`}`,
+          ? `${bot.name} dí cầu ${betAmt.toLocaleString("vi-VN")} xu → ${card?.nameVi ?? `#${cardId}`}`
+          : `${bot.name} đặt ${betAmt.toLocaleString("vi-VN")} xu → ${card?.nameVi ?? `#${cardId}`}`,
       });
     }
   }

@@ -143,8 +143,6 @@ const engine = new GameEngine((state: PublicState, playerId?: string) => {
       playerCounts: state.playerCounts,
       history: state.history,
       winningCard: state.winningCard,
-      onlineDisplay: state.onlineDisplay,
-      onlinePlayers: state.onlinePlayers,
       topAces: state.topAces,
       roundTopWinners: state.roundTopWinners,
       tarotStars: state.tarotStars,
@@ -222,17 +220,28 @@ function buildInterPayload() {
     authBetsRound: authBets,
     recentWins,
     probabilities: cardProbabilities(effective, authBets, recentWins),
-    probabilitiesByMode: {
-      auto: cardProbabilities("auto"),
-      small: cardProbabilities("small"),
-      big: cardProbabilities("big"),
-      flat: cardProbabilities("flat"),
-      cool: cardProbabilities("cool", authBets, recentWins),
-      app: cardProbabilities("app", authBets),
-      hedge: cardProbabilities("hedge", authBets),
-      user: cardProbabilities("user", authBets),
-      fed: cardProbabilities("fed", authBets),
-    },
+    probabilitiesByMode: Object.fromEntries(
+      (
+        inter.rotateCatalog?.map((e) => e.id) ?? [
+          "auto",
+          "small",
+          "big",
+          "flat",
+          "cool",
+          "app",
+          "hedge",
+          "user",
+          "fed",
+        ]
+      ).map((id) => [
+        id,
+        cardProbabilities(
+          id as Parameters<typeof cardProbabilities>[0],
+          authBets,
+          recentWins,
+        ),
+      ]),
+    ),
   };
 }
 
@@ -678,6 +687,13 @@ app.post("/api/mainadmin/inter", (req, res) => {
     if (!result.ok) return res.status(400).json(result);
     audit(me, "inter_all_slot", {
       detail: `${result.allSlotMinutes} phút`,
+    });
+  }
+  if (req.body?.rotation != null) {
+    const result = interStore.setAllRotation(req.body.rotation, me.username);
+    if (!result.ok) return res.status(400).json(result);
+    audit(me, "inter_rotation", {
+      detail: result.allRotation.join("→"),
     });
   }
   res.json({

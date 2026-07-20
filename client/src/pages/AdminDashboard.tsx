@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   api,
@@ -182,18 +182,71 @@ interface UserHisPayload {
   };
 }
 type ForceCardMode = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8";
-type InterMode =
-  | "all"
+type PackMode = "pack1" | "pack2" | "pack3" | "pack4";
+type RotateStep =
   | "auto"
   | "small"
   | "big"
   | "flat"
   | "cool"
+  | "hot"
+  | "mid"
+  | "lowmult"
+  | "highmult"
   | "app"
+  | "softapp"
   | "hedge"
-  | "user"
+  | "softfed"
   | "fed"
-  | ForceCardMode;
+  | "user"
+  | "contrarian"
+  | "momentum"
+  | "sparse"
+  | "dense"
+  | "wild";
+
+type InterMode = "all" | PackMode | RotateStep | ForceCardMode;
+
+const PACK_MODES: PackMode[] = ["pack1", "pack2", "pack3", "pack4"];
+
+const FALLBACK_ROTATE_CATALOG: { id: RotateStep; label: string }[] = [
+  { id: "auto", label: "Auto — weight gốc" },
+  { id: "small", label: "Small — ưu tiên lá 1–4" },
+  { id: "big", label: "Big — ưu tiên lá 5–8" },
+  { id: "flat", label: "Flat — ~12.5% mỗi lá" },
+  { id: "cool", label: "Cool — giảm 3 lá thắng gần nhất" },
+  { id: "hot", label: "Hot — tăng lá vừa thắng gần đây" },
+  { id: "mid", label: "Mid — ưu tiên lá 3–6" },
+  { id: "lowmult", label: "LowMult — thiên hệ số thấp (1–4)" },
+  { id: "highmult", label: "HighMult — thiên hệ số cao (5–8)" },
+  { id: "app", label: "App — hút xu (mềm)" },
+  { id: "softapp", label: "SoftApp — hút xu rất nhẹ" },
+  { id: "hedge", label: "Hedge — lệch profit² nhà" },
+  { id: "softfed", label: "SoftFed — giữ xu vừa phải" },
+  { id: "fed", label: "Fed — lá nhà lời tối đa" },
+  { id: "user", label: "User — nhả xu (cược cao)" },
+  { id: "contrarian", label: "Contrarian — ưu tiên lá ít cược" },
+  { id: "momentum", label: "Momentum — theo lá nhiều cược" },
+  { id: "sparse", label: "Sparse — boost lá chưa ai đánh" },
+  { id: "dense", label: "Dense — boost lá đông cược" },
+  { id: "wild", label: "Wild — ngẫu nhiên 2 lá trọng số cao" },
+];
+
+const DEFAULT_ALL_ROTATION: RotateStep[] = [
+  "auto",
+  "small",
+  "big",
+  "flat",
+  "app",
+  "hedge",
+  "fed",
+  "cool",
+  "user",
+];
+
+function isInterRotating(mode: string): mode is "all" | PackMode {
+  return mode === "all" || PACK_MODES.includes(mode as PackMode);
+}
 
 interface InterProb {
   cardId: number;
@@ -220,9 +273,13 @@ interface InterSnapshot {
   mode: InterMode;
   effectiveMode?: string;
   allSlotMinutes?: number;
+  allRotation?: string[];
+  defaultRotation?: string[];
+  rotateCatalog?: { id: RotateStep; label: string }[];
+  modePacks?: { id: PackMode; label: string; rotation: string[] }[];
   updatedAt: number;
   updatedBy: string;
-  labels: Record<InterMode, string>;
+  labels: Record<string, string>;
   groups: { small: number[]; big: number[] };
   prefShare: number;
   otherShare: number;
@@ -491,6 +548,10 @@ export default function AdminDashboard() {
   });
   const [interBusy, setInterBusy] = useState(false);
   const [allSlotMinutes, setAllSlotMinutes] = useState("5");
+  const [rotationDraft, setRotationDraft] = useState<RotateStep[]>([
+    ...DEFAULT_ALL_ROTATION,
+  ]);
+  const [rotationAddMode, setRotationAddMode] = useState<RotateStep>("auto");
   const [couponForm, setCouponForm] = useState({
     code: "",
     amount: "10000",
@@ -637,9 +698,40 @@ export default function AdminDashboard() {
     }
   }, [data?.inter?.allSlotMinutes]);
 
-  // ALL mode: refresh countdown / effective slot
   useEffect(() => {
-    if (tab !== "inter" || data?.inter?.mode !== "all") return;
+    const r = data?.inter?.allRotation;
+    if (r?.length) {
+      setRotationDraft(r.filter((x): x is RotateStep => isRotateStep(x)));
+    }
+  }, [data?.inter?.allRotation]);
+
+  function isRotateStep(v: string): v is RotateStep {
+    return FALLBACK_ROTATE_CATALOG.some((o) => o.id === v);
+  }
+
+  const interRotateOptions = useMemo(
+    () =>
+      data?.inter?.rotateCatalog?.length
+        ? data.inter.rotateCatalog
+        : FALLBACK_ROTATE_CATALOG,
+    [data?.inter?.rotateCatalog],
+  );
+
+  const interModePacks = useMemo(
+    () =>
+      data?.inter?.modePacks?.length
+        ? data.inter.modePacks
+        : PACK_MODES.map((id, i) => ({
+            id,
+            label: `Bộ ${i + 1}`,
+            rotation: [] as string[],
+          })),
+    [data?.inter?.modePacks],
+  );
+
+  // ALL / Bộ mode: refresh countdown / effective slot
+  useEffect(() => {
+    if (tab !== "inter" || !isInterRotating(data?.inter?.mode ?? "")) return;
     const id = window.setInterval(() => {
       void load();
     }, 15_000);
@@ -1131,30 +1223,12 @@ export default function AdminDashboard() {
   };
 
   const interModeLabel = (mode: string) => {
-    switch (mode) {
-      case "all":
-        return "ALL (xoay 5 phút)";
-      case "auto":
-        return "Tự động";
-      case "small":
-        return "Small";
-      case "big":
-        return "Big";
-      case "flat":
-        return "Flat (cân đều)";
-      case "cool":
-        return "Cool (anti-streak)";
-      case "app":
-        return "App (hút xu mềm)";
-      case "hedge":
-        return "Hedge (soft-Fed)";
-      case "fed":
-        return "Fed (đọc cầu → app lời)";
-      case "user":
-        return "User (nhả xu)";
-      default:
-        return `Ép lá #${mode}`;
-    }
+    const fromServer = data?.inter?.labels?.[mode];
+    if (fromServer) return fromServer.split(" — ")[0] ?? fromServer;
+    if (mode === "all") return "ALL (xoay slot)";
+    if (PACK_MODES.includes(mode as PackMode)) return mode.toUpperCase();
+    if (mode.startsWith("pack")) return mode;
+    return `Ép lá #${mode}`;
   };
 
   const setInterMode = async (mode: InterMode) => {
@@ -1194,6 +1268,77 @@ export default function AdminDashboard() {
     } finally {
       setInterBusy(false);
     }
+  };
+
+  const saveAllRotation = async () => {
+    if (interBusy) return;
+    if (rotationDraft.length < 2) {
+      setMsg("Chuỗi xoay cần ít nhất 2 bước");
+      return;
+    }
+    if (rotationDraft.length > 20) {
+      setMsg("Chuỗi xoay tối đa 20 bước");
+      return;
+    }
+    setInterBusy(true);
+    try {
+      await api("/api/mainadmin/inter", {
+        method: "POST",
+        body: JSON.stringify({ rotation: rotationDraft }),
+      });
+      setMsg("Đã lưu chuỗi xoay ALL");
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi lưu chuỗi xoay");
+    } finally {
+      setInterBusy(false);
+    }
+  };
+
+  const resetAllRotationDefault = async () => {
+    const def =
+      (data?.inter?.defaultRotation?.filter((x): x is RotateStep =>
+        isRotateStep(x),
+      ) as RotateStep[] | undefined) ?? DEFAULT_ALL_ROTATION;
+    setRotationDraft([...def]);
+    if (interBusy) return;
+    setInterBusy(true);
+    try {
+      await api("/api/mainadmin/inter", {
+        method: "POST",
+        body: JSON.stringify({ rotation: def }),
+      });
+      setMsg("Đã khôi phục chuỗi xoay mặc định");
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi khôi phục chuỗi");
+    } finally {
+      setInterBusy(false);
+    }
+  };
+
+  const moveRotationStep = (index: number, dir: -1 | 1) => {
+    const next = index + dir;
+    if (next < 0 || next >= rotationDraft.length) return;
+    setRotationDraft((steps) => {
+      const copy = [...steps];
+      const t = copy[index]!;
+      copy[index] = copy[next]!;
+      copy[next] = t;
+      return copy;
+    });
+  };
+
+  const removeRotationStep = (index: number) => {
+    setRotationDraft((steps) => steps.filter((_, i) => i !== index));
+  };
+
+  const addRotationStep = () => {
+    if (rotationDraft.length >= 20) {
+      setMsg("Tối đa 20 bước");
+      return;
+    }
+    setRotationDraft((steps) => [...steps, rotationAddMode]);
   };
 
   const vaultSeize = async () => {
@@ -3075,13 +3220,13 @@ export default function AdminDashboard() {
               </div>
               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-900 ring-1 ring-amber-300/60">
                 Mode:{" "}
-                {data.inter.mode === "all"
-                  ? `ALL→${(data.inter.effectiveMode ?? data.inter.all?.effectiveMode ?? "?").toUpperCase()}`
+                {isInterRotating(data.inter.mode)
+                  ? `${data.inter.mode === "all" ? "ALL" : data.inter.mode.toUpperCase()}→${(data.inter.effectiveMode ?? data.inter.all?.effectiveMode ?? "?").toUpperCase()}`
                   : interModeLabel(data.inter.mode)}
               </span>
             </div>
 
-            {data.inter.mode === "all" && data.inter.all && (
+            {isInterRotating(data.inter.mode) && data.inter.all && (
               <div className="rounded-xl bg-amber-50 px-3 py-2.5 ring-1 ring-amber-300/70">
                 <p className="text-xs font-bold text-amber-950">
                   Đang chạy:{" "}
@@ -3159,6 +3304,107 @@ export default function AdminDashboard() {
               </p>
             </div>
 
+            <div className="space-y-2 rounded-xl bg-white/70 px-3 py-2.5 ring-1 ring-amber-200/80">
+              <p className="text-[11px] font-semibold text-[var(--play-ink)]">
+                Chuỗi xoay ALL (2–20 bước)
+              </p>
+              <p className="text-[10px] text-[var(--play-muted)]">
+                Thứ tự mode khi Inter = ALL. Lưu chuỗi sẽ reset slot hiện tại
+                nếu đang chạy ALL.
+              </p>
+              <ul className="space-y-1">
+                {rotationDraft.map((step, i) => (
+                  <li
+                    key={`${step}-${i}`}
+                    className="flex items-center gap-1.5 rounded-lg bg-amber-50/90 px-2 py-1.5 ring-1 ring-amber-200/60"
+                  >
+                    <span className="w-5 text-center text-[10px] font-bold tabular-nums text-amber-900">
+                      {i + 1}
+                    </span>
+                    <span className="min-w-0 flex-1 text-xs font-bold uppercase text-[var(--play-ink)]">
+                      {step}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={interBusy || i === 0}
+                      onClick={() => moveRotationStep(i, -1)}
+                      className="rounded px-1.5 py-0.5 text-[10px] font-bold text-[var(--wood-deep)] disabled:opacity-40"
+                      title="Lên"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      disabled={interBusy || i >= rotationDraft.length - 1}
+                      onClick={() => moveRotationStep(i, 1)}
+                      className="rounded px-1.5 py-0.5 text-[10px] font-bold text-[var(--wood-deep)] disabled:opacity-40"
+                      title="Xuống"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      disabled={interBusy || rotationDraft.length <= 2}
+                      onClick={() => removeRotationStep(i)}
+                      className="rounded px-1.5 py-0.5 text-[10px] font-bold text-rose-700 disabled:opacity-40"
+                      title="Xóa"
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="min-w-[7rem] flex-1 text-[11px] font-semibold text-[var(--play-ink)]">
+                  Thêm bước
+                  <select
+                    value={rotationAddMode}
+                    onChange={(e) =>
+                      setRotationAddMode(e.target.value as RotateStep)
+                    }
+                    className="app-input mt-1 w-full"
+                    disabled={interBusy}
+                  >
+                    {interRotateOptions.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  disabled={interBusy || rotationDraft.length >= 20}
+                  onClick={addRotationStep}
+                  className="rounded-xl bg-amber-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+                >
+                  Thêm
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={interBusy}
+                  onClick={() => void saveAllRotation()}
+                  className="rounded-xl bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+                >
+                  Lưu chuỗi
+                </button>
+                <button
+                  type="button"
+                  disabled={interBusy}
+                  onClick={() => void resetAllRotationDefault()}
+                  className="rounded-xl bg-white px-4 py-2 text-xs font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/25 disabled:opacity-50"
+                >
+                  Khôi phục mặc định
+                </button>
+              </div>
+              <p className="text-[10px] text-[var(--play-muted)]">
+                Đang lưu trên server:{" "}
+                {(data.inter.allRotation ?? DEFAULT_ALL_ROTATION).join(" → ")}
+              </p>
+            </div>
+
             <button
               type="button"
               disabled={interBusy}
@@ -3179,67 +3425,38 @@ export default function AdminDashboard() {
                     : "text-[var(--play-muted)]"
                 }`}
               >
-                auto → small → big → flat → app → hedge → fed → cool → user
+                {(data.inter.allRotation ?? DEFAULT_ALL_ROTATION).join(" → ")}
               </p>
             </button>
 
             <div className="space-y-1.5">
               <p className="text-[11px] font-semibold text-[var(--play-ink)]">
-                Policy — đọc cầu auth
+                Bộ mode 1–4 — xoay chuỗi cố định (cùng phút/slot như ALL)
               </p>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                {(
-                  [
-                    {
-                      id: "fed" as const,
-                      title: "Fed — đọc cầu",
-                      desc: "Cứng: lá app lời max",
-                      activeClass:
-                        "bg-rose-700 text-white ring-rose-800 shadow-sm",
-                    },
-                    {
-                      id: "hedge" as const,
-                      title: "Hedge — soft-Fed",
-                      desc: "Lệch profit², vẫn random",
-                      activeClass:
-                        "bg-rose-500 text-white ring-rose-600 shadow-sm",
-                    },
-                    {
-                      id: "app" as const,
-                      title: "App — hút xu mềm",
-                      desc: "Ưu tiên lá trả ít",
-                      activeClass:
-                        "bg-rose-600 text-white ring-rose-700 shadow-sm",
-                    },
-                    {
-                      id: "user" as const,
-                      title: "User — nhả xu",
-                      desc: "Ưu tiên lá trả cao",
-                      activeClass:
-                        "bg-emerald-600 text-white ring-emerald-700 shadow-sm",
-                    },
-                  ] as const
-                ).map((m) => {
-                  const active = data.inter!.mode === m.id;
+              <div className="grid gap-2 sm:grid-cols-2">
+                {interModePacks.map((pack) => {
+                  const active = data.inter!.mode === pack.id;
                   return (
                     <button
-                      key={m.id}
+                      key={pack.id}
                       type="button"
                       disabled={interBusy}
-                      onClick={() => setInterMode(m.id)}
+                      onClick={() => setInterMode(pack.id)}
                       className={`rounded-xl px-3 py-3 text-left transition ring-1 ${
                         active
-                          ? m.activeClass
-                          : "bg-white/90 text-[var(--play-ink)] ring-[var(--wood-deep)]/15 hover:bg-white"
+                          ? "bg-indigo-700 text-white ring-indigo-800 shadow-sm"
+                          : "bg-white/90 text-[var(--play-ink)] ring-indigo-200/60 hover:bg-indigo-50"
                       } ${interBusy ? "opacity-60" : ""}`}
                     >
-                      <p className="text-sm font-bold">{m.title}</p>
+                      <p className="text-sm font-bold">{pack.label}</p>
                       <p
                         className={`mt-1 text-[10px] leading-snug ${
                           active ? "text-white/80" : "text-[var(--play-muted)]"
                         }`}
                       >
-                        {m.desc}
+                        {pack.rotation.length
+                          ? pack.rotation.join(" → ")
+                          : "—"}
                       </p>
                     </button>
                   );
@@ -3249,58 +3466,43 @@ export default function AdminDashboard() {
 
             <div className="space-y-1.5">
               <p className="text-[11px] font-semibold text-[var(--play-ink)]">
-                Bias — không đọc stake
+                20 thuật toán — chọn một mode cố định
               </p>
-              <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
-                {(
-                  [
-                    {
-                      id: "auto" as const,
-                      title: "Tự động",
-                      desc: "Weight gốc",
-                    },
-                    {
-                      id: "small" as const,
-                      title: "Small",
-                      desc: "Lá 1–4 ~72%",
-                    },
-                    {
-                      id: "big" as const,
-                      title: "Big",
-                      desc: "Lá 5–8 ~72%",
-                    },
-                    {
-                      id: "flat" as const,
-                      title: "Flat",
-                      desc: "Cân ~12.5%",
-                    },
-                    {
-                      id: "cool" as const,
-                      title: "Cool",
-                      desc: "Anti-streak",
-                    },
-                  ] as const
-                ).map((m) => {
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {interRotateOptions.map((m) => {
                   const active = data.inter!.mode === m.id;
+                  const stakeHint =
+                    m.id === "app" ||
+                    m.id === "softapp" ||
+                    m.id === "user" ||
+                    m.id === "fed" ||
+                    m.id === "softfed" ||
+                    m.id === "hedge" ||
+                    m.id === "contrarian" ||
+                    m.id === "momentum" ||
+                    m.id === "sparse" ||
+                    m.id === "dense";
                   return (
                     <button
                       key={m.id}
                       type="button"
                       disabled={interBusy}
                       onClick={() => setInterMode(m.id)}
-                      className={`rounded-xl px-3 py-3 text-left transition ring-1 ${
+                      className={`rounded-xl px-3 py-2.5 text-left transition ring-1 ${
                         active
-                          ? "bg-[var(--wood-deep)] text-white ring-[var(--wood-deep)] shadow-sm"
+                          ? stakeHint
+                            ? "bg-rose-600 text-white ring-rose-700 shadow-sm"
+                            : "bg-[var(--wood-deep)] text-white ring-[var(--wood-deep)] shadow-sm"
                           : "bg-white/90 text-[var(--play-ink)] ring-[var(--wood-deep)]/15 hover:bg-white"
                       } ${interBusy ? "opacity-60" : ""}`}
                     >
-                      <p className="text-sm font-bold">{m.title}</p>
+                      <p className="text-xs font-bold uppercase">{m.id}</p>
                       <p
-                        className={`mt-1 text-[10px] leading-snug ${
-                          active ? "text-white/75" : "text-[var(--play-muted)]"
+                        className={`mt-0.5 text-[10px] leading-snug ${
+                          active ? "text-white/80" : "text-[var(--play-muted)]"
                         }`}
                       >
-                        {m.desc}
+                        {m.label.replace(/^[^:]+:\s*/, "")}
                       </p>
                     </button>
                   );
@@ -3352,7 +3554,8 @@ export default function AdminDashboard() {
             </div>
 
             <p className="text-[10px] text-[var(--play-muted)]">
-              {data.inter.labels[data.inter.mode]}
+              {data.inter.labels[data.inter.mode] ??
+                interModeLabel(data.inter.mode)}
               {data.inter.updatedBy ? (
                 <>
                   {" "}
@@ -3419,13 +3622,25 @@ export default function AdminDashboard() {
                 : ""}
             </p>
             {(data.inter.mode === "app" ||
+              data.inter.mode === "softapp" ||
               data.inter.mode === "user" ||
               data.inter.mode === "fed" ||
+              data.inter.mode === "softfed" ||
               data.inter.mode === "hedge" ||
+              data.inter.mode === "contrarian" ||
+              data.inter.mode === "momentum" ||
+              data.inter.mode === "sparse" ||
+              data.inter.mode === "dense" ||
               data.inter.effectiveMode === "app" ||
+              data.inter.effectiveMode === "softapp" ||
               data.inter.effectiveMode === "user" ||
               data.inter.effectiveMode === "fed" ||
-              data.inter.effectiveMode === "hedge") && (
+              data.inter.effectiveMode === "softfed" ||
+              data.inter.effectiveMode === "hedge" ||
+              data.inter.effectiveMode === "contrarian" ||
+              data.inter.effectiveMode === "momentum" ||
+              data.inter.effectiveMode === "sparse" ||
+              data.inter.effectiveMode === "dense") && (
               <p className="text-[10px] text-[var(--play-muted)]">
                 Theo stake user đăng nhập · Trả = cược×hệ số · Lời app = tổng
                 stake − trả

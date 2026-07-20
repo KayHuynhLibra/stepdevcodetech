@@ -2,15 +2,45 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { adaptAllEffectiveMode } from "./tarotEngagement.js";
+import {
+  ALL_ROTATION_DEFAULT,
+  isPackMode,
+  isRotateMode,
+  MODE_PACK_LABELS,
+  MODE_PACK_ROTATIONS,
+  packRotation,
+  PACK_MODES,
+  ROTATE_LABELS,
+  ROTATE_MODE_IDS,
+  type PackMode,
+  type RotateMode,
+} from "./interAlgorithms.js";
+
+export type { PackMode, RotateMode } from "./interAlgorithms.js";
+export {
+  MODE_PACK_LABELS,
+  MODE_PACK_ROTATIONS,
+  ROTATE_LABELS,
+  ROTATE_MODE_IDS,
+} from "./interAlgorithms.js";
 
 /** Mode can thiệp xác suất lá thắng (mainadmin). */
 export type ForceCardMode = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8";
-export type PolicyMode = "app" | "user" | "fed" | "hedge";
-/** Bias không đọc stake (có thể dùng history). */
+export type PolicyMode =
+  | "app"
+  | "softapp"
+  | "user"
+  | "momentum"
+  | "fed"
+  | "softfed"
+  | "hedge"
+  | "contrarian"
+  | "sparse"
+  | "dense";
+/** Legacy bias subset */
 export type BiasMode = "auto" | "small" | "big" | "flat" | "cool";
-/** Mode tác động xoay trong ALL (không gồm ép lá / ALL). */
-export type RotateMode = BiasMode | PolicyMode;
-export type InterMode = RotateMode | "all" | ForceCardMode;
+
+export type InterMode = RotateMode | "all" | PackMode | ForceCardMode;
 
 export const FORCE_CARD_MODES: ForceCardMode[] = [
   "1",
@@ -23,23 +53,58 @@ export const FORCE_CARD_MODES: ForceCardMode[] = [
   "8",
 ];
 
-export const POLICY_MODES: PolicyMode[] = ["app", "user", "fed", "hedge"];
-
-/** Thứ tự xoay khi mode = ALL — mỗi slot 5 phút. */
-export const ALL_ROTATION: RotateMode[] = [
-  "auto",
-  "small",
-  "big",
-  "flat",
+export const POLICY_MODES: PolicyMode[] = [
   "app",
+  "softapp",
   "hedge",
+  "softfed",
   "fed",
-  "cool",
   "user",
+  "momentum",
+  "contrarian",
+  "sparse",
+  "dense",
 ];
 
-export const ALL_SLOT_MS = 5 * 60 * 1000;
+/** Thứ tự xoay mặc định khi mode = ALL (tùy chỉnh được). */
+export const ALL_ROTATION: RotateMode[] = [...ALL_ROTATION_DEFAULT];
 
+export const ROTATE_MODES: RotateMode[] = [...ROTATE_MODE_IDS];
+
+export const MIN_ALL_ROTATION_LEN = 2;
+export const MAX_ALL_ROTATION_LEN = 20;
+
+export function validateAllRotation(raw: unknown):
+  | { ok: true; steps: RotateMode[] }
+  | { ok: false; reason: string } {
+  if (!Array.isArray(raw)) {
+    return { ok: false, reason: "rotation phải là mảng" };
+  }
+  const steps: RotateMode[] = [];
+  for (const item of raw) {
+    if (!isRotateMode(item)) {
+      return { ok: false, reason: `Bước không hợp lệ: ${String(item)}` };
+    }
+    steps.push(item);
+  }
+  if (steps.length < MIN_ALL_ROTATION_LEN) {
+    return {
+      ok: false,
+      reason: `Chuỗi cần ít nhất ${MIN_ALL_ROTATION_LEN} bước`,
+    };
+  }
+  if (steps.length > MAX_ALL_ROTATION_LEN) {
+    return {
+      ok: false,
+      reason: `Chuỗi tối đa ${MAX_ALL_ROTATION_LEN} bước`,
+    };
+  }
+  return { ok: true, steps };
+}
+
+export { isRotateMode } from "./interAlgorithms.js";
+
+export const ALL_SLOT_MS = 5 * 60 * 1000;
 /** Thời lượng mỗi slot khi mode ALL (phút) — chọn 1…9 (&lt; 10 phút). */
 export const DEFAULT_ALL_SLOT_MINUTES = 5;
 export const MIN_ALL_SLOT_MINUTES = 1;
@@ -53,20 +118,14 @@ export function clampAllSlotMinutes(raw: unknown): number {
 
 export const INTER_MODES: InterMode[] = [
   "all",
-  "auto",
-  "small",
-  "big",
-  "flat",
-  "cool",
-  "app",
-  "hedge",
-  "user",
-  "fed",
+  ...PACK_MODES,
+  ...ROTATE_MODE_IDS,
   ...FORCE_CARD_MODES,
 ];
 
-export function isForceCardMode(v: unknown): v is ForceCardMode {
-  return (
+export { isPackMode, PACK_MODES } from "./interAlgorithms.js";
+
+export function isForceCardMode(v: unknown): v is ForceCardMode {  return (
     v === "1" ||
     v === "2" ||
     v === "3" ||
@@ -79,7 +138,18 @@ export function isForceCardMode(v: unknown): v is ForceCardMode {
 }
 
 export function isPolicyMode(v: unknown): v is PolicyMode {
-  return v === "app" || v === "user" || v === "fed" || v === "hedge";
+  return (
+    v === "app" ||
+    v === "softapp" ||
+    v === "user" ||
+    v === "momentum" ||
+    v === "fed" ||
+    v === "softfed" ||
+    v === "hedge" ||
+    v === "contrarian" ||
+    v === "sparse" ||
+    v === "dense"
+  );
 }
 
 export function isBiasMode(v: unknown): v is BiasMode {
@@ -92,26 +162,32 @@ export function isBiasMode(v: unknown): v is BiasMode {
   );
 }
 
-export function isRotateMode(v: unknown): v is RotateMode {
-  return isBiasMode(v) || isPolicyMode(v);
+function rotatesLikeAll(mode: InterMode): mode is "all" | PackMode {
+  return mode === "all" || isPackMode(mode);
 }
 
 export function isInterMode(v: unknown): v is InterMode {
-  return v === "all" || isRotateMode(v) || isForceCardMode(v);
+  return (
+    v === "all" ||
+    isPackMode(v) ||
+    isRotateMode(v) ||
+    isForceCardMode(v)
+  );
 }
-
 /** Mode ép thắng → id lá; còn lại null. */
 export function forcedCardId(mode: InterMode): number | null {
   return isForceCardMode(mode) ? Number(mode) : null;
 }
 
 interface InterFile {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   mode: InterMode;
   updatedAt: number;
   updatedBy: string;
   /** Phút mỗi slot khi mode = all (v2). */
   allSlotMinutes?: number;
+  /** Chuỗi xoay tùy chỉnh khi mode = all (v3). */
+  allRotation?: RotateMode[];
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -151,7 +227,20 @@ export class InterStore {
   private updatedAt = 0;
   private updatedBy = "";
   private allSlotMinutes = DEFAULT_ALL_SLOT_MINUTES;
+  /** null = dùng ALL_ROTATION mặc định */
+  private allRotation: RotateMode[] | null = null;
   private lastLoggedEffective: string | null = null;
+
+  getAllRotation(): RotateMode[] {
+    if (isPackMode(this.mode)) return packRotation(this.mode);
+    return this.allRotation?.length
+      ? [...this.allRotation]
+      : [...ALL_ROTATION];
+  }
+
+  private getRotationChain(): RotateMode[] {
+    return this.getAllRotation();
+  }
 
   private getAllSlotMs(): number {
     return this.allSlotMinutes * 60 * 1000;
@@ -173,15 +262,22 @@ export class InterStore {
         return;
       }
       const parsed = JSON.parse(readFileSync(PATH, "utf8")) as InterFile;
-      if (parsed?.version !== 1 && parsed?.version !== 2) return;
+      if (parsed?.version !== 1 && parsed?.version !== 2 && parsed?.version !== 3) {
+        return;
+      }
       if (isInterMode(parsed.mode)) this.mode = parsed.mode;
       if (typeof parsed.updatedAt === "number") this.updatedAt = parsed.updatedAt;
       if (typeof parsed.updatedBy === "string") this.updatedBy = parsed.updatedBy;
       if (parsed.allSlotMinutes != null) {
         this.allSlotMinutes = clampAllSlotMinutes(parsed.allSlotMinutes);
       }
+      if (Array.isArray(parsed.allRotation) && parsed.allRotation.length > 0) {
+        const v = validateAllRotation(parsed.allRotation);
+        if (v.ok) this.allRotation = v.steps;
+      }
+      const rot = this.getAllRotation();
       console.log(
-        `[inter] Loaded mode=${this.mode} allSlot=${this.allSlotMinutes}m`,
+        `[inter] Loaded mode=${this.mode} allSlot=${this.allSlotMinutes}m rotation=${rot.length} steps`,
       );
     } catch (err) {
       console.warn("[inter] Failed to load inter.json:", err);
@@ -191,11 +287,14 @@ export class InterStore {
   private save() {
     if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
     const body: InterFile = {
-      version: 2,
+      version: 3,
       mode: this.mode,
       updatedAt: this.updatedAt,
       updatedBy: this.updatedBy,
       allSlotMinutes: this.allSlotMinutes,
+      ...(this.allRotation?.length
+        ? { allRotation: [...this.allRotation] }
+        : {}),
     };
     writeFileSync(TMP, JSON.stringify(body, null, 2), "utf8");
     renameSync(TMP, PATH);
@@ -213,50 +312,55 @@ export class InterStore {
   getEffectiveMode(traffic?: {
     authStake: number;
     displayStake: number;
-  }): Exclude<InterMode, "all"> {
-    if (this.mode !== "all") return this.mode;
+  }): Exclude<InterMode, "all" | PackMode> {
+    if (!rotatesLikeAll(this.mode)) {
+      return this.mode as Exclude<InterMode, "all" | PackMode>;
+    }
     const slotMs = this.getAllSlotMs();
     const anchor = this.updatedAt || Date.now();
     const elapsed = Math.max(0, Date.now() - anchor);
-    const idx = Math.floor(elapsed / slotMs) % ALL_ROTATION.length;
-    let eff = ALL_ROTATION[idx]!;
+    const chain = this.getRotationChain();
+    const idx = Math.floor(elapsed / slotMs) % chain.length;
+    let eff = chain[idx]!;
     if (traffic) {
       eff = adaptAllEffectiveMode(eff, traffic);
     }
     return eff;
   }
 
-  /** Gọi định kỳ — log khi ALL đổi slot. */
+  /** Gọi định kỳ — log khi ALL / Bộ mode đổi slot. */
   tickRotation() {
-    if (this.mode !== "all") {
+    if (!rotatesLikeAll(this.mode)) {
       this.lastLoggedEffective = null;
       return;
     }
     const eff = this.getEffectiveMode();
     if (eff !== this.lastLoggedEffective) {
       const snap = this.getRotationInfo();
+      const tag = isPackMode(this.mode) ? this.mode.toUpperCase() : "ALL";
       console.log(
-        `[inter:ALL] slot → ${eff} · còn ~${Math.ceil(snap.remainingMs / 1000)}s · tiếp ${snap.nextMode}`,
+        `[inter:${tag}] slot → ${eff} · còn ~${Math.ceil(snap.remainingMs / 1000)}s · tiếp ${snap.nextMode}`,
       );
       this.lastLoggedEffective = eff;
     }
   }
 
   getRotationInfo() {
+    const chain = this.getRotationChain();
     const slotMs = this.getAllSlotMs();
     const anchor = this.updatedAt || Date.now();
     const elapsed = Math.max(0, Date.now() - anchor);
-    const idx = Math.floor(elapsed / slotMs) % ALL_ROTATION.length;
+    const idx = Math.floor(elapsed / slotMs) % chain.length;
     const intoSlot = elapsed % slotMs;
     const remainingMs = slotMs - intoSlot;
-    const nextIdx = (idx + 1) % ALL_ROTATION.length;
+    const nextIdx = (idx + 1) % chain.length;
     return {
-      rotation: [...ALL_ROTATION],
+      rotation: [...chain],
       slotMs,
       slotMinutes: this.allSlotMinutes,
       slotIndex: idx,
-      effectiveMode: ALL_ROTATION[idx]!,
-      nextMode: ALL_ROTATION[nextIdx]!,
+      effectiveMode: chain[idx]!,
+      nextMode: chain[nextIdx]!,
       remainingMs,
       nextRotateAt: Date.now() + remainingMs,
     };
@@ -279,7 +383,7 @@ export class InterStore {
     const next = clampAllSlotMinutes(minutes);
     this.allSlotMinutes = next;
     this.updatedBy = byUsername;
-    if (this.mode === "all") {
+    if (rotatesLikeAll(this.mode)) {
       this.updatedAt = Date.now();
       this.lastLoggedEffective = null;
     }
@@ -288,42 +392,76 @@ export class InterStore {
     return { ok: true, allSlotMinutes: next };
   }
 
+  setAllRotation(
+    steps: RotateMode[],
+    byUsername: string,
+  ): { ok: true; allRotation: RotateMode[] } | { ok: false; reason: string } {
+    const v = validateAllRotation(steps);
+    if (!v.ok) return v;
+    this.allRotation = v.steps;
+    this.updatedBy = byUsername;
+    if (rotatesLikeAll(this.mode)) {
+      this.updatedAt = Date.now();
+      this.lastLoggedEffective = null;
+    }
+    this.save();
+    console.log(
+      `[inter] ALL rotation → [${v.steps.join("→")}] by ${byUsername}`,
+    );
+    return { ok: true, allRotation: this.getAllRotation() };
+  }
+
+  resetAllRotationToDefault(byUsername: string) {
+    return this.setAllRotation([...ALL_ROTATION], byUsername);
+  }
+
   getSnapshot() {
     const effectiveMode = this.getEffectiveMode();
+    const chain = this.getAllRotation();
     const rotation =
-      this.mode === "all"
+      rotatesLikeAll(this.mode)
         ? this.getRotationInfo()
         : {
-            rotation: [...ALL_ROTATION],
+            rotation: [...chain],
             slotMs: this.getAllSlotMs(),
             slotMinutes: this.allSlotMinutes,
             slotIndex: 0,
             effectiveMode,
-            nextMode: ALL_ROTATION[1]!,
+            nextMode: chain[1] ?? chain[0]!,
             remainingMs: 0,
             nextRotateAt: 0,
           };
+
+    const packLabels = Object.fromEntries(
+      (Object.keys(MODE_PACK_LABELS) as PackMode[]).map((p) => [
+        p,
+        MODE_PACK_LABELS[p],
+      ]),
+    ) as Record<PackMode, string>;
 
     return {
       mode: this.mode,
       effectiveMode,
       allSlotMinutes: this.allSlotMinutes,
+      allRotation: [...chain],
+      defaultRotation: [...ALL_ROTATION],
+      rotateCatalog: ROTATE_MODE_IDS.map((id) => ({
+        id,
+        label: ROTATE_LABELS[id],
+      })),
+      modePacks: PACK_MODES.map((p) => ({
+        id: p,
+        label: MODE_PACK_LABELS[p],
+        rotation: [...MODE_PACK_ROTATIONS[p]],
+      })),
       updatedAt: this.updatedAt,
       updatedBy: this.updatedBy,
       labels: {
-        all: `ALL — xoay auto→small→big→flat→app→hedge→fed→cool→user (mỗi ${this.allSlotMinutes} phút, tối đa 9)`,
-        auto: "Tự động — weight gốc, không lệch nhóm",
-        small: "Small — ưu tiên lá 1–4 (Nhà Ảo Thuật … Hoàng Đế)",
-        big: "Big — ưu tiên lá 5–8 (Đôi Tình Nhân … Mặt Trời)",
-        flat: "Flat — cân đều ~12.5% mỗi lá",
-        cool: "Cool — giảm mạnh 3 lá thắng gần nhất (anti-streak)",
-        app: "App — hút xu mềm theo stake user (ưu tiên lá trả ít, vẫn random)",
-        hedge:
-          "Hedge — soft-Fed; lệch mạnh theo lời nhà (profit²), vẫn random",
-        fed: "Fed — đọc cầu user đăng nhập; luôn chọn lá app lời tối đa (thường lá ít/không ai đánh)",
-        user: "User — nhả xu theo stake user thật (ưu tiên lá trả nhiều)",
+        all: `ALL — xoay ${chain.join("→")} (mỗi ${this.allSlotMinutes} phút/slot)`,
+        ...ROTATE_LABELS,
+        ...packLabels,
         ...FORCE_LABELS,
-      } as Record<InterMode, string>,
+      } as Record<string, string>,
       groups: {
         small: [1, 2, 3, 4],
         big: [5, 6, 7, 8],
@@ -341,7 +479,7 @@ export function effectiveWeights(
   mode: InterMode,
   cardIds: number[],
 ): number[] {
-  if (mode === "all") {
+  if (mode === "all" || isPackMode(mode)) {
     return [...baseWeights];
   }
 
@@ -359,7 +497,16 @@ export function effectiveWeights(
     return [...baseWeights];
   }
 
-  const prefIds = new Set(mode === "small" ? [1, 2, 3, 4] : [5, 6, 7, 8]);
+  const prefSets: Record<string, Set<number>> = {
+    small: new Set([1, 2, 3, 4]),
+    big: new Set([5, 6, 7, 8]),
+    mid: new Set([3, 4, 5, 6]),
+    lowmult: new Set([1, 2, 3, 4]),
+    highmult: new Set([5, 6, 7, 8]),
+  };
+  const prefIds = prefSets[mode];
+  if (!prefIds) return [...baseWeights];
+
   let prefTotal = 0;
   let otherTotal = 0;
   for (let i = 0; i < cardIds.length; i++) {
@@ -376,5 +523,4 @@ export function effectiveWeights(
     return (w / otherTotal) * OTHER_SHARE * 100;
   });
 }
-
 export const interStore = new InterStore();

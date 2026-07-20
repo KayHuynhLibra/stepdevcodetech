@@ -1,5 +1,6 @@
 import {
   effectiveWeights,
+  isPackMode,
   isPolicyMode,
   type InterMode,
   type PolicyMode,
@@ -117,24 +118,61 @@ export function policyWeights(
   const totalStake = realBets.reduce((a, b) => a + Math.max(0, b), 0);
   if (totalStake <= 0) return CARDS.map((c) => c.weight);
 
-  if (mode === "fed") {
+  const modeKey = mode as PolicyMode;
+
+  if (modeKey === "fed" || modeKey === "softfed") {
     const profits = houseProfitByCard(realBets);
     const maxProfit = Math.max(...profits);
     const mask = profits.map((p) => (p === maxProfit ? 1 : 0));
     const n = mask.reduce<number>((a, b) => a + b, 0) || 1;
-    return mask.map((m) => (m / n) * 100);
+    let w = mask.map((m) => (m / n) * 100);
+    if (modeKey === "softfed") {
+      w = w.map((x, i) => x * 0.55 + CARDS[i]!.weight * 0.45);
+    }
+    return w;
   }
 
-  if (mode === "hedge") {
+  if (modeKey === "hedge") {
     const profits = houseProfitByCard(realBets);
     return profits.map((p) => Math.pow(Math.max(p, 0) + 1, 2));
   }
 
-  if (mode === "app") {
-    // Scale tiền ÷10: chia nhỏ hơn để vẫn lệch rõ
+  if (modeKey === "app") {
     return liab.map((L) => 1 / Math.pow(1 + L / 50, 3.5));
   }
+  if (modeKey === "softapp") {
+    return liab.map((L) => 1 / Math.pow(1 + L / 80, 2));
+  }
+  if (modeKey === "contrarian" || modeKey === "sparse") {
+    return liab.map((L) => 1 / (1 + L));
+  }
+  if (modeKey === "dense" || modeKey === "momentum") {
+    return liab.map((L) => Math.pow(1 + L / 30, 2));
+  }
   return liab.map((L) => Math.pow(1 + L / 50, 3.5));
+}
+
+/** Hot: tăng lá vừa thắng (ngược cool nhẹ). */
+export function hotWeights(
+  baseWeights: number[],
+  recentWins: number[] = [],
+): number[] {
+  const hotIds = new Set(recentWins.slice(0, 3));
+  return baseWeights.map((w, i) => {
+    const id = CARDS[i]!.id;
+    return hotIds.has(id) ? w * 1.85 : w;
+  });
+}
+
+/** Wild: 2 lá ngẫu nhiên chiếm ~90% xác suất. */
+export function wildWeights(baseWeights: number[]): number[] {
+  const i1 = Math.floor(Math.random() * CARDS.length);
+  let i2 = Math.floor(Math.random() * CARDS.length);
+  if (i2 === i1) i2 = (i2 + 1) % CARDS.length;
+  return baseWeights.map((w, i) => {
+    if (i === i1 || i === i2) return w * 8;
+    return w * 0.15;
+  });
 }
 
 /** Cool: giảm mạnh weight các lá thắng gần nhất. */
@@ -154,6 +192,9 @@ function resolveWeights(
   realBets?: number[],
   recentWins?: number[],
 ): number[] {
+  if (isPackMode(mode)) {
+    return CARDS.map((c) => c.weight);
+  }
   if (mode === "flat") {
     return CARDS.map(() => 12.5);
   }
@@ -162,6 +203,15 @@ function resolveWeights(
       CARDS.map((c) => c.weight),
       recentWins ?? [],
     );
+  }
+  if (mode === "hot") {
+    return hotWeights(
+      CARDS.map((c) => c.weight),
+      recentWins ?? [],
+    );
+  }
+  if (mode === "wild") {
+    return wildWeights(CARDS.map((c) => c.weight));
   }
   if (isPolicyMode(mode)) return policyWeights(mode, realBets ?? []);
   return effectiveWeights(

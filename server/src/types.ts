@@ -124,8 +124,8 @@ export interface PublicState {
   yourBets?: number[];
   guessesToday?: number;
   winToday?: number;
-  onlineReal: number;
-  onlineDisplay: number;
+  onlineReal?: number;
+  onlineDisplay?: number;
   /** Danh sách nhân vật — chỉ gửi khi viewer là admin/mainadmin */
   onlinePlayers?: OnlinePlayerPublic[];
   /** VIP/ID viewer đăng nhập (không cần online list) */

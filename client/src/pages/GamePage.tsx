@@ -1392,30 +1392,32 @@ export default function GamePage() {
           )}
         </button>
         ) : (
-        <div
-          className="game-task mt-2 flex w-full items-center gap-2 px-3 py-1.5 text-[10px] text-[var(--play-muted)]"
-          aria-live="polite"
-        >
-          <span
-            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-              connected ? "ui-live-dot" : "bg-rose-400"
-            }`}
-            aria-hidden
-          />
-          <span className="flex-1 font-semibold text-[var(--play-ink)]">
-            {connected
-              ? `${state?.onlineDisplay ?? 0} online`
-              : "Mất kết nối"}
-            {!sessionAuthed &&
-              connected &&
-              state?.guestPlayRemainingMs != null &&
-              state.guestPlayRemainingMs > 0 && (
-                <span className="ml-1.5 text-[9px] font-semibold text-amber-800 tabular-nums">
-                  · Khách còn {formatDuration(state.guestPlayRemainingMs)}
+        <>
+          {!connected && (
+            <div
+              className="game-task mt-2 flex w-full items-center gap-2 px-3 py-1.5 text-[10px] text-[var(--play-muted)]"
+              aria-live="polite"
+            >
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-400"
+                aria-hidden
+              />
+              <span className="font-semibold text-[var(--play-ink)]">
+                Mất kết nối
+              </span>
+            </div>
+          )}
+          {connected &&
+            !sessionAuthed &&
+            state?.guestPlayRemainingMs != null &&
+            state.guestPlayRemainingMs > 0 && (
+              <div className="game-task mt-2 px-3 py-1.5 text-[10px] text-amber-900">
+                <span className="font-semibold tabular-nums">
+                  Khách còn {formatDuration(state.guestPlayRemainingMs)}
                 </span>
-              )}
-          </span>
-        </div>
+              </div>
+            )}
+        </>
         )}
 
         {/* ===== ZONE 3: Lịch sử nhanh (strip) ===== */}

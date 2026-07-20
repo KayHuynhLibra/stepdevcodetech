@@ -134,7 +134,7 @@ export interface GameState {
   guessesToday?: number;
   winToday?: number;
   onlineReal?: number;
-  onlineDisplay: number;
+  onlineDisplay?: number;
   onlinePlayers?: OnlinePlayerPublic[];
   viewerAuth?: {
     code?: string;
