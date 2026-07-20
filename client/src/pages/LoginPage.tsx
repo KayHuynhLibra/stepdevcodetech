@@ -1,12 +1,17 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
+  AUTH_CHANGE_PASSWORD,
+  AUTH_LOGIN,
+  AUTH_RECOVER,
+  AUTH_REGISTER,
   api,
   changePassword,
   clearSession,
   getStoredUser,
   getToken,
   homePath,
+  postAuthPath,
   recoverPassword,
   saveSession,
   type AuthUser,
@@ -19,30 +24,52 @@ import {
 } from "../guest";
 import { AppShell } from "../components/AppShell";
 
-type Mode = "login" | "register" | "changePw" | "recover";
+export type AuthPage = "login" | "register" | "recover" | "changePw";
 
-export default function LoginPage() {
+function roleLabel(role: AuthUser["role"]): string {
+  if (role === "mainadmin") return "Mainadmin";
+  if (role === "admin") return "Admin";
+  return "Player";
+}
+
+export default function LoginPage({ page }: { page: AuthPage }) {
   const nav = useNavigate();
-  const [mode, setMode] = useState<Mode>("login");
+  const location = useLocation();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [nextPassword, setNextPassword] = useState("");
   const [recoveryCode, setRecoveryCode] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(
+    () => (location.state as { info?: string } | null)?.info ?? null,
+  );
   const [loading, setLoading] = useState(false);
   const guestHref = useMemo(() => guestPlayPath(ensureGuestCode()), []);
 
   useEffect(() => {
+    const msg = (location.state as { info?: string } | null)?.info;
+    if (msg) setInfo(msg);
+  }, [location.key, location.state]);
+
+  useEffect(() => {
+    const token = getToken();
     const user = getStoredUser();
-    if (getToken() && user) {
-      if (user.mustChangePassword) {
-        setMode("changePw");
+
+    if (page === "changePw") {
+      if (!token || !user) {
+        nav(AUTH_LOGIN, { replace: true });
         return;
       }
-      nav(homePath(user), { replace: true });
+      if (!user.mustChangePassword) {
+        nav(homePath(user), { replace: true });
+      }
+      return;
     }
-  }, [nav]);
+
+    if (token && user) {
+      nav(postAuthPath(user), { replace: true });
+    }
+  }, [page, nav]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -50,26 +77,27 @@ export default function LoginPage() {
     setInfo(null);
     setLoading(true);
     try {
-      if (mode === "changePw") {
+      if (page === "changePw") {
         await changePassword(password, nextPassword);
         clearSession();
-        setMode("login");
         setPassword("");
         setNextPassword("");
-        setInfo("Đã đổi mật khẩu. Đăng nhập lại với mật khẩu mới.");
+        nav(AUTH_LOGIN, {
+          replace: true,
+          state: { info: "Đã đổi mật khẩu. Đăng nhập lại với mật khẩu mới." },
+        });
         return;
       }
-      if (mode === "recover") {
+      if (page === "recover") {
         await recoverPassword(username, recoveryCode, nextPassword);
-        setMode("login");
-        setPassword("");
-        setNextPassword("");
-        setRecoveryCode("");
-        setInfo("Đã đặt mật khẩu mới — đăng nhập lại.");
+        nav(AUTH_LOGIN, {
+          replace: true,
+          state: { info: "Đã đặt mật khẩu mới — đăng nhập lại." },
+        });
         return;
       }
       const path =
-        mode === "login" ? "/api/auth/login" : "/api/auth/register";
+        page === "login" ? "/api/auth/login" : "/api/auth/register";
       const merge = getGuestMergePayload();
       const data = await api<{
         ok: true;
@@ -82,7 +110,7 @@ export default function LoginPage() {
       });
       saveSession(data.token, data.user);
       clearGuestMergePending();
-      if (data.user.recoveryCode && mode === "register") {
+      if (data.user.recoveryCode && page === "register") {
         setInfo(
           `Lưu mã khôi phục: ${data.user.recoveryCode} (cần khi quên mật khẩu)`,
         );
@@ -95,13 +123,16 @@ export default function LoginPage() {
         );
       }
       if (data.user.mustChangePassword) {
-        setMode("changePw");
         setPassword("");
-        setInfo("Tài khoản seed — vui lòng đổi mật khẩu trước khi tiếp tục.");
+        nav(AUTH_CHANGE_PASSWORD, {
+          replace: true,
+          state: {
+            info: "Tài khoản seed — vui lòng đổi mật khẩu trước khi tiếp tục.",
+          },
+        });
         return;
       }
-      if (data.user.recoveryCode && mode === "register") {
-        // Cho user đọc mã trước khi vào app
+      if (data.user.recoveryCode && page === "register") {
         window.setTimeout(() => nav(homePath(data.user), { replace: true }), 2200);
         return;
       }
@@ -114,13 +145,24 @@ export default function LoginPage() {
   };
 
   const title =
-    mode === "changePw"
+    page === "changePw"
       ? "Đổi mật khẩu bắt buộc"
-      : mode === "recover"
+      : page === "recover"
         ? "Quên mật khẩu"
-        : mode === "login"
+        : page === "login"
           ? "Đăng nhập"
           : "Đăng ký tài khoản";
+
+  const changePwUser = page === "changePw" ? getStoredUser() : null;
+
+  const leaveChangePw = () => {
+    clearSession();
+    setPassword("");
+    setNextPassword("");
+    setError(null);
+    setInfo(null);
+    nav(AUTH_LOGIN, { replace: true });
+  };
 
   return (
     <AppShell center maxWidth="sm">
@@ -140,8 +182,30 @@ export default function LoginPage() {
             </div>
           </div>
 
+          {changePwUser && (
+            <div
+              className="mb-4 rounded-2xl border border-[var(--gold)]/35 bg-white/75 px-3.5 py-3 shadow-sm"
+              aria-live="polite"
+            >
+              <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-[var(--play-muted)]">
+                Đang đổi mật khẩu cho
+              </p>
+              <p className="play-heading mt-0.5 text-base">
+                {changePwUser.username}
+              </p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                <span className="identity-chip identity-chip--code identity-chip--code-lg font-mono">
+                  ID {String(changePwUser.code || changePwUser.id).toUpperCase()}
+                </span>
+                <span className="text-xs font-semibold text-[var(--wood-deep)]">
+                  {roleLabel(changePwUser.role)}
+                </span>
+              </div>
+            </div>
+          )}
+
           <form onSubmit={submit} className="space-y-3">
-            {mode !== "changePw" && (
+            {page !== "changePw" && (
               <label className="block text-xs font-semibold text-[var(--play-muted)]">
                 Username
                 <input
@@ -153,7 +217,7 @@ export default function LoginPage() {
                 />
               </label>
             )}
-            {mode === "recover" && (
+            {page === "recover" && (
               <label className="block text-xs font-semibold text-[var(--play-muted)]">
                 Mã khôi phục
                 <input
@@ -168,28 +232,30 @@ export default function LoginPage() {
               </label>
             )}
             <label className="block text-xs font-semibold text-[var(--play-muted)]">
-              {mode === "changePw"
+              {page === "changePw"
                 ? "Mật khẩu hiện tại"
-                : mode === "recover"
+                : page === "recover"
                   ? "Mật khẩu mới"
                   : "Mật khẩu"}
               <input
                 type="password"
-                value={mode === "recover" ? nextPassword : password}
+                value={page === "recover" ? nextPassword : password}
                 onChange={(e) =>
-                  mode === "recover"
+                  page === "recover"
                     ? setNextPassword(e.target.value)
                     : setPassword(e.target.value)
                 }
                 autoComplete={
-                  mode === "login" ? "current-password" : "new-password"
+                  page === "login" ? "current-password" : "new-password"
                 }
                 className="app-input mt-1"
                 required
-                minLength={mode === "recover" || mode === "register" ? 6 : undefined}
+                minLength={
+                  page === "recover" || page === "register" ? 6 : undefined
+                }
               />
             </label>
-            {mode === "changePw" && (
+            {page === "changePw" && (
               <label className="block text-xs font-semibold text-[var(--play-muted)]">
                 Mật khẩu mới
                 <input
@@ -218,58 +284,61 @@ export default function LoginPage() {
             <button type="submit" disabled={loading} className="app-btn-primary">
               {loading
                 ? "Đang xử lý…"
-                : mode === "changePw"
+                : page === "changePw"
                   ? "Đổi mật khẩu"
-                  : mode === "recover"
+                  : page === "recover"
                     ? "Đặt mật khẩu mới"
-                    : mode === "login"
+                    : page === "login"
                       ? "Đăng nhập"
                       : "Tạo tài khoản"}
             </button>
           </form>
 
-          {mode !== "changePw" && (
-            <div className="mt-3 space-y-2 text-center">
+          {page === "changePw" && (
+            <div className="mt-3 text-center">
               <button
                 type="button"
-                onClick={() => {
-                  setMode(mode === "login" ? "register" : "login");
-                  setError(null);
-                  setInfo(null);
-                }}
-                className="w-full text-xs font-semibold text-[var(--play-ink)] underline-offset-2 hover:underline"
+                onClick={leaveChangePw}
+                className="text-xs font-semibold text-[var(--play-ink)] underline-offset-2 hover:underline"
               >
-                {mode === "login"
-                  ? "Chưa có tài khoản? Đăng ký"
-                  : mode === "register"
-                    ? "Đã có tài khoản? Đăng nhập"
-                    : "Quay lại đăng nhập"}
+                Đăng nhập tài khoản khác
               </button>
-              {mode === "login" && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode("recover");
-                    setError(null);
-                    setInfo(null);
-                  }}
-                  className="w-full text-xs font-semibold text-[var(--wood-deep)] underline-offset-2 hover:underline"
-                >
-                  Quên mật khẩu?
-                </button>
+            </div>
+          )}
+
+          {page !== "changePw" && (
+            <div className="mt-3 space-y-2 text-center">
+              {page === "login" && (
+                <>
+                  <Link
+                    to={AUTH_REGISTER}
+                    className="block w-full text-xs font-semibold text-[var(--play-ink)] underline-offset-2 hover:underline"
+                  >
+                    Chưa có tài khoản? Đăng ký
+                  </Link>
+                  <Link
+                    to={AUTH_RECOVER}
+                    className="block w-full text-xs font-semibold text-[var(--wood-deep)] underline-offset-2 hover:underline"
+                  >
+                    Quên mật khẩu?
+                  </Link>
+                </>
               )}
-              {mode === "recover" && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode("login");
-                    setError(null);
-                    setInfo(null);
-                  }}
-                  className="w-full text-xs font-semibold text-[var(--play-ink)] underline-offset-2 hover:underline"
+              {page === "register" && (
+                <Link
+                  to={AUTH_LOGIN}
+                  className="block w-full text-xs font-semibold text-[var(--play-ink)] underline-offset-2 hover:underline"
+                >
+                  Đã có tài khoản? Đăng nhập
+                </Link>
+              )}
+              {page === "recover" && (
+                <Link
+                  to={AUTH_LOGIN}
+                  className="block w-full text-xs font-semibold text-[var(--play-ink)] underline-offset-2 hover:underline"
                 >
                   Quay lại đăng nhập
-                </button>
+                </Link>
               )}
             </div>
           )}

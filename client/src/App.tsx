@@ -1,10 +1,13 @@
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import {
+  AUTH_CHANGE_PASSWORD,
+  AUTH_LOGIN,
   getStoredUser,
   getToken,
   homePath,
   isStaff,
   playPath,
+  postAuthPath,
   type AuthUser,
   type UserRole,
 } from "./auth";
@@ -24,8 +27,10 @@ function RequireAuth({
 }) {
   const token = getToken();
   const user = getStoredUser();
-  if (!token || !user) return <Navigate to="/login" replace />;
-  if (user.mustChangePassword) return <Navigate to="/login" replace />;
+  if (!token || !user) return <Navigate to={AUTH_LOGIN} replace />;
+  if (user.mustChangePassword) {
+    return <Navigate to={AUTH_CHANGE_PASSWORD} replace />;
+  }
 
   if (role === "mainadmin" && user.role !== "mainadmin") {
     return <Navigate to={homePath(user)} replace />;
@@ -56,10 +61,10 @@ function RequireOwnCode({
   const user = getStoredUser();
 
   if (!token || !user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={AUTH_LOGIN} replace />;
   }
   if (user.mustChangePassword) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={AUTH_CHANGE_PASSWORD} replace />;
   }
 
   const mine = String(user.code || user.id);
@@ -99,7 +104,7 @@ function RequireOwnGuest() {
   const { guestCode } = useParams();
   const user = getStoredUser();
   if (getToken() && user) {
-    return <Navigate to={playPath(user)} replace />;
+    return <Navigate to={postAuthPath(user)} replace />;
   }
 
   const mine = ensureGuestCode();
@@ -113,21 +118,27 @@ function RequireOwnGuest() {
 function GuestEntry() {
   const user = getStoredUser();
   if (getToken() && user) {
-    return <Navigate to={playPath(user)} replace />;
+    return <Navigate to={postAuthPath(user)} replace />;
   }
   return <Navigate to={guestPlayPath(ensureGuestCode())} replace />;
 }
 
 function LegacyRoleRedirect(_props: { role: UserRole }) {
   const user = getStoredUser();
-  if (!getToken() || !user) return <Navigate to="/login" replace />;
-  return <Navigate to={homePath(user)} replace />;
+  if (!getToken() || !user) return <Navigate to={AUTH_LOGIN} replace />;
+  return <Navigate to={postAuthPath(user)} replace />;
 }
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+      <Route path="/login" element={<LoginPage page="login" />} />
+      <Route path="/register" element={<LoginPage page="register" />} />
+      <Route path="/recover" element={<LoginPage page="recover" />} />
+      <Route
+        path="/change-password"
+        element={<LoginPage page="changePw" />}
+      />
 
       <Route
         path="/player/:userCode"
@@ -219,7 +230,11 @@ export default function App() {
         path="/"
         element={
           <Navigate
-            to={getToken() ? homePath(getStoredUser() as AuthUser) : "/login"}
+            to={
+              getToken()
+                ? postAuthPath(getStoredUser() as AuthUser)
+                : AUTH_LOGIN
+            }
             replace
           />
         }

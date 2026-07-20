@@ -34,6 +34,21 @@ export const VIP_ROUNDS_REQUIRED = 10_000;
 const TOKEN_KEY = "tarot_token";
 const USER_KEY = "tarot_user";
 
+/** Route auth — tách URL để tránh lẫn session login vs đổi MK bắt buộc */
+export const AUTH_LOGIN = "/login";
+export const AUTH_REGISTER = "/register";
+export const AUTH_RECOVER = "/recover";
+export const AUTH_CHANGE_PASSWORD = "/change-password";
+
+/** Sau khi có session: dashboard hoặc bước đổi MK bắt buộc */
+export function postAuthPath(
+  user: { role: UserRole; code?: string; id: string; mustChangePassword?: boolean } | null,
+): string {
+  if (!user) return AUTH_LOGIN;
+  if (user.mustChangePassword) return AUTH_CHANGE_PASSWORD;
+  return homePath(user);
+}
+
 export function isStaff(user: { role: UserRole } | null | undefined): boolean {
   return user?.role === "admin" || user?.role === "mainadmin";
 }

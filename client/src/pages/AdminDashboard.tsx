@@ -458,6 +458,18 @@ export default function AdminDashboard() {
   >("all");
   const [hisBusy, setHisBusy] = useState(false);
   const [hisData, setHisData] = useState<UserHisPayload | null>(null);
+  const [pwReset, setPwReset] = useState<{
+    id: string;
+    username: string;
+    code: string;
+    role: string;
+  } | null>(null);
+  const [pwResetValue, setPwResetValue] = useState("");
+  const [pwResetBusy, setPwResetBusy] = useState(false);
+  const [pwResetResult, setPwResetResult] = useState<{
+    tempPassword: string;
+    recoveryCode?: string;
+  } | null>(null);
   const [toolsQ, setToolsQ] = useState("");
   const [toolsBusy, setToolsBusy] = useState(false);
   const [toolsResult, setToolsResult] = useState<{
@@ -743,7 +755,35 @@ export default function AdminDashboard() {
     }
   };
 
-  const resetUserPassword = async (userId: string) => {
+  const openPwReset = (u: {
+    id: string;
+    username: string;
+    code?: string;
+    role: string;
+  }) => {
+    setPwReset({
+      id: u.id,
+      username: u.username,
+      code: u.code || "",
+      role: u.role,
+    });
+    setPwResetValue("");
+    setPwResetResult(null);
+    setPwResetBusy(false);
+  };
+
+  const closePwReset = () => {
+    setPwReset(null);
+    setPwResetValue("");
+    setPwResetResult(null);
+    setPwResetBusy(false);
+  };
+
+  const submitPwReset = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!pwReset || pwResetBusy) return;
+    setPwResetBusy(true);
+    setPwResetResult(null);
     try {
       const r = await api<{
         ok: true;
@@ -751,15 +791,21 @@ export default function AdminDashboard() {
         recoveryCode?: string;
       }>("/api/admin/user-reset-password", {
         method: "POST",
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({
+          userId: pwReset.id,
+          password: pwResetValue.trim(),
+        }),
       });
-      setMsg(
-        `MK tạm: ${r.tempPassword}` +
-          (r.recoveryCode ? ` · recovery: ${r.recoveryCode}` : ""),
-      );
+      setPwResetResult({
+        tempPassword: r.tempPassword,
+        recoveryCode: r.recoveryCode,
+      });
+      setMsg(`Đã đặt mật khẩu cho ${pwReset.username}`);
       await load();
     } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi");
+      setMsg(err instanceof Error ? err.message : "Lỗi đặt MK");
+    } finally {
+      setPwResetBusy(false);
     }
   };
 
@@ -2015,7 +2061,7 @@ export default function AdminDashboard() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => resetUserPassword(u.id)}
+                        onClick={() => openPwReset(u)}
                         className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
                       >
                         Reset MK
@@ -3527,6 +3573,109 @@ export default function AdminDashboard() {
                   </ul>
                 </div>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {pwReset && isStaff(me) && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/45 p-3 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pw-reset-title"
+          onClick={() => {
+            if (!pwResetBusy) closePwReset();
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-[var(--play-cream,#f7f1e6)] p-4 shadow-xl ring-1 ring-[var(--wood-deep)]/20"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-start justify-between gap-2">
+              <div>
+                <p id="pw-reset-title" className="play-heading text-sm">
+                  Đặt mật khẩu user
+                </p>
+                <p className="text-[10px] text-[var(--play-muted)]">
+                  User sẽ bị đăng xuất · bắt đổi MK khi login lại
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/20"
+                disabled={pwResetBusy}
+                onClick={closePwReset}
+              >
+                Đóng
+              </button>
+            </div>
+
+            <div className="mb-3 rounded-lg bg-white/80 px-2.5 py-2 text-[11px] ring-1 ring-[var(--wood-deep)]/10">
+              <p className="font-semibold text-[var(--play-ink)]">
+                {pwReset.username}{" "}
+                <span className="text-[var(--wood-deep)]">{pwReset.role}</span>
+              </p>
+              <p className="mt-0.5 text-[var(--play-muted)]">
+                <span className="identity-chip identity-chip--code !text-[9px] font-mono">
+                  ID {pwReset.code || "—"}
+                </span>
+              </p>
+            </div>
+
+            {pwResetResult ? (
+              <div className="space-y-3 text-[11px]">
+                <div className="rounded-lg bg-[var(--wood-deep)]/10 px-3 py-2.5 ring-1 ring-[var(--gold)]/30">
+                  <p className="text-[10px] font-semibold uppercase text-[var(--play-muted)]">
+                    Mật khẩu mới (gửi cho user)
+                  </p>
+                  <p className="mt-1 break-all font-mono text-sm font-bold text-[var(--play-ink)]">
+                    {pwResetResult.tempPassword}
+                  </p>
+                  {pwResetResult.recoveryCode && (
+                    <p className="mt-2 text-[var(--play-muted)]">
+                      Mã khôi phục mới:{" "}
+                      <span className="font-mono font-bold text-[var(--play-ink)]">
+                        {pwResetResult.recoveryCode}
+                      </span>
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="app-btn-primary w-full"
+                  onClick={closePwReset}
+                >
+                  Đóng
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={submitPwReset} className="space-y-3">
+                <label className="block text-xs font-semibold text-[var(--play-muted)]">
+                  Mật khẩu mới
+                  <input
+                    type="text"
+                    value={pwResetValue}
+                    onChange={(e) => setPwResetValue(e.target.value)}
+                    autoComplete="new-password"
+                    className="app-input mt-1 font-mono"
+                    placeholder="Để trống = MK tạm ngẫu nhiên"
+                    minLength={pwResetValue.trim() ? 6 : undefined}
+                    disabled={pwResetBusy}
+                  />
+                </label>
+                <p className="text-[10px] text-[var(--play-muted)]">
+                  Tối thiểu 6 ký tự nếu tự nhập. Để trống hệ thống tạo dạng{" "}
+                  <span className="font-mono">Tmp…</span>.
+                </p>
+                <button
+                  type="submit"
+                  disabled={pwResetBusy}
+                  className="app-btn-primary w-full"
+                >
+                  {pwResetBusy ? "Đang lưu…" : "Lưu mật khẩu"}
+                </button>
+              </form>
             )}
           </div>
         </div>
