@@ -221,7 +221,7 @@ export default function UserDashboard() {
       <section id="avatar-picker" className="app-panel mt-4 p-3">
         <p className="play-heading text-sm">Đổi avatar</p>
         <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-          Chọn mẫu hoặc tải ảnh từ máy — hiện trên bàn chơi & bảng xếp hạng
+          Avatar &amp; ID hiện với người chơi khác trên bàn Tarot / Bánh xe Arcana
         </p>
         <label className="mt-2 flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-[var(--cream)]/80 px-3 py-2.5 text-sm font-bold text-[var(--wood-deep)] ring-1 ring-[var(--amber)]/40">
           <input

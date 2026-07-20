@@ -144,6 +144,18 @@ interface UserHisPayload {
     result: string;
     profit: number;
   }[];
+  recentArcanaSpins?: {
+    id: string;
+    at: number;
+    username: string;
+    stake: number;
+    pickId: number;
+    pickIds?: number[];
+    winId: number;
+    won: boolean;
+    profit: number;
+    seed: string;
+  }[];
   stake24h: {
     stake24h: number;
     bets24h: number;
@@ -488,6 +500,7 @@ export default function AdminDashboard() {
     }[]
   >([]);
   const [arcanaBusy, setArcanaBusy] = useState(false);
+  const [arcanaSpinFilter, setArcanaSpinFilter] = useState("");
 
   const selectManagedGame = (g: ManagedGame) => {
     setManagedGame(g);
@@ -1019,13 +1032,36 @@ export default function AdminDashboard() {
     }
   };
 
-  const loadArcanaSpins = async () => {
+  const loadArcanaSpins = async (filterRaw?: string) => {
     try {
+      const q = (filterRaw ?? arcanaSpinFilter).trim();
+      let userId = "";
+      if (q) {
+        const match = data?.users.find(
+          (u) =>
+            u.id === q ||
+            u.code?.toUpperCase() === q.toUpperCase() ||
+            u.username.toLowerCase() === q.toLowerCase(),
+        );
+        if (!match) {
+          setMsg("Không tìm thấy user/code để lọc spins");
+          return;
+        }
+        userId = match.id;
+      }
+      const url = userId
+        ? `/api/mainadmin/arcana/spins?limit=80&userId=${encodeURIComponent(userId)}`
+        : "/api/mainadmin/arcana/spins?limit=80";
       const r = await api<{
         ok: true;
         spins: typeof arcanaSpins;
-      }>("/api/mainadmin/arcana/spins?limit=80");
+      }>(url);
       setArcanaSpins(r.spins);
+      setMsg(
+        userId
+          ? `Đã tải ${r.spins.length} spin của user`
+          : `Đã tải ${r.spins.length} spin gần đây`,
+      );
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Lỗi tải spin");
     }
@@ -1851,9 +1887,14 @@ export default function AdminDashboard() {
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex min-w-0 items-center gap-2">
                         <img
-                          src={u.avatar || "/assets/ui/avatar-default.png"}
+                          src={normalizeAvatar(u.avatar)}
                           alt=""
                           className="h-8 w-8 rounded-full object-cover"
+                          onError={(e) => {
+                            const el = e.currentTarget;
+                            if (el.src.includes("avatar-default")) return;
+                            el.src = "/assets/ui/avatar-default.png";
+                          }}
                         />
                         <div className="min-w-0">
                           <p className="font-semibold text-[var(--play-ink)]">
@@ -3253,15 +3294,23 @@ export default function AdminDashboard() {
             </ul>
           </section>
           <section className="app-panel mt-3 p-3">
-            <div className="mb-2 flex items-center justify-between">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <p className="play-heading text-sm">Log quay gần đây</p>
-              <button
-                type="button"
-                className="text-[11px] font-bold text-[var(--wood-deep)] underline"
-                onClick={() => void loadArcanaSpins()}
-              >
-                Tải lại
-              </button>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <input
+                  value={arcanaSpinFilter}
+                  onChange={(e) => setArcanaSpinFilter(e.target.value)}
+                  placeholder="Lọc user / ID…"
+                  className="app-input !max-w-[9rem] !py-1 text-[11px]"
+                />
+                <button
+                  type="button"
+                  className="text-[11px] font-bold text-[var(--wood-deep)] underline"
+                  onClick={() => void loadArcanaSpins()}
+                >
+                  Tải
+                </button>
+              </div>
             </div>
             <ul className="max-h-56 space-y-1.5 overflow-y-auto text-[11px]">
               {arcanaSpins.length === 0 ? (
@@ -3422,7 +3471,7 @@ export default function AdminDashboard() {
 
                 <div>
                   <p className="mb-1 text-xs font-bold text-[var(--play-ink)]">
-                    Cược gần
+                    Cược gần (Tarot)
                   </p>
                   <ul className="max-h-40 space-y-1 overflow-y-auto">
                     {hisData.recentBets.length === 0 && (
@@ -3436,6 +3485,43 @@ export default function AdminDashboard() {
                         Ván #{b.round} · lá {b.cardId} · {formatXu(b.amount)} ·{" "}
                         {b.result} · {formatXu(b.profit)} ·{" "}
                         {new Date(b.at).toLocaleString("vi-VN")}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div>
+                  <p className="mb-1 text-xs font-bold text-[var(--play-ink)]">
+                    Lịch sử Bánh xe Arcana
+                  </p>
+                  <ul className="max-h-48 space-y-1 overflow-y-auto">
+                    {(hisData.recentArcanaSpins?.length ?? 0) === 0 && (
+                      <li className="text-[var(--play-muted)]">
+                        Chưa có lượt quay Arcana
+                      </li>
+                    )}
+                    {(hisData.recentArcanaSpins ?? []).map((sp) => (
+                      <li
+                        key={sp.id}
+                        className="rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/10"
+                      >
+                        {formatXu(sp.stake)} · picks [
+                        {(sp.pickIds?.length ? sp.pickIds : [sp.pickId]).join(
+                          ", ",
+                        )}
+                        ] → #{sp.winId} ·{" "}
+                        <span
+                          className={
+                            sp.won
+                              ? "text-[var(--jade-deep)]"
+                              : "text-rose-600"
+                          }
+                        >
+                          {sp.won ? "win" : "lose"} {formatXu(sp.profit)}
+                        </span>
+                        <span className="block text-[10px] text-[var(--play-muted)]">
+                          {new Date(sp.at).toLocaleString("vi-VN")}
+                        </span>
                       </li>
                     ))}
                   </ul>

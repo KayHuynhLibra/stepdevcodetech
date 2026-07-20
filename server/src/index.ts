@@ -1122,6 +1122,7 @@ app.get("/api/mainadmin/users/:userId/history", (req, res) => {
     ipHistory: intel.ipHistory,
     relatedIps: guestIpStore.findIpsForUser(userId),
     recentBets: betStore.getByUser(userId, 20),
+    recentArcanaSpins: arcanaWheelStore.listSpins(40, userId),
     stake24h: betStore.getUserStats24h(userId),
   });
 });

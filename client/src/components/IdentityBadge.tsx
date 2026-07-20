@@ -67,9 +67,14 @@ export function IdentityBadge({
           <img
             src={avatar}
             alt=""
-            className={`rounded-full object-cover ring-2 ring-white shadow ${
-              compact ? "h-8 w-8" : "h-11 w-11"
+            className={`rounded-full object-cover ring-2 ring-[var(--gold)]/55 shadow ${
+              compact ? "h-9 w-9" : "h-14 w-14"
             }`}
+            onError={(e) => {
+              const el = e.currentTarget;
+              if (el.src.includes("avatar-default")) return;
+              el.src = DEFAULT_AVATAR;
+            }}
           />
           <span className="absolute -bottom-0.5 -right-0.5 rounded-full bg-[var(--wood-deep)] px-1 text-[8px] font-bold leading-tight text-[var(--cream)] ring-1 ring-[var(--gold)]/50">
             Đổi
@@ -80,9 +85,14 @@ export function IdentityBadge({
           <img
             src={avatar}
             alt=""
-            className={`rounded-full object-cover ring-2 ring-white shadow ${
-              compact ? "h-8 w-8" : "h-11 w-11"
+            className={`rounded-full object-cover ring-2 ring-[var(--gold)]/55 shadow ${
+              compact ? "h-9 w-9" : "h-14 w-14"
             }`}
+            onError={(e) => {
+              const el = e.currentTarget;
+              if (el.src.includes("avatar-default")) return;
+              el.src = DEFAULT_AVATAR;
+            }}
           />
         </span>
       )}
@@ -99,16 +109,16 @@ export function IdentityBadge({
         ) : (
           <p className={nameClass}>{name}</p>
         )}
-        <div className="mt-0.5 flex flex-wrap items-center gap-1">
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
           <span className="identity-chip identity-chip--role">
             {roleLabel(role)}
           </span>
           {code && (
             <span
-              className={`identity-chip identity-chip--code${
+              className={`identity-chip identity-chip--code identity-chip--code-lg${
                 user?.isVip ? " identity-chip--code-vip" : ""
               }`}
-              title={user?.isVip ? "ID VIP" : "ID"}
+              title={user?.isVip ? "ID VIP — hiện với người chơi khác" : "ID người chơi"}
             >
               ID {code}
             </span>

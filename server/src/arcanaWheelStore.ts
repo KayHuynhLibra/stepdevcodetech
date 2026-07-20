@@ -11,8 +11,11 @@ const CONFIG_PATH = join(DATA_DIR, "arcana-wheel.json");
 const SPINS_PATH = join(DATA_DIR, "arcana-spins.json");
 const SPINS_CAP = 2000;
 const RECENT_PUBLIC = 24;
-const CONFIG_VERSION = 2 as const;
-const PICK_COUNT = 3;
+const CONFIG_VERSION = 3 as const;
+const PICK_MIN = 1;
+const PICK_MAX = 8;
+const MAX_STAKE = 100_000;
+const DEFAULT_BET_TIERS = [300, 800, 1500, 3000, 10_000, 30_000, 100_000];
 
 export interface ArcanaSlot {
   id: number;
@@ -30,6 +33,9 @@ export interface ArcanaWheelConfig {
   version: typeof CONFIG_VERSION;
   enabled: boolean;
   betTiers: number[];
+  pickMin: number;
+  pickMax: number;
+  maxStake: number;
   slots: ArcanaSlot[];
   updatedAt: number;
   updatedBy?: string;
@@ -137,7 +143,10 @@ function defaultConfig(): ArcanaWheelConfig {
   return {
     version: CONFIG_VERSION,
     enabled: true,
-    betTiers: [300, 800, 1500, 3000],
+    betTiers: [...DEFAULT_BET_TIERS],
+    pickMin: PICK_MIN,
+    pickMax: PICK_MAX,
+    maxStake: MAX_STAKE,
     slots: DEFAULT_SLOTS.map((s) => ({ ...s })),
     updatedAt: Date.now(),
   };
@@ -146,13 +155,20 @@ function defaultConfig(): ArcanaWheelConfig {
 function needsMigration(parsed: {
   version?: number;
   slots?: ArcanaSlot[];
+  betTiers?: number[];
+  maxStake?: number;
 }): boolean {
   if (parsed.version !== CONFIG_VERSION) return true;
   if (!Array.isArray(parsed.slots) || parsed.slots.length !== 8) return true;
-  return parsed.slots.some(
-    (s) =>
-      typeof s.image === "string" && s.image.includes("/assets/cards/"),
-  );
+  if (parsed.slots.some((s) => typeof s.image === "string" && s.image.includes("/assets/cards/"))) {
+    return true;
+  }
+  if (typeof parsed.maxStake !== "number" || parsed.maxStake < MAX_STAKE) {
+    return true;
+  }
+  const tiers = parsed.betTiers ?? [];
+  if (!tiers.includes(MAX_STAKE)) return true;
+  return false;
 }
 
 function atomicWrite(path: string, data: unknown) {
@@ -174,13 +190,17 @@ function pickWeighted(slots: ArcanaSlot[]): ArcanaSlot {
   return slots[slots.length - 1]!;
 }
 
-function normalizePickIds(raw: unknown): number[] | null {
+function normalizePickIds(
+  raw: unknown,
+  pickMin: number,
+  pickMax: number,
+): number[] | null {
   if (!Array.isArray(raw)) return null;
   const ids = raw
     .map((n) => Math.floor(Number(n)))
     .filter((n) => Number.isFinite(n) && n > 0);
   const unique = [...new Set(ids)];
-  if (unique.length !== PICK_COUNT) return null;
+  if (unique.length < pickMin || unique.length > pickMax) return null;
   return unique;
 }
 
@@ -198,13 +218,16 @@ class ArcanaWheelStore {
       if (!existsSync(CONFIG_PATH)) {
         this.config = defaultConfig();
         this.saveConfig();
-        console.log("[arcana] Config created v2");
+        console.log("[arcana] Config created v3");
         return;
       }
       const parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as {
         version?: number;
         enabled?: boolean;
         betTiers?: number[];
+        pickMin?: number;
+        pickMax?: number;
+        maxStake?: number;
         slots?: ArcanaSlot[];
         updatedAt?: number;
         updatedBy?: string;
@@ -213,17 +236,24 @@ class ArcanaWheelStore {
       if (needsMigration(parsed)) {
         const base = defaultConfig();
         if (typeof parsed.enabled === "boolean") base.enabled = parsed.enabled;
-        if (Array.isArray(parsed.betTiers) && parsed.betTiers.length > 0) {
-          const tiers = parsed.betTiers
-            .map((n) => Math.floor(Number(n)))
-            .filter((n) => Number.isFinite(n) && n > 0);
-          if (tiers.length) base.betTiers = tiers;
+        // Keep character slots if already v2 art; else defaults
+        if (
+          Array.isArray(parsed.slots) &&
+          parsed.slots.length === 8 &&
+          !parsed.slots.some(
+            (s) =>
+              typeof s.image === "string" && s.image.includes("/assets/cards/"),
+          )
+        ) {
+          base.slots = parsed.slots.map((s) => ({ ...s }));
         }
         base.updatedAt = Date.now();
-        base.updatedBy = "migrate-v2";
+        base.updatedBy = "migrate-v3";
         this.config = base;
         this.saveConfig();
-        console.log("[arcana] Migrated config → v2 (new chars + ratios)");
+        console.log(
+          `[arcana] Migrated config → v3 · tiers=${base.betTiers.join(",")} · maxStake=${base.maxStake}`,
+        );
         return;
       }
 
@@ -231,6 +261,9 @@ class ArcanaWheelStore {
         ...defaultConfig(),
         ...parsed,
         version: CONFIG_VERSION,
+        pickMin: PICK_MIN,
+        pickMax: PICK_MAX,
+        maxStake: Math.max(MAX_STAKE, Math.floor(Number(parsed.maxStake) || MAX_STAKE)),
         slots:
           Array.isArray(parsed.slots) && parsed.slots.length === 8
             ? parsed.slots
@@ -239,11 +272,11 @@ class ArcanaWheelStore {
           Array.isArray(parsed.betTiers) && parsed.betTiers.length > 0
             ? parsed.betTiers
                 .map((n) => Math.floor(Number(n)))
-                .filter((n) => n > 0)
+                .filter((n) => n > 0 && n <= MAX_STAKE)
             : defaultConfig().betTiers,
       };
       console.log(
-        `[arcana] Config loaded v2 · enabled=${this.config.enabled} · tiers=${this.config.betTiers.join(",")}`,
+        `[arcana] Config loaded v3 · enabled=${this.config.enabled} · tiers=${this.config.betTiers.join(",")}`,
       );
     } catch (err) {
       console.warn("[arcana] Failed to load config:", err);
@@ -296,6 +329,9 @@ class ArcanaWheelStore {
   getConfig(): ArcanaWheelConfig {
     return {
       ...this.config,
+      pickMin: this.config.pickMin ?? PICK_MIN,
+      pickMax: this.config.pickMax ?? PICK_MAX,
+      maxStake: this.config.maxStake ?? MAX_STAKE,
       slots: this.config.slots.map((s) => ({ ...s })),
       betTiers: [...this.config.betTiers],
     };
@@ -306,7 +342,9 @@ class ArcanaWheelStore {
     return {
       enabled: cfg.enabled,
       betTiers: cfg.betTiers,
-      pickCount: PICK_COUNT,
+      pickMin: cfg.pickMin,
+      pickMax: cfg.pickMax,
+      maxStake: cfg.maxStake,
       slots: cfg.slots.map(({ id, key, name, nameVi, ratio, image }) => ({
         id,
         key,
@@ -417,17 +455,27 @@ class ArcanaWheelStore {
       return { ok: false, reason: "Bàn Bánh xe Arcana đang tạm khóa" };
     }
     const stake = Math.floor(Number(input.stake));
-    if (!this.config.betTiers.includes(stake)) {
+    const maxStake = this.config.maxStake ?? MAX_STAKE;
+    if (
+      !Number.isFinite(stake) ||
+      stake <= 0 ||
+      stake > maxStake ||
+      !this.config.betTiers.includes(stake)
+    ) {
       return { ok: false, reason: "Mức cược không hợp lệ" };
     }
 
-    let pickIds = normalizePickIds(input.pickIds);
+    const pickMin = this.config.pickMin ?? PICK_MIN;
+    const pickMax = this.config.pickMax ?? PICK_MAX;
+    let pickIds = normalizePickIds(input.pickIds, pickMin, pickMax);
     if (!pickIds && input.pickId != null) {
-      // Không chấp nhận 1 pick nữa — bắt buộc 3
-      return { ok: false, reason: "Phải chọn đúng 3 nhân vật" };
+      pickIds = normalizePickIds([input.pickId], pickMin, pickMax);
     }
     if (!pickIds) {
-      return { ok: false, reason: "Phải chọn đúng 3 nhân vật khác nhau" };
+      return {
+        ok: false,
+        reason: `Chọn từ ${pickMin} đến ${pickMax} nhân vật khác nhau`,
+      };
     }
     for (const id of pickIds) {
       if (!this.config.slots.some((s) => s.id === id)) {
@@ -496,4 +544,4 @@ class ArcanaWheelStore {
 }
 
 export const arcanaWheelStore = new ArcanaWheelStore();
-export { PICK_COUNT };
+export { PICK_MIN, PICK_MAX, MAX_STAKE };

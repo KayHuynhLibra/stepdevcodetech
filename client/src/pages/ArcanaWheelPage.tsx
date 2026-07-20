@@ -50,8 +50,9 @@ interface SpinResult {
 
 const SPIN_MS = 4200;
 const FULL_TURNS = 5;
-const PICK_COUNT = 3;
 const AUTO_GAP_MS = 600;
+const DEFAULT_PICK_MIN = 1;
+const DEFAULT_PICK_MAX = 8;
 
 function targetRotationDeg(
   winIndex: number,
@@ -211,7 +212,11 @@ export default function ArcanaWheelPage() {
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
   const [balance, setBalance] = useState(user?.balance ?? 0);
   const [enabled, setEnabled] = useState(true);
-  const [betTiers, setBetTiers] = useState<number[]>([300, 800, 1500, 3000]);
+  const [betTiers, setBetTiers] = useState<number[]>([
+    300, 800, 1500, 3000, 10_000, 30_000, 100_000,
+  ]);
+  const [pickMin, setPickMin] = useState(DEFAULT_PICK_MIN);
+  const [pickMax, setPickMax] = useState(DEFAULT_PICK_MAX);
   const [slots, setSlots] = useState<ArcanaSlotPublic[]>([]);
   const [recent, setRecent] = useState<RecentSpin[]>([]);
   const [stake, setStake] = useState(300);
@@ -273,6 +278,9 @@ export default function ArcanaWheelPage() {
       const r = await api<{
         enabled: boolean;
         betTiers: number[];
+        pickMin?: number;
+        pickMax?: number;
+        maxStake?: number;
         slots: ArcanaSlotPublic[];
         recent: RecentSpin[];
         balance: number;
@@ -280,6 +288,8 @@ export default function ArcanaWheelPage() {
       setEnabled(r.enabled);
       enabledRef.current = r.enabled;
       setBetTiers(r.betTiers);
+      setPickMin(r.pickMin ?? DEFAULT_PICK_MIN);
+      setPickMax(r.pickMax ?? DEFAULT_PICK_MAX);
       setSlots(r.slots);
       setRecent(r.recent);
       syncUserBalance(r.balance);
@@ -316,14 +326,19 @@ export default function ArcanaWheelPage() {
     if (spinning) return;
     setPickIds((prev) => {
       if (prev.includes(id)) return prev.filter((x) => x !== id);
-      if (prev.length >= PICK_COUNT) return prev;
+      if (prev.length >= pickMax) return prev;
       return [...prev, id];
     });
   };
 
   const runSpin = useCallback(async (): Promise<boolean> => {
     const picks = pickIdsRef.current;
-    if (spinningRef.current || picks.length !== PICK_COUNT || !slots.length) {
+    if (
+      spinningRef.current ||
+      picks.length < pickMin ||
+      picks.length > pickMax ||
+      !slots.length
+    ) {
       return false;
     }
     if (!enabledRef.current) {
@@ -383,14 +398,14 @@ export default function ArcanaWheelPage() {
       spinningRef.current = false;
       setSpinning(false);
     }
-  }, [slots]);
+  }, [slots, pickMin, pickMax]);
 
   // Auto loop
   useEffect(() => {
     if (!autoSpin || spinning || loading) return;
-    if (pickIds.length !== PICK_COUNT) {
+    if (pickIds.length < pickMin || pickIds.length > pickMax) {
       setAutoSpin(false);
-      setError("Chọn đúng 3 nhân vật để Auto");
+      setError(`Chọn từ ${pickMin}–${pickMax} nhân vật để Auto`);
       return;
     }
     const t = window.setTimeout(() => {
@@ -398,7 +413,16 @@ export default function ArcanaWheelPage() {
       void runSpin();
     }, AUTO_GAP_MS);
     return () => window.clearTimeout(t);
-  }, [autoSpin, spinning, loading, pickIds.length, lastResult, runSpin]);
+  }, [
+    autoSpin,
+    spinning,
+    loading,
+    pickIds.length,
+    pickMin,
+    pickMax,
+    lastResult,
+    runSpin,
+  ]);
 
   if (!user) {
     return (
@@ -414,7 +438,8 @@ export default function ArcanaWheelPage() {
   const canSpin =
     !spinning &&
     enabled &&
-    pickIds.length === PICK_COUNT &&
+    pickIds.length >= pickMin &&
+    pickIds.length <= pickMax &&
     !loading &&
     balance >= stake;
 
@@ -505,7 +530,7 @@ export default function ArcanaWheelPage() {
 
       <section className="app-panel mt-3 p-3">
         <p className="play-heading text-center text-sm">
-          CHỌN ĐÚNG 3 NHÂN VẬT ({pickIds.length}/{PICK_COUNT})
+          CHỌN {pickMin}–{pickMax} NHÂN VẬT ({pickIds.length}/{pickMax})
         </p>
         <div className="mt-2 grid grid-cols-4 gap-2">
           {slots.map((s) => {
@@ -545,7 +570,8 @@ export default function ArcanaWheelPage() {
         </div>
 
         <p className="mt-3 text-center text-[10px] text-[var(--play-muted)]">
-          1. Chọn số xu · 2. Chọn đúng 3 nhân vật · Trúng 1 trong 3 = thắng
+          1. Chọn số xu (tối đa 100.000) · 2. Chọn 1–{pickMax} nhân vật · Trúng
+          1 trong các ô đã chọn = thắng
         </p>
         <div className="mt-2 flex flex-wrap justify-center gap-2">
           {betTiers.map((t) => (
@@ -572,8 +598,8 @@ export default function ArcanaWheelPage() {
             disabled={spinning && !autoSpin}
             onChange={(e) => {
               const on = e.target.checked;
-              if (on && pickIds.length !== PICK_COUNT) {
-                setError("Chọn đúng 3 nhân vật trước khi Auto");
+              if (on && (pickIds.length < pickMin || pickIds.length > pickMax)) {
+                setError(`Chọn từ ${pickMin}–${pickMax} nhân vật trước khi Auto`);
                 return;
               }
               setAutoSpin(on);
@@ -603,8 +629,8 @@ export default function ArcanaWheelPage() {
                 ? "Đang quay…"
                 : autoSpin
                   ? "Dừng Auto"
-                  : pickIds.length !== PICK_COUNT
-                    ? `Chọn thêm ${PICK_COUNT - pickIds.length} NV`
+                  : pickIds.length < pickMin
+                    ? `Chọn thêm ${pickMin - pickIds.length} NV`
                     : `Quay số phận · ${formatXu(stake)} xu`}
           </button>
         </div>

@@ -1440,9 +1440,14 @@ export default function GamePage() {
                   title="Xem thông tin"
                 >
                   <img
-                    src={ace.avatar}
+                    src={normalizeAvatar(ace.avatar)}
                     alt=""
                     className="h-7 w-7 rounded-full object-cover ring-1 ring-white/25"
+                    onError={(e) => {
+                      const el = e.currentTarget;
+                      if (el.src.includes("avatar-default")) return;
+                      el.src = "/assets/ui/avatar-default.png";
+                    }}
                   />
                 </button>
                 <div className="min-w-0 flex-1">
@@ -1530,9 +1535,14 @@ export default function GamePage() {
                   title="Xem thông tin"
                 >
                   <img
-                    src={star.avatar}
+                    src={normalizeAvatar(star.avatar)}
                     alt=""
                     className="h-9 w-9 rounded-full object-cover ring-1 ring-[var(--gold)]/40"
+                    onError={(e) => {
+                      const el = e.currentTarget;
+                      if (el.src.includes("avatar-default")) return;
+                      el.src = "/assets/ui/avatar-default.png";
+                    }}
                   />
                 </button>
                 <div className="min-w-0 flex-1">
