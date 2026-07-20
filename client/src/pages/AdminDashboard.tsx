@@ -257,12 +257,23 @@ interface ArcanaSlotAdmin {
 }
 
 interface ArcanaConfig {
-  version: 1;
+  version: number;
   enabled: boolean;
   betTiers: number[];
+  pickMin?: number;
+  pickMax?: number;
+  maxStake?: number;
+  payoutScale?: number;
   slots: ArcanaSlotAdmin[];
   updatedAt: number;
   updatedBy?: string;
+}
+
+interface ArcanaRtpRow {
+  pickCount: number;
+  winProbability: number;
+  rtpSequential: number;
+  rtpOptimal: number;
 }
 
 interface ArcanaStats {
@@ -319,6 +330,7 @@ interface Overview {
   vaultArcana?: VaultSnapshot;
   arcanaStats?: ArcanaStats;
   arcanaConfig?: ArcanaConfig;
+  arcanaRtpPreview?: ArcanaRtpRow[];
   inter?: InterSnapshot;
   coupons?: {
     code: string;
@@ -1144,6 +1156,31 @@ export default function AdminDashboard() {
         }),
       });
       setMsg(`Đã lưu ${slot.nameVi}`);
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi");
+    } finally {
+      setArcanaBusy(false);
+    }
+  };
+
+  const saveArcanaPayoutScale = async () => {
+    if (!data?.arcanaConfig) return;
+    const el = document.getElementById(
+      "arcana-payout-scale",
+    ) as HTMLInputElement | null;
+    const payoutScale = Number(el?.value);
+    if (!Number.isFinite(payoutScale)) {
+      setMsg("payoutScale không hợp lệ");
+      return;
+    }
+    setArcanaBusy(true);
+    try {
+      await api("/api/mainadmin/arcana/config", {
+        method: "PATCH",
+        body: JSON.stringify({ payoutScale }),
+      });
+      setMsg("Đã lưu hệ số thưởng (payoutScale)");
       await load();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Lỗi");
@@ -3272,6 +3309,80 @@ export default function AdminDashboard() {
                     {formatXu(data.arcanaStats.vaultBalance)}
                   </p>
                 </div>
+              </div>
+            )}
+          </section>
+          <section className="app-panel mt-3 space-y-2 p-3">
+            <p className="play-heading text-sm">Cân bằng RTP (v4)</p>
+            <p className="text-[11px] text-[var(--play-muted)]">
+              Thưởng khi trúng = cược × tỷ lệ × payoutScale ÷ số ô chọn. RTP %
+              = kỳ vọng hoàn trả / cược (100% = hòa vốn).
+            </p>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="text-xs font-semibold text-[var(--play-muted)]">
+                payoutScale
+                <input
+                  id="arcana-payout-scale"
+                  type="number"
+                  min={0.01}
+                  max={2}
+                  step={0.01}
+                  defaultValue={data.arcanaConfig.payoutScale ?? 0.3}
+                  className="app-input mt-1 w-28"
+                />
+              </label>
+              <button
+                type="button"
+                disabled={arcanaBusy}
+                onClick={() => void saveArcanaPayoutScale()}
+                className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white"
+              >
+                Lưu scale
+              </button>
+            </div>
+            {data.arcanaRtpPreview && data.arcanaRtpPreview.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="mt-2 w-full min-w-[20rem] text-left text-[10px]">
+                  <thead>
+                    <tr className="text-[var(--play-muted)]">
+                      <th className="py-1 pr-2">Số ô</th>
+                      <th className="py-1 pr-2">P thắng %</th>
+                      <th className="py-1 pr-2">RTP tối ưu %</th>
+                      <th className="py-1">RTP id 1..k %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.arcanaRtpPreview.map((row) => {
+                      const warn =
+                        row.rtpOptimal > 105 || row.rtpOptimal < 85;
+                      return (
+                        <tr
+                          key={row.pickCount}
+                          className={
+                            warn
+                              ? "font-bold text-rose-700"
+                              : "text-[var(--play-ink)]"
+                          }
+                        >
+                          <td className="py-0.5 pr-2">{row.pickCount}</td>
+                          <td className="py-0.5 pr-2 tabular-nums">
+                            {row.winProbability}
+                          </td>
+                          <td className="py-0.5 pr-2 tabular-nums">
+                            {row.rtpOptimal}
+                          </td>
+                          <td className="py-0.5 tabular-nums">
+                            {row.rtpSequential}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <p className="mt-1 text-[10px] text-[var(--play-muted)]">
+                  Đỏ: RTP tối ưu &lt;85% hoặc &gt;105%. Chỉnh payoutScale hoặc
+                  weight/ratio.
+                </p>
               </div>
             )}
           </section>

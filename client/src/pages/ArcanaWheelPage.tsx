@@ -48,6 +48,18 @@ interface SpinResult {
   at?: number;
 }
 
+const DEFAULT_PAYOUT_SCALE = 0.3;
+
+function previewArcanaPayout(
+  stake: number,
+  ratio: number,
+  pickCount: number,
+  payoutScale: number,
+): number {
+  const k = Math.max(1, pickCount);
+  const scale = Math.max(0.01, Math.min(2, payoutScale));
+  return Math.max(0, Math.floor((stake * ratio * scale) / k));
+}
 const SPIN_MS = 4200;
 const FULL_TURNS = 5;
 const AUTO_GAP_MS = 600;
@@ -217,6 +229,7 @@ export default function ArcanaWheelPage() {
   ]);
   const [pickMin, setPickMin] = useState(DEFAULT_PICK_MIN);
   const [pickMax, setPickMax] = useState(DEFAULT_PICK_MAX);
+  const [payoutScale, setPayoutScale] = useState(DEFAULT_PAYOUT_SCALE);
   const [slots, setSlots] = useState<ArcanaSlotPublic[]>([]);
   const [recent, setRecent] = useState<RecentSpin[]>([]);
   const [stake, setStake] = useState(300);
@@ -273,6 +286,20 @@ export default function ArcanaWheelPage() {
     }
   };
 
+  const pickCount = Math.max(1, pickIds.length);
+
+  const maxWinPreview = useMemo(() => {
+    if (!pickIds.length) return 0;
+    let best = 0;
+    for (const id of pickIds) {
+      const s = slotById.get(id);
+      if (!s) continue;
+      const p = previewArcanaPayout(stake, s.ratio, pickCount, payoutScale);
+      if (p > best) best = p;
+    }
+    return best;
+  }, [pickIds, slotById, stake, pickCount, payoutScale]);
+
   const load = useCallback(async () => {
     try {
       const r = await api<{
@@ -281,6 +308,7 @@ export default function ArcanaWheelPage() {
         pickMin?: number;
         pickMax?: number;
         maxStake?: number;
+        payoutScale?: number;
         slots: ArcanaSlotPublic[];
         recent: RecentSpin[];
         balance: number;
@@ -290,6 +318,11 @@ export default function ArcanaWheelPage() {
       setBetTiers(r.betTiers);
       setPickMin(r.pickMin ?? DEFAULT_PICK_MIN);
       setPickMax(r.pickMax ?? DEFAULT_PICK_MAX);
+      setPayoutScale(
+        typeof r.payoutScale === "number" && r.payoutScale > 0
+          ? r.payoutScale
+          : DEFAULT_PAYOUT_SCALE,
+      );
       setSlots(r.slots);
       setRecent(r.recent);
       syncUserBalance(r.balance);
@@ -564,15 +597,35 @@ export default function ArcanaWheelPage() {
                 <span className="font-play text-[10px] font-bold text-[var(--gold)]">
                   1:{s.ratio}
                 </span>
+                {selected && pickIds.length > 0 && (
+                  <span className="mt-0.5 text-[8px] font-semibold text-[var(--jade-deep)] tabular-nums">
+                    +{formatXu(
+                      previewArcanaPayout(
+                        stake,
+                        s.ratio,
+                        pickIds.length,
+                        payoutScale,
+                      ),
+                    )}
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
 
         <p className="mt-3 text-center text-[10px] text-[var(--play-muted)]">
-          1. Chọn số xu (tối đa 100.000) · 2. Chọn 1–{pickMax} nhân vật · Trúng
-          1 trong các ô đã chọn = thắng
+          Thưởng khi trúng = cược × tỷ lệ × {payoutScale} ÷ số ô đã chọn (làm
+          tròn xuống). Chọn {pickMin}–{pickMax} nhân vật — trúng đúng 1 ô ra
+          thưởng.
         </p>
+        {pickIds.length > 0 && (
+          <p className="mt-1 text-center text-[10px] font-semibold text-[var(--wood-deep)] tabular-nums">
+            Nếu trúng ô tỷ lệ cao nhất trong lựa chọn: nhận tối đa{" "}
+            {formatXu(maxWinPreview)} xu (lãi{" "}
+            {formatXu(Math.max(0, maxWinPreview - stake))})
+          </p>
+        )}
         <div className="mt-2 flex flex-wrap justify-center gap-2">
           {betTiers.map((t) => (
             <button

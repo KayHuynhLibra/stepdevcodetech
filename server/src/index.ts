@@ -568,6 +568,7 @@ app.get("/api/admin/overview", (req, res) => {
     payload.vaultArcana = vaultArcanaSnap;
     payload.arcanaStats = arcanaStats;
     payload.arcanaConfig = arcanaWheelStore.getConfig();
+    payload.arcanaRtpPreview = arcanaWheelStore.getRtpPreview();
     payload.inter = buildInterPayload();
     payload.traffic = {
       ...live,
@@ -769,6 +770,7 @@ app.get("/api/mainadmin/arcana/config", (req, res) => {
     ok: true,
     config: arcanaWheelStore.getConfig(),
     stats: arcanaWheelStore.getStats(),
+    rtpPreview: arcanaWheelStore.getRtpPreview(),
   });
 });
 
@@ -779,6 +781,7 @@ app.patch("/api/mainadmin/arcana/config", (req, res) => {
     {
       enabled: req.body?.enabled,
       betTiers: req.body?.betTiers,
+      payoutScale: req.body?.payoutScale,
       slots: req.body?.slots,
     },
     me.username,
@@ -794,6 +797,7 @@ app.patch("/api/mainadmin/arcana/config", (req, res) => {
     ok: true,
     config: result.config,
     stats: arcanaWheelStore.getStats(),
+    rtpPreview: arcanaWheelStore.getRtpPreview(),
   });
 });
 

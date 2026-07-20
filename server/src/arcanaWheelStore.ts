@@ -3,6 +3,12 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { randomBytes, randomInt } from "crypto";
 import { authStore } from "./auth.js";
+import {
+  computeArcanaPayout,
+  computeRtpPreview,
+  DEFAULT_PAYOUT_SCALE,
+  type RtpPickRow,
+} from "./arcanaRtp.js";
 import { vaultArcana } from "./vaultStore.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -11,7 +17,7 @@ const CONFIG_PATH = join(DATA_DIR, "arcana-wheel.json");
 const SPINS_PATH = join(DATA_DIR, "arcana-spins.json");
 const SPINS_CAP = 2000;
 const RECENT_PUBLIC = 24;
-const CONFIG_VERSION = 3 as const;
+const CONFIG_VERSION = 4 as const;
 const PICK_MIN = 1;
 const PICK_MAX = 8;
 const MAX_STAKE = 100_000;
@@ -36,6 +42,8 @@ export interface ArcanaWheelConfig {
   pickMin: number;
   pickMax: number;
   maxStake: number;
+  /** Hệ số thưởng (0.01–2), nhân sau khi chia số ô chọn */
+  payoutScale: number;
   slots: ArcanaSlot[];
   updatedAt: number;
   updatedBy?: string;
@@ -147,6 +155,7 @@ function defaultConfig(): ArcanaWheelConfig {
     pickMin: PICK_MIN,
     pickMax: PICK_MAX,
     maxStake: MAX_STAKE,
+    payoutScale: DEFAULT_PAYOUT_SCALE,
     slots: DEFAULT_SLOTS.map((s) => ({ ...s })),
     updatedAt: Date.now(),
   };
@@ -157,6 +166,7 @@ function needsMigration(parsed: {
   slots?: ArcanaSlot[];
   betTiers?: number[];
   maxStake?: number;
+  payoutScale?: number;
 }): boolean {
   if (parsed.version !== CONFIG_VERSION) return true;
   if (!Array.isArray(parsed.slots) || parsed.slots.length !== 8) return true;
@@ -218,7 +228,7 @@ class ArcanaWheelStore {
       if (!existsSync(CONFIG_PATH)) {
         this.config = defaultConfig();
         this.saveConfig();
-        console.log("[arcana] Config created v3");
+        console.log("[arcana] Config created v4");
         return;
       }
       const parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as {
@@ -228,6 +238,7 @@ class ArcanaWheelStore {
         pickMin?: number;
         pickMax?: number;
         maxStake?: number;
+        payoutScale?: number;
         slots?: ArcanaSlot[];
         updatedAt?: number;
         updatedBy?: string;
@@ -247,15 +258,29 @@ class ArcanaWheelStore {
         ) {
           base.slots = parsed.slots.map((s) => ({ ...s }));
         }
+        if (
+          typeof parsed.payoutScale === "number" &&
+          parsed.payoutScale > 0 &&
+          parsed.payoutScale <= 2
+        ) {
+          base.payoutScale = parsed.payoutScale;
+        }
         base.updatedAt = Date.now();
-        base.updatedBy = "migrate-v3";
+        base.updatedBy = parsed.version === 3 ? "migrate-v4" : "migrate-v4";
         this.config = base;
         this.saveConfig();
         console.log(
-          `[arcana] Migrated config → v3 · tiers=${base.betTiers.join(",")} · maxStake=${base.maxStake}`,
+          `[arcana] Migrated config → v4 · payoutScale=${base.payoutScale} · tiers=${base.betTiers.join(",")}`,
         );
         return;
       }
+
+      const payoutScale =
+        typeof parsed.payoutScale === "number" &&
+        parsed.payoutScale > 0 &&
+        parsed.payoutScale <= 2
+          ? parsed.payoutScale
+          : DEFAULT_PAYOUT_SCALE;
 
       this.config = {
         ...defaultConfig(),
@@ -264,6 +289,7 @@ class ArcanaWheelStore {
         pickMin: PICK_MIN,
         pickMax: PICK_MAX,
         maxStake: Math.max(MAX_STAKE, Math.floor(Number(parsed.maxStake) || MAX_STAKE)),
+        payoutScale,
         slots:
           Array.isArray(parsed.slots) && parsed.slots.length === 8
             ? parsed.slots
@@ -276,7 +302,7 @@ class ArcanaWheelStore {
             : defaultConfig().betTiers,
       };
       console.log(
-        `[arcana] Config loaded v3 · enabled=${this.config.enabled} · tiers=${this.config.betTiers.join(",")}`,
+        `[arcana] Config loaded v4 · enabled=${this.config.enabled} · payoutScale=${this.config.payoutScale}`,
       );
     } catch (err) {
       console.warn("[arcana] Failed to load config:", err);
@@ -332,6 +358,7 @@ class ArcanaWheelStore {
       pickMin: this.config.pickMin ?? PICK_MIN,
       pickMax: this.config.pickMax ?? PICK_MAX,
       maxStake: this.config.maxStake ?? MAX_STAKE,
+      payoutScale: this.config.payoutScale ?? DEFAULT_PAYOUT_SCALE,
       slots: this.config.slots.map((s) => ({ ...s })),
       betTiers: [...this.config.betTiers],
     };
@@ -345,6 +372,7 @@ class ArcanaWheelStore {
       pickMin: cfg.pickMin,
       pickMax: cfg.pickMax,
       maxStake: cfg.maxStake,
+      payoutScale: cfg.payoutScale,
       slots: cfg.slots.map(({ id, key, name, nameVi, ratio, image }) => ({
         id,
         key,
@@ -362,6 +390,16 @@ class ArcanaWheelStore {
         won: s.won,
       })),
     };
+  }
+
+  getRtpPreview(): RtpPickRow[] {
+    const cfg = this.getConfig();
+    return computeRtpPreview(
+      cfg.slots,
+      cfg.pickMin ?? PICK_MIN,
+      cfg.pickMax ?? PICK_MAX,
+      cfg.payoutScale ?? DEFAULT_PAYOUT_SCALE,
+    );
   }
 
   getStats() {
@@ -395,12 +433,20 @@ class ArcanaWheelStore {
     patch: {
       enabled?: boolean;
       betTiers?: number[];
+      payoutScale?: number;
       slots?: Array<Partial<ArcanaSlot> & { id: number }>;
     },
     byUsername: string,
   ): { ok: true; config: ArcanaWheelConfig } | { ok: false; reason: string } {
     if (typeof patch.enabled === "boolean") {
       this.config.enabled = patch.enabled;
+    }
+    if (typeof patch.payoutScale === "number") {
+      const s = patch.payoutScale;
+      if (!Number.isFinite(s) || s < 0.01 || s > 2) {
+        return { ok: false, reason: "payoutScale phải từ 0.01 đến 2" };
+      }
+      this.config.payoutScale = Math.round(s * 1000) / 1000;
     }
     if (Array.isArray(patch.betTiers)) {
       const tiers = patch.betTiers
@@ -496,9 +542,17 @@ class ArcanaWheelStore {
     vaultArcana.recordStakeIn(stake, debit.user.username, debit.user.id);
 
     const seed = randomBytes(8).toString("hex");
+    const payoutScale = this.config.payoutScale ?? DEFAULT_PAYOUT_SCALE;
     const winSlot = pickWeighted(this.config.slots);
     const won = pickIds.includes(winSlot.id);
-    const payout = won ? stake * winSlot.ratio : 0;
+    const payout = won
+      ? computeArcanaPayout(
+          stake,
+          winSlot.ratio,
+          pickIds.length,
+          payoutScale,
+        )
+      : 0;
     const profit = payout - stake;
 
     let balanceAfter = debit.user.balance;
@@ -511,6 +565,20 @@ class ArcanaWheelStore {
           credit.user.username,
           credit.user.id,
         );
+      } else {
+        const refund = authStore.adjustBalance(input.userId, stake);
+        if (refund.ok) {
+          balanceAfter = refund.user.balance;
+          vaultArcana.recordStakeRefund(
+            stake,
+            refund.user.username,
+            refund.user.id,
+          );
+        }
+        return {
+          ok: false,
+          reason: "Không trả thưởng được — đã hoàn cược",
+        };
       }
     }
 
@@ -544,4 +612,5 @@ class ArcanaWheelStore {
 }
 
 export const arcanaWheelStore = new ArcanaWheelStore();
-export { PICK_MIN, PICK_MAX, MAX_STAKE };
+export { PICK_MIN, PICK_MAX, MAX_STAKE, DEFAULT_PAYOUT_SCALE };
+export type { RtpPickRow };
