@@ -54,6 +54,16 @@ import {
   isRoomId,
   voiceRoomStore,
 } from "./voiceRoomStore.js";
+import {
+  clientIp,
+  globalHttpRateLimit,
+  rateLimit,
+  socketIp,
+  startRateLimitPrune,
+  trackSocketConnect,
+  trackSocketDisconnect,
+} from "./rateLimit.js";
+import { securityHeaders, warnOpenCorsIfProd } from "./securityHeaders.js";
 
 const PORT = Number(process.env.PORT) || 3001;
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -64,6 +74,7 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
   .filter(Boolean);
 
 const app = express();
+warnOpenCorsIfProd(ALLOWED_ORIGINS);
 app.use(
   cors({
     origin: (origin, cb) => {
@@ -74,36 +85,11 @@ app.use(
     },
   }),
 );
+app.use(securityHeaders);
 app.use(express.json({ limit: "1.5mb" }));
+app.use(globalHttpRateLimit({ max: 160, windowMs: 60_000, skipPaths: ["/health"] }));
 app.use("/uploads/avatars", express.static(UPLOADS_DIR));
-
-/** Simple sliding-window rate limit (in-memory). */
-const rateBuckets = new Map<string, { n: number; reset: number }>();
-function rateLimit(
-  key: string,
-  max: number,
-  windowMs: number,
-): boolean {
-  const now = Date.now();
-  let b = rateBuckets.get(key);
-  if (!b || now > b.reset) {
-    b = { n: 0, reset: now + windowMs };
-    rateBuckets.set(key, b);
-  }
-  b.n += 1;
-  return b.n <= max;
-}
-function clientIp(req: express.Request): string {
-  const xf = req.headers["x-forwarded-for"];
-  if (typeof xf === "string" && xf.length) return xf.split(",")[0]!.trim();
-  return req.socket.remoteAddress || "unknown";
-}
-
-function socketIp(socket: { handshake: { address?: string; headers: Record<string, unknown> } }): string {
-  const xf = socket.handshake.headers["x-forwarded-for"];
-  if (typeof xf === "string" && xf.length) return xf.split(",")[0]!.trim();
-  return socket.handshake.address || "unknown";
-}
+startRateLimitPrune(60_000);
 
 function kickUserSockets(userId: string, reason: string) {
   for (const sid of engine.getSocketIdsForUser(userId)) {
@@ -142,6 +128,8 @@ const io = new Server(httpServer, {
         ? ALLOWED_ORIGINS
         : true,
   },
+  maxHttpBufferSize: 1e5,
+  connectTimeout: 20_000,
 });
 
 attachVoiceSocket(io);
@@ -545,6 +533,10 @@ app.post("/api/auth/nickname", (req, res) => {
 
 /** Upload avatar từ máy (user đã login hoặc khách kèm guestCode). */
 app.post("/api/avatar/upload", (req, res) => {
+  const ip = clientIp(req);
+  if (!rateLimit(`avatar:${ip}`, 20, 60_000)) {
+    return res.status(429).json({ ok: false, reason: "Quá nhiều lần upload" });
+  }
   const dataUrl = String(req.body?.dataUrl ?? "");
   const authUser = authStore.resolveToken(bearer(req));
   const guestCode = String(req.body?.guestCode ?? "")
@@ -1900,6 +1892,17 @@ app.post("/api/mainadmin/devices/kick", async (req, res) => {
 });
 
 io.on("connection", (socket) => {
+  const connIp = socketIp(socket);
+  if (!rateLimit(`conn:${connIp}`, 15, 60_000)) {
+    socket.disconnect(true);
+    return;
+  }
+  const tracked = trackSocketConnect(connIp, socket.id, 25);
+  if (!tracked.ok) {
+    socket.disconnect(true);
+    return;
+  }
+
   socket.on(
     "join",
     (payload?: {
@@ -2189,6 +2192,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
+    trackSocketDisconnect(connIp, socket.id);
     deviceStore.onDisconnect(socket.id);
     guestIpStore.onDisconnect(socket.id);
     engine.leave(socket.id);

@@ -7,6 +7,7 @@ import {
 import { auditStore } from "./auditStore.js";
 import { normalizeAvatar } from "./avatars.js";
 import { cultivationStore } from "./cultivationStore.js";
+import { rateLimit } from "./rateLimit.js";
 import {
   voiceRoomStore,
   type VoiceRoomId,
@@ -282,6 +283,7 @@ export function attachVoiceSocket(io: Server) {
         data?: unknown;
         token?: string;
       }) => {
+        if (!rateLimit(`voice:signal:${socket.id}`, 60, 10_000)) return;
         const to = String(payload?.toSocketId ?? "");
         if (!to || !payload?.data) return;
         const fromMem = voiceRoomStore.getMembership(socket.id);

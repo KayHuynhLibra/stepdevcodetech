@@ -11,6 +11,9 @@ server/data/
 # Tài liệu học tập nội bộ — không commit / không push
 studying/
 
+# Cybersecurity notes nội bộ — không commit / không push
+cybersecurity/
+
 # Bản chụp Version 1 — chỉ local, không push GitHub
 version 1/
 
