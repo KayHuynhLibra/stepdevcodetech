@@ -33,6 +33,8 @@ import {
   type BotIdentity,
 } from "./bots.js";
 import { vaultStore } from "./vaultStore.js";
+import { cultivationStore } from "./cultivationStore.js";
+import { maxStakeForUser } from "./tutienBetLimitsStore.js";
 import { guestPlayStore, GUEST_PLAY_LIMIT_MS } from "./guestPlayStore.js";
 import { chatConfigStore } from "./chatConfigStore.js";
 import {
@@ -1002,22 +1004,25 @@ export class GameEngine {
     }
 
     const amt = Math.floor(Number(amount));
-    if (
-      !Number.isFinite(amt) ||
-      amt < MIN_BET ||
-      amt > MAX_BET ||
-      amt % BET_STEP !== 0
-    ) {
-      return {
-        ok: false,
-        reason: `Số xu không hợp lệ (tối đa ${MAX_BET.toLocaleString("vi-VN")} / 1 lá)`,
-      };
-    }
-
     const player = this.players.get(socketId);
     if (!player) return { ok: false, reason: "Chưa vào phòng" };
     if (player.userId && authStore.isBanned(player.userId)) {
       return { ok: false, reason: "Tài khoản bị khóa" };
+    }
+
+    const linked = player.userId ? authStore.getById(player.userId) : null;
+    const cardMax = maxStakeForUser(linked);
+
+    if (
+      !Number.isFinite(amt) ||
+      amt < MIN_BET ||
+      amt > cardMax ||
+      amt % BET_STEP !== 0
+    ) {
+      return {
+        ok: false,
+        reason: `Số xu không hợp lệ (tối đa ${cardMax.toLocaleString("vi-VN")} / 1 lá)`,
+      };
     }
 
     this.ensureDay(player);
@@ -1028,10 +1033,10 @@ export class GameEngine {
     }
 
     const prev = player.bets.get(cardId) ?? 0;
-    if (prev + amt > MAX_BET) {
+    if (prev + amt > cardMax) {
       return {
         ok: false,
-        reason: `Mỗi lá tối đa ${MAX_BET.toLocaleString("vi-VN")} xu (đã đặt ${prev.toLocaleString("vi-VN")})`,
+        reason: `Mỗi lá tối đa ${cardMax.toLocaleString("vi-VN")} xu (đã đặt ${prev.toLocaleString("vi-VN")})`,
       };
     }
     if (prev <= 0) {
@@ -1110,7 +1115,9 @@ export class GameEngine {
     if (mode === "vip" && !authStore.isVipUser(player.userId)) {
       return { ok: false, reason: "Cần VIP để chat bay màn hình" };
     }
-    const cost = chatConfigStore.costForMode(mode);
+    const costBase = chatConfigStore.costForMode(mode);
+    const rank = authStore.getCultivationRank(player.userId);
+    const cost = cultivationStore.chatCostAfterDiscount(costBase, rank);
 
     let text: string | null = null;
     const sid = String(opts.id ?? "").trim();
@@ -1148,6 +1155,15 @@ export class GameEngine {
     }
 
     player.balance -= cost;
+    if (cost > 0 && player.userId) {
+      vaultStore.recordChatFee(
+        cost,
+        player.userId,
+        player.name,
+        mode,
+        rank,
+      );
+    }
     this.shoutCooldown.set(socketId, now);
     if (mode === "saint") {
       this.saintCooldown.set(player.userId, now);
@@ -1318,6 +1334,9 @@ export class GameEngine {
           : undefined,
         vipGranted: linked ? !!linked.vipGranted : undefined,
       };
+      if (linked?.cultivationRank) {
+        row.cultivationRank = linked.cultivationRank;
+      }
       if (forStaff && linked) {
         row.balance = linked.balance;
         row.outcomeMode = authStore.getOutcomeMode(linked.id);
@@ -1341,6 +1360,11 @@ export class GameEngine {
       if (mode === "normal") return;
       const bets = CARDS.map((c) => p.bets.get(c.id) ?? 0);
       if (!bets.some((x) => x > 0)) return;
+      /** win: chỉ ép thắng với xác suất outcomeWinPct (80–100) */
+      if (mode === "win") {
+        const pct = authStore.getOutcomeWinPct(p.userId);
+        if (Math.random() * 100 >= pct) return;
+      }
       biases.push({ bets, mode });
     };
     for (const p of this.players.values()) consider(p);

@@ -179,8 +179,24 @@ export function forcedCardId(mode: InterMode): number | null {
   return isForceCardMode(mode) ? Number(mode) : null;
 }
 
+export interface VaultInterLink {
+  enabled: boolean;
+  lossThresholdXu: number;
+  profitThresholdXu: number;
+  onLossMode: InterMode;
+  onProfitMode: InterMode;
+}
+
+export const DEFAULT_VAULT_INTER_LINK: VaultInterLink = {
+  enabled: false,
+  lossThresholdXu: 50_000,
+  profitThresholdXu: 50_000,
+  onLossMode: "small",
+  onProfitMode: "big",
+};
+
 interface InterFile {
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   mode: InterMode;
   updatedAt: number;
   updatedBy: string;
@@ -188,6 +204,9 @@ interface InterFile {
   allSlotMinutes?: number;
   /** Chuỗi xoay tùy chỉnh khi mode = all (v3). */
   allRotation?: RotateMode[];
+  /** Bias Big(+)/Small(−) % — v4 */
+  winBiasPct?: number;
+  vaultInterLink?: Partial<VaultInterLink>;
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -211,6 +230,56 @@ const TMP = join(DATA_DIR, "inter.json.tmp");
 const PREF_SHARE = 0.72;
 const OTHER_SHARE = 0.28;
 
+function clampWinBias(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(-50, Math.min(50, Math.round(n)));
+}
+
+function mergeVaultLink(raw: Partial<VaultInterLink>): VaultInterLink {
+  const d = DEFAULT_VAULT_INTER_LINK;
+  const onLoss =
+    raw.onLossMode && isInterMode(raw.onLossMode)
+      ? raw.onLossMode
+      : d.onLossMode;
+  const onProfit =
+    raw.onProfitMode && isInterMode(raw.onProfitMode)
+      ? raw.onProfitMode
+      : d.onProfitMode;
+  return {
+    enabled: !!raw.enabled,
+    lossThresholdXu: Math.max(
+      0,
+      Math.floor(Number(raw.lossThresholdXu ?? d.lossThresholdXu) || 0),
+    ),
+    profitThresholdXu: Math.max(
+      0,
+      Math.floor(Number(raw.profitThresholdXu ?? d.profitThresholdXu) || 0),
+    ),
+    onLossMode: onLoss,
+    onProfitMode: onProfit,
+  };
+}
+
+/**
+ * Áp winBiasPct lên weights: + → Big (5–8), − → Small (1–4).
+ */
+export function applyWinBiasToWeights(
+  weights: number[],
+  cardIds: number[],
+  winBiasPct: number,
+): number[] {
+  const pct = clampWinBias(winBiasPct);
+  if (pct === 0) return weights;
+  const boost = 1 + Math.abs(pct) / 100;
+  const cut = 1 / boost;
+  return cardIds.map((id, i) => {
+    const w = weights[i]!;
+    const isBig = id >= 5;
+    if (pct > 0) return isBig ? w * boost : w * cut;
+    return isBig ? w * cut : w * boost;
+  });
+}
+
 const FORCE_LABELS: Record<ForceCardMode, string> = {
   "1": "Ép lá #1 — Nhà Ảo Thuật (100%)",
   "2": "Ép lá #2 — Nữ Tư Tế (100%)",
@@ -230,6 +299,13 @@ export class InterStore {
   /** null = dùng ALL_ROTATION mặc định */
   private allRotation: RotateMode[] | null = null;
   private lastLoggedEffective: string | null = null;
+  /** −50…+50 — dương nghiêng Big (5–8), âm nghiêng Small (1–4) */
+  private winBiasPct = 0;
+  private vaultInterLink: VaultInterLink = {
+    ...DEFAULT_VAULT_INTER_LINK,
+  };
+  /** Tránh spam setMode khi vault link giữ cùng mode */
+  private lastVaultLinkApplied: string | null = null;
 
   getAllRotation(): RotateMode[] {
     if (isPackMode(this.mode)) return packRotation(this.mode);
@@ -262,7 +338,7 @@ export class InterStore {
         return;
       }
       const parsed = JSON.parse(readFileSync(PATH, "utf8")) as InterFile;
-      if (parsed?.version !== 1 && parsed?.version !== 2 && parsed?.version !== 3) {
+      if (parsed?.version !== 1 && parsed?.version !== 2 && parsed?.version !== 3 && parsed?.version !== 4) {
         return;
       }
       if (isInterMode(parsed.mode)) this.mode = parsed.mode;
@@ -275,9 +351,15 @@ export class InterStore {
         const v = validateAllRotation(parsed.allRotation);
         if (v.ok) this.allRotation = v.steps;
       }
+      if (typeof parsed.winBiasPct === "number") {
+        this.winBiasPct = clampWinBias(parsed.winBiasPct);
+      }
+      if (parsed.vaultInterLink && typeof parsed.vaultInterLink === "object") {
+        this.vaultInterLink = mergeVaultLink(parsed.vaultInterLink);
+      }
       const rot = this.getAllRotation();
       console.log(
-        `[inter] Loaded mode=${this.mode} allSlot=${this.allSlotMinutes}m rotation=${rot.length} steps`,
+        `[inter] Loaded mode=${this.mode} allSlot=${this.allSlotMinutes}m rotation=${rot.length} steps bias=${this.winBiasPct} vaultLink=${this.vaultInterLink.enabled}`,
       );
     } catch (err) {
       console.warn("[inter] Failed to load inter.json:", err);
@@ -287,11 +369,13 @@ export class InterStore {
   private save() {
     if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
     const body: InterFile = {
-      version: 3,
+      version: 4,
       mode: this.mode,
       updatedAt: this.updatedAt,
       updatedBy: this.updatedBy,
       allSlotMinutes: this.allSlotMinutes,
+      winBiasPct: this.winBiasPct,
+      vaultInterLink: { ...this.vaultInterLink },
       ...(this.allRotation?.length
         ? { allRotation: [...this.allRotation] }
         : {}),
@@ -415,6 +499,68 @@ export class InterStore {
     return this.setAllRotation([...ALL_ROTATION], byUsername);
   }
 
+  getWinBiasPct(): number {
+    return this.winBiasPct;
+  }
+
+  setWinBiasPct(pct: number, byUsername: string) {
+    this.winBiasPct = clampWinBias(pct);
+    this.updatedAt = Date.now();
+    this.updatedBy = byUsername;
+    this.save();
+    return { ok: true as const, winBiasPct: this.winBiasPct };
+  }
+
+  getVaultInterLink(): VaultInterLink {
+    return { ...this.vaultInterLink };
+  }
+
+  setVaultInterLink(
+    partial: Partial<VaultInterLink>,
+    byUsername: string,
+  ) {
+    this.vaultInterLink = mergeVaultLink({
+      ...this.vaultInterLink,
+      ...partial,
+    });
+    this.updatedAt = Date.now();
+    this.updatedBy = byUsername;
+    this.lastVaultLinkApplied = null;
+    this.save();
+    return { ok: true as const, vaultInterLink: this.getVaultInterLink() };
+  }
+
+  /**
+   * Theo netFromPlay Kho Tarot: lỗ nặng → onLossMode, lãi nhiều → onProfitMode.
+   * Gọi định kỳ; không đụng mode nếu link tắt hoặc trong khoảng ngưỡng.
+   */
+  applyVaultNet(netFromPlay: number): {
+    applied: boolean;
+    mode?: InterMode;
+    reason: string;
+  } {
+    const link = this.vaultInterLink;
+    if (!link.enabled) {
+      return { applied: false, reason: "vault link tắt" };
+    }
+    let target: InterMode | null = null;
+    if (netFromPlay <= -link.lossThresholdXu) {
+      target = link.onLossMode;
+    } else if (netFromPlay >= link.profitThresholdXu) {
+      target = link.onProfitMode;
+    }
+    if (!target) {
+      return { applied: false, reason: "trong ngưỡng trung tính" };
+    }
+    const key = `${target}:${Math.sign(netFromPlay)}`;
+    if (this.lastVaultLinkApplied === key && this.mode === target) {
+      return { applied: false, reason: "đã áp cùng mode", mode: target };
+    }
+    this.setMode(target, "vault-auto");
+    this.lastVaultLinkApplied = key;
+    return { applied: true, mode: target, reason: `netFromPlay=${netFromPlay}` };
+  }
+
   getSnapshot() {
     const effectiveMode = this.getEffectiveMode();
     const chain = this.getAllRotation();
@@ -445,6 +591,8 @@ export class InterStore {
       allSlotMinutes: this.allSlotMinutes,
       allRotation: [...chain],
       defaultRotation: [...ALL_ROTATION],
+      winBiasPct: this.winBiasPct,
+      vaultInterLink: this.getVaultInterLink(),
       rotateCatalog: ROTATE_MODE_IDS.map((id) => ({
         id,
         label: ROTATE_LABELS[id],

@@ -1,3 +1,5 @@
+export type OuterEvenMoneyBet = "red" | "black" | "odd" | "even";
+
 export interface SpinResult {
   id: string;
   stake: number;
@@ -15,6 +17,13 @@ export interface SpinResult {
   wheelDisplayWinId?: number;
   missionCompleted?: boolean;
   usedBonusSpin?: boolean;
+  outerNumber?: number;
+  outerBet?: OuterEvenMoneyBet;
+  outerWon?: boolean;
+  outerPayout?: number;
+  arcanaPayout?: number;
+  arcanaStake?: number;
+  outerStake?: number;
   profit: number;
   seed: string;
   at?: number;

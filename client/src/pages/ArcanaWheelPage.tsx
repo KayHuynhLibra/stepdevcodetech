@@ -21,16 +21,23 @@ import { TarotRecentStrip } from "../components/TarotRecentStrip";
 import { ArcanaPaytable } from "../components/arcana/ArcanaPaytable";
 import { ArcanaRecentTable } from "../components/arcana/ArcanaRecentTable";
 import { ArcanaStreakPanel } from "../components/arcana/ArcanaStreakPanel";
-import { ArcanaStreakSummary } from "../components/arcana/ArcanaStreakSummary";
 import type { SpinResult } from "../components/arcana/arcanaTypes";
 import { formatXu } from "../cards";
 import {
-  previewArcanaPayout,
-  rarityLabel,
-  rarityLabelEn,
+  raritySegmentColor,
   rarityTierKey,
+  type RarityTierKey,
   type StreakBonusRules,
 } from "../lib/arcanaPayout";
+import { onArcanaImgError } from "../lib/arcanaImages";
+import {
+  EU_WHEEL_ORDER,
+  outerBetLabelVi,
+  outerIndexOnWheel,
+  pocketColor,
+  pocketHex,
+  type OuterEvenMoneyBet,
+} from "../lib/europeanRoulette";
 
 interface ArcanaSlotPublic {
   id: number;
@@ -52,6 +59,9 @@ interface RecentSpin {
   stake?: number;
   payout?: number;
   profit?: number;
+  outerNumber?: number;
+  outerBet?: OuterEvenMoneyBet;
+  outerWon?: boolean;
 }
 
 const DEFAULT_PAYOUT_SCALE = 0.3;
@@ -65,6 +75,7 @@ const DEFAULT_STREAK_BONUS: StreakBonusRules = {
 };
 
 const SPIN_MS = 4200;
+const SPIN_MS_OUTER = 4600;
 const FULL_TURNS = 5;
 const AUTO_GAP_MS = 600;
 const DEFAULT_PICK_MIN = 1;
@@ -89,110 +100,143 @@ function targetRotationDeg(
   return Math.ceil((baseDeg + 1) / 360) * 360 + FULL_TURNS * 360 - land;
 }
 
+/** Opposite spin direction for inner Arcana disc. */
+function targetRotationDegOpposite(
+  winIndex: number,
+  n: number,
+  baseDeg: number,
+): number {
+  const seg = 360 / n;
+  const land = winIndex * seg;
+  return Math.floor((baseDeg - 1) / 360) * 360 - FULL_TURNS * 360 - land;
+}
+
 import {
   FANTASY_SPARKLE_ANGLES as SPARKLE_ANGLES,
-  FANTASY_STAR_ANGLES as STAR_ANGLES,
   fantasyParticleStyle,
 } from "../lib/fantasyParticles";
 
-function ArcanaRoulette({
+function DoubleArcanaRoulette({
   slots,
-  rotationDeg,
+  rotationOuterDeg,
+  rotationInnerDeg,
   spinning,
   highlightId,
+  highlightOuter,
   pickIds,
 }: {
   slots: ArcanaSlotPublic[];
-  rotationDeg: number;
+  rotationOuterDeg: number;
+  rotationInnerDeg: number;
   spinning: boolean;
   highlightId: number | null;
+  highlightOuter: number | null;
   pickIds: number[];
 }) {
-  const n = Math.max(slots.length, 1);
-  const seg = 360 / n;
-  const size = 280;
-  const rInner = 42;
+  const nInner = Math.max(slots.length, 1);
+  const segInner = 360 / nInner;
+  const nOuter = EU_WHEEL_ORDER.length;
+  const segOuter = 360 / nOuter;
+  const rHub = 42;
+  const innerInset = 92;
+  const sizeCss = "min(360px, 92vw)";
 
-  const conic = useMemo(() => {
-    if (!slots.length) return "transparent";
-    const colors = [
-      "#1a3d36",
-      "#2a4a28",
-      "#3d3420",
-      "#2c3e50",
-      "#3a2a45",
-      "#1e3a4c",
-      "#4a3520",
-      "#2a3550",
-    ];
-    const parts = slots.map((_, i) => {
-      const c = colors[i % colors.length]!;
-      return `${c} ${i * seg}deg ${(i + 1) * seg}deg`;
+  const outerConic = useMemo(() => {
+    const parts = EU_WHEEL_ORDER.map((num, i) => {
+      const c = pocketHex(num);
+      return `${c} ${i * segOuter}deg ${(i + 1) * segOuter}deg`;
     });
-    return `conic-gradient(from ${-seg / 2}deg, ${parts.join(", ")})`;
-  }, [slots, seg]);
+    return `conic-gradient(from ${-segOuter / 2}deg, ${parts.join(", ")})`;
+  }, [segOuter]);
+
+  const innerConic = useMemo(() => {
+    if (!slots.length) return "transparent";
+    const parts = slots.map((s, i) => {
+      const c = raritySegmentColor(s.weightShare ?? 99);
+      return `${c} ${i * segInner}deg ${(i + 1) * segInner}deg`;
+    });
+    return `conic-gradient(from ${-segInner / 2}deg, ${parts.join(", ")})`;
+  }, [slots, segInner]);
 
   return (
     <div
       className={`arcana-wheel-wrap arcana-wheel-ornate relative mx-auto ${
         spinning ? "arcana-wheel-wrap--spinning" : ""
       }`}
-      style={{ width: size, height: size }}
+      style={{ width: sizeCss, height: sizeCss }}
     >
       <div
         className="arcana-aura pointer-events-none absolute rounded-full"
-        style={{ inset: -18 }}
+        style={{ inset: -12 }}
         aria-hidden
       />
-      <div
-        className="arcana-aura-inner pointer-events-none absolute rounded-full"
-        style={{ inset: -10 }}
-        aria-hidden
-      />
-      <div
-        className="arcana-wheel-ring-shimmer pointer-events-none absolute inset-0 rounded-full"
-        aria-hidden
-      />
-      {SPARKLE_ANGLES.map((deg, i) => (
+      {SPARKLE_ANGLES.slice(0, 4).map((deg, i) => (
         <span
           key={`sp-${deg}`}
           className="arcana-sparkle pointer-events-none"
-          style={fantasyParticleStyle(deg, 48, i, "sparkle")}
+          style={fantasyParticleStyle(deg, 42, i, "sparkle")}
           aria-hidden
         />
       ))}
-      {STAR_ANGLES.map((deg, i) => (
-        <span
-          key={`st-${deg}`}
-          className="arcana-star pointer-events-none"
-          style={fantasyParticleStyle(deg, 54, i, "star")}
-          aria-hidden
-        >
-          ✦
-        </span>
-      ))}
 
       <div
-        className="pointer-events-none absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-0.5"
+        className="pointer-events-none absolute left-1/2 top-0 z-30 -translate-x-1/2 -translate-y-0.5"
         aria-hidden
       >
-        <div className="arcana-pointer h-0 w-0 border-l-[11px] border-r-[11px] border-t-[20px] border-l-transparent border-r-transparent border-t-[var(--gold)]" />
+        <div className="arcana-pointer h-0 w-0 border-l-[12px] border-r-[12px] border-t-[22px] border-l-transparent border-r-transparent border-t-[var(--gold)]" />
       </div>
 
       <div className="arcana-wheel-outer-ring pointer-events-none absolute inset-0 rounded-full" />
 
+      {/* Outer European 37 */}
       <div
-        className="arcana-wheel-disc absolute inset-[8px] rounded-full"
+        className="absolute inset-[5px] overflow-hidden rounded-full"
         style={{
-          background: conic,
-          transform: `rotate(${rotationDeg}deg)`,
+          background: outerConic,
+          transform: `rotate(${rotationOuterDeg}deg)`,
+          transition: spinning
+            ? `transform ${SPIN_MS_OUTER}ms cubic-bezier(0.12, 0.75, 0.08, 1)`
+            : "none",
+        }}
+      >
+        {EU_WHEEL_ORDER.map((num, i) => {
+          const mid = i * segOuter;
+          const hi = highlightOuter === num && !spinning;
+          return (
+            <div
+              key={`eu-${num}`}
+              className="pointer-events-none absolute inset-0"
+              style={{ transform: `rotate(${mid}deg)` }}
+            >
+              <span
+                className={`absolute left-1/2 top-2 -translate-x-1/2 font-play text-[10px] font-bold tabular-nums ${
+                  hi
+                    ? "rounded bg-[var(--gold)] px-0.5 text-[var(--night)]"
+                    : "text-[#f5e6c8]"
+                }`}
+                style={{ textShadow: "0 1px 2px rgba(0,0,0,0.9)" }}
+              >
+                {num}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Inner Arcana 8 */}
+      <div
+        className="absolute overflow-hidden rounded-full ring-2 ring-[var(--gold)]/50"
+        style={{
+          inset: innerInset,
+          background: innerConic,
+          transform: `rotate(${rotationInnerDeg}deg)`,
           transition: spinning
             ? `transform ${SPIN_MS}ms cubic-bezier(0.12, 0.75, 0.08, 1)`
             : "none",
         }}
       >
         {slots.map((s, i) => {
-          const mid = i * seg;
+          const mid = i * segInner;
           const isHi = highlightId === s.id && !spinning;
           const isPick = pickIds.includes(s.id);
           return (
@@ -201,62 +245,55 @@ function ArcanaRoulette({
               className="pointer-events-none absolute inset-0"
               style={{ transform: `rotate(${mid}deg)` }}
             >
-              <div className="absolute left-1/2 top-0 h-full w-px origin-top -translate-x-1/2 bg-[var(--gold)]/35" />
+              <div className="absolute left-1/2 top-0 h-full w-px origin-top -translate-x-1/2 bg-[var(--gold)]/25" />
               <div
                 className="absolute left-1/2 flex -translate-x-1/2 flex-col items-center"
-                style={{ top: 14 }}
+                style={{ top: 8 }}
               >
                 <div
                   className={`overflow-hidden rounded-full shadow-md ring-1 ${
                     isHi
-                      ? "arcana-seg-label--pulse ring-2 ring-[var(--jade)] shadow-[0_0_12px_rgba(80,200,160,0.55)]"
+                      ? "arcana-seg-label--pulse ring-2 ring-[var(--jade)]"
                       : isPick
                         ? "ring-2 ring-[var(--gold)]"
                         : "ring-[var(--gold)]/40"
                   }`}
-                  style={{ width: 44, height: 44 }}
+                  style={{ width: 36, height: 36 }}
                 >
                   <img
                     src={s.image}
                     alt=""
-                    className="h-full w-full object-cover"
+                    className="h-full w-full object-cover object-top"
                     draggable={false}
+                    onError={(e) => onArcanaImgError(e, s.id)}
                   />
                 </div>
-                <span className="arcana-wheel-mult mt-0.5 rounded bg-[var(--night)]/90 px-1.5 font-play text-[10px] font-bold tabular-nums shadow-sm ring-1 ring-[var(--gold)]/55">
+                <span className="arcana-wheel-mult mt-0.5 rounded bg-[var(--night)]/90 px-1 font-play text-[9px] font-bold tabular-nums">
                   ×{s.ratio}
                 </span>
-                {typeof s.weightShare === "number" && s.weightShare > 0 && (
-                  <span
-                    className={`arcana-rarity arcana-rarity--wheel arcana-rarity--${rarityTierKey(s.weightShare)} mt-0.5`}
-                  >
-                    {rarityLabelEn(s.weightShare)}
-                  </span>
-                )}
               </div>
             </div>
           );
         })}
-        <div
-          className="pointer-events-none absolute inset-0 rounded-full"
-          style={{
-            background:
-              "radial-gradient(circle at center, transparent 38%, rgba(6,20,18,0.55) 100%)",
-          }}
-        />
       </div>
 
       <div
         className="absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center overflow-hidden rounded-full bg-[radial-gradient(circle_at_30%_30%,#3d2a18,#0c1a16)] ring-2 ring-[var(--gold)]/60"
-        style={{ width: rInner * 2, height: rInner * 2 }}
+        style={{ width: rHub * 2, height: rHub * 2 }}
       >
         {highlightId != null && slots.find((x) => x.id === highlightId) ? (
           <img
             src={slots.find((x) => x.id === highlightId)!.image}
             alt=""
-            className={`h-full w-full object-cover ${
+            className={`h-full w-full object-cover object-top ${
               spinning ? "opacity-40" : "opacity-100"
             }`}
+            onError={(e) =>
+              onArcanaImgError(
+                e,
+                slots.find((x) => x.id === highlightId)?.id,
+              )
+            }
           />
         ) : (
           <span className="font-play text-[10px] font-bold text-[var(--gold-soft)]">
@@ -264,13 +301,6 @@ function ArcanaRoulette({
           </span>
         )}
       </div>
-
-      {spinning && (
-        <div
-          className="pointer-events-none absolute inset-0 animate-pulse rounded-full"
-          style={{ boxShadow: "0 0 28px 6px rgba(212,175,55,0.35)" }}
-        />
-      )}
     </div>
   );
 }
@@ -290,9 +320,12 @@ export default function ArcanaWheelPage() {
   const [stake, setStake] = useState(300);
   const [pickIds, setPickIds] = useState<number[]>([]);
   const [spinning, setSpinning] = useState(false);
-  const [rotationDeg, setRotationDeg] = useState(0);
+  const [rotationOuterDeg, setRotationOuterDeg] = useState(0);
+  const [rotationInnerDeg, setRotationInnerDeg] = useState(0);
   const [displayWinId, setDisplayWinId] = useState<number | null>(null);
+  const [displayOuter, setDisplayOuter] = useState<number | null>(null);
   const [lastResult, setLastResult] = useState<SpinResult | null>(null);
+  const [outerBet, setOuterBet] = useState<OuterEvenMoneyBet | null>(null);
   const [luckStreak, setLuckStreak] = useState(0);
   const [streakBonus, setStreakBonus] = useState<StreakBonusRules>(
     DEFAULT_STREAK_BONUS,
@@ -316,11 +349,13 @@ export default function ArcanaWheelPage() {
     windowHours: 24,
   });
   const [useBonusSpin, setUseBonusSpin] = useState(false);
-  const rotationRef = useRef(0);
+  const rotationOuterRef = useRef(0);
+  const rotationInnerRef = useRef(0);
   const autoRef = useRef(false);
   const spinningRef = useRef(false);
   const pickIdsRef = useRef<number[]>([]);
   const stakeRef = useRef(300);
+  const outerBetRef = useRef<OuterEvenMoneyBet | null>(null);
   const enabledRef = useRef(true);
   const balanceRef = useRef(0);
 
@@ -333,6 +368,9 @@ export default function ArcanaWheelPage() {
   useEffect(() => {
     stakeRef.current = stake;
   }, [stake]);
+  useEffect(() => {
+    outerBetRef.current = outerBet;
+  }, [outerBet]);
   useEffect(() => {
     enabledRef.current = enabled;
   }, [enabled]);
@@ -357,19 +395,12 @@ export default function ArcanaWheelPage() {
     }
   };
 
-  const pickCount = Math.max(1, pickIds.length);
-
-  const maxWinPreview = useMemo(() => {
-    if (!pickIds.length) return 0;
-    let best = 0;
-    for (const id of pickIds) {
-      const s = slotById.get(id);
-      if (!s) continue;
-      const p = previewArcanaPayout(stake, s.ratio, pickCount, payoutScale);
-      if (p > best) best = p;
-    }
-    return best;
-  }, [pickIds, slotById, stake, pickCount, payoutScale]);
+  const arcanaStakePreview =
+    outerBet && !useBonusSpin
+      ? stake - Math.floor(stake / 2)
+      : stake;
+  const outerStakePreview =
+    outerBet && !useBonusSpin ? Math.floor(stake / 2) : 0;
 
   const load = useCallback(async () => {
     try {
@@ -449,6 +480,57 @@ export default function ArcanaWheelPage() {
     });
   };
 
+  const OUTSIDE_TIERS: {
+    key: RarityTierKey;
+    en: string;
+    vi: string;
+  }[] = [
+    { key: "low", en: "COMMON", vi: "Thường" },
+    { key: "mid", en: "RARE", vi: "Hiếm" },
+    { key: "high", en: "EPIC", vi: "Epic" },
+  ];
+
+  const applyOutsideTier = (tier: RarityTierKey) => {
+    if (spinning) return;
+    const inTier = slots
+      .filter((s) => rarityTierKey(s.weightShare ?? 99) === tier)
+      .sort((a, b) => (b.weightShare ?? 0) - (a.weightShare ?? 0));
+    if (!inTier.length) return;
+    let targetIds = inTier.map((s) => s.id);
+    let truncated = false;
+    if (targetIds.length > pickMax) {
+      targetIds = targetIds.slice(0, pickMax);
+      truncated = true;
+    }
+    const same =
+      pickIds.length === targetIds.length &&
+      targetIds.every((id) => pickIds.includes(id));
+    if (same) {
+      setPickIds((prev) => prev.filter((id) => !targetIds.includes(id)));
+      setError("");
+      return;
+    }
+    setPickIds(targetIds);
+    setError(
+      truncated
+        ? `Nhóm ${tier === "high" ? "Epic" : tier === "mid" ? "Rare" : "Common"} vượt ${pickMax} ô — đã chọn ${pickMax} ô weight cao nhất`
+        : "",
+    );
+  };
+
+  const outsideTierActive = (tier: RarityTierKey): boolean => {
+    const ids = slots
+      .filter((s) => rarityTierKey(s.weightShare ?? 99) === tier)
+      .sort((a, b) => (b.weightShare ?? 0) - (a.weightShare ?? 0))
+      .map((s) => s.id)
+      .slice(0, pickMax);
+    return (
+      ids.length > 0 &&
+      pickIds.length === ids.length &&
+      ids.every((id) => pickIds.includes(id))
+    );
+  };
+
   const useBonusRef = useRef(false);
   useEffect(() => {
     useBonusRef.current = useBonusSpin;
@@ -499,23 +581,40 @@ export default function ArcanaWheelPage() {
           stake: bonus ? mission.bonusStake : stakeRef.current,
           pickIds: picks,
           useBonusSpin: bonus,
+          outerBet: bonus ? null : outerBetRef.current,
         }),
       });
 
-      const animWinId =
-        r.spin.wheelDisplayWinId ?? r.spin.winId;
+      const animWinId = r.spin.wheelDisplayWinId ?? r.spin.winId;
       const winIndex = slots.findIndex((s) => s.id === animWinId);
       const idx = winIndex >= 0 ? winIndex : 0;
-      const nextRot = targetRotationDeg(idx, slots.length, rotationRef.current);
-      rotationRef.current = nextRot;
-      setRotationDeg(nextRot);
+      const nextInner = targetRotationDegOpposite(
+        idx,
+        slots.length,
+        rotationInnerRef.current,
+      );
+      rotationInnerRef.current = nextInner;
+      setRotationInnerDeg(nextInner);
+
+      const outerNum =
+        typeof r.spin.outerNumber === "number" ? r.spin.outerNumber : 0;
+      const outerIdx = outerIndexOnWheel(outerNum);
+      const nextOuter = targetRotationDeg(
+        outerIdx,
+        EU_WHEEL_ORDER.length,
+        rotationOuterRef.current,
+      );
+      rotationOuterRef.current = nextOuter;
+      setRotationOuterDeg(nextOuter);
       setDisplayWinId(null);
+      setDisplayOuter(null);
 
       await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, SPIN_MS + 80);
+        window.setTimeout(resolve, SPIN_MS_OUTER + 80);
       });
 
       setDisplayWinId(r.spin.winId);
+      setDisplayOuter(outerNum);
       setLastResult(r.spin);
       setRecent(r.recent);
       syncUserBalance(r.balance);
@@ -569,9 +668,13 @@ export default function ArcanaWheelPage() {
         return {
           key: r.id,
           image: s?.image ?? "/assets/ui/avatar-default.png",
-          badge: r.winId,
-          title: s?.nameVi,
-          ringClass: r.won
+          badge:
+            typeof r.outerNumber === "number" ? r.outerNumber : r.winId,
+          title:
+            typeof r.outerNumber === "number"
+              ? `Số ${r.outerNumber} · ${s?.nameVi ?? ""}`
+              : s?.nameVi,
+          ringClass: r.won || r.outerWon
             ? "ring-[var(--jade)]/55"
             : "ring-[var(--wood-deep)]/25",
         };
@@ -579,6 +682,20 @@ export default function ArcanaWheelPage() {
     [recentRows, slotById],
   );
 
+  const hotCold = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const s of slots) counts.set(s.id, 0);
+    for (const r of recent) {
+      counts.set(r.winId, (counts.get(r.winId) ?? 0) + 1);
+    }
+    const ranked = [...counts.entries()].sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0] - b[0];
+    });
+    const hot = ranked.slice(0, 3).filter(([, n]) => n > 0);
+    const cold = [...ranked].reverse().slice(0, 3);
+    return { hot, cold };
+  }, [recent, slots]);
 
   const slotLabel = useCallback(
     (id: number) => slotById.get(id)?.nameVi ?? `#${id}`,
@@ -614,11 +731,19 @@ export default function ArcanaWheelPage() {
           ← Hub
         </Link>
         <div className="min-w-0 flex-1">
-          <p className="play-heading truncate text-sm">Bánh xe Arcana</p>
-          <p className="truncate text-[10px] text-[var(--play-muted)]">
-            {user.username} · {user.code}
-          </p>
+          <p className="play-heading truncate text-sm">Arcana</p>
         </div>
+        <button
+          type="button"
+          onClick={() => setDetailSheet("streak")}
+          className="rounded-lg bg-white/70 px-2 py-1 text-[10px] font-bold tabular-nums text-[var(--wood-deep)] ring-1 ring-[var(--wood-deep)]/20"
+          title="Chuỗi vận"
+        >
+          ×{luckStreak}
+          {(streakBonus.nextWinBonusPercent ?? 0) > 0
+            ? ` +${streakBonus.nextWinBonusPercent}%`
+            : ""}
+        </button>
         <button
           type="button"
           onClick={() => {
@@ -627,7 +752,7 @@ export default function ArcanaWheelPage() {
           }}
           className="rounded-lg bg-white/70 px-2 py-1 text-[10px] font-bold text-[var(--wood-deep)] ring-1 ring-[var(--wood-deep)]/20"
         >
-          Lịch sử
+          LS
         </button>
         <div className="flex items-center gap-1.5 rounded-full bg-[var(--night)]/70 px-2.5 py-1 ring-1 ring-[var(--gold)]/35">
           <img
@@ -641,86 +766,155 @@ export default function ArcanaWheelPage() {
         </div>
       </header>
 
-      <ArcanaStreakSummary
-        luckStreak={luckStreak}
-        streakBonus={streakBonus}
-        onDetail={() => setDetailSheet("streak")}
-      />
-
-      <p className="mt-2 text-center text-[11px] font-semibold text-[var(--play-muted)]">
-        Nhiệm vụ: {mission.count}/{mission.target} spin ≥{" "}
-        {formatXu(mission.stakeMin)} (24h)
-        {mission.bonusSpins > 0
-          ? ` · ${mission.bonusSpins} lượt quay thưởng`
-          : ""}
+      <p className="mt-1 text-center text-[10px] text-[var(--play-muted)]">
+        NV {mission.count}/{mission.target}
+        {mission.bonusSpins > 0 ? ` · ${mission.bonusSpins} thưởng` : ""}
       </p>
-      {(streakBonus.nextWinBonusPercent ?? 0) > 0 && (
-        <p className="text-center text-[10px] font-bold text-[var(--jade-deep)]">
-          Ván thắng tới: +{streakBonus.nextWinBonusPercent}% chuỗi vận
-        </p>
-      )}
 
-      <div className="mt-2">
-        <ArcanaRoulette
+      <div className="mt-1">
+        <DoubleArcanaRoulette
           slots={slots}
-          rotationDeg={rotationDeg}
+          rotationOuterDeg={rotationOuterDeg}
+          rotationInnerDeg={rotationInnerDeg}
           spinning={spinning}
           highlightId={displayWinId}
+          highlightOuter={displayOuter}
           pickIds={pickIds}
         />
       </div>
 
       {lastResult && !spinning && (
         <p
-          className={`mt-3 text-center text-sm font-bold ${
-            lastResult.won ? "text-[var(--jade-deep)]" : "text-rose-700"
+          className={`mt-2 text-center text-xs font-bold ${
+            lastResult.profit > 0
+              ? "text-[var(--jade-deep)]"
+              : "text-rose-700"
           }`}
         >
-          {lastResult.won
-            ? `Trúng · +${formatXu(lastResult.profit)} xu${
-                (lastResult.streakBonusPercent ?? 0) > 0
-                  ? ` (gồm +${lastResult.streakBonusPercent}% chuỗi vận)`
-                  : ""
-              } · ${slotById.get(lastResult.winId)?.nameVi ?? ""}`
-            : lastResult.nearMiss
-              ? `Suýt trúng · −${formatXu(lastResult.stake)} xu · vòng dừng ${slotById.get(lastResult.wheelDisplayWinId ?? lastResult.winId)?.nameVi ?? ""} · kết quả ${slotById.get(lastResult.winId)?.nameVi ?? ""}`
-              : `Trượt · −${formatXu(lastResult.stake)} xu · ra ${slotById.get(lastResult.winId)?.nameVi ?? ""}`}
+          {(() => {
+            const n = lastResult.outerNumber;
+            const col =
+              typeof n === "number"
+                ? pocketColor(n) === "red"
+                  ? "Đ"
+                  : pocketColor(n) === "black"
+                    ? "N"
+                    : "0"
+                : "";
+            const outer =
+              typeof n === "number" ? `${n}${col !== "0" ? col : ""}` : "";
+            const oBet =
+              lastResult.outerBet && (lastResult.outerStake ?? 0) > 0
+                ? lastResult.outerWon
+                  ? ` · ${outerBetLabelVi(lastResult.outerBet)}+`
+                  : ` · ${outerBetLabelVi(lastResult.outerBet)}−`
+                : "";
+            const arc = lastResult.won
+              ? ` · ${slotById.get(lastResult.winId)?.nameVi ?? "Arcana"}+`
+              : ` · ${slotById.get(lastResult.winId)?.nameVi ?? "Arcana"}−`;
+            const sign = lastResult.profit >= 0 ? "+" : "−";
+            return `${outer}${oBet}${arc} ${sign}${formatXu(Math.abs(lastResult.profit))}`;
+          })()}
         </p>
       )}
 
-      <TarotRecentStrip
-        title="Kết quả gần đây"
-        items={recentStripItems}
-        emptyText="Chưa có lịch sử quay"
-        headerExtra={
-          <ArcanaInfoButton
-            onClick={() => setDetailSheet("recent")}
-            ariaLabel="Xem bảng kết quả gần đây"
-          >
-            Bảng
-          </ArcanaInfoButton>
-        }
-      />
+      <div className="mt-2 flex items-center justify-between gap-2 px-0.5">
+        <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto pb-0.5">
+          {recentRows.slice(0, 10).map((r) => {
+            const n = r.outerNumber;
+            const c =
+              typeof n === "number"
+                ? pocketColor(n)
+                : ("black" as const);
+            return (
+              <span
+                key={r.id}
+                className={`inline-flex h-6 min-w-[1.4rem] shrink-0 items-center justify-center rounded px-1 font-play text-[10px] font-bold tabular-nums ${
+                  c === "red"
+                    ? "bg-[#8b1a1a] text-[#f5e6c8]"
+                    : c === "green"
+                      ? "bg-[#0d5c2e] text-[#f5e6c8]"
+                      : "bg-[#1a1a1a] text-[#f5e6c8]"
+                }`}
+                title={slotById.get(r.winId)?.nameVi}
+              >
+                {typeof n === "number" ? n : "·"}
+              </span>
+            );
+          })}
+          {recentRows.length === 0 && (
+            <span className="text-[10px] text-[var(--play-muted)]">
+              Chưa có kết quả
+            </span>
+          )}
+        </div>
+        <ArcanaInfoButton
+          onClick={() => setDetailSheet("recent")}
+          ariaLabel="Bảng kết quả"
+        >
+          +
+        </ArcanaInfoButton>
+      </div>
 
-      <section className="arcana-pick-section app-panel mt-3 p-3">
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <p className="play-heading text-center text-sm">
-            CHỌN {pickMin}–{pickMax} NHÂN VẬT ({pickIds.length}/{pickMax})
-          </p>
-          <ArcanaInfoButton
-            onClick={() => setDetailSheet("paytable")}
-            ariaLabel="Bảng hệ số và thưởng"
-          >
-            Bảng thưởng
-          </ArcanaInfoButton>
+      <section className="arcana-pick-section app-panel mt-2 p-2.5">
+        <div className="flex flex-wrap items-center justify-center gap-1.5">
+          {(
+            [
+              { key: "red" as const, label: "Đỏ" },
+              { key: "black" as const, label: "Đen" },
+              { key: "even" as const, label: "Chẵn" },
+              { key: "odd" as const, label: "Lẻ" },
+            ] as const
+          ).map((t) => {
+            const active = outerBet === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                disabled={spinning || !enabled || useBonusSpin}
+                onClick={() =>
+                  setOuterBet((prev) => (prev === t.key ? null : t.key))
+                }
+                className={`arcana-eu-chip arcana-eu-chip--${t.key} ${
+                  active ? "arcana-eu-chip--active" : ""
+                }`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+          <span className="mx-0.5 h-4 w-px bg-[var(--wood-deep)]/20" />
+          {OUTSIDE_TIERS.map((t) => {
+            const active = outsideTierActive(t.key);
+            return (
+              <button
+                key={t.key}
+                type="button"
+                disabled={spinning || !enabled}
+                onClick={() => applyOutsideTier(t.key)}
+                className={`arcana-outside-chip arcana-outside-chip--${t.key} ${
+                  active ? "arcana-outside-chip--active" : ""
+                }`}
+              >
+                {t.en}
+              </button>
+            );
+          })}
           <ArcanaInfoButton
             onClick={() => setDetailSheet("howto")}
-            ariaLabel="Hướng dẫn cách tính thưởng"
+            ariaLabel="Hướng dẫn"
           >
             ?
           </ArcanaInfoButton>
         </div>
-        <div className="mt-2 grid grid-cols-4 gap-2">
+        {outerBet && !useBonusSpin && (
+          <p className="mt-1 text-center text-[9px] text-[var(--play-muted)]">
+            ½ ngoài {formatXu(outerStakePreview)} · ½ Arcana{" "}
+            {formatXu(arcanaStakePreview)}
+          </p>
+        )}
+
+        <div className="mt-2 grid grid-cols-4 gap-1.5">
           {slots.map((s) => {
             const selected = pickIds.includes(s.id);
             const order = pickIds.indexOf(s.id);
@@ -731,68 +925,38 @@ export default function ArcanaWheelPage() {
                 type="button"
                 disabled={spinning || !enabled}
                 onClick={() => togglePick(s.id)}
-                className={`arcana-pick-card arcana-pick-card--${tier} relative flex flex-col items-center p-1.5 transition ${
-                  selected
-                    ? "arcana-pick-card--selected"
-                    : ""
+                title={s.nameVi}
+                className={`arcana-pick-card arcana-pick-card--${tier} relative flex flex-col items-center p-1 transition ${
+                  selected ? "arcana-pick-card--selected" : ""
                 }`}
               >
                 {selected && (
-                  <span className="arcana-pick-badge">
-                    {order + 1}
-                  </span>
+                  <span className="arcana-pick-badge">{order + 1}</span>
                 )}
                 <div className="arcana-pick-avatar">
                   <img
                     src={s.image}
                     alt={s.nameVi}
-                    className="h-full w-full rounded-full object-cover"
+                    className="h-full w-full rounded-full object-cover object-top"
+                    onError={(e) => onArcanaImgError(e, s.id)}
                   />
                 </div>
-                <span className="mt-0.5 line-clamp-2 text-center text-[9px] font-semibold leading-tight text-[var(--play-ink)]">
-                  {s.nameVi}
-                </span>
                 <span className="arcana-pick-ratio font-play text-[10px] font-bold">
                   ×{s.ratio}
                 </span>
-                {typeof s.weightShare === "number" && s.weightShare > 0 && (
-                  <span
-                    className={`arcana-rarity arcana-rarity--${tier}`}
-                  >
-                    {rarityLabel(s.weightShare)}
-                  </span>
-                )}
-                {selected && pickIds.length > 0 && (
-                  <span className="mt-0.5 text-[8px] font-bold text-emerald-300 tabular-nums drop-shadow-sm">
-                    +{formatXu(
-                      previewArcanaPayout(
-                        stake,
-                        s.ratio,
-                        pickIds.length,
-                        payoutScale,
-                      ),
-                    )}
-                  </span>
-                )}
               </button>
             );
           })}
         </div>
 
-        {pickIds.length > 0 && (
-          <p className="mt-2 text-center text-[10px] font-semibold text-[var(--wood-deep)] tabular-nums">
-            Trúng ô cao nhất trong lựa chọn: tối đa {formatXu(maxWinPreview)}{" "}
-            xu (lãi {formatXu(Math.max(0, maxWinPreview - stake))})
-          </p>
-        )}
-        <div className="mt-2 flex flex-wrap justify-center gap-2">
+        <div className="mt-2 flex flex-wrap justify-center gap-1.5">
           {betTiers.map((t) => (
             <button
               key={t}
               type="button"
               disabled={spinning}
               onClick={() => setStake(t)}
-              className={`rounded-full px-3 py-1.5 font-play text-xs font-bold tabular-nums ${
+              className={`rounded-full px-2.5 py-1 font-play text-[11px] font-bold tabular-nums ${
                 stake === t
                   ? "bg-[var(--wood-deep)] text-[var(--gold-soft)] ring-1 ring-[var(--gold)]"
                   : "bg-white/70 text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
@@ -803,38 +967,50 @@ export default function ArcanaWheelPage() {
           ))}
         </div>
 
-        <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 text-xs font-semibold text-[var(--play-ink)]">
-          <input
-            type="checkbox"
-            checked={useBonusSpin}
-            disabled={spinning || mission.bonusSpins <= 0}
-            onChange={(e) => setUseBonusSpin(e.target.checked)}
-            className="h-4 w-4 accent-[var(--jade-deep)]"
-          />
-          Dùng lượt quay thưởng ({mission.bonusSpins} · mức{" "}
-          {formatXu(mission.bonusStake)} miễn phí)
-        </label>
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] font-semibold text-[var(--play-ink)]">
+          <label className="flex cursor-pointer items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={useBonusSpin}
+              disabled={spinning || mission.bonusSpins <= 0}
+              onChange={(e) => setUseBonusSpin(e.target.checked)}
+              className="h-3.5 w-3.5 accent-[var(--jade-deep)]"
+            />
+            Thưởng ({mission.bonusSpins})
+          </label>
+          <label className="flex cursor-pointer items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={autoSpin}
+              disabled={spinning && !autoSpin}
+              onChange={(e) => {
+                const on = e.target.checked;
+                if (
+                  on &&
+                  (pickIds.length < pickMin || pickIds.length > pickMax)
+                ) {
+                  setError(
+                    `Chọn từ ${pickMin}–${pickMax} nhân vật trước khi Auto`,
+                  );
+                  return;
+                }
+                setAutoSpin(on);
+                setError("");
+              }}
+              className="h-3.5 w-3.5 accent-[var(--jade-deep)]"
+            />
+            Auto
+          </label>
+          <button
+            type="button"
+            onClick={() => setDetailSheet("paytable")}
+            className="text-[10px] font-bold text-[var(--wood-deep)] underline-offset-2 hover:underline"
+          >
+            Bảng thưởng
+          </button>
+        </div>
 
-        <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 text-xs font-semibold text-[var(--play-ink)]">
-          <input
-            type="checkbox"
-            checked={autoSpin}
-            disabled={spinning && !autoSpin}
-            onChange={(e) => {
-              const on = e.target.checked;
-              if (on && (pickIds.length < pickMin || pickIds.length > pickMax)) {
-                setError(`Chọn từ ${pickMin}–${pickMax} nhân vật trước khi Auto`);
-                return;
-              }
-              setAutoSpin(on);
-              setError("");
-            }}
-            className="h-4 w-4 accent-[var(--jade-deep)]"
-          />
-          Auto quay (dừng khi hết xu / tắt Auto)
-        </label>
-
-        <div className="mt-3 flex gap-2">
+        <div className="mt-2 flex gap-2">
           <button
             type="button"
             disabled={!canSpin && !autoSpin}
@@ -854,8 +1030,8 @@ export default function ArcanaWheelPage() {
                 : autoSpin
                   ? "Dừng Auto"
                   : pickIds.length < pickMin
-                    ? `Chọn thêm ${pickMin - pickIds.length} NV`
-                    : `Quay số phận · ${formatXu(stake)} xu`}
+                    ? `Chọn ${pickMin - pickIds.length} NV`
+                    : `Quay · ${formatXu(stake)}`}
           </button>
         </div>
       </section>
@@ -886,6 +1062,26 @@ export default function ArcanaWheelPage() {
               items={recentStripItems}
               emptyText="Chưa có lịch sử quay"
             />
+            {hotCold.hot.length > 0 && (
+              <div className="mb-3 flex flex-wrap justify-center gap-4 text-[10px]">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-rose-700">Nóng</span>
+                  {hotCold.hot.map(([id, n]) => (
+                    <span key={`h-${id}`} className="tabular-nums">
+                      {slotById.get(id)?.nameVi?.slice(0, 8) ?? id}({n})
+                    </span>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-sky-800">Lạnh</span>
+                  {hotCold.cold.map(([id, n]) => (
+                    <span key={`c-${id}`} className="tabular-nums">
+                      {slotById.get(id)?.nameVi?.slice(0, 8) ?? id}({n})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             <ArcanaRecentTable
               rows={recentRows}
               slotName={slotLabel}
@@ -898,7 +1094,7 @@ export default function ArcanaWheelPage() {
             bare
             slots={slots}
             pickIds={pickIds}
-            stake={stake}
+            stake={arcanaStakePreview}
             payoutScale={payoutScale}
           />
         )}

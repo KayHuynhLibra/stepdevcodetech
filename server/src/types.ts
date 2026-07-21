@@ -107,6 +107,8 @@ export interface OnlinePlayerPublic {
   outcomeMode?: "normal" | "win" | "lose";
   /** Khách chưa login — staff only */
   guestCode?: string;
+  /** Cảnh giới Tu Tiên (công khai nếu đã gán) */
+  cultivationRank?: string;
 }
 
 export interface PublicState {

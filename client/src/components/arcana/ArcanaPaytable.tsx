@@ -3,6 +3,7 @@ import {
   previewArcanaPayout,
   rarityLabel,
 } from "../../lib/arcanaPayout";
+import { onArcanaImgError } from "../../lib/arcanaImages";
 
 export interface ArcanaPaytableSlot {
   id: number;
@@ -39,7 +40,8 @@ export function ArcanaPaytable({
       )}
       {bare && (
         <p className="mb-2 text-[10px] text-[var(--play-muted)]">
-          Hệ số ×N nhân vào công thức — không phải đổi 1 xu lấy N xu.
+          Hệ số ×N nhân vào phần stake Arcana. Chip Đỏ/Đen/Chẵn/Lẻ chia stake
+          50/50 (even-money ×2). Common / Rare / Epic = chọn nhóm Arcana.
         </p>
       )}
       <div className={`overflow-x-auto ${bare ? "" : "mt-2"}`}>
@@ -72,14 +74,21 @@ export function ArcanaPaytable({
                       <img
                         src={s.image}
                         alt=""
-                        className="h-7 w-7 shrink-0 rounded-full object-cover ring-1 ring-[var(--gold)]/30"
+                        className="h-7 w-7 shrink-0 rounded-full object-cover object-top ring-1 ring-[var(--gold)]/30"
+                        onError={(e) => onArcanaImgError(e, s.id)}
                       />
                       <div className="min-w-0">
                         <p className="truncate font-semibold text-[var(--play-ink)]">
                           {s.nameVi}
                         </p>
                         <span
-                          className={`arcana-rarity arcana-rarity--${rare === "Hiếm" ? "high" : rare === "TB" ? "mid" : "low"}`}
+                          className={`arcana-rarity arcana-rarity--${
+                            rare === "Epic"
+                              ? "high"
+                              : rare === "Hiếm"
+                                ? "mid"
+                                : "low"
+                          }`}
                         >
                           {rare}
                         </span>

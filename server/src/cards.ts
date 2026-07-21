@@ -1,5 +1,7 @@
 import {
+  applyWinBiasToWeights,
   effectiveWeights,
+  interStore,
   isPackMode,
   isPolicyMode,
   type InterMode,
@@ -192,32 +194,36 @@ function resolveWeights(
   realBets?: number[],
   recentWins?: number[],
 ): number[] {
+  let weights: number[];
   if (isPackMode(mode)) {
-    return CARDS.map((c) => c.weight);
-  }
-  if (mode === "flat") {
-    return CARDS.map(() => 12.5);
-  }
-  if (mode === "cool") {
-    return coolWeights(
+    weights = CARDS.map((c) => c.weight);
+  } else if (mode === "flat") {
+    weights = CARDS.map(() => 12.5);
+  } else if (mode === "cool") {
+    weights = coolWeights(
       CARDS.map((c) => c.weight),
       recentWins ?? [],
     );
-  }
-  if (mode === "hot") {
-    return hotWeights(
+  } else if (mode === "hot") {
+    weights = hotWeights(
       CARDS.map((c) => c.weight),
       recentWins ?? [],
     );
+  } else if (mode === "wild") {
+    weights = wildWeights(CARDS.map((c) => c.weight));
+  } else if (isPolicyMode(mode)) {
+    weights = policyWeights(mode, realBets ?? []);
+  } else {
+    weights = effectiveWeights(
+      CARDS.map((c) => c.weight),
+      mode,
+      CARDS.map((c) => c.id),
+    );
   }
-  if (mode === "wild") {
-    return wildWeights(CARDS.map((c) => c.weight));
-  }
-  if (isPolicyMode(mode)) return policyWeights(mode, realBets ?? []);
-  return effectiveWeights(
-    CARDS.map((c) => c.weight),
-    mode,
+  return applyWinBiasToWeights(
+    weights,
     CARDS.map((c) => c.id),
+    interStore.getWinBiasPct(),
   );
 }
 

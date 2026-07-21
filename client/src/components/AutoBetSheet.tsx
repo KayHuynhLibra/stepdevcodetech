@@ -81,6 +81,8 @@ export function saveAutoBet(cfg: AutoBetConfig) {
 interface AutoBetSheetProps {
   open: boolean;
   initial: AutoBetConfig;
+  maxBetPerCard?: number;
+  quickAdds?: number[];
   onClose: () => void;
   onSave: (cfg: AutoBetConfig) => void;
 }
@@ -88,12 +90,16 @@ interface AutoBetSheetProps {
 export function AutoBetSheet({
   open,
   initial,
+  maxBetPerCard = MAX_BET_PER_CARD,
+  quickAdds = [...QUICK_ADDS],
   onClose,
   onSave,
 }: AutoBetSheetProps) {
   const [enabled, setEnabled] = useState(initial.enabled);
   const [slots, setSlots] = useState<AutoBetSlot[]>(initial.slots);
   const [formError, setFormError] = useState<string | null>(null);
+  const cap = Math.max(MAX_BET_PER_CARD, maxBetPerCard);
+  const adds = quickAdds.length ? quickAdds : [...QUICK_ADDS];
 
   useEffect(() => {
     if (!open) return;
@@ -122,7 +128,7 @@ export function AutoBetSheet({
         s.cardId === cardId
           ? {
               ...s,
-              amount: Math.min(MAX_BET_PER_CARD, s.amount + n),
+              amount: Math.min(cap, s.amount + n),
             }
           : s,
       ),
@@ -135,10 +141,7 @@ export function AutoBetSheet({
         s.cardId === cardId
           ? {
               ...s,
-              amount: Math.max(
-                MIN_BET,
-                Math.min(MAX_BET_PER_CARD, amount),
-              ),
+              amount: Math.max(MIN_BET, Math.min(cap, amount)),
             }
           : s,
       ),
@@ -293,7 +296,7 @@ export function AutoBetSheet({
                       </button>
                     </div>
                     <div className="flex flex-wrap gap-1">
-                      {QUICK_ADDS.map((n) => (
+                      {adds.map((n) => (
                         <button
                           key={n}
                           type="button"

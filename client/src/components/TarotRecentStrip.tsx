@@ -48,7 +48,13 @@ export function TarotRecentStrip({
             <img
               src={item.image}
               alt=""
-              className="h-full w-full object-cover object-center"
+              className="h-full w-full object-cover object-top"
+              onError={(e) => {
+                const img = e.currentTarget;
+                if (img.dataset.fb === "1") return;
+                img.dataset.fb = "1";
+                img.src = "/assets/cards/card-back.webp?v=6";
+              }}
             />
             <span className="font-play absolute left-0.5 top-0.5 z-[1] rounded bg-[var(--wood-deep)]/92 px-1 text-[9px] font-bold leading-tight text-[var(--gold-soft)] tabular-nums shadow-sm">
               {item.badge}

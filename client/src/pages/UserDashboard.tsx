@@ -28,6 +28,7 @@ import { CARDS, formatXu, type BetEntry } from "../cards";
 import { AppShell } from "../components/AppShell";
 import { IdentityBadge } from "../components/IdentityBadge";
 import { uploadAvatarFromFile } from "../uploadAvatar";
+import { ensureCultivationColors } from "../cultivation";
 
 function cardName(id: number) {
   return CARDS.find((c) => c.id === id)?.nameVi ?? `Lá ${id}`;
@@ -94,12 +95,13 @@ export default function UserDashboard() {
       nav("/login", { replace: true });
       return;
     }
+    void ensureCultivationColors();
     api<{ ok: true; user: AuthUser }>("/api/auth/me")
       .then((r) => {
         setUser(r.user);
         const token = getToken();
         if (token) saveSession(token, r.user);
-        if (isStaff(r.user)) {
+        if (isStaff(r.user) || r.user.role === "deal" || r.user.role === "tutien" || r.user.role === "mod") {
           nav(homePath(r.user), { replace: true });
           return;
         }

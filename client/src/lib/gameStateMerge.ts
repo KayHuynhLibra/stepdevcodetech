@@ -40,7 +40,15 @@ function onlinePlayersSame(
   if (!a && !b) return true;
   if (!a || !b || a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
-    if (a[i]!.id !== b[i]!.id || a[i]!.balance !== b[i]!.balance) {
+    const pa = a[i]!;
+    const pb = b[i]!;
+    if (
+      pa.id !== pb.id ||
+      pa.balance !== pb.balance ||
+      pa.cultivationRank !== pb.cultivationRank ||
+      pa.isVip !== pb.isVip ||
+      pa.code !== pb.code
+    ) {
       return false;
     }
   }

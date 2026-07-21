@@ -13,7 +13,9 @@ export type VaultLedgerType =
   | "seize_user"
   | "set_balance"
   | "coupon_mint"
-  | "admin_adjust";
+  | "admin_adjust"
+  | "chat_fee"
+  | "cultivation_fee";
 
 export interface VaultLedgerEntry {
   id: string;
@@ -130,6 +132,13 @@ export class VaultStore {
   }
 
   getSnapshot() {
+    const breakdown: Record<string, { count: number; sum: number }> = {};
+    for (const e of this.ledger) {
+      const row = breakdown[e.type] ?? { count: 0, sum: 0 };
+      row.count += 1;
+      row.sum += e.amount;
+      breakdown[e.type] = row;
+    }
     return {
       label: this.label,
       balance: this.balance,
@@ -142,6 +151,9 @@ export class VaultStore {
         this.totalPayoutOut +
         this.totalMinted -
         this.totalBurned,
+      /** Lãi/lỗ thuần từ cược user (không gồm mint/burn admin) */
+      netFromPlay: this.totalStakeIn - this.totalPayoutOut,
+      breakdown,
       ledger: this.ledger.slice(0, 50),
     };
   }
@@ -309,6 +321,45 @@ export class VaultStore {
       d > 0 ? "Admin cộng xu" : "Admin trừ xu",
       { userId, username },
     );
+  }
+
+  /** Chat trả phí → xu vào Kho Tarot */
+  recordChatFee(
+    amount: number,
+    userId: string,
+    username: string,
+    mode: string,
+    rank?: string | null,
+  ) {
+    const amt = Math.floor(amount);
+    if (amt <= 0) return;
+    this.balance += amt;
+    this.totalMinted += amt;
+    const rankNote = rank ? ` · ${rank}` : "";
+    this.push(
+      "chat_fee",
+      amt,
+      "system",
+      `Chat ${mode}${rankNote}`,
+      { userId, username },
+    );
+  }
+
+  /** Phí duy trì cảnh giới → Kho Tarot */
+  recordCultivationFee(
+    amount: number,
+    userId: string,
+    username: string,
+    rank: string,
+  ) {
+    const amt = Math.floor(amount);
+    if (amt <= 0) return;
+    this.balance += amt;
+    this.totalMinted += amt;
+    this.push("cultivation_fee", amt, "system", `Phí duy trì ${rank}`, {
+      userId,
+      username,
+    });
   }
 }
 

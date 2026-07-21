@@ -13,6 +13,9 @@ interface BetSheetProps {
   balance: number;
   /** Số xu đã đặt trên lá này trong ván hiện tại */
   currentStake?: number;
+  /** Trần / lá (tutien có thể >1M) */
+  maxBetPerCard?: number;
+  quickAdds?: number[];
   onClose: () => void;
   onConfirm: (cardId: number, amount: number) => void;
 }
@@ -22,10 +25,14 @@ export function BetSheet({
   cardId,
   balance,
   currentStake = 0,
+  maxBetPerCard = MAX_BET_PER_CARD,
+  quickAdds = [...QUICK_ADDS],
   onClose,
   onConfirm,
 }: BetSheetProps) {
   const [amount, setAmount] = useState(0);
+  const cap = Math.max(MAX_BET_PER_CARD, maxBetPerCard);
+  const adds = quickAdds.length ? quickAdds : [...QUICK_ADDS];
 
   const card: CardDef | undefined = useMemo(
     () => CARDS.find((c) => c.id === cardId) ?? undefined,
@@ -39,20 +46,20 @@ export function BetSheet({
   if (!open || !card) return null;
 
   const already = Math.max(0, currentStake);
-  const roomLeft = Math.max(0, MAX_BET_PER_CARD - already);
+  const roomLeft = Math.max(0, cap - already);
   const totalAfter = already + amount;
   const overCardCap = amount > roomLeft;
   const insufficient =
     amount > balance || amount <= 0 || overCardCap || roomLeft <= 0;
   const status =
     roomLeft <= 0
-      ? `Đã đạt trần ${formatXu(MAX_BET_PER_CARD)} xu / lá`
+      ? `Đã đạt trần ${formatXu(cap)} xu / lá`
       : amount <= 0
         ? already > 0
           ? `Đã đặt ${formatXu(already)} · còn thêm tối đa ${formatXu(roomLeft)}`
-          : `Mời chọn số đặt (tối đa ${formatXu(MAX_BET_PER_CARD)} / lá)`
+          : `Mời chọn số đặt (tối đa ${formatXu(cap)} / lá)`
         : overCardCap
-          ? `Vượt trần ${formatXu(MAX_BET_PER_CARD)} / lá`
+          ? `Vượt trần ${formatXu(cap)} / lá`
           : amount > balance
             ? "Số dư không đủ"
             : already > 0
@@ -116,7 +123,7 @@ export function BetSheet({
 
           <p className="bet-sheet-meta mb-2 text-center text-[11px] font-semibold">
             Lá {card.id} · x{card.multiplier} · Số dư {formatXu(balance)} · Max{" "}
-            {formatXu(MAX_BET_PER_CARD)}/lá
+            {formatXu(cap)}/lá
           </p>
 
           {already > 0 && (
@@ -138,11 +145,11 @@ export function BetSheet({
           </div>
 
           <div className="bet-sheet-chips mx-auto grid w-[92%] grid-cols-3 gap-2">
-            {QUICK_ADDS.map((n) => (
+            {adds.map((n) => (
               <button
                 key={n}
                 type="button"
-                disabled={roomLeft <= 0}
+                disabled={roomLeft <= 0 || balance <= 0}
                 onClick={() => add(n)}
                 className="bet-sheet-chip font-play tabular-nums"
               >

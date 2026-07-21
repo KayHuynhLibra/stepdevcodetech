@@ -7,6 +7,9 @@ import { fileURLToPath } from "url";
 import { Server } from "socket.io";
 import {
   authStore,
+  canAccessRoomAdmin,
+  canManageCultivation,
+  canModerateVoiceRoom,
   isBalanceOperator,
   isMainAdmin,
   isStaff,
@@ -39,8 +42,18 @@ import { reportStore } from "./reportStore.js";
 import type { PublicState } from "./types.js";
 import { arcanaWheelStore } from "./arcanaWheelStore.js";
 import { arcanaMissionStore } from "./arcanaMissionStore.js";
+import { tutienBetLimitsStore } from "./tutienBetLimitsStore.js";
 import { chatConfigStore } from "./chatConfigStore.js";
 import { vaultArcana, vaultStore } from "./vaultStore.js";
+import {
+  cultivationStore,
+  isCultivationRank,
+} from "./cultivationStore.js";
+import { attachVoiceSocket, broadcastVoiceRoom } from "./voiceSocket.js";
+import {
+  isRoomId,
+  voiceRoomStore,
+} from "./voiceRoomStore.js";
 
 const PORT = Number(process.env.PORT) || 3001;
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -131,6 +144,8 @@ const io = new Server(httpServer, {
   },
 });
 
+attachVoiceSocket(io);
+
 const engine = new GameEngine((state: PublicState, playerId?: string) => {
   if (playerId) {
     io.to(playerId).emit("state", state);
@@ -206,6 +221,33 @@ function requireMainAdmin(
   if (!user) return null;
   if (!isMainAdmin(user)) {
     res.status(403).json({ ok: false, reason: "Chỉ mainadmin" });
+    return null;
+  }
+  return user;
+}
+
+/** Tab Room + REST điều hành voice — mainadmin / mod (admin staff cũng được). */
+function requireRoomModerator(
+  req: express.Request,
+  res: express.Response,
+): ReturnType<typeof authStore.resolveToken> {
+  const user = requireAuth(req, res);
+  if (!user) return null;
+  if (!canModerateVoiceRoom(user)) {
+    res.status(403).json({ ok: false, reason: "Chỉ mainadmin / mod / admin" });
+    return null;
+  }
+  return user;
+}
+
+function requireCultivationManager(
+  req: express.Request,
+  res: express.Response,
+): ReturnType<typeof authStore.resolveToken> {
+  const user = requireAuth(req, res);
+  if (!user) return null;
+  if (!canManageCultivation(user)) {
+    res.status(403).json({ ok: false, reason: "Chỉ Tu Tiên / mainadmin" });
     return null;
   }
   return user;
@@ -364,10 +406,14 @@ app.post("/api/auth/login", (req, res) => {
         user: merged.user,
         token: result.token,
         guestMerged: true,
+        betLimits: tutienBetLimitsStore.limitsForUser(merged.user),
       });
     }
   }
-  res.json(result);
+  res.json({
+    ...result,
+    betLimits: tutienBetLimitsStore.limitsForUser(result.user),
+  });
 });
 
 app.post("/api/auth/recover-password", (req, res) => {
@@ -413,7 +459,11 @@ app.post("/api/auth/change-password", (req, res) => {
 app.get("/api/auth/me", (req, res) => {
   const user = requireAuth(req, res);
   if (!user) return;
-  res.json({ ok: true, user });
+  res.json({
+    ok: true,
+    user,
+    betLimits: tutienBetLimitsStore.limitsForUser(user),
+  });
 });
 
 /** Thẻ profile công khai (VIP + ID) — dùng khi mở popup người chơi. */
@@ -679,6 +729,7 @@ app.get("/api/admin/overview", (req, res) => {
     payload.inter = buildInterPayload();
     payload.chatConfig = chatConfigStore.getSnapshot();
     payload.invites = inviteStore.list();
+    payload.cultivation = cultivationStore.getPublic();
     payload.traffic = {
       ...live,
       ...accounts,
@@ -738,6 +789,22 @@ app.post("/api/mainadmin/inter", (req, res) => {
     if (!result.ok) return res.status(400).json(result);
     audit(me, "inter_rotation", {
       detail: result.allRotation.join("→"),
+    });
+  }
+  if (req.body?.winBiasPct != null && req.body?.winBiasPct !== "") {
+    const result = interStore.setWinBiasPct(
+      Number(req.body.winBiasPct),
+      me.username,
+    );
+    audit(me, "inter_win_bias", { detail: String(result.winBiasPct) });
+  }
+  if (req.body?.vaultInterLink != null) {
+    const result = interStore.setVaultInterLink(
+      req.body.vaultInterLink,
+      me.username,
+    );
+    audit(me, "vault_inter_link", {
+      detail: JSON.stringify(result.vaultInterLink),
     });
   }
   res.json({
@@ -909,6 +976,7 @@ app.patch("/api/mainadmin/arcana/config", (req, res) => {
     {
       enabled: req.body?.enabled,
       betTiers: req.body?.betTiers,
+      tutienMaxByRank: req.body?.tutienMaxByRank,
       payoutScale: req.body?.payoutScale,
       streakBonusEnabled: req.body?.streakBonusEnabled,
       streakBonusMinStreak: req.body?.streakBonusMinStreak,
@@ -979,6 +1047,7 @@ app.post("/api/arcana-wheel/spin", (req, res) => {
     pickIds: req.body?.pickIds,
     pickId: req.body?.pickId,
     useBonusSpin: !!req.body?.useBonusSpin,
+    outerBet: req.body?.outerBet,
   });
   if (!result.ok) return res.status(400).json(result);
   const live = engine.applyAuthBalance(user.id, result.balance);
@@ -1080,23 +1149,49 @@ app.post("/api/admin/bots", (req, res) => {
   res.json(result);
 });
 
-/** Admin: mode kết quả riêng cho 1 user (lose | normal | win). */
+/** Admin: mode kết quả riêng cho 1 user (lose | normal | win) + winPct 80–100. */
 app.post("/api/admin/user-outcome", (req, res) => {
   const me = requireAdmin(req, res);
   if (!me) return;
   const userId = String(req.body?.userId ?? "");
-  const mode = req.body?.mode;
-  if (!userId || !isUserOutcomeMode(mode)) {
+  if (!userId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId" });
+  }
+  const hasWinPct =
+    req.body?.winPct != null && req.body?.winPct !== "";
+  const winPctRaw = hasWinPct ? Number(req.body.winPct) : undefined;
+  const modeRaw = req.body?.mode;
+
+  /** Chỉ cập nhật % (tự bật win) */
+  if (hasWinPct && (modeRaw == null || modeRaw === "")) {
+    const result = authStore.setOutcomeWinPct(userId, winPctRaw!);
+    if (!result.ok) return res.status(400).json(result);
+    audit(me, "user_outcome", {
+      targetId: result.user.id,
+      targetName: result.user.username,
+      detail: `win@${result.user.outcomeWinPct ?? winPctRaw}%`,
+    });
+    return res.json(result);
+  }
+
+  if (!isUserOutcomeMode(modeRaw)) {
     return res
       .status(400)
       .json({ ok: false, reason: "Thiếu userId hoặc mode (normal|win|lose)" });
   }
-  const result = authStore.setOutcomeMode(userId, mode);
+  const result = authStore.setOutcomeMode(
+    userId,
+    modeRaw,
+    hasWinPct ? winPctRaw : undefined,
+  );
   if (!result.ok) return res.status(400).json(result);
   audit(me, "user_outcome", {
     targetId: result.user.id,
     targetName: result.user.username,
-    detail: mode,
+    detail:
+      modeRaw === "win"
+        ? `win@${result.user.outcomeWinPct ?? 100}%`
+        : String(modeRaw),
   });
   res.json(result);
 });
@@ -1484,11 +1579,14 @@ app.post("/api/mainadmin/user-role", (req, res) => {
     (role !== "user" &&
       role !== "deal" &&
       role !== "admin" &&
-      role !== "onl")
+      role !== "onl" &&
+      role !== "tutien" &&
+      role !== "mod")
   ) {
-    return res
-      .status(400)
-      .json({ ok: false, reason: "Thiếu userId hoặc role (user|deal|admin)" });
+    return res.status(400).json({
+      ok: false,
+      reason: "Thiếu userId hoặc role (user|deal|admin|onl|tutien|mod)",
+    });
   }
   const result = authStore.setUserRole(userId, role);
   if (!result.ok) return res.status(400).json(result);
@@ -1497,6 +1595,182 @@ app.post("/api/mainadmin/user-role", (req, res) => {
     targetName: result.user.username,
     detail: String(role),
   });
+  res.json({ ok: true, user: result.user });
+});
+
+/** Dashboard Room — danh sách 5 phòng voice + ghế. */
+app.get("/api/room/overview", (req, res) => {
+  const me = requireRoomModerator(req, res);
+  if (!me) return;
+  res.json({
+    ok: true,
+    me: { id: me.id, username: me.username, role: me.role },
+    rooms: voiceRoomStore.listAllRooms(),
+    canAccessRoomAdmin: canAccessRoomAdmin(me),
+  });
+});
+
+app.post("/api/room/set-open", (req, res) => {
+  const me = requireRoomModerator(req, res);
+  if (!me) return;
+  const roomId = Number(req.body?.roomId);
+  const open = !!req.body?.open;
+  const result = voiceRoomStore.staffSetOpen(roomId, open);
+  if (!result.ok) return res.status(400).json(result);
+  if (isRoomId(roomId)) broadcastVoiceRoom(io, roomId);
+  audit(me, "room_set_open", {
+    detail: `room=${roomId} → ${open ? "open" : "closed"}`,
+  });
+  res.json({ ok: true, room: result.room });
+});
+
+app.post("/api/room/force-mute", (req, res) => {
+  const me = requireRoomModerator(req, res);
+  if (!me) return;
+  const targetSocketId = String(req.body?.targetSocketId ?? "").trim();
+  const muted = !!req.body?.muted;
+  if (!targetSocketId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu targetSocketId" });
+  }
+  const result = voiceRoomStore.staffForceMute(targetSocketId, muted);
+  if (!result.ok) return res.status(400).json(result);
+  io.to(targetSocketId).emit("voice:forceMuted", {
+    muted,
+    room: result.room,
+  });
+  broadcastVoiceRoom(io, result.roomId);
+  audit(me, "room_force_mute", {
+    detail: `room=${result.roomId} target=${targetSocketId} muted=${muted}`,
+  });
+  res.json({ ok: true, room: result.room });
+});
+
+app.post("/api/room/kick", (req, res) => {
+  const me = requireRoomModerator(req, res);
+  if (!me) return;
+  const targetSocketId = String(req.body?.targetSocketId ?? "").trim();
+  if (!targetSocketId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu targetSocketId" });
+  }
+  const result = voiceRoomStore.kick("", targetSocketId, true);
+  if (!result.ok) return res.status(400).json(result);
+  const targetSock = io.sockets.sockets.get(targetSocketId);
+  if (targetSock) void targetSock.leave(`voice:${result.roomId}`);
+  io.to(targetSocketId).emit("voice:kicked", {
+    reason: "Mod đã mời bạn ra khỏi phòng voice",
+    room: result.room,
+  });
+  io.to(`voice:${result.roomId}`).emit("voice:peerLeft", {
+    socketId: targetSocketId,
+    room: result.room,
+  });
+  broadcastVoiceRoom(io, result.roomId);
+  audit(me, "room_kick", {
+    detail: `room=${result.roomId} target=${targetSocketId}`,
+  });
+  res.json({ ok: true, room: result.room });
+});
+
+app.post("/api/room/clear", (req, res) => {
+  const me = requireRoomModerator(req, res);
+  if (!me) return;
+  const roomId = Number(req.body?.roomId);
+  const result = voiceRoomStore.staffClearRoom(roomId);
+  if (!result.ok) return res.status(400).json(result);
+  for (const sid of result.kicked) {
+    const sock = io.sockets.sockets.get(sid);
+    if (sock && isRoomId(roomId)) void sock.leave(`voice:${roomId}`);
+    io.to(sid).emit("voice:kicked", {
+      reason: "Mod đã dọn phòng voice",
+      room: result.room,
+    });
+  }
+  if (isRoomId(roomId)) broadcastVoiceRoom(io, roomId);
+  audit(me, "room_clear", {
+    detail: `room=${roomId} kicked=${result.kicked.length}`,
+  });
+  res.json({ ok: true, room: result.room, kicked: result.kicked.length });
+});
+
+/** Public: bảng màu + label cảnh giới (chip UI). */
+app.get("/api/cultivation/colors", (_req, res) => {
+  res.json({ ok: true, ...cultivationStore.getPublic() });
+});
+
+/** Tu Tiên / mainadmin: overview gán rank + màu. */
+app.get("/api/tutien/overview", (req, res) => {
+  const me = requireCultivationManager(req, res);
+  if (!me) return;
+  res.json({
+    ok: true,
+    me: { id: me.id, username: me.username, role: me.role },
+    users: authStore.listUsers(),
+    cultivation: cultivationStore.getPublic(),
+    stats: engine.getOnlineStats(),
+  });
+});
+
+app.get("/api/tutien/cultivation/colors", (req, res) => {
+  const me = requireCultivationManager(req, res);
+  if (!me) return;
+  res.json({ ok: true, ...cultivationStore.getPublic() });
+});
+
+app.post("/api/tutien/cultivation/colors", (req, res) => {
+  const me = requireCultivationManager(req, res);
+  if (!me) return;
+  const result = cultivationStore.setColors(
+    req.body?.colors ?? req.body,
+    me.username,
+  );
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "cultivation_colors", {
+    detail: `updatedBy=${me.username}`,
+  });
+  res.json({ ok: true, ...cultivationStore.getPublic() });
+});
+
+/** Mainadmin: lợi ích + phí duy trì 9 bậc */
+app.post("/api/mainadmin/cultivation/config", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const result = cultivationStore.setBenefitsAndMaintenance(
+    {
+      benefits: req.body?.benefits,
+      maintenance: req.body?.maintenance,
+    },
+    me.username,
+  );
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "cultivation_config", { detail: "benefits+maintenance" });
+  res.json({ ok: true, ...cultivationStore.getPublic() });
+});
+
+/** Tu Tiên / mainadmin: gán hoặc xóa cảnh giới. */
+app.post("/api/admin/cultivation/rank", (req, res) => {
+  const me = requireCultivationManager(req, res);
+  if (!me) return;
+  const userId = String(req.body?.userId ?? "").trim();
+  const rawRank = req.body?.rank;
+  if (!userId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId" });
+  }
+  let rank: import("./cultivationRanks.js").CultivationRank | null = null;
+  if (rawRank === null || rawRank === undefined || rawRank === "") {
+    rank = null;
+  } else if (isCultivationRank(rawRank)) {
+    rank = rawRank;
+  } else {
+    return res.status(400).json({ ok: false, reason: "Cảnh giới không hợp lệ" });
+  }
+  const result = authStore.setCultivationRank(userId, rank);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "cultivation_rank", {
+    targetId: result.user.id,
+    targetName: result.user.username,
+    detail: rank ?? "cleared",
+  });
+  engine.refreshAllClients();
   res.json({ ok: true, user: result.user });
 });
 
@@ -1512,6 +1786,26 @@ app.post("/api/mainadmin/user-leaderboard-hide", (req, res) => {
   const result = authStore.setHideFromLeaderboard(userId, hidden);
   if (!result.ok) return res.status(400).json(result);
   audit(me, "user_leaderboard_hide", {
+    targetId: result.user.id,
+    targetName: result.user.username,
+    detail: hidden ? "hide" : "show",
+  });
+  engine.refreshAllClients();
+  res.json(result);
+});
+
+/** Mainadmin: ẩn nick công khai (displayName → Ẩn danh) */
+app.post("/api/mainadmin/user-hide-nickname", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const userId = String(req.body?.userId ?? "").trim();
+  const hidden = !!req.body?.hidden;
+  if (!userId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId" });
+  }
+  const result = authStore.setHideNickname(userId, hidden);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "user_hide_nickname", {
     targetId: result.user.id,
     targetName: result.user.username,
     detail: hidden ? "hide" : "show",
@@ -1909,6 +2203,30 @@ if (existsSync(CLIENT_DIST)) {
 }
 
 engine.start();
+
+/** Phí duy trì cảnh giới + vault→Inter link */
+setInterval(() => {
+  try {
+    const fees = authStore.processCultivationFees();
+    if (fees.charged || fees.demoted) {
+      console.log(
+        `[cultivation] fees charged=${fees.charged} demoted=${fees.demoted}`,
+      );
+      engine.refreshAllClients();
+    }
+  } catch (err) {
+    console.warn("[cultivation] fee tick failed:", err);
+  }
+  try {
+    const snap = vaultStore.getSnapshot();
+    const r = interStore.applyVaultNet(snap.netFromPlay ?? snap.netHouse);
+    if (r.applied) {
+      console.log(`[inter] vault-auto → ${r.mode} (${r.reason})`);
+    }
+  } catch (err) {
+    console.warn("[inter] vault link tick failed:", err);
+  }
+}, 5 * 60 * 1000);
 
 httpServer.listen(PORT, () => {
   console.log(`[server] Tarot demo listening on http://localhost:${PORT}`);

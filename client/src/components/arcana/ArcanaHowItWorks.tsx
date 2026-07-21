@@ -40,6 +40,15 @@ export function ArcanaHowItWorksBody({
         Trúng khi nhân vật bánh xe dừng nằm trong danh sách bạn đã chọn. Chuỗi
         vận thắng có thể cộng thêm % lên thưởng gốc (xem Chi tiết chuỗi vận).
       </p>
+      <p className="mt-2 text-[var(--play-muted)]">
+        <strong>Nhóm Arcana</strong> (Common / Rare / Epic): chọn nhanh cả nhóm
+        theo độ hiếm — cùng công thức thưởng như chọn từng nhân vật.
+      </p>
+      <p className="mt-2 text-[var(--play-muted)]">
+        <strong>Roulette ngoài</strong> (Đỏ / Đen / Chẵn / Lẻ): tùy chọn. Khi
+        chọn, chia stake 50/50 — nửa even-money (trúng nhận ×2 nửa đó; số 0
+        thua), nửa còn lại vào Arcana. Không chọn = 100% stake vào Arcana.
+      </p>
     </div>
   );
 }

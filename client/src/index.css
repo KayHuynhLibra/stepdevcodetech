@@ -1752,6 +1752,92 @@ input {
   box-shadow: 0 0 2px rgba(200, 210, 220, 0.25);
 }
 
+.arcana-outside-chip {
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  font-family: var(--font-play, inherit);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.65);
+  color: var(--play-ink, #1a1a1a);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.arcana-outside-chip:disabled {
+  opacity: 0.45;
+}
+
+.arcana-outside-chip:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.arcana-outside-chip--low {
+  border-color: rgba(100, 120, 140, 0.35);
+}
+
+.arcana-outside-chip--mid {
+  border-color: rgba(40, 140, 110, 0.4);
+  color: #0d4a3c;
+}
+
+.arcana-outside-chip--high {
+  border-color: rgba(180, 130, 40, 0.45);
+  color: #5a3a08;
+}
+
+.arcana-outside-chip--active {
+  box-shadow: 0 0 0 2px rgba(80, 200, 160, 0.55);
+  background: rgba(40, 100, 85, 0.18);
+}
+
+.arcana-outside-chip--high.arcana-outside-chip--active {
+  box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.65);
+  background: rgba(90, 60, 20, 0.16);
+}
+
+.arcana-eu-chip {
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  font-family: var(--font-play, inherit);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.arcana-eu-chip:disabled {
+  opacity: 0.4;
+}
+
+.arcana-eu-chip:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.arcana-eu-chip--red {
+  background: #8b1a1a;
+  color: #f5e6c8;
+  border-color: rgba(255, 200, 120, 0.35);
+}
+
+.arcana-eu-chip--black {
+  background: #1a1a1a;
+  color: #f5e6c8;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.arcana-eu-chip--even,
+.arcana-eu-chip--odd {
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--play-ink, #1a1a1a);
+}
+
+.arcana-eu-chip--active {
+  box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.75);
+}
+
 /* ---- Pick deck (chọn nhân vật) ---- */
 .arcana-pick-section {
   border: 1px solid rgba(212, 175, 55, 0.2);

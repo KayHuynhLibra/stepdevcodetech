@@ -9,12 +9,15 @@ import {
 } from "../auth";
 import { normalizeAvatar, DEFAULT_AVATAR } from "../avatars";
 import { VipFantasyAvatar } from "./VipFantasyAvatar";
+import { CultivationChip } from "./CultivationChip";
 
 function roleLabel(role?: UserRole | "guest"): string {
   if (role === "mainadmin") return "Mainadmin";
   if (role === "admin") return "Admin";
   if (role === "deal") return "Deal";
   if (role === "onl") return "Onl";
+  if (role === "tutien") return "Tu Tiên";
+  if (role === "mod") return "Mod";
   if (role === "guest") return "Khách";
   return "Player";
 }
@@ -156,6 +159,9 @@ export function IdentityBadge({
           <span className="identity-chip identity-chip--role">
             {roleLabel(role)}
           </span>
+          {user?.cultivationRank && (
+            <CultivationChip rank={user.cultivationRank} />
+          )}
           {isVip && (
             <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-[#1a1208] shadow ring-1 ring-amber-200/80">
               VIP

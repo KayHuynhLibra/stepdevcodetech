@@ -1,4 +1,11 @@
-export type UserRole = "user" | "admin" | "mainadmin" | "deal" | "onl";
+export type UserRole =
+  | "user"
+  | "admin"
+  | "mainadmin"
+  | "deal"
+  | "onl"
+  | "tutien"
+  | "mod";
 
 export interface AuthUser {
   id: string;
@@ -18,6 +25,8 @@ export interface AuthUser {
   mustChangePassword?: boolean;
   /** Admin: lose | normal | win */
   outcomeMode?: "normal" | "win" | "lose";
+  /** Khi win: xác suất ép thắng 80–100 (mặc định 100) */
+  outcomeWinPct?: number;
   /** Số ván lifetime */
   roundsPlayed?: number;
   /** Admin cấp VIP */
@@ -31,8 +40,11 @@ export interface AuthUser {
   recoveryCode?: string;
   /** Mainadmin: ẩn khỏi BXH (chỉ trong admin list) */
   hideFromLeaderboard?: boolean;
+  hideNickname?: boolean;
   usernameRenamesUsed?: number;
   usernameRenamesLeft?: number;
+  /** Cảnh giới Tu Tiên (công khai) */
+  cultivationRank?: string | null;
 }
 
 /** Ngưỡng VIP tự động — đồng bộ server */
@@ -88,6 +100,26 @@ export function isStaff(user: { role: UserRole } | null | undefined): boolean {
   return user?.role === "admin" || user?.role === "mainadmin";
 }
 
+export function isMod(user: { role: UserRole } | null | undefined): boolean {
+  return user?.role === "mod";
+}
+
+/** Điều hành Room voice (trong hub / API). */
+export function canModerateVoiceRoom(
+  user: { role: UserRole } | null | undefined,
+): boolean {
+  if (!user) return false;
+  return isStaff(user) || user.role === "mod";
+}
+
+/** Tab Room trên dashboard — mainadmin hoặc mod. */
+export function canAccessRoomAdmin(
+  user: { role: UserRole } | null | undefined,
+): boolean {
+  if (!user) return false;
+  return user.role === "mainadmin" || user.role === "mod";
+}
+
 /** Staff hoặc role Onl — thấy số người online trên bàn. */
 export function canSeeOnline(
   user: { role: UserRole } | null | undefined,
@@ -100,6 +132,19 @@ export function isOnlineViewer(
   user: { role: UserRole } | null | undefined,
 ): boolean {
   return user?.role === "onl";
+}
+
+export function isTutien(
+  user: { role: UserRole } | null | undefined,
+): boolean {
+  return user?.role === "tutien";
+}
+
+export function canManageCultivation(
+  user: { role: UserRole } | null | undefined,
+): boolean {
+  if (!user) return false;
+  return user.role === "tutien" || user.role === "mainadmin";
 }
 
 export function isBalanceOperator(
@@ -130,6 +175,8 @@ export function homePath(
   if (user.role === "mainadmin") return `/mainadmin/${code}`;
   if (user.role === "admin") return `/admin/${code}`;
   if (user.role === "deal") return `/deal/${code}`;
+  if (user.role === "tutien") return `/tutien/${code}`;
+  if (user.role === "mod") return `/mod/${code}`;
   return `/player/${code}`;
 }
 

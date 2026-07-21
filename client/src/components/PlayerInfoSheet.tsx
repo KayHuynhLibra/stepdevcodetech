@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { VIP_ROUNDS_REQUIRED, userShowsVip } from "../auth";
 import { formatXu } from "../cards";
 import { VipFantasyAvatar } from "./VipFantasyAvatar";
+import { CultivationChip } from "./CultivationChip";
 
 export interface PlayerInfoView {
   name: string;
@@ -21,6 +22,7 @@ export interface PlayerInfoView {
   isVip?: boolean;
   roundsPlayed?: number;
   vipGranted?: boolean;
+  cultivationRank?: string | null;
 }
 
 interface PlayerInfoSheetProps {
@@ -170,6 +172,7 @@ export function PlayerInfoSheet({
               <span className="identity-chip identity-chip--role !text-[9px]">
                 {kind}
               </span>
+              <CultivationChip rank={player.cultivationRank} />
               {showVip && (
                 <span className="rounded-full bg-amber-400 px-2.5 py-0.5 text-[10px] font-extrabold text-[#1a1208] shadow ring-1 ring-amber-200/80">
                   VIP
@@ -284,13 +287,13 @@ export function PlayerInfoSheet({
 
             <div>
               <p className="mb-1.5 text-[10px] text-white/45">
-                VIP admin (tắt không gỡ VIP đủ 10k ván)
+                VIP10K (tắt không gỡ VIP đủ 10k ván)
               </p>
               <p className="mb-1.5 text-[10px] text-white/40 tabular-nums">
                 {rounds.toLocaleString("vi-VN")} ván
                 {showVip
                   ? localGranted
-                    ? " · đang VIP (cấp thủ công)"
+                    ? " · đang VIP10K (cấp thủ công)"
                     : autoVip
                       ? " · đang VIP (đủ ván)"
                       : " · đang VIP"
@@ -311,7 +314,7 @@ export function PlayerInfoSheet({
                     : "bg-white/10 text-white/80 ring-1 ring-white/15"
                 }`}
               >
-                {localGranted ? "Đang cấp admin" : "Cấp VIP admin"}
+                {localGranted ? "Đang VIP10K" : "Cấp VIP10K"}
               </button>
             </div>
               </>

@@ -3,12 +3,16 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   api,
   arcanaPath,
+  canAccessRoomAdmin,
+  canManageCultivation,
   clearSession,
   getStoredUser,
   getToken,
   homePath,
   isMainAdmin,
+  isMod,
   isStaff,
+  isTutien,
   playPath,
   saveSession,
   VIP_ROUNDS_REQUIRED,
@@ -19,6 +23,53 @@ import { CARDS, formatXu } from "../cards";
 import { AppShell } from "../components/AppShell";
 import { IdentityBadge } from "../components/IdentityBadge";
 import { uploadAvatarFromFile } from "../uploadAvatar";
+import {
+  CULTIVATION_LABELS,
+  CULTIVATION_RANKS,
+  DEFAULT_CULTIVATION_COLORS,
+  ensureCultivationColors,
+  setCultivationColorsCache,
+  type CultivationColorMap,
+  type CultivationRank,
+} from "../cultivation";
+import { CultivationChip } from "../components/CultivationChip";
+import { onArcanaImgError } from "../lib/arcanaImages";
+
+type CultBenefitDraft = Record<
+  CultivationRank,
+  {
+    chatDiscountPct: number;
+    voiceSeatPriority: number;
+    voiceHoldBonusMs: number;
+  }
+>;
+type CultMaintDraft = Record<
+  CultivationRank,
+  { period: "day" | "week"; feeXu: number }
+>;
+
+function defaultBenefitDraft(): CultBenefitDraft {
+  const o = {} as CultBenefitDraft;
+  CULTIVATION_RANKS.forEach((r, i) => {
+    o[r] = {
+      chatDiscountPct: Math.min(50, i * 5 + (i >= 7 ? 10 : 0)),
+      voiceSeatPriority: i,
+      voiceHoldBonusMs: i * 60_000,
+    };
+  });
+  return o;
+}
+function defaultMaintDraft(): CultMaintDraft {
+  const fees = [10, 25, 50, 100, 200, 500, 1000, 2000, 5000];
+  const o = {} as CultMaintDraft;
+  CULTIVATION_RANKS.forEach((r, i) => {
+    o[r] = {
+      period: i >= 5 ? "week" : "day",
+      feeXu: fees[i] ?? 10,
+    };
+  });
+  return o;
+}
 
 type ManagedGame = "tarot" | "arcana";
 const MANAGED_GAME_KEY = "tarot_admin_managed_game";
@@ -35,7 +86,30 @@ type TabId =
   | "ips"
   | "chat"
   | "tools"
-  | "arcana";
+  | "arcana"
+  | "rolead"
+  | "tutien"
+  | "room";
+
+interface VoiceRoomSeatAdmin {
+  seat: number;
+  socketId: string;
+  userId: string;
+  name: string;
+  avatar: string;
+  muted: boolean;
+  forceMuted: boolean;
+  joinedAt: number;
+}
+
+interface VoiceRoomAdmin {
+  roomId: number;
+  hostSocketId: string | null;
+  hostUserId: string | null;
+  seats: (VoiceRoomSeatAdmin | null)[];
+  occupied: number;
+  open: boolean;
+}
 
 interface InviteRow {
   code: string;
@@ -286,6 +360,14 @@ interface InterSnapshot {
   allSlotMinutes?: number;
   allRotation?: string[];
   defaultRotation?: string[];
+  winBiasPct?: number;
+  vaultInterLink?: {
+    enabled: boolean;
+    lossThresholdXu: number;
+    profitThresholdXu: number;
+    onLossMode: string;
+    onProfitMode: string;
+  };
   rotateCatalog?: { id: RotateStep; label: string }[];
   modePacks?: { id: PackMode; label: string; rotation: string[] }[];
   updatedAt: number;
@@ -323,6 +405,8 @@ interface VaultSnapshot {
   totalMinted: number;
   totalBurned: number;
   netHouse: number;
+  netFromPlay?: number;
+  breakdown?: Record<string, { count: number; sum: number }>;
   ledger: {
     id: string;
     at: number;
@@ -352,6 +436,7 @@ interface ArcanaConfig {
   pickMin?: number;
   pickMax?: number;
   maxStake?: number;
+  tutienMaxByRank?: Record<string, number>;
   payoutScale?: number;
   streakBonusEnabled?: boolean;
   streakBonusMinStreak?: number;
@@ -395,7 +480,26 @@ interface Overview {
     vipPool: number;
   };
   users: AuthUser[];
-  botPanel: {
+  cultivation?: {
+    colors: CultivationColorMap;
+    labels: Record<string, string>;
+    ranks: CultivationRank[];
+    benefits?: Record<
+      string,
+      {
+        chatDiscountPct: number;
+        voiceSeatPriority: number;
+        voiceHoldBonusMs: number;
+      }
+    >;
+    maintenance?: Record<
+      string,
+      { period: "day" | "week"; feeXu: number }
+    >;
+    updatedAt?: number;
+    updatedBy?: string;
+  };
+  botPanel?: {
     targetCount: number;
     activeCount: number;
     logs?: {
@@ -410,9 +514,9 @@ interface Overview {
       message: string;
     }[];
   };
-  history: { round: number; win: number }[];
-  recentBets: BetRow[];
-  betStats: {
+  history?: { round: number; win: number }[];
+  recentBets?: BetRow[];
+  betStats?: {
     rows: number;
     stakeTotal: number;
     payoutTotal: number;
@@ -520,12 +624,17 @@ function cardName(id: number) {
 
 const LEDGER_LABEL: Record<string, string> = {
   stake_in: "Cược vào",
+  stake_refund: "Hoàn cược",
   payout_out: "Trả thưởng",
   mint: "Bơm kho",
   burn: "Rút kho",
   grant_user: "Cấp user",
   seize_user: "Thu user",
   set_balance: "Đặt số dư",
+  coupon_mint: "Coupon",
+  admin_adjust: "Admin chỉnh xu",
+  chat_fee: "Phí chat",
+  cultivation_fee: "Phí cảnh giới",
 };
 
 export default function AdminDashboard() {
@@ -533,7 +642,9 @@ export default function AdminDashboard() {
   const loc = useLocation();
   const [me, setMe] = useState<AuthUser | null>(getStoredUser());
   const [data, setData] = useState<Overview | null>(null);
-  const [tab, setTab] = useState<TabId>("overview");
+  const [tab, setTab] = useState<TabId>(() =>
+    getStoredUser()?.role === "tutien" ? "tutien" : "overview",
+  );
   const [managedGame, setManagedGame] = useState<ManagedGame>(() => {
     try {
       const v = localStorage.getItem(MANAGED_GAME_KEY);
@@ -544,6 +655,26 @@ export default function AdminDashboard() {
   });
   const [botCount, setBotCount] = useState(25);
   const [msg, setMsg] = useState<string | null>(null);
+  const [cultivationColors, setCultivationColors] =
+    useState<CultivationColorMap>(() =>
+      structuredClone(DEFAULT_CULTIVATION_COLORS),
+    );
+  const [cultBenefits, setCultBenefits] = useState<CultBenefitDraft>(
+    defaultBenefitDraft,
+  );
+  const [cultMaint, setCultMaint] = useState<CultMaintDraft>(defaultMaintDraft);
+  const [winBiasDraft, setWinBiasDraft] = useState("0");
+  const [vaultLinkDraft, setVaultLinkDraft] = useState({
+    enabled: false,
+    lossThresholdXu: "50000",
+    profitThresholdXu: "50000",
+    onLossMode: "small",
+    onProfitMode: "big",
+  });
+  const [cultivationBusy, setCultivationBusy] = useState(false);
+  const [rankDraftUserId, setRankDraftUserId] = useState("");
+  const [rankDraftValue, setRankDraftValue] = useState<string>("");
+  const [rankFilter, setRankFilter] = useState("");
   const [adjust, setAdjust] = useState<{ userId: string; delta: string }>({
     userId: "",
     delta: "100",
@@ -559,6 +690,9 @@ export default function AdminDashboard() {
     amount: "1000",
   });
   const [interBusy, setInterBusy] = useState(false);
+  const [interSubTab, setInterSubTab] = useState<"room" | "userWin">("room");
+  const [winPctDrafts, setWinPctDrafts] = useState<Record<string, string>>({});
+  const [winPctFilter, setWinPctFilter] = useState("");
   const [allSlotMinutes, setAllSlotMinutes] = useState("5");
   const [rotationDraft, setRotationDraft] = useState<RotateStep[]>([
     ...DEFAULT_ALL_ROTATION,
@@ -580,6 +714,8 @@ export default function AdminDashboard() {
   const [inviteBusy, setInviteBusy] = useState(false);
   const [codeDrafts, setCodeDrafts] = useState<Record<string, string>>({});
   const [codeBusyId, setCodeBusyId] = useState<string | null>(null);
+  const [selfNickDraft, setSelfNickDraft] = useState<string | null>(null);
+  const [selfNickBusy, setSelfNickBusy] = useState(false);
   const [ipRows, setIpRows] = useState<IpRow[]>([]);
   const [ipBusy, setIpBusy] = useState(false);
   const [userFilter, setUserFilter] = useState("");
@@ -647,6 +783,8 @@ export default function AdminDashboard() {
   >([]);
   const [arcanaBusy, setArcanaBusy] = useState(false);
   const [arcanaSpinFilter, setArcanaSpinFilter] = useState("");
+  const [roomLobby, setRoomLobby] = useState<VoiceRoomAdmin[]>([]);
+  const [roomBusy, setRoomBusy] = useState(false);
 
   const selectManagedGame = (g: ManagedGame) => {
     setManagedGame(g);
@@ -659,10 +797,86 @@ export default function AdminDashboard() {
     if (g === "arcana" && tab === "inter") setTab("overview");
   };
 
+  const loadRooms = useCallback(async () => {
+    const r = await api<{
+      ok: true;
+      rooms: VoiceRoomAdmin[];
+    }>("/api/room/overview");
+    setRoomLobby(r.rooms);
+  }, []);
+
   const load = useCallback(async () => {
-    const overview = await api<Overview>("/api/admin/overview");
+    const stored = getStoredUser();
+    if (stored?.role === "mod") {
+      const room = await api<{
+        ok: true;
+        me: { id: string; username: string; role: AuthUser["role"] };
+        rooms: VoiceRoomAdmin[];
+      }>("/api/room/overview");
+      setRoomLobby(room.rooms);
+      setData({
+        ok: true,
+        me: room.me,
+        users: [],
+        stats: {
+          realPlayers: 0,
+          displayOnline: 0,
+          phase: "—",
+          roundNumber: 0,
+          botTarget: 0,
+          botActive: 0,
+          vipPool: 0,
+        },
+      });
+      return;
+    }
+    const overview =
+      stored?.role === "tutien"
+        ? await api<Overview>("/api/tutien/overview")
+        : await api<Overview>("/api/admin/overview");
     setData(overview);
     setBotCount(overview.stats.botTarget);
+    if (overview.cultivation?.colors) {
+      setCultivationColorsCache(overview.cultivation.colors);
+      setCultivationColors(structuredClone(overview.cultivation.colors));
+    } else {
+      void ensureCultivationColors().then((c) =>
+        setCultivationColors(structuredClone(c)),
+      );
+    }
+    if (overview.cultivation?.benefits) {
+      setCultBenefits((prev) => {
+        const next = { ...prev };
+        for (const r of CULTIVATION_RANKS) {
+          const row = overview.cultivation!.benefits![r];
+          if (row) next[r] = { ...row };
+        }
+        return next;
+      });
+    }
+    if (overview.cultivation?.maintenance) {
+      setCultMaint((prev) => {
+        const next = { ...prev };
+        for (const r of CULTIVATION_RANKS) {
+          const row = overview.cultivation!.maintenance![r];
+          if (row) next[r] = { ...row };
+        }
+        return next;
+      });
+    }
+    if (overview.inter?.winBiasPct != null) {
+      setWinBiasDraft(String(overview.inter.winBiasPct));
+    }
+    if (overview.inter?.vaultInterLink) {
+      const v = overview.inter.vaultInterLink;
+      setVaultLinkDraft({
+        enabled: !!v.enabled,
+        lossThresholdXu: String(v.lossThresholdXu),
+        profitThresholdXu: String(v.profitThresholdXu),
+        onLossMode: v.onLossMode || "small",
+        onProfitMode: v.onProfitMode || "big",
+      });
+    }
     const activeVault =
       managedGame === "arcana" ? overview.vaultArcana : overview.vault;
     if (activeVault) {
@@ -687,7 +901,7 @@ export default function AdminDashboard() {
     }
     api<{ ok: true; user: AuthUser }>("/api/auth/me")
       .then((r) => {
-        if (!isStaff(r.user)) {
+        if (!isStaff(r.user) && !isTutien(r.user) && !isMod(r.user)) {
           nav(homePath(r.user), { replace: true });
           return;
         }
@@ -700,6 +914,8 @@ export default function AdminDashboard() {
           return;
         }
         setMe(r.user);
+        if (r.user.role === "tutien") setTab("tutien");
+        if (r.user.role === "mod") setTab("room");
         const token = getToken();
         if (token) saveSession(token, r.user);
         return load();
@@ -709,6 +925,15 @@ export default function AdminDashboard() {
         nav("/login", { replace: true });
       });
   }, [nav, load, loc.pathname]);
+
+  useEffect(() => {
+    if (tab !== "room" || !canAccessRoomAdmin(me)) return;
+    void loadRooms().catch(() => {});
+    const id = window.setInterval(() => {
+      void loadRooms().catch(() => {});
+    }, 4000);
+    return () => window.clearInterval(id);
+  }, [tab, me, loadRooms]);
 
   useEffect(() => {
     if (data?.inter?.allSlotMinutes != null) {
@@ -846,19 +1071,37 @@ export default function AdminDashboard() {
   const setUserOutcome = async (
     userId: string,
     mode: "normal" | "win" | "lose",
+    winPct?: number,
   ) => {
     try {
       await api("/api/admin/user-outcome", {
         method: "POST",
-        body: JSON.stringify({ userId, mode }),
+        body: JSON.stringify({
+          userId,
+          mode,
+          ...(mode === "win" && winPct != null ? { winPct } : {}),
+        }),
       });
       setMsg(
         mode === "normal"
           ? "Đã về Normal"
           : mode === "win"
-            ? "User: ưu tiên WIN"
+            ? `User: WIN ${winPct ?? 100}%`
             : "User: ưu tiên LOSE",
       );
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi");
+    }
+  };
+
+  const setUserWinPct = async (userId: string, winPct: number) => {
+    try {
+      await api("/api/admin/user-outcome", {
+        method: "POST",
+        body: JSON.stringify({ userId, winPct }),
+      });
+      setMsg(`Win % → ${Math.max(80, Math.min(100, Math.floor(winPct)))}%`);
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi");
@@ -871,7 +1114,7 @@ export default function AdminDashboard() {
         method: "POST",
         body: JSON.stringify({ userId, isVip }),
       });
-      setMsg(isVip ? "Đã cấp VIP admin" : "Đã tắt VIP admin");
+      setMsg(isVip ? "Đã cấp VIP10K" : "Đã tắt VIP10K");
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi");
@@ -907,7 +1150,7 @@ export default function AdminDashboard() {
 
   const setUserRole = async (
     userId: string,
-    role: "user" | "deal" | "admin" | "onl",
+    role: "user" | "deal" | "admin" | "onl" | "tutien" | "mod",
   ) => {
     try {
       await api("/api/mainadmin/user-role", {
@@ -921,11 +1164,121 @@ export default function AdminDashboard() {
             ? "Đã cấp admin"
             : role === "onl"
               ? "Đã cấp role Onl (xem online)"
-              : "Đã chuyển về user",
+              : role === "tutien"
+                ? "Đã cấp role Tu Tiên"
+                : role === "mod"
+                  ? "Đã cấp role Mod (Room)"
+                  : "Đã chuyển về user",
       );
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi đổi role");
+    }
+  };
+
+  const roomAction = async (
+    path: string,
+    body: Record<string, unknown>,
+    okMsg: string,
+  ) => {
+    if (roomBusy) return;
+    setRoomBusy(true);
+    try {
+      await api(path, { method: "POST", body: JSON.stringify(body) });
+      setMsg(okMsg);
+      await loadRooms();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi Room");
+    } finally {
+      setRoomBusy(false);
+    }
+  };
+
+  const setCultivationRank = async (
+    userId: string,
+    rank: CultivationRank | null,
+  ) => {
+    setCultivationBusy(true);
+    try {
+      await api("/api/admin/cultivation/rank", {
+        method: "POST",
+        body: JSON.stringify({ userId, rank }),
+      });
+      setMsg(
+        rank
+          ? `Đã gán ${CULTIVATION_LABELS[rank]}`
+          : "Đã xóa cảnh giới",
+      );
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi gán cảnh giới");
+    } finally {
+      setCultivationBusy(false);
+    }
+  };
+
+  const saveCultivationColors = async () => {
+    setCultivationBusy(true);
+    try {
+      const r = await api<{
+        ok: true;
+        colors: CultivationColorMap;
+      }>("/api/tutien/cultivation/colors", {
+        method: "POST",
+        body: JSON.stringify({ colors: cultivationColors }),
+      });
+      setCultivationColorsCache(r.colors);
+      setCultivationColors(structuredClone(r.colors));
+      setMsg("Đã lưu bảng màu cảnh giới");
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi lưu màu");
+    } finally {
+      setCultivationBusy(false);
+    }
+  };
+
+  const saveCultivationConfig = async () => {
+    setCultivationBusy(true);
+    try {
+      await api("/api/mainadmin/cultivation/config", {
+        method: "POST",
+        body: JSON.stringify({
+          benefits: cultBenefits,
+          maintenance: cultMaint,
+        }),
+      });
+      setMsg("Đã lưu lợi ích + phí duy trì cảnh giới");
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi lưu cấu hình Tu Tiên");
+    } finally {
+      setCultivationBusy(false);
+    }
+  };
+
+  const saveWinBiasAndVaultLink = async () => {
+    setInterBusy(true);
+    try {
+      await api("/api/mainadmin/inter", {
+        method: "POST",
+        body: JSON.stringify({
+          winBiasPct: Number(winBiasDraft),
+          vaultInterLink: {
+            enabled: vaultLinkDraft.enabled,
+            lossThresholdXu: Number(vaultLinkDraft.lossThresholdXu),
+            profitThresholdXu: Number(vaultLinkDraft.profitThresholdXu),
+            onLossMode: vaultLinkDraft.onLossMode,
+            onProfitMode: vaultLinkDraft.onProfitMode,
+          },
+        }),
+      });
+      setMsg("Đã lưu winBias + Vault→Inter link");
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi lưu Inter bias");
+    } finally {
+      setInterBusy(false);
     }
   };
 
@@ -939,6 +1292,59 @@ export default function AdminDashboard() {
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi ẩn BXH");
+    }
+  };
+
+  const setUserHideNickname = async (userId: string, hidden: boolean) => {
+    try {
+      await api("/api/mainadmin/user-hide-nickname", {
+        method: "POST",
+        body: JSON.stringify({ userId, hidden }),
+      });
+      setMsg(hidden ? "Đã ẩn nick công khai" : "Đã hiện nick công khai");
+      await load();
+      if (userId === me?.id) {
+        const token = getToken();
+        if (token) {
+          try {
+            const r = await api<{ ok: true; user: AuthUser }>("/api/auth/me");
+            saveSession(token, r.user);
+            setMe(r.user);
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi ẩn nick");
+    }
+  };
+
+  const saveSelfNickname = async () => {
+    if (selfNickBusy) return;
+    setSelfNickBusy(true);
+    try {
+      const raw = (selfNickDraft ?? "").trim();
+      const r = await api<{ ok: true; user: AuthUser }>("/api/auth/nickname", {
+        method: "POST",
+        body: JSON.stringify({ nickname: raw }),
+      });
+      const token = getToken();
+      if (token) {
+        saveSession(token, r.user);
+        setMe(r.user);
+      }
+      setSelfNickDraft(r.user.nickname ?? "");
+      setMsg(
+        r.user.nickname?.trim()
+          ? `Nickname → ${r.user.nickname}`
+          : "Đã xóa nickname — hiện username",
+      );
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi lưu nickname");
+    } finally {
+      setSelfNickBusy(false);
     }
   };
 
@@ -1531,6 +1937,37 @@ export default function AdminDashboard() {
     }
   };
 
+  const saveArcanaTutienMax = async () => {
+    if (!data?.arcanaConfig) return;
+    const tutienMaxByRank: Record<string, number> = {};
+    for (const rank of CULTIVATION_RANKS) {
+      const el = document.getElementById(
+        `arcana-tutien-max-${rank}`,
+      ) as HTMLInputElement | null;
+      const n = Math.floor(Number(el?.value));
+      if (!Number.isFinite(n) || n < 1_000_000 || n > 100_000_000) {
+        setMsg(
+          `Max ${CULTIVATION_LABELS[rank]} phải từ 1M đến 100M`,
+        );
+        return;
+      }
+      tutienMaxByRank[rank] = n;
+    }
+    setArcanaBusy(true);
+    try {
+      await api("/api/mainadmin/arcana/config", {
+        method: "PATCH",
+        body: JSON.stringify({ tutienMaxByRank }),
+      });
+      setMsg("Đã lưu max cược Tu Tiên (9 bậc)");
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi");
+    } finally {
+      setArcanaBusy(false);
+    }
+  };
+
   const saveArcanaStreakBonus = async () => {
     if (!data?.arcanaConfig) return;
     const enabled = (
@@ -1582,25 +2019,32 @@ export default function AdminDashboard() {
 
   const s = data.stats;
   const main = isMainAdmin(me);
+  const tutienOnly = isTutien(me);
+  const modOnly = isMod(me);
+  const canCultivation = canManageCultivation(me);
+  const canRoom = canAccessRoomAdmin(me);
   const activeVault =
     managedGame === "arcana" ? data.vaultArcana : data.vault;
   const tabs: { id: TabId; label: string; show: boolean }[] = [
-    { id: "overview", label: "Tổng quan", show: true },
+    { id: "overview", label: "Tổng quan", show: !tutienOnly && !modOnly },
     { id: "tools", label: "Tra cứu", show: main },
     { id: "traffic", label: "Lưu lượng", show: main && managedGame === "tarot" },
     { id: "inter", label: "Inter", show: main && managedGame === "tarot" },
     { id: "arcana", label: "Bánh xe", show: main && managedGame === "arcana" },
     { id: "ips", label: "IP", show: main },
     { id: "chat", label: "Chat", show: main },
-    { id: "users", label: "User & Bot", show: true },
-    { id: "mod", label: "Mod", show: true },
-    { id: "coupons", label: "Coupon ẩn", show: true },
+    { id: "users", label: "User & Bot", show: !tutienOnly && !modOnly },
+    { id: "rolead", label: "RoleAD", show: main },
+    { id: "room", label: "Room", show: canRoom },
+    { id: "mod", label: "Mod", show: !tutienOnly && !modOnly },
+    { id: "coupons", label: "Coupon ẩn", show: !tutienOnly && !modOnly },
     { id: "invites", label: "Mã TV", show: main },
     {
       id: "vault",
       label: managedGame === "arcana" ? "Kho Arcana" : "Kho Tarot",
       show: main,
     },
+    { id: "tutien", label: "Tu Tiên", show: canCultivation },
   ];
 
   const filteredUsers = data.users.filter((u) => {
@@ -1609,7 +2053,16 @@ export default function AdminDashboard() {
     if (userQuick === "muted" && !u.muted) return false;
     const q = userFilter.trim().toLowerCase();
     if (!q) return true;
-    return `${u.username} ${u.code} ${u.id} ${u.role}`
+    return `${u.username} ${u.code} ${u.id} ${u.role} ${u.cultivationRank ?? ""}`
+      .toLowerCase()
+      .includes(q);
+  });
+
+  const tutienRankUsers = data.users.filter((u) => {
+    if (u.role === "mainadmin") return false;
+    const q = rankFilter.trim().toLowerCase();
+    if (!q) return true;
+    return `${u.username} ${u.code} ${u.id} ${u.cultivationRank ?? ""}`
       .toLowerCase()
       .includes(q);
   });
@@ -2038,12 +2491,12 @@ export default function AdminDashboard() {
 
           <section className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
             {[
-              ["Cược gần đây", String(data.betStats.rows)],
-              ["Tổng stake", formatXu(data.betStats.stakeTotal)],
-              ["Tổng trả", formatXu(data.betStats.payoutTotal)],
+              ["Cược gần đây", String(data.betStats?.rows ?? 0)],
+              ["Tổng stake", formatXu(data.betStats?.stakeTotal ?? 0)],
+              ["Tổng trả", formatXu(data.betStats?.payoutTotal ?? 0)],
               [
                 "Win / Lose",
-                `${data.betStats.winCount}/${data.betStats.loseCount}`,
+                `${data.betStats?.winCount ?? 0}/${data.betStats?.loseCount ?? 0}`,
               ],
             ].map(([label, value]) => (
               <div key={label} className="app-panel p-3">
@@ -2059,13 +2512,13 @@ export default function AdminDashboard() {
 
           <section className="app-panel mt-4 p-3">
             <p className="play-heading mb-2 text-sm">
-              Lịch sử ván ({data.history.length})
+              Lịch sử ván ({data.history?.length ?? 0})
             </p>
             <ul className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">
-              {data.history.length === 0 ? (
+              {(data.history?.length ?? 0) === 0 ? (
                 <li className="text-xs text-[var(--play-muted)]">Chưa có ván</li>
               ) : (
-                data.history.map((h) => (
+                data.history!.map((h) => (
                   <li
                     key={h.round}
                     className="rounded-md bg-white/80 px-2 py-1 text-[11px] font-semibold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/10"
@@ -2080,15 +2533,15 @@ export default function AdminDashboard() {
 
           <section className="app-panel mt-4 p-3">
             <p className="play-heading mb-2 text-sm">
-              Cược user gần đây ({data.recentBets.length})
+              Cược user gần đây ({data.recentBets?.length ?? 0})
             </p>
             <ul className="max-h-44 space-y-1.5 overflow-y-auto">
-              {data.recentBets.length === 0 ? (
+              {(data.recentBets?.length ?? 0) === 0 ? (
                 <li className="text-xs text-[var(--play-muted)]">
                   Chưa ghi nhận cược.
                 </li>
               ) : (
-                data.recentBets.map((b) => (
+                data.recentBets!.map((b) => (
                   <li
                     key={b.id}
                     className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
@@ -2389,9 +2842,9 @@ export default function AdminDashboard() {
                 const rounds = u.roundsPlayed ?? 0;
                 const vip = !!u.isVip;
                 const vipLabel = granted
-                  ? "Admin"
+                  ? "VIP10K"
                   : rounds >= VIP_ROUNDS_REQUIRED
-                    ? "10k ván"
+                    ? "đủ 10k ván"
                     : null;
                 const draft =
                   codeDrafts[u.id] !== undefined
@@ -2424,6 +2877,9 @@ export default function AdminDashboard() {
                               </span>
                             )}
                           </p>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                            <CultivationChip rank={u.cultivationRank} />
+                          </div>
                           <p className="text-[10px] text-[var(--play-muted)]">
                             <span
                               className={`identity-chip identity-chip--code${
@@ -2488,9 +2944,16 @@ export default function AdminDashboard() {
                               : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
                           }`}
                         >
-                          {label}
+                          {mode === "win" && om === "win"
+                            ? `Win ${u.outcomeWinPct ?? 100}%`
+                            : label}
                         </button>
                       ))}
+                      {om === "win" && (
+                        <span className="rounded-full bg-emerald-100 px-2 py-1 text-[9px] font-bold text-emerald-900 ring-1 ring-emerald-300/60">
+                          Inter → User Win % để chỉnh 80–100
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={() => setUserVip(u.id, !granted)}
@@ -2500,10 +2963,9 @@ export default function AdminDashboard() {
                             : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
                         }`}
                       >
-                        {granted ? "VIP admin ✓" : "VIP admin"}
+                        {granted ? "VIP10K ✓" : "VIP10K"}
                       </button>
-                      {data?.me.role === "mainadmin" &&
-                        u.role !== "mainadmin" && (
+                      {data?.me.role === "mainadmin" && (
                           <button
                             type="button"
                             onClick={() =>
@@ -2516,6 +2978,21 @@ export default function AdminDashboard() {
                             }`}
                           >
                             {u.hideFromLeaderboard ? "BXH ẩn ✓" : "Ẩn BXH"}
+                          </button>
+                        )}
+                      {data?.me.role === "mainadmin" && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setUserHideNickname(u.id, !u.hideNickname)
+                            }
+                            className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                              u.hideNickname
+                                ? "bg-indigo-800 text-white"
+                                : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                            }`}
+                          >
+                            {u.hideNickname ? "Nick ẩn ✓" : "Ẩn nick"}
                           </button>
                         )}
                       <button
@@ -2593,6 +3070,42 @@ export default function AdminDashboard() {
                                 Thu Onl
                               </button>
                             )}
+                            {u.role !== "tutien" && (
+                              <button
+                                type="button"
+                                onClick={() => setUserRole(u.id, "tutien")}
+                                className="rounded-full bg-violet-800 px-2.5 py-1 text-[10px] font-bold text-white"
+                              >
+                                Cấp Tu Tiên
+                              </button>
+                            )}
+                            {u.role === "tutien" && (
+                              <button
+                                type="button"
+                                onClick={() => setUserRole(u.id, "user")}
+                                className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-violet-700/40"
+                              >
+                                Thu Tu Tiên
+                              </button>
+                            )}
+                            {u.role !== "mod" && (
+                              <button
+                                type="button"
+                                onClick={() => setUserRole(u.id, "mod")}
+                                className="rounded-full bg-indigo-800 px-2.5 py-1 text-[10px] font-bold text-white"
+                              >
+                                Cấp Mod
+                              </button>
+                            )}
+                            {u.role === "mod" && (
+                              <button
+                                type="button"
+                                onClick={() => setUserRole(u.id, "user")}
+                                className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-indigo-700/40"
+                              >
+                                Thu Mod
+                              </button>
+                            )}
                           </>
                         )}
                     </div>
@@ -2602,6 +3115,689 @@ export default function AdminDashboard() {
             </ul>
           </section>
         </>
+      )}
+
+      {tab === "rolead" && main && (
+        <>
+          <section className="app-panel mt-4 space-y-3 p-3">
+            <div>
+              <p className="play-heading text-sm">RoleAD · Quyền của bạn</p>
+              <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+                Mainadmin tự bật quyền phụ (áp dụng cả chính mình). Role{" "}
+                <strong>mainadmin</strong> không đổi được — bảo vệ tài khoản gốc.
+              </p>
+            </div>
+            {(() => {
+              const self =
+                data.users.find((u) => u.id === data.me.id) ?? null;
+              if (!self) {
+                return (
+                  <p className="text-xs text-[var(--play-muted)]">
+                    Không tải được profile — F5 lại.
+                  </p>
+                );
+              }
+              return (
+                <div className="rounded-lg bg-white/70 p-3 ring-1 ring-[var(--wood-deep)]/10">
+                  <p className="text-sm font-bold text-[var(--play-ink)]">
+                    {self.username}{" "}
+                    <span className="text-[10px] font-semibold text-[var(--wood-deep)]">
+                      {self.role}
+                    </span>
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
+                    ID {self.code} · Hiện công khai:{" "}
+                    <strong>{self.displayName ?? self.username}</strong>
+                  </p>
+
+                  <div className="mt-3 rounded-lg bg-[var(--cream)]/80 px-2.5 py-2 ring-1 ring-[var(--wood-deep)]/10">
+                    <p className="text-[11px] font-bold text-[var(--play-ink)]">
+                      Nickname trong game
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
+                      2–12 ký tự · hiện trên bàn / chat / BXH · để trống = dùng
+                      username · login vẫn <strong>@{self.username}</strong>
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <input
+                        value={
+                          selfNickDraft !== null
+                            ? selfNickDraft
+                            : (self.nickname ?? "")
+                        }
+                        onChange={(e) =>
+                          setSelfNickDraft(e.target.value.slice(0, 12))
+                        }
+                        maxLength={12}
+                        spellCheck={false}
+                        placeholder="Nickname…"
+                        className="app-input min-w-[10rem] flex-1 !py-1.5 text-sm"
+                      />
+                      <button
+                        type="button"
+                        disabled={selfNickBusy}
+                        onClick={() => void saveSelfNickname()}
+                        className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                      >
+                        {selfNickBusy ? "…" : "Lưu nick"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setUserLeaderboardHide(
+                          self.id,
+                          !self.hideFromLeaderboard,
+                        )
+                      }
+                      className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                        self.hideFromLeaderboard
+                          ? "bg-slate-700 text-white"
+                          : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                      }`}
+                    >
+                      {self.hideFromLeaderboard
+                        ? "Ẩn BXH · đang bật"
+                        : "Ẩn khỏi BXH"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setUserHideNickname(self.id, !self.hideNickname)
+                      }
+                      className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                        self.hideNickname
+                          ? "bg-indigo-800 text-white"
+                          : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                      }`}
+                    >
+                      {self.hideNickname
+                        ? "Ẩn nick · đang bật"
+                        : "Ẩn nick (Ẩn danh)"}
+                    </button>
+                  </div>
+                  <p className="mt-2 text-[10px] text-[var(--play-muted)]">
+                    Ẩn nick: bàn chơi / profile hiện <em>Ẩn danh</em> thay vì
+                    nickname. Username login không đổi.
+                  </p>
+                </div>
+              );
+            })()}
+          </section>
+
+          <section className="app-panel mt-3 space-y-2 p-3">
+            <p className="play-heading text-sm">Cấp / thu role</p>
+            <p className="text-[11px] text-[var(--play-muted)]">
+              user · deal · admin · onl · tutien · mod. Không đụng tài khoản
+              mainadmin khác.
+            </p>
+            <input
+              value={userFilter}
+              onChange={(e) => setUserFilter(e.target.value)}
+              placeholder="Lọc username / ID / role…"
+              className="app-input w-full !py-1.5 text-sm"
+            />
+            <ul className="mt-2 max-h-[28rem] space-y-2 overflow-y-auto">
+              {filteredUsers
+                .filter((u) => u.role !== "mainadmin" || u.id === data.me.id)
+                .slice(0, 80)
+                .map((u) => (
+                  <li
+                    key={u.id}
+                    className="rounded-lg bg-white/70 px-2 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-[var(--play-ink)]">
+                          {u.username}{" "}
+                          <span className="text-[var(--wood-deep)]">
+                            {u.role}
+                          </span>
+                          {u.id === data.me.id && (
+                            <span className="ml-1 text-amber-700">(bạn)</span>
+                          )}
+                        </p>
+                        <p className="text-[10px] text-[var(--play-muted)]">
+                          {u.code} · {u.displayName ?? u.username}
+                          {u.hideNickname ? " · nick ẩn" : ""}
+                          {u.hideFromLeaderboard ? " · BXH ẩn" : ""}
+                        </p>
+                      </div>
+                    </div>
+                    {u.role !== "mainadmin" && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {(
+                          [
+                            ["user", "User"],
+                            ["deal", "Deal"],
+                            ["admin", "Admin"],
+                            ["onl", "Onl"],
+                            ["tutien", "Tu Tiên"],
+                            ["mod", "Mod"],
+                          ] as const
+                        ).map(([role, label]) => (
+                          <button
+                            key={role}
+                            type="button"
+                            disabled={u.role === role}
+                            onClick={() => setUserRole(u.id, role)}
+                            className={`rounded-full px-2.5 py-1 text-[10px] font-bold disabled:opacity-40 ${
+                              u.role === role
+                                ? "bg-[var(--wood-deep)] text-[var(--gold-soft)]"
+                                : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setUserLeaderboardHide(
+                              u.id,
+                              !u.hideFromLeaderboard,
+                            )
+                          }
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                            u.hideFromLeaderboard
+                              ? "bg-slate-700 text-white"
+                              : "bg-white ring-1 ring-[var(--wood-deep)]/15"
+                          }`}
+                        >
+                          {u.hideFromLeaderboard ? "BXH ẩn ✓" : "Ẩn BXH"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setUserHideNickname(u.id, !u.hideNickname)
+                          }
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                            u.hideNickname
+                              ? "bg-indigo-800 text-white"
+                              : "bg-white ring-1 ring-[var(--wood-deep)]/15"
+                          }`}
+                        >
+                          {u.hideNickname ? "Nick ẩn ✓" : "Ẩn nick"}
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                ))}
+            </ul>
+          </section>
+        </>
+      )}
+
+      {tab === "tutien" && canCultivation && (
+        <>
+          <section className="app-panel mt-4 p-3 sm:p-4">
+            <p className="play-heading text-sm">Gán cảnh giới</p>
+            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+              9 bậc công khai — hiện chip màu trên badge / profile người chơi.
+            </p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+              <label className="min-w-0 flex-1 text-[11px] font-semibold text-[var(--play-muted)]">
+                Người chơi
+                <select
+                  value={rankDraftUserId}
+                  onChange={(e) => setRankDraftUserId(e.target.value)}
+                  className="app-input mt-1 w-full !py-1.5 text-sm"
+                >
+                  <option value="">Chọn user…</option>
+                  {tutienRankUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.username} · {u.code}
+                      {u.cultivationRank
+                        ? ` · ${CULTIVATION_LABELS[u.cultivationRank as CultivationRank] ?? u.cultivationRank}`
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="sm:w-44 text-[11px] font-semibold text-[var(--play-muted)]">
+                Cảnh giới
+                <select
+                  value={rankDraftValue}
+                  onChange={(e) => setRankDraftValue(e.target.value)}
+                  className="app-input mt-1 w-full !py-1.5 text-sm"
+                >
+                  <option value="">— Xóa —</option>
+                  {CULTIVATION_RANKS.map((r) => (
+                    <option key={r} value={r}>
+                      {CULTIVATION_LABELS[r]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                disabled={cultivationBusy || !rankDraftUserId}
+                onClick={() =>
+                  void setCultivationRank(
+                    rankDraftUserId,
+                    rankDraftValue
+                      ? (rankDraftValue as CultivationRank)
+                      : null,
+                  )
+                }
+                className="rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
+              >
+                Lưu rank
+              </button>
+            </div>
+            <input
+              value={rankFilter}
+              onChange={(e) => setRankFilter(e.target.value)}
+              placeholder="Lọc danh sách…"
+              className="app-input mt-3 w-full !py-1.5 text-sm"
+            />
+            <ul className="mt-2 max-h-64 space-y-1.5 overflow-y-auto sm:max-h-80">
+              {tutienRankUsers.map((u) => (
+                <li
+                  key={u.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-[var(--play-ink)]">
+                      {u.username}{" "}
+                      <span className="font-mono text-[var(--play-muted)]">
+                        · {u.code}
+                      </span>
+                    </p>
+                    <div className="mt-0.5">
+                      <CultivationChip rank={u.cultivationRank} />
+                      {!u.cultivationRank && (
+                        <span className="text-[10px] text-[var(--play-muted)]">
+                          Chưa có cảnh giới
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {CULTIVATION_RANKS.map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        disabled={cultivationBusy}
+                        onClick={() => void setCultivationRank(u.id, r)}
+                        className={`rounded-full px-2 py-0.5 text-[9px] font-bold ring-1 ${
+                          u.cultivationRank === r
+                            ? "bg-[var(--wood-deep)] text-[var(--cream)] ring-[var(--wood-deep)]"
+                            : "bg-white text-[var(--play-ink)] ring-[var(--wood-deep)]/20"
+                        }`}
+                        title={CULTIVATION_LABELS[r]}
+                      >
+                        {CULTIVATION_LABELS[r].split(" ")[0]}
+                      </button>
+                    ))}
+                    {u.cultivationRank && (
+                      <button
+                        type="button"
+                        disabled={cultivationBusy}
+                        onClick={() => void setCultivationRank(u.id, null)}
+                        className="rounded-full bg-white px-2 py-0.5 text-[9px] font-bold text-red-800 ring-1 ring-red-300/60"
+                      >
+                        Xóa
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="app-panel mt-4 p-3 sm:p-4">
+            <p className="play-heading text-sm">Màu cảnh giới</p>
+            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+              bg / text / border (hex) — lưu trên server, chip cập nhật sau khi
+              lưu.
+              {data.cultivation?.updatedBy
+                ? ` · Sửa gần nhất: ${data.cultivation.updatedBy}`
+                : ""}
+            </p>
+            <ul className="mt-3 space-y-2">
+              {CULTIVATION_RANKS.map((r) => {
+                const row = cultivationColors[r];
+                return (
+                  <li
+                    key={r}
+                    className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2 py-2 ring-1 ring-[var(--wood-deep)]/10"
+                  >
+                    <CultivationChip rank={r} colors={row} />
+                    <span className="w-20 shrink-0 text-[11px] font-semibold text-[var(--play-ink)]">
+                      {CULTIVATION_LABELS[r]}
+                    </span>
+                    {(
+                      [
+                        ["bg", "Nền"],
+                        ["text", "Chữ"],
+                        ["border", "Viền"],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <label
+                        key={key}
+                        className="flex items-center gap-1 text-[10px] text-[var(--play-muted)]"
+                      >
+                        {label}
+                        <input
+                          type="color"
+                          value={row[key]}
+                          onChange={(e) =>
+                            setCultivationColors((prev) => ({
+                              ...prev,
+                              [r]: { ...prev[r], [key]: e.target.value },
+                            }))
+                          }
+                          className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent p-0"
+                        />
+                        <input
+                          value={row[key]}
+                          onChange={(e) =>
+                            setCultivationColors((prev) => ({
+                              ...prev,
+                              [r]: { ...prev[r], [key]: e.target.value },
+                            }))
+                          }
+                          className="app-input !w-[5.5rem] !py-1 font-mono text-[10px]"
+                        />
+                      </label>
+                    ))}
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={cultivationBusy}
+                onClick={() => void saveCultivationColors()}
+                className="rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
+              >
+                Lưu màu
+              </button>
+              <button
+                type="button"
+                disabled={cultivationBusy}
+                onClick={() =>
+                  setCultivationColors(
+                    structuredClone(DEFAULT_CULTIVATION_COLORS),
+                  )
+                }
+                className="rounded-full bg-white px-4 py-2 text-xs font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+              >
+                Reset mặc định (chưa lưu)
+              </button>
+            </div>
+          </section>
+
+          {main && (
+            <section className="app-panel mt-4 p-3 sm:p-4">
+              <p className="play-heading text-sm">Lợi ích + phí duy trì</p>
+              <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+                Giảm phí chat %, ưu tiên ghế voice, phí ngày/tuần. Không trả → tụt
+                bậc.
+              </p>
+              <ul className="mt-3 space-y-2">
+                {CULTIVATION_RANKS.map((r) => (
+                  <li
+                    key={r}
+                    className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2 py-2 text-[10px] ring-1 ring-[var(--wood-deep)]/10"
+                  >
+                    <span className="w-20 shrink-0 font-semibold">
+                      {CULTIVATION_LABELS[r]}
+                    </span>
+                    <label className="flex items-center gap-1">
+                      Chat%
+                      <input
+                        type="number"
+                        min={0}
+                        max={80}
+                        value={cultBenefits[r].chatDiscountPct}
+                        onChange={(e) =>
+                          setCultBenefits((p) => ({
+                            ...p,
+                            [r]: {
+                              ...p[r],
+                              chatDiscountPct: Number(e.target.value),
+                            },
+                          }))
+                        }
+                        className="app-input !w-14 !py-1"
+                      />
+                    </label>
+                    <label className="flex items-center gap-1">
+                      Ưu tiên
+                      <input
+                        type="number"
+                        min={0}
+                        max={8}
+                        value={cultBenefits[r].voiceSeatPriority}
+                        onChange={(e) =>
+                          setCultBenefits((p) => ({
+                            ...p,
+                            [r]: {
+                              ...p[r],
+                              voiceSeatPriority: Number(e.target.value),
+                            },
+                          }))
+                        }
+                        className="app-input !w-12 !py-1"
+                      />
+                    </label>
+                    <label className="flex items-center gap-1">
+                      Phí
+                      <input
+                        type="number"
+                        min={0}
+                        value={cultMaint[r].feeXu}
+                        onChange={(e) =>
+                          setCultMaint((p) => ({
+                            ...p,
+                            [r]: { ...p[r], feeXu: Number(e.target.value) },
+                          }))
+                        }
+                        className="app-input !w-20 !py-1"
+                      />
+                    </label>
+                    <select
+                      value={cultMaint[r].period}
+                      onChange={(e) =>
+                        setCultMaint((p) => ({
+                          ...p,
+                          [r]: {
+                            ...p[r],
+                            period: e.target.value as "day" | "week",
+                          },
+                        }))
+                      }
+                      className="app-input !w-24 !py-1"
+                    >
+                      <option value="day">Ngày</option>
+                      <option value="week">Tuần</option>
+                    </select>
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                disabled={cultivationBusy}
+                onClick={() => void saveCultivationConfig()}
+                className="mt-3 rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
+              >
+                Lưu lợi ích + phí
+              </button>
+            </section>
+          )}
+        </>
+      )}
+
+      {tab === "room" && canRoom && (
+        <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="play-heading text-sm">Room — điều hành voice</p>
+              <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+                Quyền <strong>mainadmin</strong> / <strong>mod</strong>: mở–đóng
+                phòng, mute mic, kick, dọn phòng. Tự refresh ~4s.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={roomBusy}
+              onClick={() => void loadRooms()}
+              className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-50"
+            >
+              Làm mới
+            </button>
+          </div>
+          <div className="space-y-3">
+            {(roomLobby.length
+              ? roomLobby
+              : [1, 2, 3, 4, 5].map((id) => ({
+                  roomId: id,
+                  hostSocketId: null,
+                  hostUserId: null,
+                  seats: Array.from({ length: 8 }, () => null),
+                  occupied: 0,
+                  open: true,
+                }))
+            ).map((room) => (
+              <div
+                key={room.roomId}
+                className={`rounded-xl px-3 py-2.5 ring-1 ${
+                  room.open === false
+                    ? "bg-rose-50 ring-rose-300/60"
+                    : "bg-white/80 ring-[var(--wood-deep)]/12"
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-bold text-[var(--play-ink)]">
+                    Room {room.roomId}{" "}
+                    <span className="text-[10px] font-semibold text-[var(--play-muted)]">
+                      {room.occupied}/8 ·{" "}
+                      {room.open === false ? "ĐÓNG" : "Mở"}
+                    </span>
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    <button
+                      type="button"
+                      disabled={roomBusy}
+                      onClick={() =>
+                        void roomAction(
+                          "/api/room/set-open",
+                          {
+                            roomId: room.roomId,
+                            open: room.open === false,
+                          },
+                          room.open === false
+                            ? `Đã mở Room ${room.roomId}`
+                            : `Đã đóng Room ${room.roomId}`,
+                        )
+                      }
+                      className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                        room.open === false
+                          ? "bg-emerald-700 text-white"
+                          : "bg-rose-700 text-white"
+                      }`}
+                    >
+                      {room.open === false ? "Mở phòng" : "Đóng phòng"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={roomBusy || room.occupied === 0}
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            `Dọn hết ghế Room ${room.roomId}?`,
+                          )
+                        )
+                          return;
+                        void roomAction(
+                          "/api/room/clear",
+                          { roomId: room.roomId },
+                          `Đã dọn Room ${room.roomId}`,
+                        );
+                      }}
+                      className="rounded-full bg-slate-800 px-2.5 py-1 text-[10px] font-bold text-white disabled:opacity-40"
+                    >
+                      Dọn phòng
+                    </button>
+                  </div>
+                </div>
+                <ul className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                  {room.seats.map((seat, idx) => {
+                    if (!seat) {
+                      return (
+                        <li
+                          key={`empty-${room.roomId}-${idx}`}
+                          className="rounded-lg bg-[var(--cream)]/60 px-2 py-1.5 text-[10px] text-[var(--play-muted)]"
+                        >
+                          Ghế {idx + 1} · trống
+                        </li>
+                      );
+                    }
+                    return (
+                      <li
+                        key={seat.socketId}
+                        className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-[var(--play-ink)]">
+                            #{seat.seat} {seat.name}
+                            {seat.forceMuted ? (
+                              <span className="ml-1 text-rose-600">mute</span>
+                            ) : null}
+                          </p>
+                          <p className="truncate text-[9px] text-[var(--play-muted)]">
+                            {seat.userId.slice(0, 10)}…
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 gap-1">
+                          <button
+                            type="button"
+                            disabled={roomBusy}
+                            onClick={() =>
+                              void roomAction(
+                                "/api/room/force-mute",
+                                {
+                                  targetSocketId: seat.socketId,
+                                  muted: !seat.forceMuted,
+                                },
+                                seat.forceMuted
+                                  ? `Bỏ mute ${seat.name}`
+                                  : `Mute ${seat.name}`,
+                              )
+                            }
+                            className="rounded-full bg-amber-600/90 px-2 py-0.5 text-[9px] font-bold text-white"
+                          >
+                            {seat.forceMuted ? "Unmute" : "Mute"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={roomBusy}
+                            onClick={() =>
+                              void roomAction(
+                                "/api/room/kick",
+                                { targetSocketId: seat.socketId },
+                                `Kick ${seat.name}`,
+                              )
+                            }
+                            className="rounded-full bg-rose-700 px-2 py-0.5 text-[9px] font-bold text-white"
+                          >
+                            Kick
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {tab === "mod" && (
@@ -3428,7 +4624,179 @@ export default function AdminDashboard() {
 
       {tab === "inter" && main && data.inter && (
         <>
-          <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+          <div className="mt-4 flex flex-wrap gap-1.5">
+            {(
+              [
+                ["room", "Phòng Inter"],
+                ["userWin", "User Win %"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setInterSubTab(id)}
+                className={`rounded-full px-3 py-1.5 text-[11px] font-bold ${
+                  interSubTab === id
+                    ? "bg-[var(--wood-deep)] text-white"
+                    : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {interSubTab === "userWin" && (
+            <section className="app-panel mt-3 space-y-3 p-3 sm:p-4">
+              <div>
+                <p className="play-heading text-sm">User Win % — ép thắng theo xác suất</p>
+                <p className="mt-1 text-[11px] text-[var(--play-muted)]">
+                  Mode Win không còn luôn 100%. Chỉnh <strong>80–100%</strong>:
+                  mỗi ván user có cược sẽ được ép thắng với xác suất đó; phần còn
+                  lại theo Inter phòng. 100% = như cũ.
+                </p>
+              </div>
+              <input
+                value={winPctFilter}
+                onChange={(e) => setWinPctFilter(e.target.value)}
+                placeholder="Lọc username / ID…"
+                className="app-input w-full !py-1.5 text-xs"
+              />
+              <ul className="max-h-[28rem] space-y-2 overflow-y-auto">
+                {[...data.users]
+                  .filter((u) => u.role !== "mainadmin")
+                  .filter((u) => {
+                    const q = winPctFilter.trim().toLowerCase();
+                    if (!q) return true;
+                    return (
+                      u.username.toLowerCase().includes(q) ||
+                      (u.code || "").toLowerCase().includes(q) ||
+                      (u.displayName || "").toLowerCase().includes(q)
+                    );
+                  })
+                  .sort((a, b) => {
+                    const aw = (a.outcomeMode ?? "normal") === "win" ? 0 : 1;
+                    const bw = (b.outcomeMode ?? "normal") === "win" ? 0 : 1;
+                    if (aw !== bw) return aw - bw;
+                    return a.username.localeCompare(b.username, "vi");
+                  })
+                  .map((u) => {
+                    const om = u.outcomeMode ?? "normal";
+                    const pct =
+                      winPctDrafts[u.id] !== undefined
+                        ? winPctDrafts[u.id]!
+                        : String(u.outcomeWinPct ?? 100);
+                    const pctNum = Math.max(
+                      80,
+                      Math.min(100, Math.floor(Number(pct)) || 100),
+                    );
+                    return (
+                      <li
+                        key={u.id}
+                        className={`rounded-lg px-2.5 py-2 text-xs ring-1 ${
+                          om === "win"
+                            ? "bg-emerald-50 ring-emerald-300/70"
+                            : "bg-white/70 ring-[var(--wood-deep)]/10"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-[var(--play-ink)]">
+                              {u.username}{" "}
+                              <span className="text-[10px] font-normal text-[var(--play-muted)]">
+                                ID {u.code || "—"} · {u.role}
+                              </span>
+                            </p>
+                            <p className="text-[10px] text-[var(--play-muted)]">
+                              {om === "win"
+                                ? `Đang WIN @ ${u.outcomeWinPct ?? 100}%`
+                                : om === "lose"
+                                  ? "Đang LOSE"
+                                  : "Normal (theo phòng)"}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {(
+                              [
+                                ["lose", "Lose"],
+                                ["normal", "Normal"],
+                                ["win", "Win"],
+                              ] as const
+                            ).map(([mode, label]) => (
+                              <button
+                                key={mode}
+                                type="button"
+                                onClick={() =>
+                                  void setUserOutcome(
+                                    u.id,
+                                    mode,
+                                    mode === "win" ? pctNum : undefined,
+                                  )
+                                }
+                                className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                                  om === mode
+                                    ? mode === "win"
+                                      ? "bg-emerald-600 text-white"
+                                      : mode === "lose"
+                                        ? "bg-rose-600 text-white"
+                                        : "bg-[var(--wood-deep)] text-white"
+                                    : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-end gap-2">
+                          <label className="min-w-[10rem] flex-1 text-[10px] font-semibold text-[var(--play-muted)]">
+                            Win % ({pctNum}%)
+                            <input
+                              type="range"
+                              min={80}
+                              max={100}
+                              step={1}
+                              value={pctNum}
+                              onChange={(e) =>
+                                setWinPctDrafts((d) => ({
+                                  ...d,
+                                  [u.id]: e.target.value,
+                                }))
+                              }
+                              className="mt-1 w-full accent-emerald-600"
+                            />
+                          </label>
+                          <input
+                            type="number"
+                            min={80}
+                            max={100}
+                            value={pct}
+                            onChange={(e) =>
+                              setWinPctDrafts((d) => ({
+                                ...d,
+                                [u.id]: e.target.value,
+                              }))
+                            }
+                            className="app-input !w-16 !py-1 text-center text-[11px]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void setUserWinPct(u.id, pctNum)}
+                            className="rounded-full bg-emerald-700 px-3 py-1.5 text-[10px] font-bold text-white"
+                          >
+                            Lưu % (bật Win)
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </section>
+          )}
+
+          {interSubTab === "room" && (
+        <>
+          <section className="app-panel mt-3 space-y-3 p-3 sm:p-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p className="play-heading text-sm">Inter — thuật toán lá thắng</p>
@@ -3444,6 +4812,112 @@ export default function AdminDashboard() {
                   ? `${data.inter.mode === "all" ? "ALL" : data.inter.mode.toUpperCase()}→${(data.inter.effectiveMode ?? data.inter.all?.effectiveMode ?? "?").toUpperCase()}`
                   : interModeLabel(data.inter.mode)}
               </span>
+            </div>
+
+            <div className="rounded-xl bg-white/80 px-3 py-2.5 ring-1 ring-[var(--wood-deep)]/15">
+              <p className="text-xs font-bold text-[var(--play-ink)]">
+                Win bias + Vault→Inter
+              </p>
+              <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
+                Bias + nghiêng Big (5–8), − nghiêng Small (1–4). Link: Kho lỗ →
+                mode mất, Kho lãi → mode thắng.
+              </p>
+              <div className="mt-2 flex flex-wrap items-end gap-2">
+                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                  winBiasPct (−50…50)
+                  <input
+                    value={winBiasDraft}
+                    onChange={(e) => setWinBiasDraft(e.target.value)}
+                    type="number"
+                    min={-50}
+                    max={50}
+                    className="app-input mt-0.5 !w-24 !py-1"
+                  />
+                </label>
+                <label className="flex items-center gap-1 text-[10px] font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={vaultLinkDraft.enabled}
+                    onChange={(e) =>
+                      setVaultLinkDraft((d) => ({
+                        ...d,
+                        enabled: e.target.checked,
+                      }))
+                    }
+                  />
+                  Bật vault link
+                </label>
+                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                  Ngưỡng lỗ
+                  <input
+                    value={vaultLinkDraft.lossThresholdXu}
+                    onChange={(e) =>
+                      setVaultLinkDraft((d) => ({
+                        ...d,
+                        lossThresholdXu: e.target.value,
+                      }))
+                    }
+                    className="app-input mt-0.5 !w-28 !py-1"
+                  />
+                </label>
+                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                  Ngưỡng lãi
+                  <input
+                    value={vaultLinkDraft.profitThresholdXu}
+                    onChange={(e) =>
+                      setVaultLinkDraft((d) => ({
+                        ...d,
+                        profitThresholdXu: e.target.value,
+                      }))
+                    }
+                    className="app-input mt-0.5 !w-28 !py-1"
+                  />
+                </label>
+                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                  Khi lỗ
+                  <select
+                    value={vaultLinkDraft.onLossMode}
+                    onChange={(e) =>
+                      setVaultLinkDraft((d) => ({
+                        ...d,
+                        onLossMode: e.target.value,
+                      }))
+                    }
+                    className="app-input mt-0.5 !py-1"
+                  >
+                    <option value="small">small</option>
+                    <option value="app">app</option>
+                    <option value="fed">fed</option>
+                    <option value="cool">cool</option>
+                  </select>
+                </label>
+                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                  Khi lãi
+                  <select
+                    value={vaultLinkDraft.onProfitMode}
+                    onChange={(e) =>
+                      setVaultLinkDraft((d) => ({
+                        ...d,
+                        onProfitMode: e.target.value,
+                      }))
+                    }
+                    className="app-input mt-0.5 !py-1"
+                  >
+                    <option value="big">big</option>
+                    <option value="user">user</option>
+                    <option value="hot">hot</option>
+                    <option value="auto">auto</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  disabled={interBusy}
+                  onClick={() => void saveWinBiasAndVaultLink()}
+                  className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-50"
+                >
+                  Lưu bias / link
+                </button>
+              </div>
             </div>
 
             {isInterRotating(data.inter.mode) && data.inter.all && (
@@ -3978,7 +5452,7 @@ export default function AdminDashboard() {
           <section className="app-panel mt-3 space-y-2 p-3">
             <p className="play-heading text-sm">Log Inter gần đây</p>
             <ul className="max-h-40 space-y-1 overflow-y-auto text-[11px]">
-              {(data.botPanel.logs ?? [])
+              {(data.botPanel?.logs ?? [])
                 .filter(
                   (l) =>
                     l.botId === "system" &&
@@ -4003,7 +5477,7 @@ export default function AdminDashboard() {
                     </p>
                   </li>
                 ))}
-              {(data.botPanel.logs ?? []).filter(
+              {(data.botPanel?.logs ?? []).filter(
                 (l) =>
                   l.botId === "system" &&
                   typeof l.message === "string" &&
@@ -4015,6 +5489,8 @@ export default function AdminDashboard() {
               )}
             </ul>
           </section>
+        </>
+          )}
         </>
       )}
 
@@ -4049,6 +5525,43 @@ export default function AdminDashboard() {
                 </p>
               </div>
             ))}
+          </section>
+
+          <section className="app-panel mt-3 p-3">
+            <p className="play-heading text-sm">Phân loại ledger (gần đây)</p>
+            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+              Net từ chơi:{" "}
+              <span className="font-bold tabular-nums">
+                {formatXu(
+                  activeVault.netFromPlay ??
+                    activeVault.totalStakeIn - activeVault.totalPayoutOut,
+                )}
+              </span>
+              {" · "}
+              chat/fee/cược ghi rõ loại.
+            </p>
+            <ul className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+              {Object.entries(activeVault.breakdown ?? {}).map(
+                ([type, row]) => (
+                  <li
+                    key={type}
+                    className="rounded-lg bg-white/70 px-2 py-1.5 text-[10px] ring-1 ring-[var(--wood-deep)]/10"
+                  >
+                    <span className="font-semibold">
+                      {LEDGER_LABEL[type] ?? type}
+                    </span>
+                    <span className="mt-0.5 block tabular-nums text-[var(--play-muted)]">
+                      {row.count} GD · {formatXu(row.sum)}
+                    </span>
+                  </li>
+                ),
+              )}
+              {Object.keys(activeVault.breakdown ?? {}).length === 0 && (
+                <li className="text-[11px] text-[var(--play-muted)]">
+                  Chưa có breakdown
+                </li>
+              )}
+            </ul>
           </section>
 
           <section className="app-panel mt-4 space-y-3 p-3">
@@ -4268,6 +5781,61 @@ export default function AdminDashboard() {
             </div>
             <div className="mt-3 rounded-lg bg-white/60 p-2.5 ring-1 ring-[var(--wood-deep)]/10">
               <p className="text-xs font-bold text-[var(--play-ink)]">
+                Max cược Tu Tiên — Tarot & Arcana (role tutien · 9 bậc)
+              </p>
+              <p className="mt-1 text-[10px] text-[var(--play-muted)]">
+                Áp dụng trần / lá Tarot và chip Arcana. Mức công khai vẫn ≤1M.
+                Cược &gt;1M khi có <strong>role tutien</strong> (mặc định Luyện
+                Khí) hoặc đã gán <strong>cảnh giới</strong>.
+              </p>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {CULTIVATION_RANKS.map((rank: CultivationRank) => {
+                  const def =
+                    data.arcanaConfig?.tutienMaxByRank?.[rank] ??
+                    ({
+                      luyen_khi: 2_000_000,
+                      truc_co: 3_000_000,
+                      kim_dan: 5_000_000,
+                      nguyen_anh: 8_000_000,
+                      hoa_than: 12_000_000,
+                      luyen_hu: 20_000_000,
+                      hop_the: 30_000_000,
+                      dai_thua: 40_000_000,
+                      do_kiep: 50_000_000,
+                    } as Record<CultivationRank, number>)[rank];
+                  return (
+                    <label
+                      key={rank}
+                      className="flex items-center justify-between gap-2 text-[10px] font-semibold text-[var(--play-muted)]"
+                    >
+                      <span className="min-w-0 truncate">
+                        {CULTIVATION_LABELS[rank]}
+                      </span>
+                      <input
+                        id={`arcana-tutien-max-${rank}`}
+                        type="number"
+                        min={1_000_000}
+                        max={100_000_000}
+                        step={100_000}
+                        defaultValue={def}
+                        key={`${rank}-${def}`}
+                        className="app-input w-28 text-right tabular-nums"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                disabled={arcanaBusy}
+                onClick={() => void saveArcanaTutienMax()}
+                className="mt-2 rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white"
+              >
+                Lưu max Tu Tiên
+              </button>
+            </div>
+            <div className="mt-3 rounded-lg bg-white/60 p-2.5 ring-1 ring-[var(--wood-deep)]/10">
+              <p className="text-xs font-bold text-[var(--play-ink)]">
                 Chuỗi vận — thưởng thêm khi thắng
               </p>
               <p className="mt-1 text-[10px] text-[var(--play-muted)]">
@@ -4386,7 +5954,8 @@ export default function AdminDashboard() {
                   <img
                     src={slot.image}
                     alt=""
-                    className="h-10 w-7 rounded object-cover"
+                    className="h-10 w-7 rounded object-cover object-top"
+                    onError={(e) => onArcanaImgError(e, slot.id)}
                   />
                   <span className="min-w-[6rem] font-semibold">
                     {slot.nameVi}

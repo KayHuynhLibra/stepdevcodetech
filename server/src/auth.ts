@@ -8,8 +8,23 @@ import {
   normalizeAvatar,
 } from "./avatars.js";
 import { STARTING_BALANCE, weekKey } from "./types.js";
+import {
+  demoteRank,
+  isCultivationRank,
+  periodMs,
+  type CultivationRank,
+} from "./cultivationRanks.js";
+import { cultivationStore } from "./cultivationStore.js";
+import { vaultStore } from "./vaultStore.js";
 
-export type UserRole = "user" | "admin" | "mainadmin" | "deal" | "onl";
+export type { CultivationRank } from "./cultivationRanks.js";
+export {
+  CULTIVATION_LABELS,
+  CULTIVATION_RANKS,
+  isCultivationRank,
+} from "./cultivationRanks.js";
+
+export type UserRole = "user" | "admin" | "mainadmin" | "deal" | "onl" | "tutien" | "mod";
 
 /** Đủ số ván lifetime → VIP tự động */
 export const VIP_ROUNDS_REQUIRED = 10_000;
@@ -42,6 +57,10 @@ export interface UserRecord {
    * normal = theo Inter phòng · win = ưu tiên thắng · lose = ưu tiên thua
    */
   outcomeMode?: UserOutcomeMode;
+  /**
+   * Khi mode=win: xác suất ép thắng mỗi ván (80–100). 100 = luôn thắng như cũ.
+   */
+  outcomeWinPct?: number;
   /** Số ván đã chơi (lifetime — có đặt cược khi settle) */
   roundsPlayed?: number;
   /** Admin cấp VIP thủ công */
@@ -65,8 +84,15 @@ export interface UserRecord {
   ipHistory?: IpHistoryEntry[];
   /** Mainadmin: không hiện trên BXH Tarot (ngày/tuần/top ván/ace/streak) */
   hideFromLeaderboard?: boolean;
+  /** Ẩn nick công khai — bàn/profile hiện "Ẩn danh" */
+  hideNickname?: boolean;
   /** Số lần đã đổi username (tối đa USERNAME_RENAME_MAX) */
   usernameRenames?: number;
+  /** Cảnh giới Tu Tiên (công khai) */
+  cultivationRank?: CultivationRank;
+  /** Hết hạn kỳ phí duy trì đã trả */
+  cultivationPaidUntil?: number;
+  cultivationLastChargeAt?: number;
 }
 
 /** Lịch sử IP theo user — không lộ ra PublicUser / client player */
@@ -80,6 +106,16 @@ export interface IpHistoryEntry {
 const IP_HISTORY_CAP = 20;
 
 export type UserOutcomeMode = "normal" | "win" | "lose";
+
+export const OUTCOME_WIN_PCT_MIN = 80;
+export const OUTCOME_WIN_PCT_MAX = 100;
+export const OUTCOME_WIN_PCT_DEFAULT = 100;
+
+export function clampOutcomeWinPct(n: unknown): number {
+  const v = Math.floor(Number(n));
+  if (!Number.isFinite(v)) return OUTCOME_WIN_PCT_DEFAULT;
+  return Math.max(OUTCOME_WIN_PCT_MIN, Math.min(OUTCOME_WIN_PCT_MAX, v));
+}
 
 export interface PublicUser {
   id: string;
@@ -97,6 +133,8 @@ export interface PublicUser {
   weekKey: string;
   mustChangePassword?: boolean;
   outcomeMode: UserOutcomeMode;
+  /** Chỉ meaningful khi outcomeMode=win — 80…100 */
+  outcomeWinPct?: number;
   roundsPlayed: number;
   vipGranted: boolean;
   /** vipGranted || roundsPlayed >= VIP_ROUNDS_REQUIRED */
@@ -110,8 +148,12 @@ export interface PublicUser {
   recoveryCode?: string;
   /** Chỉ admin list — mainadmin bật ẩn BXH */
   hideFromLeaderboard?: boolean;
+  /** Ẩn nick công khai */
+  hideNickname?: boolean;
   usernameRenamesUsed: number;
   usernameRenamesLeft: number;
+  cultivationRank?: CultivationRank;
+  cultivationPaidUntil?: number;
 }
 
 /** Trần xu mang từ guest → account */
@@ -196,7 +238,9 @@ export function validateNickname(
 export function userDisplayName(u: {
   username: string;
   nickname?: string | null;
+  hideNickname?: boolean;
 }): string {
+  if (u.hideNickname) return "Ẩn danh";
   const nick = normalizeNicknameInput(String(u.nickname ?? ""));
   if (nick.length >= 2) return nick;
   return String(u.username ?? "").slice(0, 20);
@@ -260,7 +304,8 @@ function toPublic(u: UserRecord, opts?: { includeRecovery?: boolean }): PublicUs
     id: u.id,
     code: u.code,
     username: u.username,
-    nickname: u.nickname?.trim() ? u.nickname.trim() : undefined,
+    nickname:
+      u.nickname?.trim() ? u.nickname.trim() : undefined,
     displayName: userDisplayName(u),
     role: u.role,
     avatar: u.avatar,
@@ -271,6 +316,7 @@ function toPublic(u: UserRecord, opts?: { includeRecovery?: boolean }): PublicUs
     weekKey: u.weekKey,
     mustChangePassword: !!u.mustChangePassword,
     outcomeMode: normalizeOutcomeMode(u.outcomeMode),
+    outcomeWinPct: clampOutcomeWinPct(u.outcomeWinPct),
     roundsPlayed,
     vipGranted,
     isVip: computeIsVip(u),
@@ -279,9 +325,16 @@ function toPublic(u: UserRecord, opts?: { includeRecovery?: boolean }): PublicUs
     mutedUntil,
     muted,
     hideFromLeaderboard: !!u.hideFromLeaderboard,
+    hideNickname: !!u.hideNickname,
     usernameRenamesUsed: renamesUsed,
     usernameRenamesLeft: Math.max(0, USERNAME_RENAME_MAX - renamesUsed),
   };
+  if (u.cultivationRank && isCultivationRank(u.cultivationRank)) {
+    pub.cultivationRank = u.cultivationRank;
+  }
+  if (u.cultivationPaidUntil && u.cultivationPaidUntil > 0) {
+    pub.cultivationPaidUntil = u.cultivationPaidUntil;
+  }
   if (opts?.includeRecovery && u.recoveryCode) {
     pub.recoveryCode = u.recoveryCode;
   }
@@ -314,7 +367,9 @@ function isUserRecord(u: unknown): u is UserRecord {
     r.role === "admin" ||
     r.role === "mainadmin" ||
     r.role === "deal" ||
-    r.role === "onl";
+    r.role === "onl" ||
+    r.role === "tutien" ||
+    r.role === "mod";
   return (
     typeof r.id === "string" &&
     typeof r.username === "string" &&
@@ -454,6 +509,9 @@ export class AuthStore {
           rec.vipGranted = true;
         }
         if (rec.isVip) delete rec.isVip;
+        if (rec.cultivationRank && !isCultivationRank(rec.cultivationRank)) {
+          delete rec.cultivationRank;
+        }
         this.indexUser(u);
       }
       console.log(`[auth] Loaded ${this.byId.size} users from disk`);
@@ -750,10 +808,10 @@ export class AuthStore {
     return { ok: true, user: toPublic(user) };
   }
 
-  /** Mainadmin: đổi role user / deal / admin (không đụng mainadmin). */
+  /** Mainadmin: đổi role user / deal / admin / onl / tutien / mod (không đụng mainadmin). */
   setUserRole(
     userId: string,
-    role: "user" | "deal" | "admin" | "onl",
+    role: "user" | "deal" | "admin" | "onl" | "tutien" | "mod",
   ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
     const user = this.byId.get(userId);
     if (!user) return { ok: false, reason: "Không tìm thấy user" };
@@ -768,6 +826,93 @@ export class AuthStore {
     this.scheduleSave();
     this.scheduleTokenSave();
     return { ok: true, user: toPublic(user) };
+  }
+
+  /** Tu Tiên / mainadmin: gán hoặc xóa cảnh giới công khai. */
+  setCultivationRank(
+    userId: string,
+    rank: CultivationRank | null,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    if (user.role === "mainadmin") {
+      return { ok: false, reason: "Không gán cảnh giới cho mainadmin" };
+    }
+    if (rank === null) {
+      delete user.cultivationRank;
+      delete user.cultivationPaidUntil;
+      delete user.cultivationLastChargeAt;
+    } else if (!isCultivationRank(rank)) {
+      return { ok: false, reason: "Cảnh giới không hợp lệ" };
+    } else {
+      user.cultivationRank = rank;
+      const maint = cultivationStore.getMaintenanceFor(rank);
+      user.cultivationPaidUntil = Date.now() + periodMs(maint.period);
+    }
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  /**
+   * Thu phí duy trì đến hạn. Trả về số user đã charge / demote.
+   * Gọi định kỳ từ index.ts.
+   */
+  processCultivationFees(): {
+    charged: number;
+    demoted: number;
+  } {
+    const now = Date.now();
+    let charged = 0;
+    let demoted = 0;
+    for (const user of this.byId.values()) {
+      if (!user.cultivationRank || !isCultivationRank(user.cultivationRank)) {
+        continue;
+      }
+      const rank = user.cultivationRank;
+      const paidUntil = user.cultivationPaidUntil ?? 0;
+      if (paidUntil > now) continue;
+
+      const maint = cultivationStore.getMaintenanceFor(rank);
+      const fee = Math.max(0, Math.floor(maint.feeXu));
+      const period = periodMs(maint.period);
+
+      if (fee <= 0) {
+        user.cultivationPaidUntil = now + period;
+        user.cultivationLastChargeAt = now;
+        charged += 1;
+        continue;
+      }
+
+      if (user.balance >= fee) {
+        user.balance -= fee;
+        user.cultivationPaidUntil = now + period;
+        user.cultivationLastChargeAt = now;
+        vaultStore.recordCultivationFee(fee, user.id, user.username, rank);
+        charged += 1;
+      } else {
+        const next = demoteRank(rank);
+        if (next) {
+          user.cultivationRank = next;
+          const nextMaint = cultivationStore.getMaintenanceFor(next);
+          user.cultivationPaidUntil = now + periodMs(nextMaint.period);
+        } else {
+          delete user.cultivationRank;
+          delete user.cultivationPaidUntil;
+          delete user.cultivationLastChargeAt;
+        }
+        demoted += 1;
+      }
+    }
+    if (charged > 0 || demoted > 0) this.scheduleSave();
+    return { charged, demoted };
+  }
+
+  getCultivationRank(userId: string): CultivationRank | null {
+    const u = this.byId.get(userId);
+    if (!u?.cultivationRank || !isCultivationRank(u.cultivationRank)) {
+      return null;
+    }
+    return u.cultivationRank;
   }
 
   setMuted(
@@ -905,6 +1050,7 @@ export class AuthStore {
   setOutcomeMode(
     userId: string,
     mode: UserOutcomeMode,
+    winPct?: number,
   ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
     const user = this.byId.get(userId);
     if (!user) return { ok: false, reason: "Không tìm thấy user" };
@@ -912,6 +1058,25 @@ export class AuthStore {
       return { ok: false, reason: "Mode không hợp lệ (normal|win|lose)" };
     }
     user.outcomeMode = mode;
+    if (mode === "win") {
+      user.outcomeWinPct =
+        winPct != null
+          ? clampOutcomeWinPct(winPct)
+          : clampOutcomeWinPct(user.outcomeWinPct);
+    }
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  /** Cập nhật % ép thắng (80–100); tự bật mode win. */
+  setOutcomeWinPct(
+    userId: string,
+    winPct: number,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    user.outcomeMode = "win";
+    user.outcomeWinPct = clampOutcomeWinPct(winPct);
     this.scheduleSave();
     return { ok: true, user: toPublic(user) };
   }
@@ -919,6 +1084,11 @@ export class AuthStore {
   getOutcomeMode(userId: string): UserOutcomeMode {
     const user = this.byId.get(userId);
     return normalizeOutcomeMode(user?.outcomeMode);
+  }
+
+  getOutcomeWinPct(userId: string): number {
+    const user = this.byId.get(userId);
+    return clampOutcomeWinPct(user?.outcomeWinPct);
   }
 
   setVip(
@@ -944,10 +1114,18 @@ export class AuthStore {
   ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
     const user = this.byId.get(userId);
     if (!user) return { ok: false, reason: "Không tìm thấy user" };
-    if (user.role === "mainadmin") {
-      return { ok: false, reason: "Không áp dụng cho mainadmin" };
-    }
     user.hideFromLeaderboard = !!hidden;
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  setHideNickname(
+    userId: string,
+    hidden: boolean,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    user.hideNickname = !!hidden;
     this.scheduleSave();
     return { ok: true, user: toPublic(user) };
   }
@@ -1063,6 +1241,7 @@ export class AuthStore {
         isVip: boolean;
         vipGranted: boolean;
         roundsPlayed: number;
+        cultivationRank?: CultivationRank;
       }
     | null {
     const id = String(opts.userId ?? "").trim();
@@ -1076,7 +1255,17 @@ export class AuthStore {
         : undefined;
     if (!user) return null;
     ensureDay(user);
-    return {
+    const card: {
+      userId: string;
+      username: string;
+      displayName: string;
+      code: string;
+      avatar: string;
+      isVip: boolean;
+      vipGranted: boolean;
+      roundsPlayed: number;
+      cultivationRank?: CultivationRank;
+    } = {
       userId: user.id,
       username: user.username,
       displayName: userDisplayName(user),
@@ -1086,6 +1275,10 @@ export class AuthStore {
       vipGranted: !!user.vipGranted,
       roundsPlayed: Math.max(0, Math.floor(user.roundsPlayed ?? 0)),
     };
+    if (user.cultivationRank && isCultivationRank(user.cultivationRank)) {
+      card.cultivationRank = user.cultivationRank;
+    }
+    return card;
   }
 
   /**
@@ -1319,6 +1512,29 @@ export function isStaff(user: { role: UserRole }): boolean {
   return user.role === "admin" || user.role === "mainadmin";
 }
 
+export function isMod(user: { role: UserRole } | null | undefined): boolean {
+  return user?.role === "mod";
+}
+
+/**
+ * Điều hành khu vực Room voice: mainadmin, mod, hoặc admin.
+ * (Host phòng vẫn có quyền riêng khi đang ngồi ghế.)
+ */
+export function canModerateVoiceRoom(
+  user: { role: UserRole } | null | undefined,
+): boolean {
+  if (!user) return false;
+  return isStaff(user) || user.role === "mod";
+}
+
+/** Tab Room trên dashboard — mainadmin hoặc mod. */
+export function canAccessRoomAdmin(
+  user: { role: UserRole } | null | undefined,
+): boolean {
+  if (!user) return false;
+  return user.role === "mainadmin" || user.role === "mod";
+}
+
 /** Xem số online + danh sách người chơi (không gồm công cụ admin). */
 export function canSeeOnline(user: { role: UserRole } | null | undefined): boolean {
   if (!user) return false;
@@ -1327,6 +1543,18 @@ export function canSeeOnline(user: { role: UserRole } | null | undefined): boole
 
 export function isOnlineViewer(user: { role: UserRole } | null | undefined): boolean {
   return user?.role === "onl";
+}
+
+export function isTutien(user: { role: UserRole } | null | undefined): boolean {
+  return user?.role === "tutien";
+}
+
+/** Gán cảnh giới / sửa bảng màu — Tu Tiên hoặc mainadmin. */
+export function canManageCultivation(
+  user: { role: UserRole } | null | undefined,
+): boolean {
+  if (!user) return false;
+  return user.role === "tutien" || user.role === "mainadmin";
 }
 
 export function isMainAdmin(user: { role: UserRole }): boolean {

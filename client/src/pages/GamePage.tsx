@@ -35,9 +35,11 @@ import { ShoutMarquee } from "../components/ShoutMarquee";
 import { SaintOverlay } from "../components/SaintOverlay";
 import { TarotStarsSheet } from "../components/TarotStarsSheet";
 import { RulesSheet } from "../components/RulesSheet";
+import { VoiceRoomHub } from "../components/VoiceRoomHub";
 import type { ChatMode, ShoutEvent } from "../shouts";
 import { SAINT_DISPLAY_MS } from "../shouts";
 import type { OnlinePlayerPublic } from "../cards";
+import { ensureCultivationColors } from "../cultivation";
 import { useSfx } from "../hooks/useSfx";
 import { usePlaytime } from "../hooks/usePlaytime";
 import { formatDuration } from "../playtime";
@@ -92,6 +94,7 @@ type Sheet =
   | "vipTopups"
   | "autoBet"
   | "rules"
+  | "voiceRoom"
   | null;
 
 export default function GamePage() {
@@ -103,6 +106,13 @@ export default function GamePage() {
   const [renameDraft, setRenameDraft] = useState("");
   const renameRef = useRef<HTMLDivElement>(null);
   const [me, setMe] = useState<AuthUser | null>(() => getStoredUser());
+  const [betLimits, setBetLimits] = useState<{
+    maxBetPerCard: number;
+    quickAdds: number[];
+  }>({
+    maxBetPerCard: 1_000_000,
+    quickAdds: [10, 100, 1_000, 10_000, 100_000, 1_000_000],
+  });
   const [guestAvatar, setGuestAvatarState] = useState(() => getGuestAvatar());
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [state, setState] = useState<GameState | null>(null);
@@ -137,6 +147,12 @@ export default function GamePage() {
   const [adminBusy, setAdminBusy] = useState(false);
   /** Session socket đã gắn userId (tin cậy hơn localStorage) */
   const [sessionAuthed, setSessionAuthed] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<{
+    inRoom: boolean;
+    roomId: number | null;
+    isHost: boolean;
+    roomOpen: boolean;
+  }>({ inRoom: false, roomId: null, isHost: false, roomOpen: true });
   const { play, muted, toggleMute } = useSfx();
   const {
     sessionMs,
@@ -169,6 +185,10 @@ export default function GamePage() {
 
   const lastJackpotRoundRef = useRef<number | null>(null);
   const lastStreakAtRef = useRef(0);
+
+  useEffect(() => {
+    void ensureCultivationColors();
+  }, []);
 
   useEffect(() => {
     const j = state?.lastJackpotWin;
@@ -243,8 +263,13 @@ export default function GamePage() {
         const stored = getStoredUser();
         if (token && stored) {
           try {
-            const r = await api<{ ok: true; user: AuthUser }>("/api/auth/me");
+            const r = await api<{
+              ok: true;
+              user: AuthUser;
+              betLimits?: { maxBetPerCard: number; quickAdds: number[] };
+            }>("/api/auth/me");
             setMe(r.user);
+            if (r.betLimits) setBetLimits(r.betLimits);
             saveSession(token, r.user);
           } catch {
             clearSession();
@@ -292,9 +317,14 @@ export default function GamePage() {
           showToast("Phiên hết hạn — đăng nhập lại để chat & lưu cược");
         }
         if (payload.userId && getToken()) {
-          void api<{ ok: true; user: AuthUser }>("/api/auth/me")
+          void api<{
+            ok: true;
+            user: AuthUser;
+            betLimits?: { maxBetPerCard: number; quickAdds: number[] };
+          }>("/api/auth/me")
             .then((r) => {
               setMe(r.user);
+              if (r.betLimits) setBetLimits(r.betLimits);
               const t = getToken();
               if (t) saveSession(t, r.user);
             })
@@ -444,6 +474,7 @@ export default function GamePage() {
         guessesToday: match.guessesToday ?? prev.guessesToday,
         balance: match.balance ?? prev.balance,
         outcomeMode: match.outcomeMode ?? prev.outcomeMode,
+        cultivationRank: match.cultivationRank ?? prev.cultivationRank,
         isBot: match.isBot,
         isGuest: !match.isBot && !match.code && !match.userId,
       };
@@ -457,6 +488,7 @@ export default function GamePage() {
         next.guessesToday === prev.guessesToday &&
         next.balance === prev.balance &&
         next.outcomeMode === prev.outcomeMode &&
+        next.cultivationRank === prev.cultivationRank &&
         next.isGuest === prev.isGuest
       ) {
         return prev;
@@ -691,6 +723,7 @@ export default function GamePage() {
         isVip: match.isVip ?? partial.isVip,
         roundsPlayed: match.roundsPlayed ?? partial.roundsPlayed,
         vipGranted: match.vipGranted ?? partial.vipGranted,
+        cultivationRank: match.cultivationRank ?? partial.cultivationRank,
         isGuest: !match.isBot && !match.code && !match.userId,
       };
       if (!isStaff(me)) return base;
@@ -723,6 +756,7 @@ export default function GamePage() {
           isVip: boolean;
           vipGranted: boolean;
           roundsPlayed: number;
+          cultivationRank?: string;
         };
       }>(`/api/players/card?${q}`);
       return r.card;
@@ -756,6 +790,7 @@ export default function GamePage() {
             isVip: card.isVip,
             vipGranted: card.vipGranted,
             roundsPlayed: card.roundsPlayed,
+            cultivationRank: card.cultivationRank ?? prev.cultivationRank,
             isGuest: false,
           };
         });
@@ -782,6 +817,7 @@ export default function GamePage() {
         isVip: p.isVip,
         roundsPlayed: p.roundsPlayed,
         vipGranted: p.vipGranted,
+        cultivationRank: p.cultivationRank,
       });
     },
     [openPlayerInfo],
@@ -854,10 +890,10 @@ export default function GamePage() {
       }
       showToast(
         r.user.vipGranted
-          ? "Đã cấp VIP (admin)"
+          ? "Đã cấp VIP10K"
           : r.user.isVip
-            ? "Đã tắt cấp admin — vẫn VIP do đủ ván"
-            : "Đã tắt VIP admin",
+            ? "Đã tắt VIP10K — vẫn VIP do đủ ván"
+            : "Đã tắt VIP10K",
       );
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Lỗi");
@@ -1383,6 +1419,11 @@ export default function GamePage() {
               <button
                 type="button"
                 onClick={openCoupon}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  void openVipTopups();
+                }}
+                title="Nạp xu · giữ/chuột phải xem danh sách nạp"
                 className={`px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide ${
                   balance <= 0
                     ? "animate-pulse rounded-full bg-rose-500 text-white ring-1 ring-rose-300"
@@ -1402,17 +1443,25 @@ export default function GamePage() {
               </button>
               <button
                 type="button"
-                title="Danh sách người đã nạp xu"
-                onClick={() => void openVipTopups()}
+                title="Phòng voice giao lưu"
+                onClick={() => setSheet("voiceRoom")}
                 className="ui-pill ui-pill--deep flex items-center gap-1 px-2 py-1"
               >
-                <img
-                  src="/assets/ui/icon-vip.png"
-                  alt=""
-                  className="h-3.5 w-3.5 rounded-full object-cover"
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    voiceStatus.inRoom
+                      ? voiceStatus.roomOpen
+                        ? "bg-emerald-400"
+                        : "bg-amber-400"
+                      : "bg-white/35"
+                  }`}
                 />
                 <span className="font-play text-[9px] font-semibold text-amber-200">
-                  VIP
+                  {voiceStatus.inRoom && voiceStatus.roomId
+                    ? `Room ${voiceStatus.roomId}`
+                    : "Room"}
+                  {voiceStatus.inRoom && voiceStatus.isHost ? " · H" : ""}
+                  {!voiceStatus.inRoom ? " · Off" : ""}
                 </span>
               </button>
             </div>
@@ -1869,6 +1918,8 @@ export default function GamePage() {
         currentStake={
           betCardId != null ? (state?.yourBets?.[betCardId - 1] ?? 0) : 0
         }
+        maxBetPerCard={betLimits.maxBetPerCard}
+        quickAdds={betLimits.quickAdds}
         onClose={() => {
           setSheet(null);
           setBetCardId(null);
@@ -1911,6 +1962,8 @@ export default function GamePage() {
       <AutoBetSheet
         open={sheet === "autoBet"}
         initial={autoBet}
+        maxBetPerCard={betLimits.maxBetPerCard}
+        quickAdds={betLimits.quickAdds}
         onClose={() => setSheet(null)}
         onSave={(cfg) => {
           // Cho phép đặt lại ngay trong ván betting hiện tại khi bật/đổi preset
@@ -1976,6 +2029,19 @@ export default function GamePage() {
         onClose={() => setSheet(null)}
       />
       <RulesSheet open={sheet === "rules"} onClose={() => setSheet(null)} />
+      <VoiceRoomHub
+        open={sheet === "voiceRoom"}
+        socket={socket}
+        me={me}
+        sessionAuthed={sessionAuthed}
+        onClose={() => setSheet(null)}
+        onOpen={() => setSheet("voiceRoom")}
+        onNeedLogin={() => {
+          setSheet(null);
+          nav("/login");
+        }}
+        onStatus={setVoiceStatus}
+      />
       <AvatarPickerSheet
         open={sheet === "avatar"}
         current={me ? me.avatar : guestAvatar}

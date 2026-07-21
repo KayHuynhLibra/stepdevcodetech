@@ -24,7 +24,7 @@ function RequireAuth({
   role,
 }: {
   children: React.ReactNode;
-  role?: "user" | "admin" | "mainadmin" | "deal";
+  role?: "user" | "admin" | "mainadmin" | "deal" | "tutien" | "mod";
 }) {
   const token = getToken();
   const user = getStoredUser();
@@ -42,7 +42,19 @@ function RequireAuth({
   if (role === "deal" && user.role !== "deal") {
     return <Navigate to={homePath(user)} replace />;
   }
-  if (role === "user" && (isStaff(user) || user.role === "deal")) {
+  if (role === "tutien" && user.role !== "tutien") {
+    return <Navigate to={homePath(user)} replace />;
+  }
+  if (role === "mod" && user.role !== "mod") {
+    return <Navigate to={homePath(user)} replace />;
+  }
+  if (
+    role === "user" &&
+    (isStaff(user) ||
+      user.role === "deal" ||
+      user.role === "tutien" ||
+      user.role === "mod")
+  ) {
     return <Navigate to={homePath(user)} replace />;
   }
   return children;
@@ -57,7 +69,7 @@ function RequireOwnCode({
   role,
 }: {
   children: React.ReactNode;
-  role?: "user" | "admin" | "mainadmin" | "deal";
+  role?: "user" | "admin" | "mainadmin" | "deal" | "tutien" | "mod";
 }) {
   const { userCode } = useParams();
   const loc = useLocation();
@@ -94,7 +106,19 @@ function RequireOwnCode({
   if (role === "deal" && user.role !== "deal") {
     return <Navigate to={ownDest} replace />;
   }
-  if (role === "user" && (isStaff(user) || user.role === "deal")) {
+  if (role === "tutien" && user.role !== "tutien") {
+    return <Navigate to={ownDest} replace />;
+  }
+  if (role === "mod" && user.role !== "mod") {
+    return <Navigate to={ownDest} replace />;
+  }
+  if (
+    role === "user" &&
+    (isStaff(user) ||
+      user.role === "deal" ||
+      user.role === "tutien" ||
+      user.role === "mod")
+  ) {
     return <Navigate to={ownDest} replace />;
   }
 
@@ -247,6 +271,56 @@ export default function App() {
         }
       />
 
+      <Route
+        path="/tutien/:userCode"
+        element={
+          <RequireOwnCode role="tutien">
+            <AdminDashboard />
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/tutien/:userCode/play"
+        element={
+          <RequireOwnCode role="tutien">
+            <GamePage />
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/tutien/:userCode/arcana"
+        element={
+          <RequireOwnCode role="tutien">
+            <ArcanaWheelPage />
+          </RequireOwnCode>
+        }
+      />
+
+      <Route
+        path="/mod/:userCode"
+        element={
+          <RequireOwnCode role="mod">
+            <AdminDashboard />
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/mod/:userCode/play"
+        element={
+          <RequireOwnCode role="mod">
+            <GamePage />
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/mod/:userCode/arcana"
+        element={
+          <RequireOwnCode role="mod">
+            <ArcanaWheelPage />
+          </RequireOwnCode>
+        }
+      />
+
       <Route path="/guest/:guestCode/play" element={<RequireOwnGuest />} />
       <Route path="/play" element={<GuestEntry />} />
 
@@ -256,6 +330,9 @@ export default function App() {
         path="/mainadmin"
         element={<LegacyRoleRedirect role="mainadmin" />}
       />
+      <Route path="/deal" element={<LegacyRoleRedirect role="deal" />} />
+      <Route path="/tutien" element={<LegacyRoleRedirect role="tutien" />} />
+      <Route path="/mod" element={<LegacyRoleRedirect role="mod" />} />
       <Route path="/dashboard" element={<LegacyRoleRedirect role="user" />} />
 
       <Route

@@ -52,24 +52,33 @@ export function applyStreakBonusToPayout(
   return Math.max(0, Math.floor(payoutBase * (1 + bonusPct / 100)));
 }
 
-export function rarityLabel(weightShare: number): "Hiếm" | "TB" | "Thường" {
-  if (weightShare <= 8) return "Hiếm";
-  if (weightShare <= 15) return "TB";
+export type RarityTierKey = "high" | "mid" | "low";
+
+/** VI: Epic / Hiếm / Thường — khớp Common / Rare / Epic */
+export function rarityLabel(weightShare: number): "Epic" | "Hiếm" | "Thường" {
+  if (weightShare <= 8) return "Epic";
+  if (weightShare <= 15) return "Hiếm";
   return "Thường";
 }
 
 export function rarityLabelEn(
   weightShare: number,
-): "RARE" | "MID" | "COMMON" {
-  if (weightShare <= 8) return "RARE";
-  if (weightShare <= 15) return "MID";
+): "EPIC" | "RARE" | "COMMON" {
+  if (weightShare <= 8) return "EPIC";
+  if (weightShare <= 15) return "RARE";
   return "COMMON";
 }
 
-export function rarityTierKey(
-  weightShare: number,
-): "high" | "mid" | "low" {
+export function rarityTierKey(weightShare: number): RarityTierKey {
   if (weightShare <= 8) return "high";
   if (weightShare <= 15) return "mid";
   return "low";
+}
+
+/** Segment fill for roulette-style wheel (Epic / Rare / Common). */
+export function raritySegmentColor(weightShare: number): string {
+  const tier = rarityTierKey(weightShare);
+  if (tier === "high") return "#5a4020";
+  if (tier === "mid") return "#1f4a40";
+  return "#2a3550";
 }
