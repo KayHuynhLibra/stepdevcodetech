@@ -191,9 +191,6 @@ export function PlayerInfoSheet({
     });
   };
 
-  const badge =
-    "rounded-full border border-[#8C764D] bg-[#121D2D] px-3 py-1 text-xs text-[#E3D8C4]";
-
   const theme: ProfileThemeId = normalizeProfileTheme(player.profileTheme);
   const nameFrame = normalizeNameFrame(player.nameFrame);
   const idFrame = normalizeIdFrame(player.idFrame);
@@ -229,46 +226,42 @@ export function PlayerInfoSheet({
         </div>
 
         {/* Hero couple — PRIMARY */}
-        <div className="relative z-[1] mx-3 mt-1 overflow-hidden rounded-2xl border border-[#3A4E6C]/50 px-3 py-5 profile-celestial__hero">
-          <div className="flex items-center justify-between gap-1">
+        <div className="relative z-[1] mx-3 mt-1 rounded-2xl border border-[#3A4E6C]/50 profile-celestial__hero">
+          <div className="profile-celestial__couple-stage">
             {targetBonded && player.bond ? (
-              <div className="mx-auto w-full max-w-sm">
-                <CoupleAvatar
-                  displaySize="hero"
-                  className="!w-full !justify-between"
-                  avatarA={player.avatar || "/assets/ui/avatar-default.png"}
-                  avatarB={player.bond.partnerAvatar}
-                  ringImage={player.bond.ringImage}
-                  ringAlt={player.bond.ringNameVi}
-                  ringEffect={player.bond.ringEffect}
-                  ringSharpness={player.bond.ringSharpness}
-                  coupleFrame={player.bond.coupleFrame}
-                  coupleBorder={player.bond.coupleBorder}
-                  coupleScale={player.bond.coupleScale ?? "xl"}
-                  coupleMotion={player.bond.coupleMotion}
-                  coupleGap={player.bond.coupleGap}
-                  coupleLayout={player.bond.coupleLayout}
-                  ringFrame={player.bond.ringFrame}
-                  ringFrameScale={player.bond.ringFrameScale}
-                />
-              </div>
+              <CoupleAvatar
+                displaySize="hero"
+                className="profile-celestial__couple"
+                avatarA={player.avatar || "/assets/ui/avatar-default.png"}
+                avatarB={player.bond.partnerAvatar}
+                ringImage={player.bond.ringImage}
+                ringAlt={player.bond.ringNameVi}
+                ringEffect={player.bond.ringEffect}
+                ringSharpness={player.bond.ringSharpness}
+                coupleFrame={player.bond.coupleFrame}
+                coupleBorder={player.bond.coupleBorder}
+                coupleScale={player.bond.coupleScale ?? "xl"}
+                coupleMotion={player.bond.coupleMotion}
+                coupleGap={player.bond.coupleGap}
+                coupleLayout={player.bond.coupleLayout}
+                ringFrame={player.bond.ringFrame}
+                ringFrameScale={player.bond.ringFrameScale}
+              />
             ) : (
-              <div className="mx-auto">
-                <RoleAvatarFrame
-                  size="lg"
-                  src={player.avatar || "/assets/ui/avatar-default.png"}
-                  frame={player.avatarFrame}
-                  isVip={showVip}
-                  alt=""
-                />
-              </div>
+              <RoleAvatarFrame
+                size="lg"
+                src={player.avatar || "/assets/ui/avatar-default.png"}
+                frame={player.avatarFrame}
+                isVip={showVip}
+                alt=""
+              />
             )}
           </div>
         </div>
 
-        {/* Info condensed */}
-        <div className="relative z-[1] mt-3 flex flex-col items-center gap-2 px-4">
-          <span
+        {/* Identity — name / ID / roles căn giữa đồng bộ */}
+        <div className="profile-celestial__identity relative z-[1]">
+          <div
             className={`profile-name-frame profile-name-frame--${nameFrame}`}
             data-frame={nameFrame}
           >
@@ -277,45 +270,67 @@ export function PlayerInfoSheet({
               colorId={player.nameColor}
               effectId={player.nameEffect}
               as="p"
-              className="font-display text-2xl font-bold text-[#F3EAD8]"
+              className="font-display text-center text-2xl font-bold leading-tight text-[#F3EAD8]"
             />
-          </span>
+          </div>
 
           {targetBonded && player.bond && (
-            <p className="flex items-center gap-1.5 text-sm font-medium text-[#B0C4DE]">
-              <span>Với</span>
-              <span className="text-[#8A9EB8]">——</span>
-              <span>💖</span>
-              <span className="text-[#E3D8C4]">{player.bond.partnerName}</span>
+            <p className="profile-celestial__partner">
+              <span className="opacity-70">Với</span>
+              <span className="mx-1 text-[#8A9EB8]" aria-hidden>
+                ——
+              </span>
+              <span aria-hidden>💖</span>
+              <span className="mx-1 font-medium text-[#E3D8C4]">
+                {player.bond.partnerName}
+              </span>
               {!isRingEmoji(player.bond.ringImage) ? (
                 <img
                   src={player.bond.ringImage}
                   alt=""
-                  className="h-4 w-4 object-contain"
+                  className="inline-block h-4 w-4 object-contain align-middle"
                 />
               ) : (
-                <span>💎</span>
+                <span aria-hidden>💎</span>
               )}
             </p>
           )}
 
           {(player.code || player.guestCode) && (
-            <span
-              className={`profile-id-frame profile-id-frame--${idFrame}`}
-              data-frame={idFrame}
-            >
-              ID {player.code || player.guestCode}
-            </span>
+            <div className="profile-celestial__id-wrap">
+              <span
+                className={`profile-id-frame profile-id-frame--${idFrame}`}
+                data-frame={idFrame}
+              >
+                <span className="profile-id-frame__label">ID</span>
+                <span className="profile-id-frame__value">
+                  {player.code || player.guestCode}
+                </span>
+              </span>
+            </div>
           )}
 
-          <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
-            {showVip && <span className={badge}>👑 VIP</span>}
-            <CultivationChip rank={player.cultivationRank} />
-            <span className={badge}>👤 {kind}</span>
+          <div className="profile-celestial__roles" role="list">
+            {showVip && (
+              <span className="profile-role-chip" role="listitem">
+                👑 VIP
+              </span>
+            )}
+            {player.cultivationRank ? (
+              <span className="profile-role-chip profile-role-chip--cult" role="listitem">
+                <CultivationChip
+                  rank={player.cultivationRank}
+                  className="!px-0 !py-0 !text-[11px] !font-bold !tracking-normal !ring-0 !shadow-none"
+                />
+              </span>
+            ) : null}
+            <span className="profile-role-chip" role="listitem">
+              👤 {kind}
+            </span>
           </div>
 
           {player.userId && !player.isBot && (
-            <p className="mt-1 text-xs text-[#7A8EA8]">
+            <p className="profile-celestial__rounds">
               Đã chơi {rounds.toLocaleString("vi-VN")} /{" "}
               {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván
             </p>

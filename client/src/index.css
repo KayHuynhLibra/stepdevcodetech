@@ -2752,7 +2752,104 @@ input {
     rgba(168, 85, 247, 0.28) 0%,
     transparent 70%
   );
+  overflow: visible;
+  padding: 1.1rem 0.65rem 1.25rem;
 }
+.profile-celestial__couple-stage {
+  display: flex;
+  width: 100%;
+  min-height: 8.5rem;
+  align-items: center;
+  justify-content: center;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 0.35rem 0.25rem 0.5rem;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.profile-celestial__couple-stage::-webkit-scrollbar {
+  display: none;
+}
+.profile-celestial__couple {
+  margin-inline: auto;
+  max-width: 100%;
+}
+
+.profile-celestial__identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+  padding: 0 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+.profile-celestial__partner {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  max-width: 100%;
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: #b0c4de;
+}
+.profile-celestial__id-wrap {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  padding: 0.1rem 0;
+}
+.profile-celestial__roles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+  max-width: 22rem;
+  margin-top: 0.15rem;
+}
+.profile-role-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.7rem;
+  padding: 0.2rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid #8c764d;
+  background: #121d2d;
+  color: #e3d8c4;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+.profile-role-chip--cult {
+  padding-inline: 0.65rem;
+  border-color: transparent;
+  background: transparent;
+}
+.profile-role-chip--cult > span {
+  min-height: 1.35rem;
+  padding-inline: 0.55rem !important;
+  padding-block: 0.2rem !important;
+  font-size: 0.6875rem !important;
+  line-height: 1 !important;
+  border-radius: 999px;
+}
+.profile-celestial__rounds {
+  margin: 0.15rem 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.3;
+  color: #7a8ea8;
+}
+
 @keyframes profile-stars-twinkle {
   0%,
   100% {
@@ -3153,15 +3250,16 @@ input {
   height: 5.6rem;
 }
 
-/* Couple layouts */
+/* Couple layouts ? gi? c?n gi?a tr?c d?c v?i identity bên d??i */
 .couple-avatar[data-layout="heart_arch"] {
-  padding-top: 1rem;
+  padding-top: 0.85rem;
+  padding-bottom: 0.55rem;
 }
 .couple-avatar[data-layout="heart_arch"] .couple-avatar__slot--a {
-  transform: translate(12%, -10%) rotate(-6deg);
+  transform: translate(10%, -6%) rotate(-4deg);
 }
 .couple-avatar[data-layout="heart_arch"] .couple-avatar__slot--b {
-  transform: translate(-12%, -10%) rotate(6deg);
+  transform: translate(-10%, -6%) rotate(4deg);
 }
 .couple-avatar[data-layout="banner"] {
   border-radius: 1.1rem 1.1rem 1.6rem 1.6rem;
@@ -3180,61 +3278,78 @@ input {
   animation: couple-drift 3.2s ease-in-out infinite;
 }
 
-/* Name + ID frames on profile */
+.profile-celestial__couple.couple-avatar {
+  justify-self: center;
+}
+.profile-celestial__couple.couple-avatar[data-gap="span"] {
+  width: min(100%, 22rem);
+  margin-inline: auto;
+}
+
+/* Name + ID frames on profile ? lu?n c?n gi?a, k?ch th??c ?n ??nh */
 .profile-name-frame {
   display: inline-flex;
-  max-width: 100%;
+  max-width: min(100%, 20rem);
   align-items: center;
   justify-content: center;
+  text-align: center;
+  box-sizing: border-box;
+  margin-inline: auto;
+}
+.profile-name-frame p,
+.profile-name-frame .colored-name {
+  margin: 0;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 .profile-name-frame--plaque {
-  padding: 0.35rem 1rem;
+  padding: 0.4rem 1.1rem;
   border-radius: 0.75rem;
   background: linear-gradient(180deg, rgba(40, 32, 18, 0.9), rgba(18, 24, 36, 0.85));
   border: 1px solid rgba(200, 169, 104, 0.55);
   box-shadow: inset 0 1px 0 rgba(255, 236, 200, 0.2);
 }
 .profile-name-frame--ribbon {
-  padding: 0.3rem 1.4rem;
+  padding: 0.35rem 1.5rem;
   background: linear-gradient(90deg, transparent, rgba(184, 80, 110, 0.45), transparent);
   border-block: 1px solid rgba(240, 168, 192, 0.45);
 }
 .profile-name-frame--scroll {
-  padding: 0.4rem 1.2rem;
+  padding: 0.45rem 1.25rem;
   border-radius: 0.35rem;
   background: linear-gradient(180deg, rgba(60, 48, 28, 0.75), rgba(30, 24, 16, 0.85));
   border: 1px solid rgba(200, 170, 120, 0.4);
 }
 .profile-name-frame--crystal {
-  padding: 0.35rem 1rem;
+  padding: 0.4rem 1.1rem;
   border-radius: 999px;
   background: rgba(126, 200, 255, 0.12);
   border: 1px solid rgba(126, 200, 255, 0.45);
   box-shadow: 0 0 14px rgba(126, 200, 255, 0.25);
 }
 .profile-name-frame--rune {
-  padding: 0.35rem 1rem;
+  padding: 0.4rem 1.1rem;
   border: 1px dashed rgba(200, 169, 104, 0.55);
   border-radius: 0.5rem;
 }
 .profile-name-frame--heart {
-  padding: 0.35rem 1.1rem 0.55rem;
+  padding: 0.4rem 1.15rem 0.5rem;
   background: radial-gradient(ellipse at center, rgba(255, 120, 160, 0.22), transparent 70%);
 }
 .profile-name-frame--celestial {
-  padding: 0.35rem 1.1rem;
+  padding: 0.4rem 1.15rem;
   border-radius: 999px;
   background: linear-gradient(90deg, rgba(155, 123, 255, 0.2), rgba(126, 200, 255, 0.2));
   border: 1px solid rgba(184, 155, 255, 0.4);
 }
 .profile-name-frame--banner {
-  padding: 0.3rem 1.3rem;
-  clip-path: polygon(4% 0, 96% 0, 100% 50%, 96% 100%, 4% 100%, 0 50%);
+  padding: 0.4rem 1.55rem;
+  clip-path: polygon(6% 0, 94% 0, 100% 50%, 94% 100%, 6% 100%, 0 50%);
   background: rgba(26, 38, 56, 0.85);
   border: 0;
 }
 .profile-name-frame--ink {
-  padding: 0.2rem 0.6rem;
+  padding: 0.25rem 0.75rem;
   border-bottom: 2px solid rgba(229, 193, 88, 0.55);
 }
 
@@ -3242,13 +3357,32 @@ input {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.25rem 1.5rem;
-  font-size: 0.875rem;
+  gap: 0.4rem;
+  min-width: 7.5rem;
+  min-height: 1.85rem;
+  padding: 0.3rem 1.35rem;
+  font-size: 0.8125rem;
   font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
   color: #e5c158;
   border-radius: 999px;
   border: 1px solid #c8a968;
   background: linear-gradient(90deg, #1a2638, #2a3b54, #1a2638);
+  box-sizing: border-box;
+  text-align: center;
+  white-space: nowrap;
+}
+.profile-id-frame__label {
+  opacity: 0.75;
+  font-weight: 600;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.profile-id-frame__value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
 }
 .profile-id-frame--bronze {
   border-color: #a67c3d;
@@ -3264,23 +3398,28 @@ input {
 .profile-id-frame--rune {
   border-style: double;
   border-width: 3px;
-  border-radius: 0.5rem;
+  border-radius: 0.55rem;
+  padding-inline: 1.2rem;
 }
 .profile-id-frame--seal {
-  border-radius: 0.4rem;
-  letter-spacing: 0.08em;
+  border-radius: 0.45rem;
+  letter-spacing: 0.06em;
   border-color: #c07060;
   color: #f0c0b0;
   background: #2a1414;
+  min-width: 8rem;
 }
 .profile-id-frame--ticket {
-  border-radius: 0.25rem;
+  border-radius: 0.3rem;
   border-style: dashed;
   font-family: ui-monospace, monospace;
+  padding-inline: 1.2rem;
 }
 .profile-id-frame--hex {
   border-radius: 0.35rem;
-  clip-path: polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%);
+  clip-path: polygon(10% 0, 90% 0, 100% 50%, 90% 100%, 10% 100%, 0 50%);
+  padding-inline: 1.65rem;
+  min-width: 8.25rem;
 }
 .profile-id-frame--celestial {
   border-color: #b89bff;
