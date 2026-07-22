@@ -64,6 +64,16 @@ export interface AuthUser {
   staffGrantLevel?: number;
   /** Màu nick công khai (RoleAD) */
   nameColor?: string;
+  /** Hiệu ứng chữ nick (RoleAD) */
+  nameEffect?: string;
+  /** Khung avatar role (RoleAD) */
+  avatarFrame?: string;
+  /** Nền hồ sơ chiêm tinh (RoleAD) */
+  profileTheme?: string;
+  /** Khung bao nickname (RoleAD) */
+  nameFrame?: string;
+  /** Khung bao ID badge (RoleAD) */
+  idFrame?: string;
   /** Cặp đôi / nhẫn */
   bond?: {
     partnerId: string;
@@ -78,6 +88,11 @@ export interface AuthUser {
     coupleFrame?: string;
     coupleBorder?: string;
     coupleScale?: string;
+    coupleMotion?: string;
+    coupleGap?: string;
+    coupleLayout?: string;
+    ringFrame?: string;
+    ringFrameScale?: string;
     since: number;
     status: "pending" | "active";
   };

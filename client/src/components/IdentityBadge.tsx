@@ -8,10 +8,10 @@ import {
   type UserRole,
 } from "../auth";
 import { normalizeAvatar, DEFAULT_AVATAR } from "../avatars";
-import { VipFantasyAvatar } from "./VipFantasyAvatar";
 import { CultivationChip } from "./CultivationChip";
 import { CoupleAvatar } from "./CoupleAvatar";
 import { ColoredName } from "./ColoredName";
+import { RoleAvatarFrame } from "./RoleAvatarFrame";
 
 function roleLabel(role?: UserRole | "guest"): string {
   if (role === "mainadmin") return "Mainadmin";
@@ -80,10 +80,6 @@ export function IdentityBadge({
         }`
   }`;
 
-  const avatarRing = isVip
-    ? ""
-    : "ring-2 ring-[var(--gold)]/55 shadow";
-
   const nameClass = `truncate font-play ${
     compact ? "text-sm" : "text-base"
   } ${
@@ -102,23 +98,14 @@ export function IdentityBadge({
 
   const bondActive = user?.bond?.status === "active";
 
-  const avatarNode = isVip ? (
-    <VipFantasyAvatar
+  const avatarNode = (
+    <RoleAvatarFrame
       src={avatar}
       alt=""
       size={avatarSize}
-      fx={!compact}
+      frame={user?.avatarFrame}
+      isVip={isVip}
       decoding="async"
-      onError={onAvatarError}
-    />
-  ) : (
-    <img
-      src={avatar}
-      alt=""
-      decoding="async"
-      className={`rounded-full object-cover ${avatarRing} ${
-        compact ? "h-9 w-9" : "h-14 w-14"
-      }`}
       onError={onAvatarError}
     />
   );
@@ -135,6 +122,11 @@ export function IdentityBadge({
         coupleFrame={user.bond.coupleFrame}
         coupleBorder={user.bond.coupleBorder}
         coupleScale={user.bond.coupleScale}
+        coupleMotion={user.bond.coupleMotion}
+        coupleGap={user.bond.coupleGap}
+        coupleLayout={user.bond.coupleLayout}
+        ringFrame={user.bond.ringFrame}
+        ringFrameScale={user.bond.ringFrameScale}
         compact={compact}
         onAvatarAClick={onAvatarClick}
       />
@@ -145,6 +137,7 @@ export function IdentityBadge({
       as="button"
       name={name}
       colorId={user?.nameColor}
+      effectId={user?.nameEffect}
       className={`${nameClass} block w-full text-left`}
       title="Đổi tên"
       onClick={onNameClick}
@@ -154,6 +147,7 @@ export function IdentityBadge({
       as="p"
       name={name}
       colorId={user?.nameColor}
+      effectId={user?.nameEffect}
       className={nameClass}
     />
   );

@@ -23,8 +23,20 @@ import { vaultStore } from "./vaultStore.js";
 import { ringStore } from "./ringStore.js";
 import {
   normalizeNameColor,
+  normalizeNameEffect,
   type NameColorId,
+  type NameEffectId,
 } from "./nameColors.js";
+import {
+  normalizeAvatarFrame,
+  normalizeProfileTheme,
+  normalizeNameFrame,
+  normalizeIdFrame,
+  type AvatarFrameId,
+  type ProfileThemeId,
+  type NameFrameId,
+  type IdFrameId,
+} from "./profileStyles.js";
 import {
   canControlVoiceRoomLock as grantsCanControlVoiceRoomLock,
   clampStaffGrantLevel,
@@ -152,6 +164,16 @@ export interface UserRecord {
   staffGrantLevel?: number;
   /** Màu nick công khai — RoleAD gán (nameColors.ts) */
   nameColor?: string;
+  /** Hiệu ứng chữ nick — RoleAD */
+  nameEffect?: string;
+  /** Khung avatar role — RoleAD */
+  avatarFrame?: string;
+  /** Nền hồ sơ chiêm tinh — RoleAD */
+  profileTheme?: string;
+  /** Khung bao nickname — RoleAD */
+  nameFrame?: string;
+  /** Khung bao ID badge — RoleAD */
+  idFrame?: string;
 }
 
 /** Lịch sử IP theo user — không lộ ra PublicUser / client player */
@@ -221,6 +243,16 @@ export interface PublicUser {
   staffGrantLevel?: number;
   /** Màu nick công khai (RoleAD) */
   nameColor?: string;
+  /** Hiệu ứng chữ nick (RoleAD) */
+  nameEffect?: string;
+  /** Khung avatar role (RoleAD) */
+  avatarFrame?: string;
+  /** Nền hồ sơ chiêm tinh (RoleAD) */
+  profileTheme?: string;
+  /** Khung bao nickname (RoleAD) */
+  nameFrame?: string;
+  /** Khung bao ID badge (RoleAD) */
+  idFrame?: string;
   /** Cặp đôi / nhẫn — active công khai; pending chỉ self */
   bond?: {
     partnerId: string;
@@ -235,6 +267,11 @@ export interface PublicUser {
     coupleFrame?: string;
     coupleBorder?: string;
     coupleScale?: string;
+    coupleMotion?: string;
+    coupleGap?: string;
+    coupleLayout?: string;
+    ringFrame?: string;
+    ringFrameScale?: string;
     since: number;
     status: "pending" | "active";
   };
@@ -432,6 +469,16 @@ function toPublic(
   }
   const nc = normalizeNameColor(u.nameColor);
   if (nc !== "default") pub.nameColor = nc;
+  const ne = normalizeNameEffect(u.nameEffect);
+  if (ne !== "none") pub.nameEffect = ne;
+  const af = normalizeAvatarFrame(u.avatarFrame);
+  if (af !== "none") pub.avatarFrame = af;
+  const pt = normalizeProfileTheme(u.profileTheme);
+  if (pt !== "cosmic") pub.profileTheme = pt;
+  const nf = normalizeNameFrame(u.nameFrame);
+  if (nf !== "none") pub.nameFrame = nf;
+  const idf = normalizeIdFrame(u.idFrame);
+  if (idf !== "classic") pub.idFrame = idf;
   if (opts?.includeRecovery && u.recoveryCode) {
     pub.recoveryCode = u.recoveryCode;
   }
@@ -1564,6 +1611,11 @@ export class AuthStore {
         roundsPlayed: number;
         cultivationRank?: CultivationRank;
         nameColor?: string;
+        nameEffect?: string;
+        avatarFrame?: string;
+        profileTheme?: string;
+        nameFrame?: string;
+        idFrame?: string;
       }
     | null {
     const id = String(opts.userId ?? "").trim();
@@ -1588,6 +1640,11 @@ export class AuthStore {
       roundsPlayed: number;
       cultivationRank?: CultivationRank;
       nameColor?: string;
+      nameEffect?: string;
+      avatarFrame?: string;
+      profileTheme?: string;
+      nameFrame?: string;
+      idFrame?: string;
     } = {
       userId: user.id,
       username: user.username,
@@ -1603,6 +1660,16 @@ export class AuthStore {
     }
     const nc = normalizeNameColor(user.nameColor);
     if (nc !== "default") card.nameColor = nc;
+    const ne = normalizeNameEffect(user.nameEffect);
+    if (ne !== "none") card.nameEffect = ne;
+    const af = normalizeAvatarFrame(user.avatarFrame);
+    if (af !== "none") card.avatarFrame = af;
+    const pt = normalizeProfileTheme(user.profileTheme);
+    if (pt !== "cosmic") card.profileTheme = pt;
+    const nf = normalizeNameFrame(user.nameFrame);
+    if (nf !== "none") card.nameFrame = nf;
+    const idf = normalizeIdFrame(user.idFrame);
+    if (idf !== "classic") card.idFrame = idf;
     return card;
   }
 
@@ -1769,18 +1836,62 @@ export class AuthStore {
     return { ok: true, user: toPublic(user) };
   }
 
+  /** RoleAD: gán màu / hiệu ứng nick + khung avatar + nền hồ sơ. */
+  setUserCosmetics(
+    userId: string,
+    opts: {
+      color?: unknown;
+      effect?: unknown;
+      avatarFrame?: unknown;
+      profileTheme?: unknown;
+      nameFrame?: unknown;
+      idFrame?: unknown;
+    },
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+
+    if (opts.color !== undefined) {
+      const color = normalizeNameColor(opts.color) as NameColorId;
+      if (color === "default") delete user.nameColor;
+      else user.nameColor = color;
+    }
+    if (opts.effect !== undefined) {
+      const effect = normalizeNameEffect(opts.effect) as NameEffectId;
+      if (effect === "none") delete user.nameEffect;
+      else user.nameEffect = effect;
+    }
+    if (opts.avatarFrame !== undefined) {
+      const frame = normalizeAvatarFrame(opts.avatarFrame) as AvatarFrameId;
+      if (frame === "none") delete user.avatarFrame;
+      else user.avatarFrame = frame;
+    }
+    if (opts.profileTheme !== undefined) {
+      const theme = normalizeProfileTheme(opts.profileTheme) as ProfileThemeId;
+      if (theme === "cosmic") delete user.profileTheme;
+      else user.profileTheme = theme;
+    }
+    if (opts.nameFrame !== undefined) {
+      const nf = normalizeNameFrame(opts.nameFrame) as NameFrameId;
+      if (nf === "none") delete user.nameFrame;
+      else user.nameFrame = nf;
+    }
+    if (opts.idFrame !== undefined) {
+      const idf = normalizeIdFrame(opts.idFrame) as IdFrameId;
+      if (idf === "classic") delete user.idFrame;
+      else user.idFrame = idf;
+    }
+
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
   /** RoleAD: gán màu nick công khai. */
   setNameColor(
     userId: string,
     colorRaw: unknown,
   ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
-    const user = this.byId.get(userId);
-    if (!user) return { ok: false, reason: "Không tìm thấy user" };
-    const color = normalizeNameColor(colorRaw) as NameColorId;
-    if (color === "default") delete user.nameColor;
-    else user.nameColor = color;
-    this.scheduleSave();
-    return { ok: true, user: toPublic(user) };
+    return this.setUserCosmetics(userId, { color: colorRaw });
   }
 
   adjustBalance(

@@ -128,6 +128,11 @@ export interface OnlinePlayerPublic {
   guestCode?: string;
   cultivationRank?: string;
   nameColor?: string;
+  nameEffect?: string;
+  avatarFrame?: string;
+  profileTheme?: string;
+  nameFrame?: string;
+  idFrame?: string;
 }
 
 export interface GameState {

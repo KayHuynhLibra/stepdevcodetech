@@ -2827,7 +2827,25 @@ app.post("/api/mainadmin/user-hide-nickname", (req, res) => {
   res.json(result);
 });
 
-/** RoleAD / mainadmin: màu nick công khai */
+/** RoleAD / mainadmin: màu nick + hiệu ứng + khung avatar/tên/ID + nền hồ sơ */
+function applyCosmeticsPatch(body: Record<string, unknown>) {
+  const patch: {
+    color?: unknown;
+    effect?: unknown;
+    avatarFrame?: unknown;
+    profileTheme?: unknown;
+    nameFrame?: unknown;
+    idFrame?: unknown;
+  } = {};
+  if (body.color !== undefined) patch.color = body.color;
+  if (body.effect !== undefined) patch.effect = body.effect;
+  if (body.avatarFrame !== undefined) patch.avatarFrame = body.avatarFrame;
+  if (body.profileTheme !== undefined) patch.profileTheme = body.profileTheme;
+  if (body.nameFrame !== undefined) patch.nameFrame = body.nameFrame;
+  if (body.idFrame !== undefined) patch.idFrame = body.idFrame;
+  return patch;
+}
+
 app.post("/api/mainadmin/user-name-color", (req, res) => {
   const me = requireMainAdmin(req, res);
   if (!me) return;
@@ -2835,12 +2853,52 @@ app.post("/api/mainadmin/user-name-color", (req, res) => {
   if (!userId) {
     return res.status(400).json({ ok: false, reason: "Thiếu userId" });
   }
-  const result = authStore.setNameColor(userId, req.body?.color);
+  const patch = applyCosmeticsPatch(req.body ?? {});
+  if (Object.keys(patch).length === 0) {
+    return res.status(400).json({ ok: false, reason: "Thiếu trường cập nhật" });
+  }
+  const result = authStore.setUserCosmetics(userId, patch);
   if (!result.ok) return res.status(400).json(result);
-  audit(me, "user_name_color", {
+  audit(me, "user_cosmetics", {
     targetId: result.user.id,
     targetName: result.user.username,
-    detail: String(result.user.nameColor ?? "default"),
+    detail: [
+      `color=${result.user.nameColor ?? "default"}`,
+      `fx=${result.user.nameEffect ?? "none"}`,
+      `frame=${result.user.avatarFrame ?? "none"}`,
+      `nameFrame=${result.user.nameFrame ?? "none"}`,
+      `idFrame=${result.user.idFrame ?? "classic"}`,
+      `theme=${result.user.profileTheme ?? "cosmic"}`,
+    ].join(" · "),
+  });
+  engine.refreshAllClients();
+  res.json(result);
+});
+
+app.post("/api/mainadmin/user-cosmetics", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const userId = String(req.body?.userId ?? "").trim();
+  if (!userId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId" });
+  }
+  const patch = applyCosmeticsPatch(req.body ?? {});
+  if (Object.keys(patch).length === 0) {
+    return res.status(400).json({ ok: false, reason: "Thiếu trường cập nhật" });
+  }
+  const result = authStore.setUserCosmetics(userId, patch);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "user_cosmetics", {
+    targetId: result.user.id,
+    targetName: result.user.username,
+    detail: [
+      `color=${result.user.nameColor ?? "default"}`,
+      `fx=${result.user.nameEffect ?? "none"}`,
+      `frame=${result.user.avatarFrame ?? "none"}`,
+      `nameFrame=${result.user.nameFrame ?? "none"}`,
+      `idFrame=${result.user.idFrame ?? "classic"}`,
+      `theme=${result.user.profileTheme ?? "cosmic"}`,
+    ].join(" · "),
   });
   engine.refreshAllClients();
   res.json(result);

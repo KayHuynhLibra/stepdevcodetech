@@ -4,12 +4,22 @@ import {
   isRingEmoji,
   normalizeCoupleBorder,
   normalizeCoupleFrame,
+  normalizeCoupleGap,
+  normalizeCoupleMotion,
   normalizeCoupleScale,
   normalizeRingEffect,
+  normalizeRingFrame,
+  normalizeRingFrameScale,
+  normalizeCoupleLayout,
   type CoupleBorderStyle,
   type CoupleFrameScale,
   type CoupleFrameStyle,
+  type CoupleGap,
+  type CoupleLayout,
+  type CoupleMotion,
   type RingEffect,
+  type RingFrameScale,
+  type RingFrameStyle,
 } from "../rings";
 
 export type CoupleDisplaySize = "compact" | "default" | "hero";
@@ -24,6 +34,11 @@ interface CoupleAvatarProps {
   coupleFrame?: CoupleFrameStyle | string;
   coupleBorder?: CoupleBorderStyle | string;
   coupleScale?: CoupleFrameScale | string;
+  coupleMotion?: CoupleMotion | string;
+  coupleGap?: CoupleGap | string;
+  coupleLayout?: CoupleLayout | string;
+  ringFrame?: RingFrameStyle | string;
+  ringFrameScale?: RingFrameScale | string;
   /** compact = badge; default = sheet thường; hero = profile modal lớn */
   displaySize?: CoupleDisplaySize;
   compact?: boolean;
@@ -118,7 +133,7 @@ function faceSizeClass(
   }
 }
 
-/** [A] — oval nhẫn — [B]; frame/border/scale từ catalog nhẫn. */
+/** [A] — oval nhẫn — [B]; frame/border/scale/motion/gap/ringFrame từ catalog nhẫn. */
 export function CoupleAvatar({
   avatarA,
   avatarB,
@@ -129,6 +144,11 @@ export function CoupleAvatar({
   coupleFrame,
   coupleBorder,
   coupleScale,
+  coupleMotion,
+  coupleGap,
+  coupleLayout,
+  ringFrame,
+  ringFrameScale,
   displaySize,
   compact = false,
   onAvatarAClick,
@@ -139,6 +159,11 @@ export function CoupleAvatar({
   const frame = normalizeCoupleFrame(coupleFrame);
   const border = normalizeCoupleBorder(coupleBorder);
   const scale = normalizeCoupleScale(coupleScale);
+  const motion = normalizeCoupleMotion(coupleMotion);
+  const gap = normalizeCoupleGap(coupleGap);
+  const layout = normalizeCoupleLayout(coupleLayout);
+  const rFrame = normalizeRingFrame(ringFrame);
+  const rScale = normalizeRingFrameScale(ringFrameScale);
   const sizeClass = faceSizeClass(display, scale);
   const effect = normalizeRingEffect(ringEffect);
   const fxClass =
@@ -166,6 +191,11 @@ export function CoupleAvatar({
       data-frame={frame}
       data-border={border}
       data-scale={scale}
+      data-motion={motion}
+      data-gap={gap}
+      data-layout={layout}
+      data-ring-frame={rFrame}
+      data-ring-scale={rScale}
       title="Cặp đôi"
     >
       <span className="couple-avatar__trail couple-avatar__trail--l" aria-hidden />
@@ -188,7 +218,7 @@ export function CoupleAvatar({
       )}
 
       <div
-        className="couple-avatar__oval"
+        className={`couple-avatar__oval couple-avatar__oval--${rFrame}`}
         title={ringAlt}
         aria-label={ringAlt}
       >

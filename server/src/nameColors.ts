@@ -1,4 +1,4 @@
-/** Màu nick công khai — RoleAD (mainadmin) gán cho user. */
+/** Màu + hiệu ứng nick công khai — RoleAD (mainadmin) gán cho user. */
 
 export type NameColorId =
   | "default"
@@ -13,13 +13,26 @@ export type NameColorId =
   | "aurora"
   | "cosmos";
 
+export type NameEffectId =
+  | "none"
+  | "glow"
+  | "shimmer"
+  | "pulse"
+  | "sparkle"
+  | "neon"
+  | "float"
+  | "flame";
+
 export interface NameColorPreset {
   id: NameColorId;
   label: string;
-  /** Hex solid — dùng khi không gradient */
   hex?: string;
-  /** Tailwind-ish gradient stops for CSS background */
   gradient?: string;
+}
+
+export interface NameEffectPreset {
+  id: NameEffectId;
+  label: string;
 }
 
 export const NAME_COLOR_PRESETS: NameColorPreset[] = [
@@ -44,16 +57,42 @@ export const NAME_COLOR_PRESETS: NameColorPreset[] = [
   },
 ];
 
-const IDS = new Set(NAME_COLOR_PRESETS.map((p) => p.id));
+export const NAME_EFFECT_PRESETS: NameEffectPreset[] = [
+  { id: "none", label: "Không" },
+  { id: "glow", label: "Hào quang" },
+  { id: "shimmer", label: "Lướt sáng" },
+  { id: "pulse", label: "Nhịp thở" },
+  { id: "sparkle", label: "Lấp lánh" },
+  { id: "neon", label: "Neon" },
+  { id: "float", label: "Bay nhẹ" },
+  { id: "flame", label: "Lửa chữ" },
+];
+
+const COLOR_IDS = new Set(NAME_COLOR_PRESETS.map((p) => p.id));
+const EFFECT_IDS = new Set(NAME_EFFECT_PRESETS.map((p) => p.id));
 
 export function normalizeNameColor(raw: unknown): NameColorId {
   const s = String(raw ?? "")
     .trim()
     .toLowerCase();
-  return IDS.has(s as NameColorId) ? (s as NameColorId) : "default";
+  return COLOR_IDS.has(s as NameColorId) ? (s as NameColorId) : "default";
+}
+
+export function normalizeNameEffect(raw: unknown): NameEffectId {
+  const s = String(raw ?? "")
+    .trim()
+    .toLowerCase();
+  return EFFECT_IDS.has(s as NameEffectId) ? (s as NameEffectId) : "none";
 }
 
 export function getNameColorPreset(id: unknown): NameColorPreset {
   const n = normalizeNameColor(id);
   return NAME_COLOR_PRESETS.find((p) => p.id === n) ?? NAME_COLOR_PRESETS[0]!;
+}
+
+export function getNameEffectPreset(id: unknown): NameEffectPreset {
+  const n = normalizeNameEffect(id);
+  return (
+    NAME_EFFECT_PRESETS.find((p) => p.id === n) ?? NAME_EFFECT_PRESETS[0]!
+  );
 }

@@ -71,12 +71,49 @@ import {
   type RingEffect,
   type RingItem,
   type BondAdminRow,
+  type CoupleMotion,
+  type CoupleGap,
+  type CoupleLayout,
+  type RingFrameStyle,
+  type RingFrameScale,
+  COUPLE_MOTIONS,
+  COUPLE_GAPS,
+  COUPLE_LAYOUTS,
+  RING_FRAMES,
+  RING_FRAME_SCALES,
+  COUPLE_MOTION_LABELS,
+  COUPLE_GAP_LABELS,
+  COUPLE_LAYOUT_LABELS,
+  RING_FRAME_LABELS,
+  RING_FRAME_SCALE_LABELS,
+  normalizeCoupleMotion,
+  normalizeCoupleGap,
+  normalizeCoupleLayout,
+  normalizeRingFrame,
+  normalizeRingFrameScale,
 } from "../rings";
 import {
   NAME_COLOR_PRESETS,
+  NAME_EFFECT_PRESETS,
   normalizeNameColor,
+  normalizeNameEffect,
   type NameColorId,
+  type NameEffectId,
 } from "../nameColors";
+import {
+  AVATAR_FRAME_PRESETS,
+  PROFILE_THEME_PRESETS,
+  NAME_FRAME_PRESETS,
+  ID_FRAME_PRESETS,
+  normalizeAvatarFrame,
+  normalizeProfileTheme,
+  normalizeNameFrame,
+  normalizeIdFrame,
+  type AvatarFrameId,
+  type ProfileThemeId,
+  type NameFrameId,
+  type IdFrameId,
+} from "../profileStyles";
 import { ColoredName } from "../components/ColoredName";
 
 type CultBenefitDraft = Record<
@@ -879,6 +916,11 @@ export default function AdminDashboard() {
     coupleFrame: "bronze" as CoupleFrameStyle,
     coupleBorder: "classic" as CoupleBorderStyle,
     coupleScale: "md" as CoupleFrameScale,
+    coupleMotion: "breathe" as CoupleMotion,
+    coupleGap: "normal" as CoupleGap,
+    coupleLayout: "classic" as CoupleLayout,
+    ringFrame: "classic" as RingFrameStyle,
+    ringFrameScale: "md" as RingFrameScale,
   });
   const [catalogUpload, setCatalogUpload] = useState<{
     kind: "gift" | "ring";
@@ -1773,13 +1815,31 @@ export default function AdminDashboard() {
   };
 
 
-  const setUserNameColor = async (userId: string, color: NameColorId) => {
+  const setUserCosmetics = async (
+    userId: string,
+    patch: {
+      color?: NameColorId;
+      effect?: NameEffectId;
+      avatarFrame?: AvatarFrameId;
+      profileTheme?: ProfileThemeId;
+      nameFrame?: NameFrameId;
+      idFrame?: IdFrameId;
+    },
+  ) => {
     try {
-      await api("/api/mainadmin/user-name-color", {
+      await api("/api/mainadmin/user-cosmetics", {
         method: "POST",
-        body: JSON.stringify({ userId, color }),
+        body: JSON.stringify({ userId, ...patch }),
       });
-      setMsg(`Màu nick: ${color}`);
+      const bits = [
+        patch.color && `màu ${patch.color}`,
+        patch.effect && `fx ${patch.effect}`,
+        patch.avatarFrame && `khung ${patch.avatarFrame}`,
+        patch.nameFrame && `tên ${patch.nameFrame}`,
+        patch.idFrame && `ID ${patch.idFrame}`,
+        patch.profileTheme && `nền ${patch.profileTheme}`,
+      ].filter(Boolean);
+      setMsg(`Cosmetics: ${bits.join(" · ") || "ok"}`);
       await load();
       if (userId === me?.id) {
         const token = getToken();
@@ -1794,8 +1854,12 @@ export default function AdminDashboard() {
         }
       }
     } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi màu nick");
+      setMsg(err instanceof Error ? err.message : "Lỗi cosmetics");
     }
+  };
+
+  const setUserNameColor = async (userId: string, color: NameColorId) => {
+    await setUserCosmetics(userId, { color });
   };
 
   const saveSelfNickname = async () => {
@@ -2634,6 +2698,11 @@ export default function AdminDashboard() {
           coupleFrame: draft.coupleFrame,
           coupleBorder: draft.coupleBorder,
           coupleScale: draft.coupleScale,
+          coupleMotion: draft.coupleMotion,
+          coupleGap: draft.coupleGap,
+          coupleLayout: draft.coupleLayout,
+          ringFrame: draft.ringFrame,
+          ringFrameScale: draft.ringFrameScale,
         }),
       });
       setMsg(opts?.quietMsg ?? `Đã lưu nhẫn ${key}`);
@@ -2652,6 +2721,11 @@ export default function AdminDashboard() {
           coupleFrame: "bronze",
           coupleBorder: "classic",
           coupleScale: "md",
+          coupleMotion: "breathe",
+          coupleGap: "normal",
+          coupleLayout: "classic",
+          ringFrame: "classic",
+          ringFrameScale: "md",
         });
       }
       await loadRingConfig();
@@ -4073,6 +4147,7 @@ export default function AdminDashboard() {
                       <ColoredName
                         name={self.displayName ?? self.username}
                         colorId={self.nameColor}
+                        effectId={self.nameEffect}
                         className="font-semibold"
                       />
                     </p>
@@ -4089,6 +4164,115 @@ export default function AdminDashboard() {
                           }`}
                         >
                           {c.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-[10px] font-bold text-[var(--play-ink)]">
+                      Hiệu ứng chữ
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {NAME_EFFECT_PRESETS.map((fx) => (
+                        <button
+                          key={fx.id}
+                          type="button"
+                          onClick={() =>
+                            void setUserCosmetics(self.id, { effect: fx.id })
+                          }
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${
+                            normalizeNameEffect(self.nameEffect) === fx.id
+                              ? "bg-indigo-800 text-white ring-indigo-800"
+                              : "bg-white text-[var(--play-ink)] ring-[var(--wood-deep)]/20"
+                          }`}
+                        >
+                          {fx.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-[10px] font-bold text-[var(--play-ink)]">
+                      Khung avatar (role)
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {AVATAR_FRAME_PRESETS.map((f) => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() =>
+                            void setUserCosmetics(self.id, {
+                              avatarFrame: f.id,
+                            })
+                          }
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${
+                            normalizeAvatarFrame(self.avatarFrame) === f.id
+                              ? "bg-amber-800 text-white ring-amber-800"
+                              : "bg-white text-[var(--play-ink)] ring-[var(--wood-deep)]/20"
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-[10px] font-bold text-[var(--play-ink)]">
+                      Nền hồ sơ chiêm tinh
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {PROFILE_THEME_PRESETS.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() =>
+                            void setUserCosmetics(self.id, {
+                              profileTheme: t.id,
+                            })
+                          }
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${
+                            normalizeProfileTheme(self.profileTheme) === t.id
+                              ? "bg-violet-800 text-white ring-violet-800"
+                              : "bg-white text-[var(--play-ink)] ring-[var(--wood-deep)]/20"
+                          }`}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-[10px] font-bold text-[var(--play-ink)]">
+                      Khung tên
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {NAME_FRAME_PRESETS.map((f) => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() =>
+                            void setUserCosmetics(self.id, { nameFrame: f.id })
+                          }
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${
+                            normalizeNameFrame(self.nameFrame) === f.id
+                              ? "bg-rose-800 text-white ring-rose-800"
+                              : "bg-white text-[var(--play-ink)] ring-[var(--wood-deep)]/20"
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-[10px] font-bold text-[var(--play-ink)]">
+                      Khung ID
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {ID_FRAME_PRESETS.map((f) => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() =>
+                            void setUserCosmetics(self.id, { idFrame: f.id })
+                          }
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${
+                            normalizeIdFrame(self.idFrame) === f.id
+                              ? "bg-teal-800 text-white ring-teal-800"
+                              : "bg-white text-[var(--play-ink)] ring-[var(--wood-deep)]/20"
+                          }`}
+                        >
+                          {f.label}
                         </button>
                       ))}
                     </div>
@@ -4250,6 +4434,91 @@ export default function AdminDashboard() {
                           title={c.label}
                         >
                           {c.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      <span className="w-full text-[9px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
+                        Fx chữ · khung · nền
+                      </span>
+                      {NAME_EFFECT_PRESETS.map((fx) => (
+                        <button
+                          key={`fx-${fx.id}`}
+                          type="button"
+                          onClick={() =>
+                            void setUserCosmetics(u.id, { effect: fx.id })
+                          }
+                          className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
+                            normalizeNameEffect(u.nameEffect) === fx.id
+                              ? "bg-indigo-800 text-white"
+                              : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
+                          }`}
+                        >
+                          {fx.label}
+                        </button>
+                      ))}
+                      {AVATAR_FRAME_PRESETS.map((f) => (
+                        <button
+                          key={`af-${f.id}`}
+                          type="button"
+                          onClick={() =>
+                            void setUserCosmetics(u.id, { avatarFrame: f.id })
+                          }
+                          className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
+                            normalizeAvatarFrame(u.avatarFrame) === f.id
+                              ? "bg-amber-800 text-white"
+                              : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                      {PROFILE_THEME_PRESETS.map((t) => (
+                        <button
+                          key={`pt-${t.id}`}
+                          type="button"
+                          onClick={() =>
+                            void setUserCosmetics(u.id, { profileTheme: t.id })
+                          }
+                          className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
+                            normalizeProfileTheme(u.profileTheme) === t.id
+                              ? "bg-violet-800 text-white"
+                              : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
+                          }`}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                      {NAME_FRAME_PRESETS.map((f) => (
+                        <button
+                          key={`nf-${f.id}`}
+                          type="button"
+                          onClick={() =>
+                            void setUserCosmetics(u.id, { nameFrame: f.id })
+                          }
+                          className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
+                            normalizeNameFrame(u.nameFrame) === f.id
+                              ? "bg-rose-800 text-white"
+                              : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
+                          }`}
+                        >
+                          Tên·{f.label}
+                        </button>
+                      ))}
+                      {ID_FRAME_PRESETS.map((f) => (
+                        <button
+                          key={`idf-${f.id}`}
+                          type="button"
+                          onClick={() =>
+                            void setUserCosmetics(u.id, { idFrame: f.id })
+                          }
+                          className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
+                            normalizeIdFrame(u.idFrame) === f.id
+                              ? "bg-teal-800 text-white"
+                              : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
+                          }`}
+                        >
+                          ID·{f.label}
                         </button>
                       ))}
                     </div>
@@ -5271,6 +5540,32 @@ export default function AdminDashboard() {
                               normalizeCoupleScale(g.coupleScale)
                             ]
                           }
+                          · động{" "}
+                          {
+                            COUPLE_MOTION_LABELS[
+                              normalizeCoupleMotion(g.coupleMotion)
+                            ]
+                          }
+                          · rộng{" "}
+                          {
+                            COUPLE_GAP_LABELS[normalizeCoupleGap(g.coupleGap)]
+                          }
+                          · khung nhẫn{" "}
+                          {
+                            RING_FRAME_LABELS[normalizeRingFrame(g.ringFrame)]
+                          }
+                          · scale nhẫn{" "}
+                          {
+                            RING_FRAME_SCALE_LABELS[
+                              normalizeRingFrameScale(g.ringFrameScale)
+                            ]
+                          }
+                          · layout{" "}
+                          {
+                            COUPLE_LAYOUT_LABELS[
+                              normalizeCoupleLayout(g.coupleLayout)
+                            ]
+                          }
                           {g.enabled ? "" : " · tắt"}
                         </p>
                       </div>
@@ -5297,6 +5592,13 @@ export default function AdminDashboard() {
                             ),
                             coupleBorder: normalizeCoupleBorder(g.coupleBorder),
                             coupleScale: normalizeCoupleScale(g.coupleScale),
+                            coupleMotion: normalizeCoupleMotion(g.coupleMotion),
+                            coupleGap: normalizeCoupleGap(g.coupleGap),
+                            coupleLayout: normalizeCoupleLayout(g.coupleLayout),
+                            ringFrame: normalizeRingFrame(g.ringFrame),
+                            ringFrameScale: normalizeRingFrameScale(
+                              g.ringFrameScale,
+                            ),
                           })
                         }
                         className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15"
@@ -5469,6 +5771,101 @@ export default function AdminDashboard() {
                 ))}
               </select>
             </label>
+            <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+              Động khung
+              <select
+                value={ringDraft.coupleMotion}
+                onChange={(e) =>
+                  setRingDraft((d) => ({
+                    ...d,
+                    coupleMotion: e.target.value as CoupleMotion,
+                  }))
+                }
+                className="app-input mt-0.5 w-full"
+              >
+                {COUPLE_MOTIONS.map((m) => (
+                  <option key={m} value={m}>
+                    {COUPLE_MOTION_LABELS[m]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+              Độ rộng
+              <select
+                value={ringDraft.coupleGap}
+                onChange={(e) =>
+                  setRingDraft((d) => ({
+                    ...d,
+                    coupleGap: e.target.value as CoupleGap,
+                  }))
+                }
+                className="app-input mt-0.5 w-full"
+              >
+                {COUPLE_GAPS.map((g) => (
+                  <option key={g} value={g}>
+                    {COUPLE_GAP_LABELS[g]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+              Khung nhẫn
+              <select
+                value={ringDraft.ringFrame}
+                onChange={(e) =>
+                  setRingDraft((d) => ({
+                    ...d,
+                    ringFrame: e.target.value as RingFrameStyle,
+                  }))
+                }
+                className="app-input mt-0.5 w-full"
+              >
+                {RING_FRAMES.map((f) => (
+                  <option key={f} value={f}>
+                    {RING_FRAME_LABELS[f]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+              Scale khung nhẫn
+              <select
+                value={ringDraft.ringFrameScale}
+                onChange={(e) =>
+                  setRingDraft((d) => ({
+                    ...d,
+                    ringFrameScale: e.target.value as RingFrameScale,
+                  }))
+                }
+                className="app-input mt-0.5 w-full"
+              >
+                {RING_FRAME_SCALES.map((s) => (
+                  <option key={s} value={s}>
+                    {RING_FRAME_SCALE_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+              Layout couple
+              <select
+                value={ringDraft.coupleLayout}
+                onChange={(e) =>
+                  setRingDraft((d) => ({
+                    ...d,
+                    coupleLayout: e.target.value as CoupleLayout,
+                  }))
+                }
+                className="app-input mt-0.5 w-full"
+              >
+                {COUPLE_LAYOUTS.map((l) => (
+                  <option key={l} value={l}>
+                    {COUPLE_LAYOUT_LABELS[l]}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div className="col-span-2 flex flex-col items-center gap-1 rounded-lg bg-white/50 px-2 py-2 ring-1 ring-[var(--wood-deep)]/10 sm:col-span-3">
               <p className="text-[10px] font-semibold text-[var(--play-muted)]">
                 Xem trước khung couple
@@ -5484,6 +5881,11 @@ export default function AdminDashboard() {
                 coupleFrame={ringDraft.coupleFrame}
                 coupleBorder={ringDraft.coupleBorder}
                 coupleScale={ringDraft.coupleScale}
+                coupleMotion={ringDraft.coupleMotion}
+                coupleGap={ringDraft.coupleGap}
+                coupleLayout={ringDraft.coupleLayout}
+                ringFrame={ringDraft.ringFrame}
+                ringFrameScale={ringDraft.ringFrameScale}
               />
             </div>
             <label className="col-span-2 text-[10px] font-semibold text-[var(--play-muted)] sm:col-span-2">

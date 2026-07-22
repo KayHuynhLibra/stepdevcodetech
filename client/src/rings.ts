@@ -27,6 +27,40 @@ export type CoupleBorderStyle =
 
 export type CoupleFrameScale = "sm" | "md" | "lg" | "xl";
 
+/** Động khung couple — giữ avatar + nhẫn. */
+export type CoupleMotion = "none" | "breathe" | "sway" | "drift" | "sparkle";
+
+/** Khoảng cách / độ rộng layout couple. */
+export type CoupleGap = "tight" | "normal" | "wide" | "span";
+
+/** Bố cục couple (cách xếp avatar + nhẫn). */
+export type CoupleLayout =
+  | "classic"
+  | "heart_arch"
+  | "banner"
+  | "nest"
+  | "orbit";
+
+/** Khung pedestal nhẫn giữa hai avatar. */
+export type RingFrameStyle =
+  | "classic"
+  | "crystal"
+  | "gothic"
+  | "celestial"
+  | "flame"
+  | "void"
+  | "ornate"
+  | "heart"
+  | "heart_wide"
+  | "diamond"
+  | "hex"
+  | "shield"
+  | "clover"
+  | "petal";
+
+/** Scale rộng/hẹp khung nhẫn. */
+export type RingFrameScale = "xs" | "sm" | "md" | "lg" | "xl";
+
 export const RING_EFFECTS: RingEffect[] = [
   "none",
   "glow",
@@ -57,6 +91,49 @@ export const COUPLE_BORDERS: CoupleBorderStyle[] = [
 
 export const COUPLE_SCALES: CoupleFrameScale[] = ["sm", "md", "lg", "xl"];
 
+export const COUPLE_MOTIONS: CoupleMotion[] = [
+  "none",
+  "breathe",
+  "sway",
+  "drift",
+  "sparkle",
+];
+
+export const COUPLE_GAPS: CoupleGap[] = ["tight", "normal", "wide", "span"];
+
+export const COUPLE_LAYOUTS: CoupleLayout[] = [
+  "classic",
+  "heart_arch",
+  "banner",
+  "nest",
+  "orbit",
+];
+
+export const RING_FRAMES: RingFrameStyle[] = [
+  "classic",
+  "crystal",
+  "gothic",
+  "celestial",
+  "flame",
+  "void",
+  "ornate",
+  "heart",
+  "heart_wide",
+  "diamond",
+  "hex",
+  "shield",
+  "clover",
+  "petal",
+];
+
+export const RING_FRAME_SCALES: RingFrameScale[] = [
+  "xs",
+  "sm",
+  "md",
+  "lg",
+  "xl",
+];
+
 export const COUPLE_FRAME_LABELS: Record<CoupleFrameStyle, string> = {
   bronze: "Đồng cổ",
   gold: "Vàng",
@@ -82,6 +159,54 @@ export const COUPLE_SCALE_LABELS: Record<CoupleFrameScale, string> = {
   md: "Vừa",
   lg: "Lớn",
   xl: "Rất lớn",
+};
+
+export const COUPLE_MOTION_LABELS: Record<CoupleMotion, string> = {
+  none: "Tĩnh",
+  breathe: "Thở nhẹ",
+  sway: "Đung đưa",
+  drift: "Trôi sao",
+  sparkle: "Lấp lánh",
+};
+
+export const COUPLE_GAP_LABELS: Record<CoupleGap, string> = {
+  tight: "Khít",
+  normal: "Vừa",
+  wide: "Rộng",
+  span: "Trải rộng",
+};
+
+export const COUPLE_LAYOUT_LABELS: Record<CoupleLayout, string> = {
+  classic: "Cổ điển",
+  heart_arch: "Vòm tim",
+  banner: "Banner",
+  nest: "Tổ ấm",
+  orbit: "Quỹ đạo",
+};
+
+export const RING_FRAME_LABELS: Record<RingFrameStyle, string> = {
+  classic: "Oval cổ điển",
+  crystal: "Pha lê",
+  gothic: "Gothic",
+  celestial: "Chiêm tinh",
+  flame: "Lửa",
+  void: "Hư không",
+  ornate: "Khắc hoa",
+  heart: "Trái tim",
+  heart_wide: "Tim rộng",
+  diamond: "Kim cương",
+  hex: "Lục giác",
+  shield: "Khiên",
+  clover: "Cỏ bốn lá",
+  petal: "Cánh hoa",
+};
+
+export const RING_FRAME_SCALE_LABELS: Record<RingFrameScale, string> = {
+  xs: "Rất hẹp",
+  sm: "Hẹp",
+  md: "Vừa",
+  lg: "Rộng",
+  xl: "Rất rộng",
 };
 
 export const RING_EFFECT_LABELS: Record<RingEffect, string> = {
@@ -113,6 +238,11 @@ export interface RingItem {
   coupleFrame?: CoupleFrameStyle;
   coupleBorder?: CoupleBorderStyle;
   coupleScale?: CoupleFrameScale;
+  coupleMotion?: CoupleMotion;
+  coupleGap?: CoupleGap;
+  coupleLayout?: CoupleLayout;
+  ringFrame?: RingFrameStyle;
+  ringFrameScale?: RingFrameScale;
 }
 
 export type BondStatus = "pending" | "active";
@@ -153,6 +283,11 @@ export interface UserBondSnippet {
   coupleFrame?: CoupleFrameStyle | string;
   coupleBorder?: CoupleBorderStyle | string;
   coupleScale?: CoupleFrameScale | string;
+  coupleMotion?: CoupleMotion | string;
+  coupleGap?: CoupleGap | string;
+  coupleLayout?: CoupleLayout | string;
+  ringFrame?: RingFrameStyle | string;
+  ringFrameScale?: RingFrameScale | string;
   since: number;
   status: BondStatus;
 }
@@ -172,6 +307,11 @@ export const DEFAULT_RINGS: RingItem[] = [
     coupleFrame: "bronze",
     coupleBorder: "classic",
     coupleScale: "md",
+    coupleMotion: "breathe",
+    coupleGap: "normal",
+    coupleLayout: "classic",
+    ringFrame: "classic",
+    ringFrameScale: "md",
   },
   {
     key: "gold",
@@ -187,6 +327,11 @@ export const DEFAULT_RINGS: RingItem[] = [
     coupleFrame: "gold",
     coupleBorder: "double",
     coupleScale: "lg",
+    coupleMotion: "sway",
+    coupleGap: "wide",
+    coupleLayout: "banner",
+    ringFrame: "ornate",
+    ringFrameScale: "lg",
   },
   {
     key: "rose",
@@ -202,6 +347,11 @@ export const DEFAULT_RINGS: RingItem[] = [
     coupleFrame: "rose",
     coupleBorder: "ornate",
     coupleScale: "lg",
+    coupleMotion: "drift",
+    coupleGap: "wide",
+    coupleLayout: "heart_arch",
+    ringFrame: "heart",
+    ringFrameScale: "lg",
   },
   {
     key: "diamond",
@@ -217,6 +367,11 @@ export const DEFAULT_RINGS: RingItem[] = [
     coupleFrame: "rainbow",
     coupleBorder: "crystal",
     coupleScale: "xl",
+    coupleMotion: "sparkle",
+    coupleGap: "span",
+    coupleLayout: "orbit",
+    ringFrame: "heart_wide",
+    ringFrameScale: "xl",
   },
 ];
 
@@ -293,4 +448,37 @@ export function normalizeCoupleScale(raw: unknown): CoupleFrameScale {
   return COUPLE_SCALES.includes(s as CoupleFrameScale)
     ? (s as CoupleFrameScale)
     : "md";
+}
+
+export function normalizeCoupleMotion(raw: unknown): CoupleMotion {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return COUPLE_MOTIONS.includes(s as CoupleMotion)
+    ? (s as CoupleMotion)
+    : "none";
+}
+
+export function normalizeCoupleGap(raw: unknown): CoupleGap {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return COUPLE_GAPS.includes(s as CoupleGap) ? (s as CoupleGap) : "normal";
+}
+
+export function normalizeRingFrame(raw: unknown): RingFrameStyle {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return RING_FRAMES.includes(s as RingFrameStyle)
+    ? (s as RingFrameStyle)
+    : "classic";
+}
+
+export function normalizeRingFrameScale(raw: unknown): RingFrameScale {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return RING_FRAME_SCALES.includes(s as RingFrameScale)
+    ? (s as RingFrameScale)
+    : "md";
+}
+
+export function normalizeCoupleLayout(raw: unknown): CoupleLayout {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return COUPLE_LAYOUTS.includes(s as CoupleLayout)
+    ? (s as CoupleLayout)
+    : "classic";
 }

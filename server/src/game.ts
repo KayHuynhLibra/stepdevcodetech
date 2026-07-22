@@ -1348,6 +1348,21 @@ export class GameEngine {
       if (linked?.nameColor) {
         row.nameColor = linked.nameColor;
       }
+      if (linked?.nameEffect) {
+        row.nameEffect = linked.nameEffect;
+      }
+      if (linked?.avatarFrame) {
+        row.avatarFrame = linked.avatarFrame;
+      }
+      if (linked?.profileTheme) {
+        row.profileTheme = linked.profileTheme;
+      }
+      if (linked?.nameFrame) {
+        row.nameFrame = linked.nameFrame;
+      }
+      if (linked?.idFrame) {
+        row.idFrame = linked.idFrame;
+      }
       if (forStaff && linked) {
         row.balance = linked.balance;
         row.outcomeMode = authStore.getOutcomeMode(linked.id);

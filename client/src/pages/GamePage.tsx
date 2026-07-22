@@ -628,6 +628,11 @@ export default function GamePage() {
         outcomeMode: match.outcomeMode ?? prev.outcomeMode,
         cultivationRank: match.cultivationRank ?? prev.cultivationRank,
         nameColor: match.nameColor ?? prev.nameColor,
+        nameEffect: match.nameEffect ?? prev.nameEffect,
+        avatarFrame: match.avatarFrame ?? prev.avatarFrame,
+        profileTheme: match.profileTheme ?? prev.profileTheme,
+        nameFrame: match.nameFrame ?? prev.nameFrame,
+        idFrame: match.idFrame ?? prev.idFrame,
         isBot: match.isBot,
         isGuest: !match.isBot && !match.code && !match.userId,
       };
@@ -643,6 +648,11 @@ export default function GamePage() {
         next.outcomeMode === prev.outcomeMode &&
         next.cultivationRank === prev.cultivationRank &&
         next.nameColor === prev.nameColor &&
+        next.nameEffect === prev.nameEffect &&
+        next.avatarFrame === prev.avatarFrame &&
+        next.profileTheme === prev.profileTheme &&
+        next.nameFrame === prev.nameFrame &&
+        next.idFrame === prev.idFrame &&
         next.isGuest === prev.isGuest
       ) {
         return prev;
@@ -912,6 +922,11 @@ export default function GamePage() {
           roundsPlayed: number;
           cultivationRank?: string;
           nameColor?: string;
+          nameEffect?: string;
+          avatarFrame?: string;
+          profileTheme?: string;
+          nameFrame?: string;
+          idFrame?: string;
           bond?: UserBondSnippet | null;
         };
       }>(`/api/players/card?${q}`);
@@ -948,6 +963,11 @@ export default function GamePage() {
             roundsPlayed: card.roundsPlayed,
             cultivationRank: card.cultivationRank ?? prev.cultivationRank,
             nameColor: card.nameColor ?? prev.nameColor,
+            nameEffect: card.nameEffect ?? prev.nameEffect,
+            avatarFrame: card.avatarFrame ?? prev.avatarFrame,
+            profileTheme: card.profileTheme ?? prev.profileTheme,
+            nameFrame: card.nameFrame ?? prev.nameFrame,
+            idFrame: card.idFrame ?? prev.idFrame,
             bond: card.bond ?? prev.bond ?? null,
             isGuest: false,
           };
@@ -977,6 +997,11 @@ export default function GamePage() {
         vipGranted: p.vipGranted,
         cultivationRank: p.cultivationRank,
         nameColor: p.nameColor,
+        nameEffect: p.nameEffect,
+        avatarFrame: p.avatarFrame,
+        profileTheme: p.profileTheme,
+        nameFrame: p.nameFrame,
+        idFrame: p.idFrame,
       });
     },
     [openPlayerInfo],

@@ -1,11 +1,17 @@
 import { FormEvent, useEffect, useState } from "react";
 import { VIP_ROUNDS_REQUIRED, userShowsVip } from "../auth";
 import { formatXu } from "../cards";
-import { VipFantasyAvatar } from "./VipFantasyAvatar";
 import { CultivationChip } from "./CultivationChip";
 import { CoupleAvatar } from "./CoupleAvatar";
 import { ColoredName } from "./ColoredName";
+import { RoleAvatarFrame } from "./RoleAvatarFrame";
 import { isRingEmoji, type UserBondSnippet } from "../rings";
+import {
+  normalizeProfileTheme,
+  normalizeNameFrame,
+  normalizeIdFrame,
+  type ProfileThemeId,
+} from "../profileStyles";
 
 export interface PlayerInfoView {
   name: string;
@@ -25,6 +31,11 @@ export interface PlayerInfoView {
   vipGranted?: boolean;
   cultivationRank?: string | null;
   nameColor?: string | null;
+  nameEffect?: string | null;
+  avatarFrame?: string | null;
+  profileTheme?: string | null;
+  nameFrame?: string | null;
+  idFrame?: string | null;
   bond?: UserBondSnippet | null;
 }
 
@@ -183,6 +194,10 @@ export function PlayerInfoSheet({
   const badge =
     "rounded-full border border-[#8C764D] bg-[#121D2D] px-3 py-1 text-xs text-[#E3D8C4]";
 
+  const theme: ProfileThemeId = normalizeProfileTheme(player.profileTheme);
+  const nameFrame = normalizeNameFrame(player.nameFrame);
+  const idFrame = normalizeIdFrame(player.idFrame);
+
   return (
     <div className="fixed inset-0 z-[66] flex items-end justify-center backdrop-blur-md sm:items-center">
       <button
@@ -193,10 +208,12 @@ export function PlayerInfoSheet({
       />
       <div
         className="profile-celestial relative z-10 max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-[#8A9BB8]/45 bg-[#0B1528]/85 px-0 pb-5 pt-2 text-[#E3D8C4] shadow-[0_0_40px_rgba(120,150,200,0.18),inset_0_0_60px_rgba(180,200,230,0.04)] backdrop-blur-xl sm:rounded-3xl"
+        data-theme={theme}
         role="dialog"
         aria-label="Hồ Sơ Chiêm Tinh"
       >
         <div className="profile-celestial__ornament" aria-hidden />
+        <div className="profile-celestial__stars" aria-hidden />
 
         <div className="relative z-[1] flex items-center justify-between px-4 py-2">
           <p className="font-display text-xl text-[#E3D8C4]">
@@ -212,7 +229,7 @@ export function PlayerInfoSheet({
         </div>
 
         {/* Hero couple — PRIMARY */}
-        <div className="relative z-[1] mx-3 mt-1 overflow-hidden rounded-2xl border border-[#3A4E6C]/50 bg-[radial-gradient(ellipse_at_center,rgba(168,85,247,0.28)_0%,transparent_70%)] px-3 py-5">
+        <div className="relative z-[1] mx-3 mt-1 overflow-hidden rounded-2xl border border-[#3A4E6C]/50 px-3 py-5 profile-celestial__hero">
           <div className="flex items-center justify-between gap-1">
             {targetBonded && player.bond ? (
               <div className="mx-auto w-full max-w-sm">
@@ -228,23 +245,22 @@ export function PlayerInfoSheet({
                   coupleFrame={player.bond.coupleFrame}
                   coupleBorder={player.bond.coupleBorder}
                   coupleScale={player.bond.coupleScale ?? "xl"}
+                  coupleMotion={player.bond.coupleMotion}
+                  coupleGap={player.bond.coupleGap}
+                  coupleLayout={player.bond.coupleLayout}
+                  ringFrame={player.bond.ringFrame}
+                  ringFrameScale={player.bond.ringFrameScale}
                 />
               </div>
             ) : (
               <div className="mx-auto">
-                {showVip ? (
-                  <VipFantasyAvatar
-                    size="lg"
-                    src={player.avatar || "/assets/ui/avatar-default.png"}
-                    alt=""
-                  />
-                ) : (
-                  <img
-                    src={player.avatar || "/assets/ui/avatar-default.png"}
-                    alt=""
-                    className="h-28 w-28 rounded-full border-4 border-[#C8A968] object-cover shadow-[0_0_15px_rgba(200,169,104,0.5)] md:h-32 md:w-32"
-                  />
-                )}
+                <RoleAvatarFrame
+                  size="lg"
+                  src={player.avatar || "/assets/ui/avatar-default.png"}
+                  frame={player.avatarFrame}
+                  isVip={showVip}
+                  alt=""
+                />
               </div>
             )}
           </div>
@@ -252,12 +268,18 @@ export function PlayerInfoSheet({
 
         {/* Info condensed */}
         <div className="relative z-[1] mt-3 flex flex-col items-center gap-2 px-4">
-          <ColoredName
-            name={player.name}
-            colorId={player.nameColor}
-            as="p"
-            className="font-display text-2xl font-bold text-[#F3EAD8]"
-          />
+          <span
+            className={`profile-name-frame profile-name-frame--${nameFrame}`}
+            data-frame={nameFrame}
+          >
+            <ColoredName
+              name={player.name}
+              colorId={player.nameColor}
+              effectId={player.nameEffect}
+              as="p"
+              className="font-display text-2xl font-bold text-[#F3EAD8]"
+            />
+          </span>
 
           {targetBonded && player.bond && (
             <p className="flex items-center gap-1.5 text-sm font-medium text-[#B0C4DE]">
@@ -278,7 +300,10 @@ export function PlayerInfoSheet({
           )}
 
           {(player.code || player.guestCode) && (
-            <span className="rounded-full border border-[#C8A968] bg-gradient-to-r from-[#1A2638] via-[#2A3B54] to-[#1A2638] px-6 py-1 text-sm font-bold text-[#E5C158]">
+            <span
+              className={`profile-id-frame profile-id-frame--${idFrame}`}
+              data-frame={idFrame}
+            >
               ID {player.code || player.guestCode}
             </span>
           )}

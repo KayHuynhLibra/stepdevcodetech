@@ -34,6 +34,39 @@ export type CoupleBorderStyle =
 /** Mức phóng khung couple. */
 export type CoupleFrameScale = "sm" | "md" | "lg" | "xl";
 
+/** Động khung couple. */
+export type CoupleMotion = "none" | "breathe" | "sway" | "drift" | "sparkle";
+
+/** Khoảng cách / độ rộng layout couple. */
+export type CoupleGap = "tight" | "normal" | "wide" | "span";
+
+/** Bố cục couple. */
+export type CoupleLayout =
+  | "classic"
+  | "heart_arch"
+  | "banner"
+  | "nest"
+  | "orbit";
+
+/** Khung pedestal nhẫn. */
+export type RingFrameStyle =
+  | "classic"
+  | "crystal"
+  | "gothic"
+  | "celestial"
+  | "flame"
+  | "void"
+  | "ornate"
+  | "heart"
+  | "heart_wide"
+  | "diamond"
+  | "hex"
+  | "shield"
+  | "clover"
+  | "petal";
+
+export type RingFrameScale = "xs" | "sm" | "md" | "lg" | "xl";
+
 export const RING_EFFECTS: RingEffect[] = [
   "none",
   "glow",
@@ -63,6 +96,49 @@ export const COUPLE_BORDERS: CoupleBorderStyle[] = [
 ];
 
 export const COUPLE_SCALES: CoupleFrameScale[] = ["sm", "md", "lg", "xl"];
+
+export const COUPLE_MOTIONS: CoupleMotion[] = [
+  "none",
+  "breathe",
+  "sway",
+  "drift",
+  "sparkle",
+];
+
+export const COUPLE_GAPS: CoupleGap[] = ["tight", "normal", "wide", "span"];
+
+export const COUPLE_LAYOUTS: CoupleLayout[] = [
+  "classic",
+  "heart_arch",
+  "banner",
+  "nest",
+  "orbit",
+];
+
+export const RING_FRAMES: RingFrameStyle[] = [
+  "classic",
+  "crystal",
+  "gothic",
+  "celestial",
+  "flame",
+  "void",
+  "ornate",
+  "heart",
+  "heart_wide",
+  "diamond",
+  "hex",
+  "shield",
+  "clover",
+  "petal",
+];
+
+export const RING_FRAME_SCALES: RingFrameScale[] = [
+  "xs",
+  "sm",
+  "md",
+  "lg",
+  "xl",
+];
 
 export const RING_CATEGORIES: { id: RingCategory; label: string }[] = [
   { id: "classic", label: "Cổ điển" },
@@ -98,6 +174,16 @@ export interface RingItem {
   coupleBorder: CoupleBorderStyle;
   /** Mức to nhỏ khung couple */
   coupleScale: CoupleFrameScale;
+  /** Hiệu ứng động khung couple */
+  coupleMotion: CoupleMotion;
+  /** Độ rộng khoảng cách couple */
+  coupleGap: CoupleGap;
+  /** Bố cục couple */
+  coupleLayout: CoupleLayout;
+  /** Style khung pedestal nhẫn */
+  ringFrame: RingFrameStyle;
+  /** Scale rộng/hẹp khung nhẫn */
+  ringFrameScale: RingFrameScale;
 }
 
 export type BondStatus = "pending" | "active";
@@ -140,6 +226,11 @@ export interface ActiveBondPublic {
     coupleFrame: CoupleFrameStyle;
     coupleBorder: CoupleBorderStyle;
     coupleScale: CoupleFrameScale;
+    coupleMotion: CoupleMotion;
+    coupleGap: CoupleGap;
+    coupleLayout: CoupleLayout;
+    ringFrame: RingFrameStyle;
+    ringFrameScale: RingFrameScale;
   };
   since: number;
 }
@@ -157,6 +248,11 @@ export interface UserBondSnippet {
   coupleFrame: CoupleFrameStyle;
   coupleBorder: CoupleBorderStyle;
   coupleScale: CoupleFrameScale;
+  coupleMotion: CoupleMotion;
+  coupleGap: CoupleGap;
+  coupleLayout: CoupleLayout;
+  ringFrame: RingFrameStyle;
+  ringFrameScale: RingFrameScale;
   since: number;
   status: BondStatus;
 }
@@ -197,6 +293,11 @@ export const DEFAULT_RINGS: RingItem[] = [
     coupleFrame: "bronze",
     coupleBorder: "classic",
     coupleScale: "md",
+    coupleMotion: "breathe",
+    coupleGap: "normal",
+    coupleLayout: "classic",
+    ringFrame: "classic",
+    ringFrameScale: "md",
   },
   {
     key: "gold",
@@ -212,6 +313,11 @@ export const DEFAULT_RINGS: RingItem[] = [
     coupleFrame: "gold",
     coupleBorder: "double",
     coupleScale: "lg",
+    coupleMotion: "sway",
+    coupleGap: "wide",
+    coupleLayout: "banner",
+    ringFrame: "ornate",
+    ringFrameScale: "lg",
   },
   {
     key: "rose",
@@ -227,6 +333,11 @@ export const DEFAULT_RINGS: RingItem[] = [
     coupleFrame: "rose",
     coupleBorder: "ornate",
     coupleScale: "lg",
+    coupleMotion: "drift",
+    coupleGap: "wide",
+    coupleLayout: "heart_arch",
+    ringFrame: "heart",
+    ringFrameScale: "lg",
   },
   {
     key: "diamond",
@@ -242,6 +353,11 @@ export const DEFAULT_RINGS: RingItem[] = [
     coupleFrame: "rainbow",
     coupleBorder: "crystal",
     coupleScale: "xl",
+    coupleMotion: "sparkle",
+    coupleGap: "span",
+    coupleLayout: "orbit",
+    ringFrame: "heart_wide",
+    ringFrameScale: "xl",
   },
 ];
 
@@ -300,6 +416,39 @@ function normalizeCoupleScale(raw: unknown): CoupleFrameScale {
     : "md";
 }
 
+function normalizeCoupleMotion(raw: unknown): CoupleMotion {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return COUPLE_MOTIONS.includes(s as CoupleMotion)
+    ? (s as CoupleMotion)
+    : "none";
+}
+
+function normalizeCoupleGap(raw: unknown): CoupleGap {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return COUPLE_GAPS.includes(s as CoupleGap) ? (s as CoupleGap) : "normal";
+}
+
+function normalizeRingFrame(raw: unknown): RingFrameStyle {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return RING_FRAMES.includes(s as RingFrameStyle)
+    ? (s as RingFrameStyle)
+    : "classic";
+}
+
+function normalizeRingFrameScale(raw: unknown): RingFrameScale {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return RING_FRAME_SCALES.includes(s as RingFrameScale)
+    ? (s as RingFrameScale)
+    : "md";
+}
+
+function normalizeCoupleLayout(raw: unknown): CoupleLayout {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return COUPLE_LAYOUTS.includes(s as CoupleLayout)
+    ? (s as CoupleLayout)
+    : "classic";
+}
+
 function clampRingPrice(n: unknown): number {
   const v = Math.floor(Number(n));
   if (!Number.isFinite(v)) return MIN_STAKE;
@@ -346,6 +495,11 @@ function fallbackRing(key: string): RingItem {
     coupleFrame: defaultFrameForCategory(category),
     coupleBorder: "classic",
     coupleScale: "md",
+    coupleMotion: "none",
+    coupleGap: "normal",
+    coupleLayout: "classic",
+    ringFrame: "classic",
+    ringFrameScale: "md",
   };
 }
 
@@ -373,6 +527,11 @@ function normalizeRing(raw: unknown): RingItem | null {
     coupleFrame: normalizeCoupleFrame(g.coupleFrame, category),
     coupleBorder: normalizeCoupleBorder(g.coupleBorder),
     coupleScale: normalizeCoupleScale(g.coupleScale),
+    coupleMotion: normalizeCoupleMotion(g.coupleMotion),
+    coupleGap: normalizeCoupleGap(g.coupleGap),
+    coupleLayout: normalizeCoupleLayout(g.coupleLayout),
+    ringFrame: normalizeRingFrame(g.ringFrame),
+    ringFrameScale: normalizeRingFrameScale(g.ringFrameScale),
   };
 }
 
@@ -564,6 +723,11 @@ class RingStore {
         coupleFrame: ring.coupleFrame,
         coupleBorder: ring.coupleBorder,
         coupleScale: ring.coupleScale,
+        coupleMotion: ring.coupleMotion,
+        coupleGap: ring.coupleGap,
+        coupleLayout: ring.coupleLayout,
+        ringFrame: ring.ringFrame,
+        ringFrameScale: ring.ringFrameScale,
       },
       since: bond.acceptedAt ?? bond.proposedAt,
     };
@@ -595,6 +759,11 @@ class RingStore {
         coupleFrame: active.ring.coupleFrame,
         coupleBorder: active.ring.coupleBorder,
         coupleScale: active.ring.coupleScale,
+        coupleMotion: active.ring.coupleMotion,
+        coupleGap: active.ring.coupleGap,
+        coupleLayout: active.ring.coupleLayout,
+        ringFrame: active.ring.ringFrame,
+        ringFrameScale: active.ring.ringFrameScale,
         since: active.since,
         status: "active",
       };
@@ -622,6 +791,11 @@ class RingStore {
       coupleFrame: ring.coupleFrame,
       coupleBorder: ring.coupleBorder,
       coupleScale: ring.coupleScale,
+      coupleMotion: ring.coupleMotion,
+      coupleGap: ring.coupleGap,
+      coupleLayout: ring.coupleLayout,
+      ringFrame: ring.ringFrame,
+      ringFrameScale: ring.ringFrameScale,
       since: pending.proposedAt,
       status: "pending",
     };

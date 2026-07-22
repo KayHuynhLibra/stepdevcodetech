@@ -122,6 +122,11 @@ export interface OnlinePlayerPublic {
   cultivationRank?: string;
   /** Mau nick cong khai (RoleAD) */
   nameColor?: string;
+  nameEffect?: string;
+  avatarFrame?: string;
+  profileTheme?: string;
+  nameFrame?: string;
+  idFrame?: string;
 }
 
 export interface PublicState {
