@@ -7,14 +7,25 @@ export type RingEffect = "none" | "glow" | "pulse" | "sparkle" | "orbit";
 
 export type RingCategory = "classic" | "luxury" | "romance" | "legend";
 
-/** Khung đại diện cặp đôi — khớp server ringStore.coupleFrame. */
 export type CoupleFrameStyle =
   | "bronze"
   | "gold"
   | "rose"
   | "rainbow"
   | "midnight"
-  | "jade";
+  | "jade"
+  | "obsidian"
+  | "pearl";
+
+export type CoupleBorderStyle =
+  | "classic"
+  | "double"
+  | "ornate"
+  | "thin"
+  | "crystal"
+  | "flame";
+
+export type CoupleFrameScale = "sm" | "md" | "lg" | "xl";
 
 export const RING_EFFECTS: RingEffect[] = [
   "none",
@@ -31,7 +42,20 @@ export const COUPLE_FRAMES: CoupleFrameStyle[] = [
   "rainbow",
   "midnight",
   "jade",
+  "obsidian",
+  "pearl",
 ];
+
+export const COUPLE_BORDERS: CoupleBorderStyle[] = [
+  "classic",
+  "double",
+  "ornate",
+  "thin",
+  "crystal",
+  "flame",
+];
+
+export const COUPLE_SCALES: CoupleFrameScale[] = ["sm", "md", "lg", "xl"];
 
 export const COUPLE_FRAME_LABELS: Record<CoupleFrameStyle, string> = {
   bronze: "Đồng cổ",
@@ -40,6 +64,24 @@ export const COUPLE_FRAME_LABELS: Record<CoupleFrameStyle, string> = {
   rainbow: "Cầu vồng",
   midnight: "Đêm",
   jade: "Ngọc",
+  obsidian: "Huyền đen",
+  pearl: "Ngọc trai",
+};
+
+export const COUPLE_BORDER_LABELS: Record<CoupleBorderStyle, string> = {
+  classic: "Cổ điển",
+  double: "Đôi viền",
+  ornate: "Trang trí",
+  thin: "Mảnh",
+  crystal: "Pha lê",
+  flame: "Lửa",
+};
+
+export const COUPLE_SCALE_LABELS: Record<CoupleFrameScale, string> = {
+  sm: "Nhỏ",
+  md: "Vừa",
+  lg: "Lớn",
+  xl: "Rất lớn",
 };
 
 export const RING_EFFECT_LABELS: Record<RingEffect, string> = {
@@ -60,7 +102,6 @@ export const RING_CATEGORIES: { id: RingCategory; label: string }[] = [
 export interface RingItem {
   key: string;
   nameVi: string;
-  /** Path `/assets/...` hoặc emoji (không bắt đầu bằng `/`) */
   image: string;
   price: number;
   blurb?: string;
@@ -70,6 +111,8 @@ export interface RingItem {
   effect?: RingEffect;
   imageSharpness?: number;
   coupleFrame?: CoupleFrameStyle;
+  coupleBorder?: CoupleBorderStyle;
+  coupleScale?: CoupleFrameScale;
 }
 
 export type BondStatus = "pending" | "active";
@@ -108,6 +151,8 @@ export interface UserBondSnippet {
   ringEffect?: RingEffect | string;
   ringSharpness?: number;
   coupleFrame?: CoupleFrameStyle | string;
+  coupleBorder?: CoupleBorderStyle | string;
+  coupleScale?: CoupleFrameScale | string;
   since: number;
   status: BondStatus;
 }
@@ -125,6 +170,8 @@ export const DEFAULT_RINGS: RingItem[] = [
     effect: "glow",
     imageSharpness: 75,
     coupleFrame: "bronze",
+    coupleBorder: "classic",
+    coupleScale: "md",
   },
   {
     key: "gold",
@@ -138,6 +185,8 @@ export const DEFAULT_RINGS: RingItem[] = [
     effect: "pulse",
     imageSharpness: 80,
     coupleFrame: "gold",
+    coupleBorder: "double",
+    coupleScale: "lg",
   },
   {
     key: "rose",
@@ -151,6 +200,8 @@ export const DEFAULT_RINGS: RingItem[] = [
     effect: "sparkle",
     imageSharpness: 85,
     coupleFrame: "rose",
+    coupleBorder: "ornate",
+    coupleScale: "lg",
   },
   {
     key: "diamond",
@@ -164,6 +215,8 @@ export const DEFAULT_RINGS: RingItem[] = [
     effect: "orbit",
     imageSharpness: 95,
     coupleFrame: "rainbow",
+    coupleBorder: "crystal",
+    coupleScale: "xl",
   },
 ];
 
@@ -174,7 +227,6 @@ export function findRingInList(
   return rings.find((r) => r.key === key);
 }
 
-/** true nếu `image` là emoji / text, không phải URL path. */
 export function isRingEmoji(image: string | undefined | null): boolean {
   const s = String(image ?? "").trim();
   if (!s) return true;
@@ -227,4 +279,18 @@ export function normalizeCoupleFrame(
     default:
       return "bronze";
   }
+}
+
+export function normalizeCoupleBorder(raw: unknown): CoupleBorderStyle {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return COUPLE_BORDERS.includes(s as CoupleBorderStyle)
+    ? (s as CoupleBorderStyle)
+    : "classic";
+}
+
+export function normalizeCoupleScale(raw: unknown): CoupleFrameScale {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return COUPLE_SCALES.includes(s as CoupleFrameScale)
+    ? (s as CoupleFrameScale)
+    : "md";
 }

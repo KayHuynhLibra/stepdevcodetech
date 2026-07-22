@@ -49,15 +49,23 @@ import {
   type GiftItem,
 } from "../gifts";
 import {
+  COUPLE_BORDER_LABELS,
+  COUPLE_BORDERS,
   COUPLE_FRAME_LABELS,
   COUPLE_FRAMES,
+  COUPLE_SCALE_LABELS,
+  COUPLE_SCALES,
   isRingEmoji,
+  normalizeCoupleBorder,
   normalizeCoupleFrame,
+  normalizeCoupleScale,
   normalizeRingCategory,
   RING_CATEGORIES,
   RING_EFFECT_LABELS,
   RING_EFFECTS,
   ITEM_XU_MAX,
+  type CoupleBorderStyle,
+  type CoupleFrameScale,
   type CoupleFrameStyle,
   type RingCategory,
   type RingEffect,
@@ -863,6 +871,8 @@ export default function AdminDashboard() {
     effect: "glow" as RingEffect,
     imageSharpness: "70",
     coupleFrame: "bronze" as CoupleFrameStyle,
+    coupleBorder: "classic" as CoupleBorderStyle,
+    coupleScale: "md" as CoupleFrameScale,
   });
   const [catalogUpload, setCatalogUpload] = useState<{
     kind: "gift" | "ring";
@@ -2590,6 +2600,8 @@ export default function AdminDashboard() {
           effect: draft.effect,
           imageSharpness: Math.floor(Number(draft.imageSharpness)) || 70,
           coupleFrame: draft.coupleFrame,
+          coupleBorder: draft.coupleBorder,
+          coupleScale: draft.coupleScale,
         }),
       });
       setMsg(opts?.quietMsg ?? `Đã lưu nhẫn ${key}`);
@@ -2606,6 +2618,8 @@ export default function AdminDashboard() {
           effect: "glow",
           imageSharpness: "70",
           coupleFrame: "bronze",
+          coupleBorder: "classic",
+          coupleScale: "md",
         });
       }
       await loadRingConfig();
@@ -5107,10 +5121,10 @@ export default function AdminDashboard() {
         <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
           <p className="play-heading text-sm">Catalog nhẫn</p>
           <p className="text-[11px] text-[var(--play-muted)]">
-            Giá tới {ITEM_XU_MAX.toLocaleString("vi-VN")} xu (10 chữ số). Mỗi
-            nhẫn gắn <strong>khung couple</strong> (đồng / vàng / hồng / cầu
-            vồng / đêm / ngọc) — hiển thị trên avatar cặp đôi. Effect + độ nét
-            ảnh chỉnh theo từng loại.
+            Giá tới {ITEM_XU_MAX.toLocaleString("vi-VN")} xu. Mỗi nhẫn chỉnh{" "}
+            <strong>khung màu</strong>, <strong>viền</strong> (cổ điển / đôi /
+            trang trí / mảnh / pha lê / lửa) và <strong>size</strong> (nhỏ→rất
+            lớn). Xem trước ngay bên dưới.
           </p>
           <ul className="max-h-80 space-y-2 overflow-y-auto">
             {ringRows
@@ -5151,13 +5165,25 @@ export default function AdminDashboard() {
                           {RING_EFFECT_LABELS[
                             (g.effect as RingEffect) ?? "glow"
                           ] ?? g.effect}{" "}
-                          · nét {g.imageSharpness ?? 70} · khung{" "}
+                          · nét {g.imageSharpness ?? 70}                           · khung{" "}
                           {
                             COUPLE_FRAME_LABELS[
                               normalizeCoupleFrame(
                                 g.coupleFrame,
                                 normalizeRingCategory(g.category, g.key),
                               )
+                            ]
+                          }
+                          · viền{" "}
+                          {
+                            COUPLE_BORDER_LABELS[
+                              normalizeCoupleBorder(g.coupleBorder)
+                            ]
+                          }
+                          · size{" "}
+                          {
+                            COUPLE_SCALE_LABELS[
+                              normalizeCoupleScale(g.coupleScale)
                             ]
                           }
                           {g.enabled ? "" : " · tắt"}
@@ -5184,6 +5210,8 @@ export default function AdminDashboard() {
                               g.coupleFrame,
                               normalizeRingCategory(g.category, g.key),
                             ),
+                            coupleBorder: normalizeCoupleBorder(g.coupleBorder),
+                            coupleScale: normalizeCoupleScale(g.coupleScale),
                           })
                         }
                         className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15"
@@ -5318,11 +5346,50 @@ export default function AdminDashboard() {
                 ))}
               </select>
             </label>
+            <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+              Viền khung
+              <select
+                value={ringDraft.coupleBorder}
+                onChange={(e) =>
+                  setRingDraft((d) => ({
+                    ...d,
+                    coupleBorder: e.target.value as CoupleBorderStyle,
+                  }))
+                }
+                className="app-input mt-0.5 w-full"
+              >
+                {COUPLE_BORDERS.map((b) => (
+                  <option key={b} value={b}>
+                    {COUPLE_BORDER_LABELS[b]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+              Size khung
+              <select
+                value={ringDraft.coupleScale}
+                onChange={(e) =>
+                  setRingDraft((d) => ({
+                    ...d,
+                    coupleScale: e.target.value as CoupleFrameScale,
+                  }))
+                }
+                className="app-input mt-0.5 w-full"
+              >
+                {COUPLE_SCALES.map((s) => (
+                  <option key={s} value={s}>
+                    {COUPLE_SCALE_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div className="col-span-2 flex flex-col items-center gap-1 rounded-lg bg-white/50 px-2 py-2 ring-1 ring-[var(--wood-deep)]/10 sm:col-span-3">
               <p className="text-[10px] font-semibold text-[var(--play-muted)]">
                 Xem trước khung couple
               </p>
               <CoupleAvatar
+                displaySize="hero"
                 avatarA={DEFAULT_AVATAR}
                 avatarB={AVATARS[1] ?? DEFAULT_AVATAR}
                 ringImage={ringDraft.image || "💍"}
@@ -5330,6 +5397,8 @@ export default function AdminDashboard() {
                 ringEffect={ringDraft.effect}
                 ringSharpness={Math.floor(Number(ringDraft.imageSharpness)) || 70}
                 coupleFrame={ringDraft.coupleFrame}
+                coupleBorder={ringDraft.coupleBorder}
+                coupleScale={ringDraft.coupleScale}
               />
             </div>
             <label className="col-span-2 text-[10px] font-semibold text-[var(--play-muted)] sm:col-span-2">

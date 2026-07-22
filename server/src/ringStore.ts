@@ -18,7 +18,21 @@ export type CoupleFrameStyle =
   | "rose"
   | "rainbow"
   | "midnight"
-  | "jade";
+  | "jade"
+  | "obsidian"
+  | "pearl";
+
+/** Kiểu viền khung avatar. */
+export type CoupleBorderStyle =
+  | "classic"
+  | "double"
+  | "ornate"
+  | "thin"
+  | "crystal"
+  | "flame";
+
+/** Mức phóng khung couple. */
+export type CoupleFrameScale = "sm" | "md" | "lg" | "xl";
 
 export const RING_EFFECTS: RingEffect[] = [
   "none",
@@ -35,7 +49,20 @@ export const COUPLE_FRAMES: CoupleFrameStyle[] = [
   "rainbow",
   "midnight",
   "jade",
+  "obsidian",
+  "pearl",
 ];
+
+export const COUPLE_BORDERS: CoupleBorderStyle[] = [
+  "classic",
+  "double",
+  "ornate",
+  "thin",
+  "crystal",
+  "flame",
+];
+
+export const COUPLE_SCALES: CoupleFrameScale[] = ["sm", "md", "lg", "xl"];
 
 export const RING_CATEGORIES: { id: RingCategory; label: string }[] = [
   { id: "classic", label: "Cổ điển" },
@@ -65,8 +92,12 @@ export interface RingItem {
   effect: RingEffect;
   /** Độ nét / phóng ảnh nhẫn 0–100 (mặc định 70) */
   imageSharpness: number;
-  /** Style khung couple khi đeo nhẫn này */
+  /** Style màu khung couple khi đeo nhẫn này */
   coupleFrame: CoupleFrameStyle;
+  /** Kiểu viền khung avatar */
+  coupleBorder: CoupleBorderStyle;
+  /** Mức to nhỏ khung couple */
+  coupleScale: CoupleFrameScale;
 }
 
 export type BondStatus = "pending" | "active";
@@ -107,6 +138,8 @@ export interface ActiveBondPublic {
     effect: RingEffect;
     imageSharpness: number;
     coupleFrame: CoupleFrameStyle;
+    coupleBorder: CoupleBorderStyle;
+    coupleScale: CoupleFrameScale;
   };
   since: number;
 }
@@ -122,6 +155,8 @@ export interface UserBondSnippet {
   ringEffect: RingEffect;
   ringSharpness: number;
   coupleFrame: CoupleFrameStyle;
+  coupleBorder: CoupleBorderStyle;
+  coupleScale: CoupleFrameScale;
   since: number;
   status: BondStatus;
 }
@@ -160,6 +195,8 @@ export const DEFAULT_RINGS: RingItem[] = [
     effect: "glow",
     imageSharpness: 75,
     coupleFrame: "bronze",
+    coupleBorder: "classic",
+    coupleScale: "md",
   },
   {
     key: "gold",
@@ -173,6 +210,8 @@ export const DEFAULT_RINGS: RingItem[] = [
     effect: "pulse",
     imageSharpness: 80,
     coupleFrame: "gold",
+    coupleBorder: "double",
+    coupleScale: "lg",
   },
   {
     key: "rose",
@@ -186,6 +225,8 @@ export const DEFAULT_RINGS: RingItem[] = [
     effect: "sparkle",
     imageSharpness: 85,
     coupleFrame: "rose",
+    coupleBorder: "ornate",
+    coupleScale: "lg",
   },
   {
     key: "diamond",
@@ -199,6 +240,8 @@ export const DEFAULT_RINGS: RingItem[] = [
     effect: "orbit",
     imageSharpness: 95,
     coupleFrame: "rainbow",
+    coupleBorder: "crystal",
+    coupleScale: "xl",
   },
 ];
 
@@ -241,6 +284,20 @@ function normalizeCoupleFrame(
     return s as CoupleFrameStyle;
   }
   return defaultFrameForCategory(category);
+}
+
+function normalizeCoupleBorder(raw: unknown): CoupleBorderStyle {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return COUPLE_BORDERS.includes(s as CoupleBorderStyle)
+    ? (s as CoupleBorderStyle)
+    : "classic";
+}
+
+function normalizeCoupleScale(raw: unknown): CoupleFrameScale {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return COUPLE_SCALES.includes(s as CoupleFrameScale)
+    ? (s as CoupleFrameScale)
+    : "md";
 }
 
 function clampRingPrice(n: unknown): number {
@@ -287,6 +344,8 @@ function fallbackRing(key: string): RingItem {
     effect: "glow",
     imageSharpness: 70,
     coupleFrame: defaultFrameForCategory(category),
+    coupleBorder: "classic",
+    coupleScale: "md",
   };
 }
 
@@ -312,6 +371,8 @@ function normalizeRing(raw: unknown): RingItem | null {
     effect: normalizeEffect(g.effect),
     imageSharpness: clampSharpness(g.imageSharpness),
     coupleFrame: normalizeCoupleFrame(g.coupleFrame, category),
+    coupleBorder: normalizeCoupleBorder(g.coupleBorder),
+    coupleScale: normalizeCoupleScale(g.coupleScale),
   };
 }
 
@@ -501,6 +562,8 @@ class RingStore {
         effect: ring.effect,
         imageSharpness: ring.imageSharpness,
         coupleFrame: ring.coupleFrame,
+        coupleBorder: ring.coupleBorder,
+        coupleScale: ring.coupleScale,
       },
       since: bond.acceptedAt ?? bond.proposedAt,
     };
@@ -530,6 +593,8 @@ class RingStore {
         ringEffect: active.ring.effect,
         ringSharpness: active.ring.imageSharpness,
         coupleFrame: active.ring.coupleFrame,
+        coupleBorder: active.ring.coupleBorder,
+        coupleScale: active.ring.coupleScale,
         since: active.since,
         status: "active",
       };
@@ -555,6 +620,8 @@ class RingStore {
       ringEffect: ring.effect,
       ringSharpness: ring.imageSharpness,
       coupleFrame: ring.coupleFrame,
+      coupleBorder: ring.coupleBorder,
+      coupleScale: ring.coupleScale,
       since: pending.proposedAt,
       status: "pending",
     };

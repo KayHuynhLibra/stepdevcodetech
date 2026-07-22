@@ -132,6 +132,8 @@ export function IdentityBadge({
         ringEffect={user.bond.ringEffect}
         ringSharpness={user.bond.ringSharpness}
         coupleFrame={user.bond.coupleFrame}
+        coupleBorder={user.bond.coupleBorder}
+        coupleScale={user.bond.coupleScale}
         compact={compact}
         onAvatarAClick={onAvatarClick}
       />

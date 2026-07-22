@@ -13,10 +13,8 @@ export interface PlayerInfoView {
   code?: string;
   winToday?: number;
   guessesToday?: number;
-  /** Khách chưa login */
   isGuest?: boolean;
   userId?: string;
-  /** Socket session id (Tarot) — admin chỉnh xu khách */
   socketId?: string;
   guestCode?: string;
   balance?: number;
@@ -25,18 +23,15 @@ export interface PlayerInfoView {
   roundsPlayed?: number;
   vipGranted?: boolean;
   cultivationRank?: string | null;
-  /** Bond active của người được xem */
   bond?: UserBondSnippet | null;
 }
 
 interface PlayerInfoSheetProps {
   open: boolean;
   player: PlayerInfoView | null;
-  /** User đang đăng nhập (để tặng xu) */
   meId?: string | null;
   canGift?: boolean;
   staff?: boolean;
-  /** Deal / admin / mainadmin — chỉ cộng trừ xu (không outcome/VIP) */
   balanceOperator?: boolean;
   busy?: boolean;
   giftBusy?: boolean;
@@ -54,11 +49,8 @@ interface PlayerInfoSheetProps {
     toCode?: string;
     amount: number;
   }) => void;
-  /** Mở hub catalog quà demo với người này */
   onOpenGiftHub?: () => void;
-  /** Mở cầu hôn với người này (cả hai chưa bonded) */
   onOpenRingPropose?: () => void;
-  /** Viewer đang có bond (active|pending) — ẩn nút cầu hôn */
   viewerBonded?: boolean;
 }
 
@@ -186,34 +178,41 @@ export function PlayerInfoSheet({
     });
   };
 
+  const pill =
+    "rounded-full border border-[#C59B27] bg-[#1C160C] px-3 py-1 text-xs font-semibold text-[#E8DCB8]";
+
   return (
     <div className="fixed inset-0 z-[66] flex items-end justify-center sm:items-center">
       <button
         type="button"
-        className="absolute inset-0 bg-black/55"
+        className="absolute inset-0 bg-black/65"
         aria-label="Đóng"
         onClick={onClose}
       />
-      <div className="sheet-shell relative z-10 max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-t-2xl px-5 pb-6 pt-5 shadow-xl ring-1 ring-[var(--jade)]/40 sm:rounded-2xl">
-        <div className="mb-3 flex items-start justify-between gap-2">
-          <p className="font-display text-sm tracking-wide text-[var(--jade-soft)]">
+      <div
+        className="relative z-10 max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-t-2xl border-2 border-[#D4AF37] bg-gradient-to-b from-[#0B231E] via-[#071815] to-[#040C0A] px-4 pb-6 pt-4 text-[#E8DCB8] shadow-[0_0_28px_rgba(212,175,55,0.22),inset_0_0_40px_rgba(212,175,55,0.06)] sm:rounded-2xl"
+        role="dialog"
+        aria-label="Thông tin người chơi"
+      >
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <p className="font-display text-base tracking-wide text-[#E5C158]">
             Thông tin
           </p>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/80"
+            className="rounded-full border border-[#B89748] bg-[#0F2A24] px-4 py-1 text-xs font-semibold text-[#E8DCB8]"
           >
             Đóng
           </button>
         </div>
 
-        <div
-          className={`player-info-hero${showVip ? " player-info-hero--vip" : ""}`}
-        >
-          <div className="mx-auto flex justify-center">
+        {/* Hero couple / avatar */}
+        <div className="relative overflow-hidden rounded-2xl border border-[#2D5A50]/60 bg-[radial-gradient(circle_at_50%_40%,rgba(120,50,200,0.35)_0%,transparent_70%)] px-2 py-5">
+          <div className="relative z-[1] mx-auto flex justify-center">
             {targetBonded && player.bond ? (
               <CoupleAvatar
+                displaySize="hero"
                 avatarA={player.avatar || "/assets/ui/avatar-default.png"}
                 avatarB={player.bond.partnerAvatar}
                 ringImage={player.bond.ringImage}
@@ -221,6 +220,8 @@ export function PlayerInfoSheet({
                 ringEffect={player.bond.ringEffect}
                 ringSharpness={player.bond.ringSharpness}
                 coupleFrame={player.bond.coupleFrame}
+                coupleBorder={player.bond.coupleBorder}
+                coupleScale={player.bond.coupleScale ?? "xl"}
               />
             ) : showVip ? (
               <VipFantasyAvatar
@@ -232,16 +233,17 @@ export function PlayerInfoSheet({
               <img
                 src={player.avatar || "/assets/ui/avatar-default.png"}
                 alt=""
-                className="player-info-hero__avatar"
+                className="h-20 w-20 rounded-full object-cover border-2 border-[#E5C158] shadow-[0_0_10px_rgba(229,193,88,0.4)]"
               />
             )}
           </div>
-          <div className="player-info-hero__body mt-3">
-            <p className="font-play text-lg font-bold text-[var(--cream)] drop-shadow-sm">
+
+          <div className="relative z-[1] mt-4 text-center">
+            <p className="font-display text-xl font-bold text-[#E5C158] drop-shadow">
               {player.name}
             </p>
             {targetBonded && player.bond && (
-              <p className="mt-1 flex items-center justify-center gap-1 text-[11px] text-rose-200/90">
+              <p className="mt-1.5 flex items-center justify-center gap-1.5 text-[12px] text-[#E8DCB8]/90">
                 {isRingEmoji(player.bond.ringImage) ? (
                   <span>{player.bond.ringImage}</span>
                 ) : (
@@ -252,77 +254,72 @@ export function PlayerInfoSheet({
                   />
                 )}
                 <span>
-                  {player.bond.ringNameVi} · với {player.bond.partnerName}
+                  {player.bond.ringNameVi} · với ♥ {player.bond.partnerName}
                 </span>
               </p>
             )}
-            <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1">
-              <span className="identity-chip identity-chip--role !text-[9px]">
-                {kind}
-              </span>
+
+            {(player.code || player.guestCode) && (
+              <div className="mt-3 flex justify-center">
+                <span className="rounded-full border border-[#D4AF37] bg-gradient-to-b from-[#3A2E14] to-[#1C160C] px-4 py-1 font-mono text-[11px] font-bold tracking-wide text-[#E5C158] shadow-[inset_0_1px_0_rgba(255,236,180,0.25)]">
+                  ID {player.code || player.guestCode}
+                </span>
+              </div>
+            )}
+
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              {showVip && <span className={pill}>VIP</span>}
               <CultivationChip rank={player.cultivationRank} />
-              {showVip && (
-                <span className="rounded-full bg-amber-400 px-2.5 py-0.5 text-[10px] font-extrabold text-[#1a1208] shadow ring-1 ring-amber-200/80">
-                  VIP
-                </span>
-              )}
+              <span className={pill}>{kind}</span>
             </div>
-            {player.code && (
-              <span
-                className={`identity-chip identity-chip--code${
-                  showVip ? " identity-chip--code-vip" : ""
-                }`}
-                title={showVip ? "ID VIP" : "ID"}
-              >
-                ID {player.code}
-              </span>
-            )}
-            {player.guestCode && (
-              <span
-                className="identity-chip identity-chip--code mt-1"
-                title="Mã khách"
-              >
-                {player.guestCode}
-              </span>
-            )}
-            {player.userId && !player.isBot && (
-              <p className="mt-2 text-[11px] tabular-nums text-[var(--cream)]/65">
-                Đã chơi {rounds.toLocaleString("vi-VN")} /{" "}
-                {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván
-              </p>
-            )}
           </div>
         </div>
 
         {!player.isBot && (
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <div className="rounded-xl bg-white/5 px-3 py-2.5 ring-1 ring-white/10">
-              <p className="text-[10px] text-white/45">Thắng hôm nay</p>
-              <p className="font-play mt-0.5 text-sm font-bold text-amber-200 tabular-nums">
-                {formatXu(player.winToday ?? 0)} xu
-              </p>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="flex items-center gap-3 rounded-xl border border-[#2D5A50] bg-[#0B201B] p-3">
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1C160C] text-lg shadow-[0_0_8px_rgba(229,193,88,0.35)] ring-1 ring-[#C59B27]/60"
+                aria-hidden
+              >
+                🪙
+              </span>
+              <div className="min-w-0">
+                <p className="text-[10px] text-[#E8DCB8]/55">Thắng hôm nay</p>
+                <p className="font-play truncate text-sm font-bold tabular-nums text-[#E5C158]">
+                  {formatXu(player.winToday ?? 0)} xu
+                </p>
+              </div>
             </div>
-            <div className="rounded-xl bg-white/5 px-3 py-2.5 ring-1 ring-white/10">
-              <p className="text-[10px] text-white/45">Lần đoán hôm nay</p>
-              <p className="font-play mt-0.5 text-sm font-bold text-[var(--gold-soft)] tabular-nums">
-                {player.guessesToday ?? 0}
-              </p>
+            <div className="flex items-center gap-3 rounded-xl border border-[#2D5A50] bg-[#0B201B] p-3">
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#12182A] text-lg shadow-[0_0_10px_rgba(120,180,255,0.4)] ring-1 ring-cyan-400/40"
+                aria-hidden
+              >
+                🔮
+              </span>
+              <div className="min-w-0">
+                <p className="text-[10px] text-[#E8DCB8]/55">Lần đoán hôm nay</p>
+                <p className="font-play truncate text-sm font-bold tabular-nums text-[#E8DCB8]">
+                  {(player.guessesToday ?? 0).toLocaleString("vi-VN")}
+                </p>
+              </div>
             </div>
           </div>
         )}
 
         {showRingPropose && (
-          <div className="mt-4 rounded-xl bg-white/5 px-3 py-3 ring-1 ring-rose-400/35">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-rose-200/90">
+          <div className="mt-4 rounded-xl border border-[#C59B27]/50 bg-[#0B201B] px-3 py-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#E5C158]">
               Lên nhẫn
             </p>
-            <p className="mt-1 text-[10px] text-white/45">
+            <p className="mt-1 text-[10px] text-[#E8DCB8]/55">
               Cầu hôn — trừ xu theo giá nhẫn (xu ảo)
             </p>
             <button
               type="button"
               onClick={onOpenRingPropose}
-              className="mt-2 w-full rounded-lg bg-rose-500/90 px-3 py-2 text-xs font-bold text-white"
+              className="mt-2 w-full rounded-full border border-[#C59B27] bg-gradient-to-b from-[#8B6914] to-[#5A420C] px-3 py-2 text-xs font-bold text-[#FFF8E0]"
             >
               Cầu hôn / Lên nhẫn
             </button>
@@ -330,11 +327,11 @@ export function PlayerInfoSheet({
         )}
 
         {showGift && (
-          <div className="mt-4 space-y-2 rounded-xl bg-white/5 px-3 py-3 ring-1 ring-[var(--jade)]/35">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--jade-soft)]">
+          <div className="mt-4 space-y-2 rounded-xl border border-[#2D5A50] bg-[#0B201B] px-3 py-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#E5C158]">
               Tặng quà / xu
             </p>
-            <p className="text-[10px] text-white/45">
+            <p className="text-[10px] text-[#E8DCB8]/55">
               Chuyển xu trực tiếp · tối thiểu 10 · tối đa 100.000 / lần
             </p>
             {onOpenGiftHub && (
@@ -342,7 +339,7 @@ export function PlayerInfoSheet({
                 type="button"
                 disabled={giftBusy}
                 onClick={onOpenGiftHub}
-                className="w-full rounded-lg bg-[var(--jade)]/90 px-3 py-2 text-xs font-bold text-white disabled:opacity-45"
+                className="w-full rounded-full border border-[#3D8A70] bg-[#0F2A24] px-3 py-2 text-xs font-bold text-[#E8DCB8] disabled:opacity-45"
               >
                 Mở hub quà demo
               </button>
@@ -354,7 +351,7 @@ export function PlayerInfoSheet({
                   type="button"
                   disabled={giftBusy}
                   onClick={() => setGiftAmount(String(n))}
-                  className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-bold text-white/85 ring-1 ring-white/15 disabled:opacity-45"
+                  className="rounded-full border border-[#C59B27]/50 bg-[#1C160C] px-2.5 py-1 text-[10px] font-bold text-[#E8DCB8] disabled:opacity-45"
                 >
                   {formatXu(n)}
                 </button>
@@ -367,12 +364,12 @@ export function PlayerInfoSheet({
                 placeholder="Số xu…"
                 inputMode="numeric"
                 disabled={giftBusy}
-                className="min-w-0 flex-1 rounded-lg border-0 bg-white/10 px-2 py-1.5 text-xs text-white outline-none ring-1 ring-white/15 placeholder:text-white/35"
+                className="min-w-0 flex-1 rounded-lg border border-[#2D5A50] bg-[#040C0A] px-2 py-1.5 text-xs text-[#E8DCB8] outline-none placeholder:text-[#E8DCB8]/35"
               />
               <button
                 type="submit"
                 disabled={giftBusy || !giftAmount.trim()}
-                className="shrink-0 rounded-lg bg-[var(--jade)] px-3 text-xs font-bold text-white disabled:opacity-45"
+                className="shrink-0 rounded-lg border border-[#C59B27] bg-[#1C160C] px-3 text-xs font-bold text-[#E5C158] disabled:opacity-45"
               >
                 {giftBusy ? "…" : "Tặng"}
               </button>
@@ -381,23 +378,24 @@ export function PlayerInfoSheet({
         )}
 
         {staff && !canManage && (
-          <p className="mt-4 rounded-xl bg-white/5 px-3 py-2 text-center text-[11px] text-white/50 ring-1 ring-white/10">
+          <p className="mt-4 rounded-xl border border-[#2D5A50] bg-[#0B201B] px-3 py-2 text-center text-[11px] text-[#E8DCB8]/55">
             Không quản lý được ({player.isBot ? "bot" : "khách offline"})
           </p>
         )}
 
         {canManage && (
-          <div className="mt-4 space-y-3 rounded-xl bg-white/5 px-3 py-3 ring-1 ring-[var(--gold)]/30">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--gold-soft)]">
+          <div className="mt-4 space-y-3 rounded-xl border border-[#C59B27]/45 bg-[#0B201B] px-3 py-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#E5C158]">
               Xử lý (admin)
               {canBalanceUser && !canManageUser ? " · chỉnh xu" : ""}
-              {canManageGuest && !canManageUser && !canBalanceUser ? " · khách" : ""}
-              {canManageGuest && !canManageUser && canBalanceUser ? "" : ""}
+              {canManageGuest && !canManageUser && !canBalanceUser
+                ? " · khách"
+                : ""}
             </p>
             {localBalance != null && (
-              <p className="text-xs text-white/70">
+              <p className="text-xs text-[#E8DCB8]/75">
                 Số dư:{" "}
-                <span className="font-play font-bold text-amber-200 tabular-nums">
+                <span className="font-play font-bold tabular-nums text-[#E5C158]">
                   {formatXu(localBalance)} xu
                 </span>
               </p>
@@ -405,80 +403,81 @@ export function PlayerInfoSheet({
 
             {canManageUser && (
               <>
-            <div>
-              <p className="mb-1.5 text-[10px] text-white/45">
-                Mode kết quả ván
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {(
-                  [
-                    ["lose", "Lose"],
-                    ["normal", "Normal"],
-                    ["win", "Win"],
-                  ] as const
-                ).map(([mode, label]) => (
+                <div>
+                  <p className="mb-1.5 text-[10px] text-[#E8DCB8]/45">
+                    Mode kết quả ván
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {(
+                      [
+                        ["lose", "Lose"],
+                        ["normal", "Normal"],
+                        ["win", "Win"],
+                      ] as const
+                    ).map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          if (!player.userId || !onSetOutcome) return;
+                          setLocalMode(mode);
+                          onSetOutcome(player.userId, mode);
+                        }}
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-bold disabled:opacity-45 ${
+                          localMode === mode
+                            ? mode === "win"
+                              ? "bg-emerald-700 text-white"
+                              : mode === "lose"
+                                ? "bg-rose-700 text-white"
+                                : "bg-[#3A2E14] text-[#E5C158]"
+                            : "border border-[#2D5A50] bg-[#040C0A] text-[#E8DCB8]/80"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-1.5 text-[10px] text-[#E8DCB8]/45">
+                    VIP10K (tắt không gỡ VIP đủ 10k ván)
+                  </p>
+                  <p className="mb-1.5 text-[10px] tabular-nums text-[#E8DCB8]/40">
+                    Đã chơi {rounds.toLocaleString("vi-VN")} /{" "}
+                    {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván
+                    {showVip
+                      ? localGranted
+                        ? " · VIP10K"
+                        : autoVip
+                          ? " · VIP (đủ ván)"
+                          : " · VIP"
+                      : " · chưa VIP"}
+                  </p>
                   <button
-                    key={mode}
                     type="button"
-                    disabled={busy}
+                    disabled={busy || !onSetVip}
                     onClick={() => {
-                      if (!player.userId || !onSetOutcome) return;
-                      setLocalMode(mode);
-                      onSetOutcome(player.userId, mode);
+                      if (!player.userId || !onSetVip) return;
+                      const next = !localGranted;
+                      setLocalGranted(next);
+                      onSetVip(player.userId, next);
                     }}
-                    className={`rounded-full px-2.5 py-1 text-[10px] font-bold disabled:opacity-45 ${
-                      localMode === mode
-                        ? mode === "win"
-                          ? "bg-emerald-600 text-white"
-                          : mode === "lose"
-                            ? "bg-rose-600 text-white"
-                            : "bg-[var(--wood)] text-white"
-                        : "bg-white/10 text-white/80 ring-1 ring-white/15"
+                    className={`rounded-full px-3 py-1 text-[10px] font-bold disabled:opacity-45 ${
+                      localGranted
+                        ? "bg-amber-500 text-[#1a1208]"
+                        : "border border-[#C59B27]/50 bg-[#1C160C] text-[#E8DCB8]"
                     }`}
                   >
-                    {label}
+                    {localGranted ? "Đang VIP10K" : "Cấp VIP10K"}
                   </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <p className="mb-1.5 text-[10px] text-white/45">
-                VIP10K (tắt không gỡ VIP đủ 10k ván)
-              </p>
-              <p className="mb-1.5 text-[10px] text-white/40 tabular-nums">
-                {rounds.toLocaleString("vi-VN")} ván
-                {showVip
-                  ? localGranted
-                    ? " · đang VIP10K (cấp thủ công)"
-                    : autoVip
-                      ? " · đang VIP (đủ ván)"
-                      : " · đang VIP"
-                  : " · chưa VIP"}
-              </p>
-              <button
-                type="button"
-                disabled={busy || !onSetVip}
-                onClick={() => {
-                  if (!player.userId || !onSetVip) return;
-                  const next = !localGranted;
-                  setLocalGranted(next);
-                  onSetVip(player.userId, next);
-                }}
-                className={`rounded-full px-3 py-1 text-[10px] font-bold disabled:opacity-45 ${
-                  localGranted
-                    ? "bg-amber-500 text-[#1a1208]"
-                    : "bg-white/10 text-white/80 ring-1 ring-white/15"
-                }`}
-              >
-                {localGranted ? "Đang VIP10K" : "Cấp VIP10K"}
-              </button>
-            </div>
+                </div>
               </>
             )}
 
             <div>
-              <p className="mb-1.5 text-[10px] text-white/45">Cộng / trừ xu</p>
+              <p className="mb-1.5 text-[10px] text-[#E8DCB8]/45">Cộng / trừ xu</p>
               <div className="mb-1.5 flex flex-wrap gap-1">
                 {[100, 1000, -100, -1000].map((n) => (
                   <button
@@ -502,7 +501,7 @@ export function PlayerInfoSheet({
                         });
                       }
                     }}
-                    className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-white/85 ring-1 ring-white/15 disabled:opacity-45"
+                    className="rounded-full border border-[#C59B27]/40 bg-[#1C160C] px-2 py-0.5 text-[10px] font-bold text-[#E8DCB8] disabled:opacity-45"
                   >
                     {n > 0 ? `+${formatXu(n)}` : formatXu(n)}
                   </button>
@@ -514,12 +513,12 @@ export function PlayerInfoSheet({
                   onChange={(e) => setDelta(e.target.value)}
                   placeholder="Delta (+/-)"
                   disabled={busy}
-                  className="min-w-0 flex-1 rounded-lg border-0 bg-white/10 px-2 py-1.5 text-xs text-white outline-none ring-1 ring-white/15 placeholder:text-white/35"
+                  className="min-w-0 flex-1 rounded-lg border border-[#2D5A50] bg-[#040C0A] px-2 py-1.5 text-xs text-[#E8DCB8] outline-none placeholder:text-[#E8DCB8]/35"
                 />
                 <button
                   type="submit"
                   disabled={busy || !delta.trim()}
-                  className="shrink-0 rounded-lg bg-[var(--gold)] px-3 text-xs font-bold text-[#1a1208] disabled:opacity-45"
+                  className="shrink-0 rounded-lg border border-[#C59B27] bg-[#E5C158] px-3 text-xs font-bold text-[#1a1208] disabled:opacity-45"
                 >
                   Áp
                 </button>

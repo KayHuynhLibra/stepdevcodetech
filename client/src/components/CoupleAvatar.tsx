@@ -2,11 +2,17 @@ import type { CSSProperties, SyntheticEvent } from "react";
 import { DEFAULT_AVATAR, normalizeAvatar } from "../avatars";
 import {
   isRingEmoji,
+  normalizeCoupleBorder,
   normalizeCoupleFrame,
+  normalizeCoupleScale,
   normalizeRingEffect,
+  type CoupleBorderStyle,
+  type CoupleFrameScale,
   type CoupleFrameStyle,
   type RingEffect,
 } from "../rings";
+
+export type CoupleDisplaySize = "compact" | "default" | "hero";
 
 interface CoupleAvatarProps {
   avatarA: string;
@@ -14,12 +20,13 @@ interface CoupleAvatarProps {
   ringImage: string;
   ringAlt?: string;
   ringEffect?: RingEffect | string;
-  /** 0–100 */
   ringSharpness?: number;
-  /** Khung đại diện cặp — theo catalog nhẫn */
   coupleFrame?: CoupleFrameStyle | string;
+  coupleBorder?: CoupleBorderStyle | string;
+  coupleScale?: CoupleFrameScale | string;
+  /** compact = badge; default = sheet thường; hero = profile modal lớn */
+  displaySize?: CoupleDisplaySize;
   compact?: boolean;
-  /** Click avatar A (thường là mình) */
   onAvatarAClick?: () => void;
   className?: string;
 }
@@ -79,7 +86,39 @@ function ringVisualStyle(sharpness: number): CSSProperties {
   };
 }
 
-/** [A] — oval nhẫn — [B], khung theo coupleFrame catalog. */
+function faceSizeClass(
+  display: CoupleDisplaySize,
+  scale: CoupleFrameScale,
+): string {
+  if (display === "compact") {
+    if (scale === "xl" || scale === "lg") return "h-11 w-11";
+    return "h-9 w-9";
+  }
+  if (display === "hero") {
+    switch (scale) {
+      case "sm":
+        return "h-16 w-16";
+      case "md":
+        return "h-20 w-20";
+      case "lg":
+        return "h-[5.5rem] w-[5.5rem]";
+      default:
+        return "h-24 w-24";
+    }
+  }
+  switch (scale) {
+    case "sm":
+      return "h-12 w-12";
+    case "md":
+      return "h-[4.25rem] w-[4.25rem]";
+    case "lg":
+      return "h-20 w-20";
+    default:
+      return "h-[5.25rem] w-[5.25rem]";
+  }
+}
+
+/** [A] — oval nhẫn — [B]; frame/border/scale từ catalog nhẫn. */
 export function CoupleAvatar({
   avatarA,
   avatarB,
@@ -88,12 +127,19 @@ export function CoupleAvatar({
   ringEffect,
   ringSharpness = 70,
   coupleFrame,
+  coupleBorder,
+  coupleScale,
+  displaySize,
   compact = false,
   onAvatarAClick,
   className = "",
 }: CoupleAvatarProps) {
-  const sizeClass = compact ? "h-11 w-11" : "h-[4.25rem] w-[4.25rem]";
+  const display: CoupleDisplaySize =
+    displaySize ?? (compact ? "compact" : "default");
   const frame = normalizeCoupleFrame(coupleFrame);
+  const border = normalizeCoupleBorder(coupleBorder);
+  const scale = normalizeCoupleScale(coupleScale);
+  const sizeClass = faceSizeClass(display, scale);
   const effect = normalizeRingEffect(ringEffect);
   const fxClass =
     effect === "glow"
@@ -107,15 +153,24 @@ export function CoupleAvatar({
             : "ring-fx";
 
   const aFace = (
-    <FramedAvatar src={avatarA} sizeClass={sizeClass} compact={compact} />
+    <FramedAvatar
+      src={avatarA}
+      sizeClass={sizeClass}
+      compact={display === "compact"}
+    />
   );
 
   return (
     <div
-      className={`couple-avatar ${compact ? "couple-avatar--compact" : ""} ${className}`}
+      className={`couple-avatar couple-avatar--${display} ${className}`}
       data-frame={frame}
+      data-border={border}
+      data-scale={scale}
       title="Cặp đôi"
     >
+      <span className="couple-avatar__trail couple-avatar__trail--l" aria-hidden />
+      <span className="couple-avatar__trail couple-avatar__trail--r" aria-hidden />
+
       {onAvatarAClick ? (
         <button
           type="button"
@@ -161,13 +216,18 @@ export function CoupleAvatar({
             </span>
           </span>
         </div>
+        <span className="couple-avatar__pedestal" aria-hidden />
         <span className="couple-avatar__heart" aria-hidden>
           ♥
         </span>
       </div>
 
       <span className="couple-avatar__slot couple-avatar__slot--b relative shrink-0">
-        <FramedAvatar src={avatarB} sizeClass={sizeClass} compact={compact} />
+        <FramedAvatar
+          src={avatarB}
+          sizeClass={sizeClass}
+          compact={display === "compact"}
+        />
       </span>
     </div>
   );
