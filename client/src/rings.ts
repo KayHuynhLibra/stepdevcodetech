@@ -7,6 +7,15 @@ export type RingEffect = "none" | "glow" | "pulse" | "sparkle" | "orbit";
 
 export type RingCategory = "classic" | "luxury" | "romance" | "legend";
 
+/** Khung đại diện cặp đôi — khớp server ringStore.coupleFrame. */
+export type CoupleFrameStyle =
+  | "bronze"
+  | "gold"
+  | "rose"
+  | "rainbow"
+  | "midnight"
+  | "jade";
+
 export const RING_EFFECTS: RingEffect[] = [
   "none",
   "glow",
@@ -14,6 +23,24 @@ export const RING_EFFECTS: RingEffect[] = [
   "sparkle",
   "orbit",
 ];
+
+export const COUPLE_FRAMES: CoupleFrameStyle[] = [
+  "bronze",
+  "gold",
+  "rose",
+  "rainbow",
+  "midnight",
+  "jade",
+];
+
+export const COUPLE_FRAME_LABELS: Record<CoupleFrameStyle, string> = {
+  bronze: "Đồng cổ",
+  gold: "Vàng",
+  rose: "Hồng",
+  rainbow: "Cầu vồng",
+  midnight: "Đêm",
+  jade: "Ngọc",
+};
 
 export const RING_EFFECT_LABELS: Record<RingEffect, string> = {
   none: "Không",
@@ -42,6 +69,7 @@ export interface RingItem {
   category?: RingCategory;
   effect?: RingEffect;
   imageSharpness?: number;
+  coupleFrame?: CoupleFrameStyle;
 }
 
 export type BondStatus = "pending" | "active";
@@ -79,6 +107,7 @@ export interface UserBondSnippet {
   ringImage: string;
   ringEffect?: RingEffect | string;
   ringSharpness?: number;
+  coupleFrame?: CoupleFrameStyle | string;
   since: number;
   status: BondStatus;
 }
@@ -95,6 +124,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     category: "classic",
     effect: "glow",
     imageSharpness: 75,
+    coupleFrame: "bronze",
   },
   {
     key: "gold",
@@ -107,6 +137,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     category: "luxury",
     effect: "pulse",
     imageSharpness: 80,
+    coupleFrame: "gold",
   },
   {
     key: "rose",
@@ -119,6 +150,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     category: "romance",
     effect: "sparkle",
     imageSharpness: 85,
+    coupleFrame: "rose",
   },
   {
     key: "diamond",
@@ -131,6 +163,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     category: "legend",
     effect: "orbit",
     imageSharpness: 95,
+    coupleFrame: "rainbow",
   },
 ];
 
@@ -174,4 +207,24 @@ export function normalizeRingCategory(
   if (k === "rose") return "romance";
   if (k === "diamond") return "legend";
   return "classic";
+}
+
+export function normalizeCoupleFrame(
+  raw: unknown,
+  category?: RingCategory,
+): CoupleFrameStyle {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (COUPLE_FRAMES.includes(s as CoupleFrameStyle)) {
+    return s as CoupleFrameStyle;
+  }
+  switch (category) {
+    case "luxury":
+      return "gold";
+    case "romance":
+      return "rose";
+    case "legend":
+      return "rainbow";
+    default:
+      return "bronze";
+  }
 }

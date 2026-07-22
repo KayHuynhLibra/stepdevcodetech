@@ -220,6 +220,7 @@ export function PlayerInfoSheet({
                 ringAlt={player.bond.ringNameVi}
                 ringEffect={player.bond.ringEffect}
                 ringSharpness={player.bond.ringSharpness}
+                coupleFrame={player.bond.coupleFrame}
               />
             ) : showVip ? (
               <VipFantasyAvatar

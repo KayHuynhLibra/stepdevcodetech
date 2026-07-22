@@ -2,7 +2,9 @@ import type { CSSProperties, SyntheticEvent } from "react";
 import { DEFAULT_AVATAR, normalizeAvatar } from "../avatars";
 import {
   isRingEmoji,
+  normalizeCoupleFrame,
   normalizeRingEffect,
+  type CoupleFrameStyle,
   type RingEffect,
 } from "../rings";
 
@@ -14,6 +16,8 @@ interface CoupleAvatarProps {
   ringEffect?: RingEffect | string;
   /** 0–100 */
   ringSharpness?: number;
+  /** Khung đại diện cặp — theo catalog nhẫn */
+  coupleFrame?: CoupleFrameStyle | string;
   compact?: boolean;
   /** Click avatar A (thường là mình) */
   onAvatarAClick?: () => void;
@@ -66,8 +70,8 @@ function FramedAvatar({
 
 function ringVisualStyle(sharpness: number): CSSProperties {
   const s = Math.max(0, Math.min(100, Math.floor(sharpness)));
-  const scale = 0.78 + (s / 100) * 0.42;
-  const contrast = 0.88 + (s / 100) * 0.4;
+  const scale = 0.82 + (s / 100) * 0.38;
+  const contrast = 0.9 + (s / 100) * 0.35;
   const saturate = 0.95 + (s / 100) * 0.35;
   return {
     transform: `scale(${scale.toFixed(3)})`,
@@ -75,7 +79,7 @@ function ringVisualStyle(sharpness: number): CSSProperties {
   };
 }
 
-/** [avatar A] — oval nhẫn — [avatar B] (layout theo mock couple hub). */
+/** [A] — oval nhẫn — [B], khung theo coupleFrame catalog. */
 export function CoupleAvatar({
   avatarA,
   avatarB,
@@ -83,11 +87,13 @@ export function CoupleAvatar({
   ringAlt = "Nhẫn",
   ringEffect,
   ringSharpness = 70,
+  coupleFrame,
   compact = false,
   onAvatarAClick,
   className = "",
 }: CoupleAvatarProps) {
-  const sizeClass = compact ? "h-10 w-10" : "h-16 w-16";
+  const sizeClass = compact ? "h-11 w-11" : "h-[4.25rem] w-[4.25rem]";
+  const frame = normalizeCoupleFrame(coupleFrame);
   const effect = normalizeRingEffect(ringEffect);
   const fxClass =
     effect === "glow"
@@ -107,6 +113,7 @@ export function CoupleAvatar({
   return (
     <div
       className={`couple-avatar ${compact ? "couple-avatar--compact" : ""} ${className}`}
+      data-frame={frame}
       title="Cặp đôi"
     >
       {onAvatarAClick ? (
@@ -135,7 +142,7 @@ export function CoupleAvatar({
             className={`couple-avatar__ring-visual relative flex h-full w-full items-center justify-center ${fxClass}`}
           >
             <span
-              className="flex h-[88%] w-[88%] items-center justify-center"
+              className="flex h-[90%] w-[90%] items-center justify-center"
               style={ringVisualStyle(ringSharpness)}
             >
               {isRingEmoji(ringImage) ? (

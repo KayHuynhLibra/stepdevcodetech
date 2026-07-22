@@ -22,11 +22,12 @@ import {
   GRANT_LEVEL_LABELS,
   type AuthUser,
 } from "../auth";
-import { AVATARS, isCustomAvatar, normalizeAvatar } from "../avatars";
+import { AVATARS, DEFAULT_AVATAR, isCustomAvatar, normalizeAvatar } from "../avatars";
 import { CARDS, formatXu } from "../cards";
 import { AppShell } from "../components/AppShell";
 import { IdentityBadge } from "../components/IdentityBadge";
 import { ImageUploadPopup } from "../components/ImageUploadPopup";
+import { CoupleAvatar } from "../components/CoupleAvatar";
 import { uploadAvatarFromFile } from "../uploadAvatar";
 import {
   CULTIVATION_LABELS,
@@ -48,16 +49,20 @@ import {
   type GiftItem,
 } from "../gifts";
 import {
+  COUPLE_FRAME_LABELS,
+  COUPLE_FRAMES,
   isRingEmoji,
+  normalizeCoupleFrame,
   normalizeRingCategory,
   RING_CATEGORIES,
   RING_EFFECT_LABELS,
   RING_EFFECTS,
   ITEM_XU_MAX,
-  type BondAdminRow,
+  type CoupleFrameStyle,
   type RingCategory,
   type RingEffect,
   type RingItem,
+  type BondAdminRow,
 } from "../rings";
 
 type CultBenefitDraft = Record<
@@ -857,6 +862,7 @@ export default function AdminDashboard() {
     category: "classic" as RingCategory,
     effect: "glow" as RingEffect,
     imageSharpness: "70",
+    coupleFrame: "bronze" as CoupleFrameStyle,
   });
   const [catalogUpload, setCatalogUpload] = useState<{
     kind: "gift" | "ring";
@@ -2583,6 +2589,7 @@ export default function AdminDashboard() {
           category: draft.category,
           effect: draft.effect,
           imageSharpness: Math.floor(Number(draft.imageSharpness)) || 70,
+          coupleFrame: draft.coupleFrame,
         }),
       });
       setMsg(opts?.quietMsg ?? `Đã lưu nhẫn ${key}`);
@@ -2598,6 +2605,7 @@ export default function AdminDashboard() {
           category: "classic",
           effect: "glow",
           imageSharpness: "70",
+          coupleFrame: "bronze",
         });
       }
       await loadRingConfig();
@@ -5099,9 +5107,10 @@ export default function AdminDashboard() {
         <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
           <p className="play-heading text-sm">Catalog nhẫn</p>
           <p className="text-[11px] text-[var(--play-muted)]">
-            Giá tới {ITEM_XU_MAX.toLocaleString("vi-VN")} xu (10 chữ số). Category:
-            classic / luxury / romance / legend. Effect + độ nét ảnh chỉnh được
-            theo từng loại nhẫn.
+            Giá tới {ITEM_XU_MAX.toLocaleString("vi-VN")} xu (10 chữ số). Mỗi
+            nhẫn gắn <strong>khung couple</strong> (đồng / vàng / hồng / cầu
+            vồng / đêm / ngọc) — hiển thị trên avatar cặp đôi. Effect + độ nét
+            ảnh chỉnh theo từng loại.
           </p>
           <ul className="max-h-80 space-y-2 overflow-y-auto">
             {ringRows
@@ -5142,7 +5151,15 @@ export default function AdminDashboard() {
                           {RING_EFFECT_LABELS[
                             (g.effect as RingEffect) ?? "glow"
                           ] ?? g.effect}{" "}
-                          · nét {g.imageSharpness ?? 70}
+                          · nét {g.imageSharpness ?? 70} · khung{" "}
+                          {
+                            COUPLE_FRAME_LABELS[
+                              normalizeCoupleFrame(
+                                g.coupleFrame,
+                                normalizeRingCategory(g.category, g.key),
+                              )
+                            ]
+                          }
                           {g.enabled ? "" : " · tắt"}
                         </p>
                       </div>
@@ -5163,6 +5180,10 @@ export default function AdminDashboard() {
                             category: normalizeRingCategory(g.category, g.key),
                             effect: (g.effect as RingEffect) ?? "glow",
                             imageSharpness: String(g.imageSharpness ?? 70),
+                            coupleFrame: normalizeCoupleFrame(
+                              g.coupleFrame,
+                              normalizeRingCategory(g.category, g.key),
+                            ),
                           })
                         }
                         className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15"
@@ -5278,6 +5299,39 @@ export default function AdminDashboard() {
                 className="app-input mt-0.5 w-full"
               />
             </label>
+            <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+              Khung cặp đôi
+              <select
+                value={ringDraft.coupleFrame}
+                onChange={(e) =>
+                  setRingDraft((d) => ({
+                    ...d,
+                    coupleFrame: e.target.value as CoupleFrameStyle,
+                  }))
+                }
+                className="app-input mt-0.5 w-full"
+              >
+                {COUPLE_FRAMES.map((f) => (
+                  <option key={f} value={f}>
+                    {COUPLE_FRAME_LABELS[f]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="col-span-2 flex flex-col items-center gap-1 rounded-lg bg-white/50 px-2 py-2 ring-1 ring-[var(--wood-deep)]/10 sm:col-span-3">
+              <p className="text-[10px] font-semibold text-[var(--play-muted)]">
+                Xem trước khung couple
+              </p>
+              <CoupleAvatar
+                avatarA={DEFAULT_AVATAR}
+                avatarB={AVATARS[1] ?? DEFAULT_AVATAR}
+                ringImage={ringDraft.image || "💍"}
+                ringAlt={ringDraft.nameVi || "Nhẫn"}
+                ringEffect={ringDraft.effect}
+                ringSharpness={Math.floor(Number(ringDraft.imageSharpness)) || 70}
+                coupleFrame={ringDraft.coupleFrame}
+              />
+            </div>
             <label className="col-span-2 text-[10px] font-semibold text-[var(--play-muted)] sm:col-span-2">
               Image (URL / emoji)
               <div className="mt-0.5 flex gap-1">

@@ -11,12 +11,30 @@ export type RingEffect = "none" | "glow" | "pulse" | "sparkle" | "orbit";
 
 export type RingCategory = "classic" | "luxury" | "romance" | "legend";
 
+/** Khung đại diện cặp đôi (avatar + oval). */
+export type CoupleFrameStyle =
+  | "bronze"
+  | "gold"
+  | "rose"
+  | "rainbow"
+  | "midnight"
+  | "jade";
+
 export const RING_EFFECTS: RingEffect[] = [
   "none",
   "glow",
   "pulse",
   "sparkle",
   "orbit",
+];
+
+export const COUPLE_FRAMES: CoupleFrameStyle[] = [
+  "bronze",
+  "gold",
+  "rose",
+  "rainbow",
+  "midnight",
+  "jade",
 ];
 
 export const RING_CATEGORIES: { id: RingCategory; label: string }[] = [
@@ -47,6 +65,8 @@ export interface RingItem {
   effect: RingEffect;
   /** Độ nét / phóng ảnh nhẫn 0–100 (mặc định 70) */
   imageSharpness: number;
+  /** Style khung couple khi đeo nhẫn này */
+  coupleFrame: CoupleFrameStyle;
 }
 
 export type BondStatus = "pending" | "active";
@@ -86,6 +106,7 @@ export interface ActiveBondPublic {
     image: string;
     effect: RingEffect;
     imageSharpness: number;
+    coupleFrame: CoupleFrameStyle;
   };
   since: number;
 }
@@ -100,6 +121,7 @@ export interface UserBondSnippet {
   ringImage: string;
   ringEffect: RingEffect;
   ringSharpness: number;
+  coupleFrame: CoupleFrameStyle;
   since: number;
   status: BondStatus;
 }
@@ -137,6 +159,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     category: "classic",
     effect: "glow",
     imageSharpness: 75,
+    coupleFrame: "bronze",
   },
   {
     key: "gold",
@@ -149,6 +172,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     category: "luxury",
     effect: "pulse",
     imageSharpness: 80,
+    coupleFrame: "gold",
   },
   {
     key: "rose",
@@ -161,6 +185,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     category: "romance",
     effect: "sparkle",
     imageSharpness: 85,
+    coupleFrame: "rose",
   },
   {
     key: "diamond",
@@ -173,6 +198,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     category: "legend",
     effect: "orbit",
     imageSharpness: 95,
+    coupleFrame: "rainbow",
   },
 ];
 
@@ -184,6 +210,19 @@ function defaultCategoryForKey(key: string): RingCategory {
   return "classic";
 }
 
+function defaultFrameForCategory(cat: RingCategory): CoupleFrameStyle {
+  switch (cat) {
+    case "luxury":
+      return "gold";
+    case "romance":
+      return "rose";
+    case "legend":
+      return "rainbow";
+    default:
+      return "bronze";
+  }
+}
+
 function isRingCategory(v: unknown): v is RingCategory {
   return typeof v === "string" && (RING_CATEGORY_IDS as string[]).includes(v);
 }
@@ -192,6 +231,18 @@ function normalizeCategory(raw: unknown, key: string): RingCategory {
   if (isRingCategory(raw)) return raw;
   return defaultCategoryForKey(key);
 }
+
+function normalizeCoupleFrame(
+  raw: unknown,
+  category: RingCategory,
+): CoupleFrameStyle {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (COUPLE_FRAMES.includes(s as CoupleFrameStyle)) {
+    return s as CoupleFrameStyle;
+  }
+  return defaultFrameForCategory(category);
+}
+
 function clampRingPrice(n: unknown): number {
   const v = Math.floor(Number(n));
   if (!Number.isFinite(v)) return MIN_STAKE;
@@ -223,6 +274,22 @@ function normalizeImage(raw: unknown): string {
   return s;
 }
 
+function fallbackRing(key: string): RingItem {
+  const category = defaultCategoryForKey(key);
+  return {
+    key,
+    nameVi: key,
+    image: "💍",
+    price: 0,
+    enabled: true,
+    sort: 0,
+    category,
+    effect: "glow",
+    imageSharpness: 70,
+    coupleFrame: defaultFrameForCategory(category),
+  };
+}
+
 function normalizeRing(raw: unknown): RingItem | null {
   if (!raw || typeof raw !== "object") return null;
   const g = raw as Partial<RingItem>;
@@ -232,6 +299,7 @@ function normalizeRing(raw: unknown): RingItem | null {
   const blurb =
     typeof g.blurb === "string" ? g.blurb.trim().slice(0, 80) : undefined;
   const sort = Math.floor(Number(g.sort));
+  const category = normalizeCategory(g.category, key);
   return {
     key,
     nameVi,
@@ -240,9 +308,10 @@ function normalizeRing(raw: unknown): RingItem | null {
     blurb: blurb || undefined,
     enabled: g.enabled !== false,
     sort: Number.isFinite(sort) ? sort : 100,
-    category: normalizeCategory(g.category, key),
+    category,
     effect: normalizeEffect(g.effect),
     imageSharpness: clampSharpness(g.imageSharpness),
+    coupleFrame: normalizeCoupleFrame(g.coupleFrame, category),
   };
 }
 
@@ -422,19 +491,7 @@ class RingStore {
     const partnerId = bond.aUserId === id ? bond.bUserId : bond.aUserId;
     const partner = resolveUser(partnerId);
     if (!partner) return null;
-    const ring =
-      this.getByKey(bond.ringKey) ??
-      ({
-        key: bond.ringKey,
-        nameVi: bond.ringKey,
-        image: "💍",
-        price: 0,
-        enabled: true,
-        sort: 0,
-        category: "classic" as const,
-        effect: "glow" as const,
-        imageSharpness: 70,
-      } satisfies RingItem);
+    const ring = this.getByKey(bond.ringKey) ?? fallbackRing(bond.ringKey);
     return {
       partner: { ...partner },
       ring: {
@@ -443,6 +500,7 @@ class RingStore {
         image: ring.image,
         effect: ring.effect,
         imageSharpness: ring.imageSharpness,
+        coupleFrame: ring.coupleFrame,
       },
       since: bond.acceptedAt ?? bond.proposedAt,
     };
@@ -471,6 +529,7 @@ class RingStore {
         ringImage: active.ring.image,
         ringEffect: active.ring.effect,
         ringSharpness: active.ring.imageSharpness,
+        coupleFrame: active.ring.coupleFrame,
         since: active.since,
         status: "active",
       };
@@ -484,19 +543,7 @@ class RingStore {
       pending.aUserId === id ? pending.bUserId : pending.aUserId;
     const partner = resolveUser(partnerId);
     if (!partner) return undefined;
-    const ring =
-      this.getByKey(pending.ringKey) ??
-      ({
-        key: pending.ringKey,
-        nameVi: pending.ringKey,
-        image: "💍",
-        price: 0,
-        enabled: true,
-        sort: 0,
-        category: "classic" as const,
-        effect: "glow" as const,
-        imageSharpness: 70,
-      } satisfies RingItem);
+    const ring = this.getByKey(pending.ringKey) ?? fallbackRing(pending.ringKey);
     return {
       partnerId: partner.id,
       partnerCode: partner.code,
@@ -507,6 +554,7 @@ class RingStore {
       ringImage: ring.image,
       ringEffect: ring.effect,
       ringSharpness: ring.imageSharpness,
+      coupleFrame: ring.coupleFrame,
       since: pending.proposedAt,
       status: "pending",
     };
