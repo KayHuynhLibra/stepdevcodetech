@@ -272,26 +272,31 @@ export default function UserDashboard() {
 
   return (
     <AppShell maxWidth="md">
-      <header className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <IdentityBadge
-            user={user}
-            showPath={false}
-            onAvatarClick={() => {
-              document
-                .getElementById("avatar-picker")
-                ?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }}
-            onNameClick={() => {
-              document
-                .getElementById("nickname-display")
-                ?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }}
-          />
+      <header className="admin-header">
+        <div className="admin-header__bar">
+          <p className="admin-header__title">Hồ sơ</p>
+          <button
+            type="button"
+            onClick={logout}
+            className="app-btn-ghost admin-header__exit"
+          >
+            Thoát
+          </button>
         </div>
-        <button type="button" onClick={logout} className="app-btn-ghost shrink-0">
-          Thoát
-        </button>
+        <IdentityBadge
+          user={user}
+          showPath={false}
+          onAvatarClick={() => {
+            document
+              .getElementById("avatar-picker")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
+          onNameClick={() => {
+            document
+              .getElementById("nickname-display")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
+        />
       </header>
 
       {error && (

@@ -3023,21 +3023,26 @@ export default function AdminDashboard() {
 
   return (
     <AppShell maxWidth="lg">
-      <header className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <IdentityBadge
-            user={me}
-            showPath={false}
-            onAvatarClick={() => {
-              document
-                .getElementById("avatar-picker")
-                ?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }}
-          />
+      <header className="admin-header">
+        <div className="admin-header__bar">
+          <p className="admin-header__title">Quản trị</p>
+          <button
+            type="button"
+            onClick={logout}
+            className="app-btn-ghost admin-header__exit"
+          >
+            Thoát
+          </button>
         </div>
-        <button type="button" onClick={logout} className="app-btn-ghost shrink-0">
-          Thoát
-        </button>
+        <IdentityBadge
+          user={me}
+          showPath={false}
+          onAvatarClick={() => {
+            document
+              .getElementById("avatar-picker")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
+        />
       </header>
 
       {canGameSwitch && (

@@ -54,9 +54,7 @@ export function IdentityBadge({
   onNameClick,
 }: IdentityBadgeProps) {
   const isGuest = !user;
-  const name = user
-    ? userDisplayName(user)
-    : guestName || "Khách";
+  const name = user ? userDisplayName(user) : guestName || "Khách";
   const loginHint =
     user && user.nickname?.trim() && user.nickname.trim().length >= 2
       ? user.username
@@ -69,16 +67,20 @@ export function IdentityBadge({
   const path = user ? homePath(user) : guestCode ? `/guest/${guestCode}` : "/play";
   const play = user ? playPath(user) : guestCode ? `/guest/${guestCode}/play` : "/play";
   const isVip = userShowsVip(user);
+  const bondActive = user?.bond?.status === "active";
 
-  const className = `flex w-full items-center gap-2 text-left ${
-    compact
-      ? ""
-      : `rounded-xl px-2.5 py-2 ring-1 ${
-          isVip
-            ? "bg-gradient-to-br from-amber-50/95 via-[rgba(255,248,232,0.92)] to-amber-100/80 ring-amber-300/70 shadow-[0_2px_14px_rgba(180,110,20,0.12)]"
-            : "bg-[rgba(255,248,232,0.78)] ring-[var(--gold)]/35"
-        }`
-  }`;
+  const shellClass = [
+    "identity-badge",
+    bondActive ? "identity-badge--couple" : "identity-badge--solo",
+    compact ? "identity-badge--compact" : "",
+    !compact
+      ? isVip
+        ? "rounded-xl bg-gradient-to-br from-amber-50/95 via-[rgba(255,248,232,0.92)] to-amber-100/80 px-2.5 py-2 ring-1 ring-amber-300/70 shadow-[0_2px_14px_rgba(180,110,20,0.12)]"
+        : "rounded-xl bg-[rgba(255,248,232,0.78)] px-2.5 py-2 ring-1 ring-[var(--gold)]/35"
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   const nameClass = `truncate font-play ${
     compact ? "text-sm" : "text-base"
@@ -96,8 +98,6 @@ export function IdentityBadge({
     el.src = DEFAULT_AVATAR;
   };
 
-  const bondActive = user?.bond?.status === "active";
-
   const avatarNode = (
     <RoleAvatarFrame
       src={avatar}
@@ -110,9 +110,12 @@ export function IdentityBadge({
     />
   );
 
+  /** Badge: luôn compact scale — không dùng size hero từ catalog nhẫn. */
   const coupleNode =
     bondActive && user?.bond ? (
       <CoupleAvatar
+        displaySize="compact"
+        className="identity-badge__couple"
         avatarA={avatar}
         avatarB={user.bond.partnerAvatar}
         ringImage={user.bond.ringImage}
@@ -121,13 +124,12 @@ export function IdentityBadge({
         ringSharpness={user.bond.ringSharpness}
         coupleFrame={user.bond.coupleFrame}
         coupleBorder={user.bond.coupleBorder}
-        coupleScale={user.bond.coupleScale}
-        coupleMotion={user.bond.coupleMotion}
-        coupleGap={user.bond.coupleGap}
-        coupleLayout={user.bond.coupleLayout}
+        coupleScale="md"
+        coupleMotion={user.bond.coupleMotion === "none" ? "none" : "breathe"}
+        coupleGap="normal"
+        coupleLayout="classic"
         ringFrame={user.bond.ringFrame}
-        ringFrameScale={user.bond.ringFrameScale}
-        compact={compact}
+        ringFrameScale="sm"
         onAvatarAClick={onAvatarClick}
       />
     ) : null;
@@ -152,79 +154,88 @@ export function IdentityBadge({
     />
   );
 
-  return (
-    <div className={className}>
-      {coupleNode ? (
-        coupleNode
-      ) : onAvatarClick ? (
-        <button
-          type="button"
-          onClick={onAvatarClick}
-          className="relative shrink-0 active:scale-[0.97]"
-          title="Đổi avatar"
-        >
-          {avatarNode}
-          <span className="absolute -bottom-0.5 -right-0.5 z-10 rounded-full bg-[var(--wood-deep)] px-1 text-[8px] font-bold leading-tight text-[var(--cream)] ring-1 ring-[var(--gold)]/50">
-            Đổi
-          </span>
-        </button>
-      ) : (
-        <span className="relative shrink-0">{avatarNode}</span>
-      )}
-      <div className="min-w-0 flex-1">
+  const meta = (
+    <div className="identity-badge__meta min-w-0">
+      <div className="identity-badge__name-row">
         {nameNode}
         {bondActive && (
-          <p
-            className={`inline-flex items-center rounded-full bg-gradient-to-r from-rose-500/20 to-amber-400/15 px-1.5 py-px text-[8px] font-bold uppercase tracking-wide text-rose-700/90 ring-1 ring-rose-400/35 ${
-              compact ? "mt-0" : "mt-0.5"
-            }`}
-          >
-            Cặp đôi
-          </p>
-        )}
-        {loginHint && (
-          <p
-            className={`truncate font-mono text-[9px] text-[var(--play-muted)] ${
-              compact ? "mt-0" : "mt-0.5"
-            }`}
-            title="Username đăng nhập"
-          >
-            @{loginHint}
-          </p>
-        )}
-        <div className="mt-1 flex flex-wrap items-center gap-1.5">
-          <span className="identity-chip identity-chip--role">
-            {roleLabel(role)}
-          </span>
-          {user?.cultivationRank && (
-            <CultivationChip rank={user.cultivationRank} />
-          )}
-          {isVip && (
-            <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-[#1a1208] shadow ring-1 ring-amber-200/80">
-              VIP
-            </span>
-          )}
-          {code && (
-            <span
-              className={`identity-chip identity-chip--code identity-chip--code-lg${
-                isVip ? " identity-chip--code-vip" : ""
-              }`}
-              title={isVip ? "ID VIP — hiện với người chơi khác" : "ID người chơi"}
-            >
-              ID {code}
-            </span>
-          )}
-        </div>
-        {showPath && (
-          <p
-            className={`mt-1 truncate font-mono text-[var(--play-muted)] ${
-              compact ? "text-[9px]" : "text-[10px]"
-            }`}
-          >
-            {compact ? play : `${path} · chơi ${play}`}
-          </p>
+          <span className="identity-badge__couple-tag">Cặp đôi</span>
         )}
       </div>
+      {loginHint && (
+        <p
+          className={`truncate font-mono text-[9px] text-[var(--play-muted)] ${
+            compact ? "mt-0" : "mt-0.5"
+          }`}
+          title="Username đăng nhập"
+        >
+          @{loginHint}
+        </p>
+      )}
+      <div className="identity-badge__chips">
+        <span className="identity-chip identity-chip--role">
+          {roleLabel(role)}
+        </span>
+        {user?.cultivationRank && (
+          <CultivationChip rank={user.cultivationRank} />
+        )}
+        {isVip && (
+          <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-[#1a1208] shadow ring-1 ring-amber-200/80">
+            VIP
+          </span>
+        )}
+        {code && (
+          <span
+            className={`identity-chip identity-chip--code identity-chip--code-lg${
+              isVip ? " identity-chip--code-vip" : ""
+            }`}
+            title={
+              isVip ? "ID VIP — hiện với người chơi khác" : "ID người chơi"
+            }
+          >
+            ID {code}
+          </span>
+        )}
+      </div>
+      {showPath && (
+        <p
+          className={`mt-1 truncate font-mono text-[var(--play-muted)] ${
+            compact ? "text-[9px]" : "text-[10px]"
+          }`}
+        >
+          {compact ? play : `${path} · chơi ${play}`}
+        </p>
+      )}
+    </div>
+  );
+
+  return (
+    <div className={shellClass}>
+      {coupleNode ? (
+        <>
+          <div className="identity-badge__couple-wrap">{coupleNode}</div>
+          {meta}
+        </>
+      ) : (
+        <>
+          {onAvatarClick ? (
+            <button
+              type="button"
+              onClick={onAvatarClick}
+              className="relative shrink-0 active:scale-[0.97]"
+              title="Đổi avatar"
+            >
+              {avatarNode}
+              <span className="absolute -bottom-0.5 -right-0.5 z-10 rounded-full bg-[var(--wood-deep)] px-1 text-[8px] font-bold leading-tight text-[var(--cream)] ring-1 ring-[var(--gold)]/50">
+                Đổi
+              </span>
+            </button>
+          ) : (
+            <span className="relative shrink-0">{avatarNode}</span>
+          )}
+          {meta}
+        </>
+      )}
     </div>
   );
 }

@@ -190,13 +190,18 @@ export default function DealDashboard() {
 
   return (
     <AppShell maxWidth="md">
-      <header className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <IdentityBadge user={me} showPath={false} />
+      <header className="admin-header">
+        <div className="admin-header__bar">
+          <p className="admin-header__title">Deal</p>
+          <button
+            type="button"
+            onClick={logout}
+            className="app-btn-ghost admin-header__exit"
+          >
+            Thoát
+          </button>
         </div>
-        <button type="button" onClick={logout} className="app-btn-ghost shrink-0">
-          Thoát
-        </button>
+        <IdentityBadge user={me} showPath={false} />
       </header>
 
       <p className="play-heading mt-3 text-lg">Deal — chỉnh xu ảo</p>
