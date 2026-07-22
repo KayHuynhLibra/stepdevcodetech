@@ -22,22 +22,22 @@ import { vaultArcana } from "./vaultStore.js";
 import { CARDS } from "./cards.js";
 import {
   checkEvenMoney,
-  parseOuterBet,
+  parseOuterPick,
   rollEuropeanNumber,
-  type OuterEvenMoneyBet,
+  type OuterEvenMoneyPick,
 } from "./europeanRoulette.js";
 import {
   arcanaMissionStore,
   MISSION_BONUS_STAKE,
 } from "./arcanaMissionStore.js";
 import {
-  effectiveBetTiersForUser,
+  effectiveStakeTiersForUser,
   isStakeAllowedForUser,
   personalTutienMax,
   PUBLIC_MAX_STAKE,
-  tutienBetLimitsStore,
+  tutienStakeLimitsStore,
   type TutienMaxByRank,
-} from "./tutienBetLimitsStore.js";
+} from "./tutienStakeLimitsStore.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, "..", "data");
@@ -64,7 +64,7 @@ function portraitImageForId(id: number, fallback?: string): string {
 }
 const PICK_MIN = 1;
 const PICK_MAX = 8;
-const DEFAULT_BET_TIERS = [
+const DEFAULT_STAKE_TIERS = [
   300, 800, 1500, 3000, 10_000, 30_000, 100_000, 1_000_000,
 ];
 
@@ -75,7 +75,7 @@ export interface ArcanaSlot {
   key: string;
   name: string;
   nameVi: string;
-  /** Hệ số trả thưởng (1:N → N) */
+  /** Hệ số trả xu (1:N → N) */
   ratio: number;
   /** Weight RNG */
   weight: number;
@@ -85,12 +85,12 @@ export interface ArcanaSlot {
 export interface ArcanaWheelConfig {
   version: typeof CONFIG_VERSION;
   enabled: boolean;
-  betTiers: number[];
+  stakeTiers: number[];
   pickMin: number;
   pickMax: number;
   /** Trần công khai (= PUBLIC_MAX_STAKE) */
   maxStake: number;
-  /** Virtual — nguồn shared tutienBetLimitsStore (Tarot + Arcana) */
+  /** Virtual — nguồn shared tutienStakeLimitsStore (Tarot + Arcana) */
   tutienMaxByRank?: TutienMaxByRank;
   /** Hệ số thưởng (0.01–2), nhân sau khi chia số ô chọn */
   payoutScale: number;
@@ -128,7 +128,7 @@ export interface ArcanaSpinEntry {
   usedBonusSpin?: boolean;
   /** European outer result 0–36 */
   outerNumber?: number;
-  outerBet?: OuterEvenMoneyBet;
+  outerPick?: OuterEvenMoneyPick;
   outerWon?: boolean;
   outerPayout?: number;
   /** Arcana payout after streak (before combining with outer) */
@@ -189,7 +189,7 @@ function defaultConfig(): ArcanaWheelConfig {
   return {
     version: CONFIG_VERSION,
     enabled: true,
-    betTiers: [...DEFAULT_BET_TIERS],
+    stakeTiers: [...DEFAULT_STAKE_TIERS],
     pickMin: PICK_MIN,
     pickMax: PICK_MAX,
     maxStake: PUBLIC_MAX_STAKE,
@@ -203,7 +203,7 @@ function defaultConfig(): ArcanaWheelConfig {
 function needsMigration(parsed: {
   version?: number;
   slots?: ArcanaSlot[];
-  betTiers?: number[];
+  stakeTiers?: number[];
   maxStake?: number;
   payoutScale?: number;
   streakBonusEnabled?: boolean;
@@ -215,7 +215,7 @@ function needsMigration(parsed: {
   if (typeof parsed.maxStake !== "number" || parsed.maxStake < PUBLIC_MAX_STAKE) {
     return true;
   }
-  const tiers = parsed.betTiers ?? [];
+  const tiers = parsed.stakeTiers ?? [];
   if (!tiers.includes(PUBLIC_MAX_STAKE)) return true;
   return false;
 }
@@ -273,7 +273,7 @@ class ArcanaWheelStore {
       const parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as {
         version?: number;
         enabled?: boolean;
-        betTiers?: number[];
+        stakeTiers?: number[];
         pickMin?: number;
         pickMax?: number;
         maxStake?: number;
@@ -296,7 +296,7 @@ class ArcanaWheelStore {
           Array.isArray(parsed.slots) ? parsed.slots : undefined,
         );
         if (parsed.tutienMaxByRank) {
-          tutienBetLimitsStore.seedFromLegacy(parsed.tutienMaxByRank);
+          tutienStakeLimitsStore.seedFromLegacy(parsed.tutienMaxByRank);
         }
         if (
           typeof parsed.payoutScale === "number" &&
@@ -326,15 +326,15 @@ class ArcanaWheelStore {
             parsed.streakBonusCapPercent,
           );
         }
-        // Merge betTiers: public only (≤1M), ensure 1M present — không đẩy tier Tu Tiên vào đây
-        if (Array.isArray(parsed.betTiers) && parsed.betTiers.length > 0) {
+        // Merge stakeTiers: public only (≤1M), ensure 1M present — không đẩy tier Tu Tiên vào đây
+        if (Array.isArray(parsed.stakeTiers) && parsed.stakeTiers.length > 0) {
           const merged = new Set(
-            parsed.betTiers
+            parsed.stakeTiers
               .map((n) => Math.floor(Number(n)))
               .filter((n) => n > 0 && n <= PUBLIC_MAX_STAKE),
           );
           merged.add(PUBLIC_MAX_STAKE);
-          base.betTiers = [...merged].sort((a, b) => a - b);
+          base.stakeTiers = [...merged].sort((a, b) => a - b);
         }
         base.maxStake = PUBLIC_MAX_STAKE;
         base.updatedAt = Date.now();
@@ -387,15 +387,15 @@ class ArcanaWheelStore {
             ? parsed.slots
             : undefined,
         ),
-        betTiers:
-          Array.isArray(parsed.betTiers) && parsed.betTiers.length > 0
-            ? parsed.betTiers
+        stakeTiers:
+          Array.isArray(parsed.stakeTiers) && parsed.stakeTiers.length > 0
+            ? parsed.stakeTiers
                 .map((n) => Math.floor(Number(n)))
                 .filter((n) => n > 0 && n <= PUBLIC_MAX_STAKE)
-            : defaultConfig().betTiers,
+            : defaultConfig().stakeTiers,
       };
       if (legacyTutienMax) {
-        tutienBetLimitsStore.seedFromLegacy(legacyTutienMax);
+        tutienStakeLimitsStore.seedFromLegacy(legacyTutienMax);
       }
       console.log(
         `[arcana] Config loaded v${CONFIG_VERSION} · enabled=${this.config.enabled} · maxStake=${this.config.maxStake} · payoutScale=${this.config.payoutScale}`,
@@ -454,7 +454,7 @@ class ArcanaWheelStore {
       pickMin: this.config.pickMin ?? PICK_MIN,
       pickMax: this.config.pickMax ?? PICK_MAX,
       maxStake: PUBLIC_MAX_STAKE,
-      tutienMaxByRank: tutienBetLimitsStore.getMap(),
+      tutienMaxByRank: tutienStakeLimitsStore.getMap(),
       payoutScale: this.config.payoutScale ?? DEFAULT_PAYOUT_SCALE,
       streakBonusEnabled:
         this.config.streakBonusEnabled ?? DEFAULT_STREAK_BONUS.streakBonusEnabled,
@@ -468,7 +468,7 @@ class ArcanaWheelStore {
         this.config.streakBonusCapPercent ??
         DEFAULT_STREAK_BONUS.streakBonusCapPercent,
       slots: this.config.slots.map((s) => ({ ...s })),
-      betTiers: [...this.config.betTiers],
+      stakeTiers: [...this.config.stakeTiers],
     };
   }
 
@@ -512,17 +512,17 @@ class ArcanaWheelStore {
       streakCfg,
     );
     const user = userId ? authStore.getById(userId) : null;
-    const tutienMap = tutienBetLimitsStore.getMap();
-    const effectiveTiers = effectiveBetTiersForUser(
+    const tutienMap = tutienStakeLimitsStore.getMap();
+    const effectiveTiers = effectiveStakeTiersForUser(
       user ?? undefined,
-      cfg.betTiers,
+      cfg.stakeTiers,
       tutienMap,
     );
     const tutienCap = user ? personalTutienMax(user, tutienMap) : null;
     return {
       enabled: cfg.enabled,
-      betTiers: effectiveTiers,
-      publicBetTiers: cfg.betTiers.filter((t) => t <= PUBLIC_MAX_STAKE),
+      stakeTiers: effectiveTiers,
+      publicStakeTiers: cfg.stakeTiers.filter((t) => t <= PUBLIC_MAX_STAKE),
       pickMin: cfg.pickMin,
       pickMax: cfg.pickMax,
       maxStake: tutienCap ?? cfg.maxStake,
@@ -556,7 +556,7 @@ class ArcanaWheelStore {
         payout: s.payout,
         profit: s.profit,
         outerNumber: s.outerNumber,
-        outerBet: s.outerBet,
+        outerPick: s.outerPick,
         outerWon: s.outerWon,
       })),
       mission: userId ? arcanaMissionStore.getProgress(userId) : undefined,
@@ -604,7 +604,7 @@ class ArcanaWheelStore {
   updateConfig(
     patch: {
       enabled?: boolean;
-      betTiers?: number[];
+      stakeTiers?: number[];
       tutienMaxByRank?: Partial<Record<string, number>>;
       payoutScale?: number;
       streakBonusEnabled?: boolean;
@@ -649,21 +649,21 @@ class ArcanaWheelStore {
       }
       this.config.streakBonusCapPercent = n;
     }
-    if (Array.isArray(patch.betTiers)) {
-      const tiers = patch.betTiers
+    if (Array.isArray(patch.stakeTiers)) {
+      const tiers = patch.stakeTiers
         .map((n) => Math.floor(Number(n)))
         .filter((n) => Number.isFinite(n) && n > 0 && n <= PUBLIC_MAX_STAKE);
       if (tiers.length === 0) {
         return {
           ok: false,
-          reason: "betTiers công khai không hợp lệ (mỗi mức ≤ 1M)",
+          reason: "stakeTiers công khai không hợp lệ (mỗi mức ≤ 1M)",
         };
       }
       if (!tiers.includes(PUBLIC_MAX_STAKE)) tiers.push(PUBLIC_MAX_STAKE);
-      this.config.betTiers = [...new Set(tiers)].sort((a, b) => a - b);
+      this.config.stakeTiers = [...new Set(tiers)].sort((a, b) => a - b);
     }
     if (patch.tutienMaxByRank && typeof patch.tutienMaxByRank === "object") {
-      const r = tutienBetLimitsStore.setMap(patch.tutienMaxByRank);
+      const r = tutienStakeLimitsStore.setMap(patch.tutienMaxByRank);
       if (!r.ok) return r;
     }
     if (Array.isArray(patch.slots)) {
@@ -700,7 +700,7 @@ class ArcanaWheelStore {
     /** @deprecated dùng pickIds */
     pickId?: unknown;
     useBonusSpin?: boolean;
-    outerBet?: unknown;
+    outerPick?: unknown;
   }):
     | {
         ok: true;
@@ -716,7 +716,7 @@ class ArcanaWheelStore {
     }
     const stake = Math.floor(Number(input.stake));
     const useBonus = !!input.useBonusSpin;
-    const outerBet = parseOuterBet(input.outerBet);
+    const outerPick = parseOuterPick(input.outerPick);
     if (useBonus) {
       if (!arcanaMissionStore.consumeBonusSpin(input.userId)) {
         return { ok: false, reason: "Không còn lượt quay thưởng nhiệm vụ" };
@@ -727,7 +727,7 @@ class ArcanaWheelStore {
     if (!userEarly) return { ok: false, reason: "User không tồn tại" };
     if (userEarly.banned) return { ok: false, reason: "Tài khoản bị khóa" };
 
-    const tutienMap = tutienBetLimitsStore.getMap();
+    const tutienMap = tutienStakeLimitsStore.getMap();
     if (
       !useBonus &&
       (!Number.isFinite(stake) ||
@@ -735,7 +735,7 @@ class ArcanaWheelStore {
         !isStakeAllowedForUser(
           stake,
           userEarly,
-          this.config.betTiers,
+          this.config.stakeTiers,
           tutienMap,
         ))
     ) {
@@ -744,7 +744,7 @@ class ArcanaWheelStore {
         reason:
           stake > PUBLIC_MAX_STAKE
             ? "Mức >1M chỉ dành cho role Tu Tiên đủ cảnh giới"
-            : "Mức cược không hợp lệ",
+            : "Mức xu không hợp lệ",
       };
     }
     const effectiveStake = useBonus ? MISSION_BONUS_STAKE : stake;
@@ -796,10 +796,10 @@ class ArcanaWheelStore {
     /** 50/50 when outer even-money selected; else 100% Arcana */
     let outerStake = 0;
     let arcanaStake = effectiveStake;
-    if (outerBet && !useBonus) {
+    if (outerPick && !useBonus) {
       outerStake = Math.floor(effectiveStake / 2);
       arcanaStake = effectiveStake - outerStake;
-    } else if (outerBet && useBonus) {
+    } else if (outerPick && useBonus) {
       /** Bonus spin: no outer stake (even-money ignored for payout) */
       outerStake = 0;
       arcanaStake = effectiveStake;
@@ -807,7 +807,7 @@ class ArcanaWheelStore {
 
     const outerNumber = rollEuropeanNumber((max) => randomInt(max));
     const outerWon =
-      !!outerBet && outerStake > 0 && checkEvenMoney(outerBet, outerNumber);
+      !!outerPick && outerStake > 0 && checkEvenMoney(outerPick, outerNumber);
     const outerPayout = outerWon ? outerStake * 2 : 0;
 
     const winSlot = pickWeighted(this.config.slots);
@@ -864,10 +864,10 @@ class ArcanaWheelStore {
         }
         return {
           ok: false,
-          reason: "Không trả thưởng được — đã hoàn cược",
+          reason: "Không trả xu được — đã hoàn xu",
         };
       } else {
-        return { ok: false, reason: "Không trả thưởng được" };
+        return { ok: false, reason: "Không trả xu được" };
       }
     }
 
@@ -902,12 +902,12 @@ class ArcanaWheelStore {
       missionCompleted: missionCompleted || undefined,
       usedBonusSpin: useBonus || undefined,
       outerNumber,
-      outerBet: outerBet ?? undefined,
-      outerWon: outerBet ? outerWon : undefined,
-      outerPayout: outerBet ? outerPayout : undefined,
+      outerPick: outerPick ?? undefined,
+      outerWon: outerPick ? outerWon : undefined,
+      outerPayout: outerPick ? outerPayout : undefined,
       arcanaPayout,
       arcanaStake,
-      outerStake: outerBet ? outerStake : undefined,
+      outerStake: outerPick ? outerStake : undefined,
       profit,
       seed,
       balanceAfter,

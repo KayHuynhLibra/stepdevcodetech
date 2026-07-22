@@ -96,7 +96,8 @@ type TabId =
   | "arcana"
   | "rolead"
   | "tutien"
-  | "room";
+  | "room"
+  | "deleteAcc";
 
 interface VoiceRoomSeatAdmin {
   seat: number;
@@ -139,8 +140,8 @@ interface IpRow {
   blockedUntil: number;
   joinCount?: number;
   clusterFlag?: boolean;
-  stake24h?: number;
-  bets24h?: number;
+  xu24h?: number;
+  stakes24h?: number;
   profit24h?: number;
   devices?: {
     deviceId: string;
@@ -200,8 +201,8 @@ interface IpRow {
     banned: boolean;
     muted: boolean;
     roundsPlayed: number;
-    stake24h?: number;
-    bets24h?: number;
+    xu24h?: number;
+    stakes24h?: number;
     profit24h?: number;
   }[];
 }
@@ -247,7 +248,7 @@ interface UserHisPayload {
     firstAt: number;
     lastAt: number;
   }[];
-  recentBets: {
+  recentStakes: {
     id: string;
     at: number;
     round: number;
@@ -268,9 +269,9 @@ interface UserHisPayload {
     profit: number;
     seed: string;
   }[];
-  stake24h: {
-    stake24h: number;
-    bets24h: number;
+  xu24h: {
+    xu24h: number;
+    stakes24h: number;
     profit24h: number;
   };
 }
@@ -402,15 +403,15 @@ interface InterSnapshot {
   groups: { small: number[]; big: number[] };
   prefShare: number;
   otherShare: number;
-  realBetsRound?: number[];
-  authBetsRound?: number[];
+  realStakesRound?: number[];
+  authStakesRound?: number[];
   recentWins?: number[];
   probabilities: InterProb[];
   probabilitiesByMode: Partial<Record<InterMode, InterProb[]>>;
   all?: InterAllRotation;
 }
 
-interface BetRow {
+interface StakeRow {
   id: string;
   at: number;
   username: string;
@@ -484,7 +485,7 @@ interface ArcanaSlotAdmin {
 interface ArcanaConfig {
   version: number;
   enabled: boolean;
-  betTiers: number[];
+  stakeTiers: number[];
   pickMin?: number;
   pickMax?: number;
   maxStake?: number;
@@ -567,8 +568,8 @@ interface Overview {
     }[];
   };
   history?: { round: number; win: number }[];
-  recentBets?: BetRow[];
-  betStats?: {
+  recentStakes?: StakeRow[];
+  stakeStats?: {
     rows: number;
     stakeTotal: number;
     payoutTotal: number;
@@ -641,7 +642,7 @@ function cardName(id: number) {
 const LEDGER_LABEL: Record<string, string> = {
   stake_in: "Xu vào",
   stake_refund: "Hoàn xu",
-  payout_out: "Trả thưởng",
+  payout_out: "Trả xu",
   mint: "Bơm kho",
   burn: "Rút kho",
   grant_user: "Cấp user",
@@ -738,7 +739,7 @@ export default function AdminDashboard() {
     cards: {
       cardId: number;
       nameVi: string;
-      authBet: number;
+      authStake: number;
       liability: number;
       houseProfit: number;
       percent: number;
@@ -802,6 +803,9 @@ export default function AdminDashboard() {
   const [ipRows, setIpRows] = useState<IpRow[]>([]);
   const [ipBusy, setIpBusy] = useState(false);
   const [userFilter, setUserFilter] = useState("");
+  const [deleteTargetId, setDeleteTargetId] = useState("");
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [userQuick, setUserQuick] = useState<
     "all" | "vip" | "banned" | "muted"
   >("all");
@@ -827,12 +831,12 @@ export default function AdminDashboard() {
   const [toolsBusy, setToolsBusy] = useState(false);
   const [toolsResult, setToolsResult] = useState<{
     users: (AuthUser & {
-      stake24h?: number;
-      bets24h?: number;
+      xu24h?: number;
+      stakes24h?: number;
       profit24h?: number;
     })[];
     ips: IpRow[];
-    recentBets: {
+    recentStakes: {
       id: string;
       at: number;
       round: number;
@@ -1580,6 +1584,43 @@ export default function AdminDashboard() {
     }
   };
 
+  const deleteUserAccount = async () => {
+    if (!deleteTargetId || !deleteConfirmName.trim()) {
+      setMsg("Chọn user và gõ đúng username để xác nhận");
+      return;
+    }
+    const target = data?.users.find((u) => u.id === deleteTargetId);
+    if (!target) {
+      setMsg("Không tìm thấy user");
+      return;
+    }
+    if (
+      !window.confirm(
+        `XÓA VĨNH VIỄN «${target.username}» (ID ${target.code})?\nKhông hoàn tác được.`,
+      )
+    ) {
+      return;
+    }
+    setDeleteBusy(true);
+    try {
+      await api("/api/mainadmin/user-delete", {
+        method: "POST",
+        body: JSON.stringify({
+          userId: deleteTargetId,
+          confirmUsername: deleteConfirmName.trim(),
+        }),
+      });
+      setMsg(`Đã xóa tài khoản ${target.username}`);
+      setDeleteTargetId("");
+      setDeleteConfirmName("");
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi xóa");
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   const setUserMute = async (
     userId: string,
     opts: { minutes?: number; permanent?: boolean; off?: boolean },
@@ -1724,12 +1765,12 @@ export default function AdminDashboard() {
       const r = await api<{
         ok: true;
         users: (AuthUser & {
-          stake24h?: number;
-          bets24h?: number;
+          xu24h?: number;
+          stakes24h?: number;
           profit24h?: number;
         })[];
         ips: IpRow[];
-        recentBets: {
+        recentStakes: {
           id: string;
           at: number;
           round: number;
@@ -2302,6 +2343,11 @@ export default function AdminDashboard() {
       show: !tutienOnly && !modOnly && !ecoOnly && !auditOnly,
     },
     { id: "rolead", label: "RoleAD", show: main },
+    {
+      id: "deleteAcc",
+      label: "Xóa acc",
+      show: main,
+    },
     { id: "room", label: "Room", show: canRoom },
     {
       id: "mod",
@@ -2620,8 +2666,8 @@ export default function AdminDashboard() {
                       {u.code} · {formatXu(u.balance)} xu
                       {u.isVip ? " · VIP" : ""}
                       {u.banned ? " · BAN" : ""}
-                      {u.muted ? " · MUTE" : ""} · stake24h{" "}
-                      {formatXu(u.stake24h ?? 0)}
+                      {u.muted ? " · MUTE" : ""} · xu24h{" "}
+                      {formatXu(u.xu24h ?? 0)}
                       <button
                         type="button"
                         className="ml-2 text-[10px] font-bold text-[var(--wood-deep)] underline"
@@ -2690,13 +2736,13 @@ export default function AdminDashboard() {
                 </ul>
               </div>
 
-              {toolsResult.recentBets.length > 0 && (
+              {toolsResult.recentStakes.length > 0 && (
                 <div>
                   <p className="mb-1 text-xs font-bold text-[var(--play-ink)]">
                     Xu đặt gần của user đầu tiên
                   </p>
                   <ul className="max-h-40 space-y-1 overflow-y-auto text-[10px]">
-                    {toolsResult.recentBets.map((b) => (
+                    {toolsResult.recentStakes.map((b) => (
                       <li
                         key={b.id}
                         className="rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/10"
@@ -2749,7 +2795,7 @@ export default function AdminDashboard() {
                   ["Online login", String(data.traffic.loggedInOnline)],
                   ["Online khách", String(data.traffic.guestOnline)],
                   ["Xu hôm nay", formatXu(data.traffic.stakeToday)],
-                  ["Edge nhà cái", formatXu(data.traffic.houseEdgeXu)],
+                  ["Edge kho", formatXu(data.traffic.houseEdgeXu)],
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-lg bg-white/80 px-2 py-2">
                     <p className="text-[10px] text-[var(--play-muted)]">{label}</p>
@@ -2791,12 +2837,12 @@ export default function AdminDashboard() {
 
           <section className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
             {[
-              ["Xu đặt gần đây", String(data.betStats?.rows ?? 0)],
-              ["Tổng stake", formatXu(data.betStats?.stakeTotal ?? 0)],
-              ["Tổng trả", formatXu(data.betStats?.payoutTotal ?? 0)],
+              ["Xu đặt gần đây", String(data.stakeStats?.rows ?? 0)],
+              ["Tổng stake", formatXu(data.stakeStats?.stakeTotal ?? 0)],
+              ["Tổng trả", formatXu(data.stakeStats?.payoutTotal ?? 0)],
               [
                 "Win / Lose",
-                `${data.betStats?.winCount ?? 0}/${data.betStats?.loseCount ?? 0}`,
+                `${data.stakeStats?.winCount ?? 0}/${data.stakeStats?.loseCount ?? 0}`,
               ],
             ].map(([label, value]) => (
               <div key={label} className="app-panel p-3">
@@ -2833,15 +2879,15 @@ export default function AdminDashboard() {
 
           <section className="app-panel mt-4 p-3">
             <p className="play-heading mb-2 text-sm">
-              Xu user gần đây ({data.recentBets?.length ?? 0})
+              Xu user gần đây ({data.recentStakes?.length ?? 0})
             </p>
             <ul className="max-h-44 space-y-1.5 overflow-y-auto">
-              {(data.recentBets?.length ?? 0) === 0 ? (
+              {(data.recentStakes?.length ?? 0) === 0 ? (
                 <li className="text-xs text-[var(--play-muted)]">
                   Chưa ghi nhận ván.
                 </li>
               ) : (
-                data.recentBets!.map((b) => (
+                data.recentStakes!.map((b) => (
                   <li
                     key={b.id}
                     className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
@@ -3324,6 +3370,82 @@ export default function AdminDashboard() {
             </ul>
           </section>
         </>
+      )}
+
+      {tab === "deleteAcc" && main && data && (
+        <section className="app-panel mt-4 space-y-3 p-3 ring-2 ring-rose-500/40">
+          <div>
+            <p className="play-heading text-sm text-rose-800">
+              Xóa tài khoản (không hoàn tác)
+            </p>
+            <p className="mt-1 text-[11px] text-[var(--play-muted)]">
+              Tab riêng để tránh xóa nhầm. Khóa/mở khóa vẫn ở «User &amp; Bot».
+              Không xóa được mainadmin. Phải gõ đúng username để xác nhận.
+            </p>
+          </div>
+          <label className="block text-[11px] font-semibold text-[var(--play-muted)]">
+            Chọn tài khoản
+            <select
+              value={deleteTargetId}
+              onChange={(e) => {
+                setDeleteTargetId(e.target.value);
+                setDeleteConfirmName("");
+              }}
+              className="app-input mt-1"
+            >
+              <option value="">— Chọn user —</option>
+              {data.users
+                .filter((u) => u.role !== "mainadmin")
+                .slice()
+                .sort((a, b) => a.username.localeCompare(b.username, "vi"))
+                .map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.username} · ID {u.code || "—"} · {u.role}
+                    {u.banned ? " · ĐÃ KHÓA" : ""}
+                  </option>
+                ))}
+            </select>
+          </label>
+          {deleteTargetId && (
+            <>
+              <p className="rounded-lg bg-rose-50 px-2.5 py-2 text-[11px] font-semibold text-rose-900 ring-1 ring-rose-200">
+                Đang chọn:{" "}
+                <span className="font-mono">
+                  {data.users.find((u) => u.id === deleteTargetId)?.username}
+                </span>
+                {" · "}
+                Gõ đúng username bên dưới rồi bấm Xóa.
+              </p>
+              <label className="block text-[11px] font-semibold text-[var(--play-muted)]">
+                Gõ username để xác nhận
+                <input
+                  value={deleteConfirmName}
+                  onChange={(e) => setDeleteConfirmName(e.target.value)}
+                  placeholder="username chính xác"
+                  className="app-input mt-1 font-mono"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
+              <button
+                type="button"
+                disabled={
+                  deleteBusy ||
+                  !deleteConfirmName.trim() ||
+                  deleteConfirmName.trim().toLowerCase() !==
+                    (
+                      data.users.find((u) => u.id === deleteTargetId)
+                        ?.username ?? ""
+                    ).toLowerCase()
+                }
+                onClick={() => void deleteUserAccount()}
+                className="w-full rounded-xl bg-rose-700 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-40"
+              >
+                {deleteBusy ? "Đang xóa…" : "Xóa vĩnh viễn tài khoản"}
+              </button>
+            </>
+          )}
+        </section>
       )}
 
       {tab === "rolead" && main && (
@@ -4386,7 +4508,7 @@ export default function AdminDashboard() {
                       {row.kind}
                       {row.guestCode ? ` · guest ${row.guestCode}` : ""}
                       {` · ${row.joinCount ?? 0} joins`}
-                      {` · stake 24h ${formatXu(row.stake24h ?? 0)}`}
+                      {` · stake 24h ${formatXu(row.xu24h ?? 0)}`}
                       {row.lastSeen
                         ? ` · ${new Date(row.lastSeen).toLocaleString("vi-VN")}`
                         : ""}
@@ -4402,8 +4524,8 @@ export default function AdminDashboard() {
                           {u.isVip ? " · VIP" : ""}
                           {u.banned ? " · BAN" : ""}
                           {u.muted ? " · MUTE" : ""} · {u.roundsPlayed} ván
-                          {typeof u.stake24h === "number"
-                            ? ` · 24h ${formatXu(u.stake24h)}`
+                          {typeof u.xu24h === "number"
+                            ? ` · 24h ${formatXu(u.xu24h)}`
                             : ""}{" "}
                           · {u.role}
                         </span>
@@ -5099,7 +5221,7 @@ export default function AdminDashboard() {
                               #{c.cardId} {c.nameVi}
                             </td>
                             <td className="py-1.5 pr-2 tabular-nums">
-                              {formatXu(c.authBet)}
+                              {formatXu(c.authStake)}
                             </td>
                             <td className="py-1.5 pr-2 tabular-nums">
                               {formatXu(c.liability)}
@@ -5878,7 +6000,7 @@ export default function AdminDashboard() {
             </p>
             <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-8">
               {CARDS.map((card, i) => {
-                const stake = data.inter!.authBetsRound?.[i] ?? 0;
+                const stake = data.inter!.authStakesRound?.[i] ?? 0;
                 const profit =
                   data.inter!.probabilities.find((p) => p.cardId === card.id)
                     ?.houseProfit ?? 0;
@@ -6119,10 +6241,10 @@ export default function AdminDashboard() {
                 true,
               ],
               ["Tổng xu vào", formatXu(activeVault.totalStakeIn), false],
-              ["Tổng trả thưởng", formatXu(activeVault.totalPayoutOut), false],
+              ["Tổng trả xu", formatXu(activeVault.totalPayoutOut), false],
               ["Đã bơm (mint)", formatXu(activeVault.totalMinted), false],
               ["Đã rút (burn)", formatXu(activeVault.totalBurned), false],
-              ["Net nhà cái", formatXu(activeVault.netHouse), false],
+              ["Net kho", formatXu(activeVault.netHouse), false],
             ].map(([label, value, accent]) => (
               <div
                 key={String(label)}
@@ -6385,7 +6507,7 @@ export default function AdminDashboard() {
                 )}
               </span>
               {" · "}
-              chat/fee/cược ghi rõ loại.
+              chat/fee/xu ghi rõ loại.
             </p>
             <ul className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
               {Object.entries(activeVault.breakdown ?? {}).map(
@@ -6417,8 +6539,8 @@ export default function AdminDashboard() {
             </p>
             <p className="text-[11px] text-[var(--play-muted)]">
               {managedGame === "arcana"
-                ? "Chỉ cược/trả bánh xe ghi kho này. Coupon/cấp xu user dùng Kho Tarot."
-                : "Cược bàn Tarot + coupon/cấp/thu xu. Không lẫn Kho Arcana."}
+                ? "Chỉ xu/trả bánh xe ghi kho này. Coupon/cấp xu user dùng Kho Tarot."
+                : "Xu bàn Tarot + coupon/cấp/thu xu. Không lẫn Kho Arcana."}
             </p>
             <input
               value={vaultNote}
@@ -6601,8 +6723,8 @@ export default function AdminDashboard() {
           <section className="app-panel mt-3 space-y-2 p-3">
             <p className="play-heading text-sm">Cân bằng RTP (v5)</p>
             <p className="text-[11px] text-[var(--play-muted)]">
-              Thưởng khi trúng = cược × hệ số × payoutScale ÷ số ô chọn; có thể
-              +% chuỗi vận khi thắng liên tiếp. RTP % = kỳ vọng hoàn trả / cược.
+              Thưởng khi trúng = xu × hệ số × payoutScale ÷ số ô chọn; có thể
+              +% chuỗi vận khi thắng liên tiếp. RTP % = kỳ vọng hoàn trả / xu đặt.
             </p>
             <div className="flex flex-wrap items-end gap-2">
               <label className="text-xs font-semibold text-[var(--play-muted)]">
@@ -6628,11 +6750,11 @@ export default function AdminDashboard() {
             </div>
             <div className="mt-3 rounded-lg bg-white/60 p-2.5 ring-1 ring-[var(--wood-deep)]/10">
               <p className="text-xs font-bold text-[var(--play-ink)]">
-                Max cược Tu Tiên — Tarot & Arcana (role tutien · 9 bậc)
+                Max xu Tu Tiên — Tarot & Arcana (role tutien · 9 bậc)
               </p>
               <p className="mt-1 text-[10px] text-[var(--play-muted)]">
                 Áp dụng trần / lá Tarot và chip Arcana. Mức công khai vẫn ≤1M.
-                Cược &gt;1M khi có <strong>role tutien</strong> (mặc định Luyện
+                Xu &gt;1M khi có <strong>role tutien</strong> (mặc định Luyện
                 Khí) hoặc đã gán <strong>cảnh giới</strong>.
               </p>
               <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -6983,9 +7105,9 @@ export default function AdminDashboard() {
                       : ""}
                   </p>
                   <p className="text-[var(--play-muted)]">
-                    24h: stake {formatXu(hisData.stake24h.stake24h)} ·{" "}
-                    {hisData.stake24h.bets24h} cược · P/L{" "}
-                    {formatXu(hisData.stake24h.profit24h)}
+                    24h: stake {formatXu(hisData.xu24h.xu24h)} ·{" "}
+                    {hisData.xu24h.stakes24h} ván · P/L{" "}
+                    {formatXu(hisData.xu24h.profit24h)}
                   </p>
                 </div>
 
@@ -7033,13 +7155,13 @@ export default function AdminDashboard() {
 
                 <div>
                   <p className="mb-1 text-xs font-bold text-[var(--play-ink)]">
-                    Cược gần (Tarot)
+                    Xu đặt gần (Tarot)
                   </p>
                   <ul className="max-h-40 space-y-1 overflow-y-auto">
-                    {hisData.recentBets.length === 0 && (
+                    {hisData.recentStakes.length === 0 && (
                       <li className="text-[var(--play-muted)]">Không có</li>
                     )}
-                    {hisData.recentBets.map((b) => (
+                    {hisData.recentStakes.map((b) => (
                       <li
                         key={b.id}
                         className="rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/10"

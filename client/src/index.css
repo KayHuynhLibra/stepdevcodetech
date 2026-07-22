@@ -639,7 +639,7 @@
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
-.tarot-board-card__frame--bet {
+.tarot-board-card__frame--stake {
   border-color: rgba(255, 200, 80, 0.95);
   box-shadow:
     0 0 0 1px rgba(255, 230, 170, 0.4),
@@ -720,29 +720,29 @@
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
 }
 
-.bet-sheet-backdrop {
+.stake-sheet-backdrop {
   background: rgba(8, 6, 12, 0.55);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
 
-.bet-sheet-hero {
+.stake-sheet-hero {
   width: 6.75rem;
   height: 9rem;
 }
 
-.bet-sheet-hero__aura {
+.stake-sheet-hero__aura {
   position: absolute;
   inset: -20px;
   border-radius: 50%;
   z-index: 0;
 }
 
-.bet-sheet-hero__aura--inner {
+.stake-sheet-hero__aura--inner {
   inset: -12px;
 }
 
-.bet-sheet-hero__star {
+.stake-sheet-hero__star {
   position: absolute;
   z-index: 3;
   font-size: 11px;
@@ -751,18 +751,18 @@
   animation: arcana-star-float 3.2s ease-in-out infinite;
 }
 
-.bet-sheet-hero__star--tl {
+.stake-sheet-hero__star--tl {
   left: -6px;
   top: 4px;
 }
 
-.bet-sheet-hero__star--br {
+.stake-sheet-hero__star--br {
   right: -4px;
   bottom: 8px;
   animation-delay: 0.6s;
 }
 
-.bet-sheet-hero__card {
+.stake-sheet-hero__card {
   position: relative;
   z-index: 2;
   height: 9rem;
@@ -777,7 +777,7 @@
     0 0 20px rgba(120, 80, 220, 0.2);
 }
 
-.bet-sheet-hero__id {
+.stake-sheet-hero__id {
   position: absolute;
   left: -4px;
   top: -4px;
@@ -796,7 +796,7 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
-.bet-sheet-panel {
+.stake-sheet-panel {
   background: linear-gradient(
     180deg,
     rgba(42, 28, 14, 0.97) 0%,
@@ -809,12 +809,12 @@
   color: #fff4e0;
 }
 
-.bet-sheet-panel__rim {
+.stake-sheet-panel__rim {
   border: 1px solid rgba(255, 230, 170, 0.2);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.bet-sheet-ribbon__text {
+.stake-sheet-ribbon__text {
   padding: 0.4rem 0.75rem;
   color: #fff8e7;
   background: linear-gradient(90deg, #3a2210, #5d3a1a, #3a2210);
@@ -823,11 +823,11 @@
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
-.bet-sheet-meta {
+.stake-sheet-meta {
   color: rgba(255, 236, 200, 0.75);
 }
 
-.bet-sheet-status {
+.stake-sheet-status {
   border-radius: 0.5rem;
   border: 1px solid rgba(232, 176, 80, 0.35);
   background: rgba(0, 0, 0, 0.25);
@@ -835,16 +835,16 @@
   box-shadow: inset 0 0 20px rgba(120, 80, 220, 0.08);
 }
 
-.bet-sheet-status--error {
+.stake-sheet-status--error {
   color: #fecaca;
   border-color: rgba(248, 113, 113, 0.45);
 }
 
-.bet-sheet-status--warn {
+.stake-sheet-status--warn {
   color: #fde68a;
 }
 
-.bet-sheet-chip {
+.stake-sheet-chip {
   border-radius: 0.45rem;
   border: 2px solid rgba(255, 214, 120, 0.55);
   background: linear-gradient(
@@ -863,17 +863,17 @@
   transition: transform 0.12s ease, border-color 0.12s ease;
 }
 
-.bet-sheet-chip:not(:disabled):active {
+.stake-sheet-chip:not(:disabled):active {
   transform: scale(0.97);
   border-color: rgba(255, 230, 170, 0.85);
 }
 
-.bet-sheet-chip:disabled {
+.stake-sheet-chip:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.bet-sheet-confirm {
+.stake-sheet-confirm {
   border-radius: 0.75rem;
   border: 2px solid rgba(255, 230, 170, 0.5);
   color: #1a1208;
@@ -888,11 +888,11 @@
     0 0 20px rgba(120, 80, 220, 0.15);
 }
 
-.bet-sheet-confirm:not(.bet-sheet-confirm--disabled):active {
+.stake-sheet-confirm:not(.stake-sheet-confirm--disabled):active {
   transform: scale(0.98);
 }
 
-.bet-sheet-confirm--disabled {
+.stake-sheet-confirm--disabled {
   cursor: not-allowed;
   border-color: rgba(120, 120, 120, 0.3);
   background: #4a4a4a;
@@ -2126,7 +2126,7 @@ input {
 
   .tarot-board-ambient__glow,
   .tarot-board-card__frame--win,
-  .bet-sheet-hero__star {
+  .stake-sheet-hero__star {
     animation: none !important;
   }
 

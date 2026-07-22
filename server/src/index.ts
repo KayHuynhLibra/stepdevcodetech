@@ -29,7 +29,7 @@ import {
   saveUploadedAvatar,
   UPLOADS_DIR,
 } from "./avatars.js";
-import { betStore, PER_USER_BET_CAP } from "./betStore.js";
+import { stakeStore, PER_USER_STAKE_CAP } from "./stakeStore.js";
 import { couponStore } from "./couponStore.js";
 import { inviteStore } from "./inviteStore.js";
 import { cardProbabilities } from "./cards.js";
@@ -48,7 +48,7 @@ import { reportStore } from "./reportStore.js";
 import type { PublicState } from "./types.js";
 import { arcanaWheelStore } from "./arcanaWheelStore.js";
 import { arcanaMissionStore } from "./arcanaMissionStore.js";
-import { tutienBetLimitsStore } from "./tutienBetLimitsStore.js";
+import { tutienStakeLimitsStore } from "./tutienStakeLimitsStore.js";
 import { chatConfigStore } from "./chatConfigStore.js";
 import { vaultArcana, vaultStore } from "./vaultStore.js";
 import {
@@ -150,7 +150,7 @@ const engine = new GameEngine((state: PublicState, playerId?: string) => {
       serverTime: state.serverTime,
       roundNumber: state.roundNumber,
       roundId: state.roundId,
-      displayBets: state.displayBets,
+      displayStakes: state.displayStakes,
       playerCounts: state.playerCounts,
       history: state.history,
       winningCard: state.winningCard,
@@ -264,15 +264,15 @@ function requireCultivationManager(
 
 function buildInterPayload() {
   const inter = interStore.getSnapshot();
-  const authBets = engine.getAuthBets();
+  const authStakes = engine.getAuthStakes();
   const recentWins = engine.getHistory(3).map((h) => h.win);
   const effective = inter.effectiveMode;
   return {
     ...inter,
-    realBetsRound: engine.getRealBets(),
-    authBetsRound: authBets,
+    realStakesRound: engine.getRealStakes(),
+    authStakesRound: authStakes,
     recentWins,
-    probabilities: cardProbabilities(effective, authBets, recentWins),
+    probabilities: cardProbabilities(effective, authStakes, recentWins),
     probabilitiesByMode: Object.fromEntries(
       (
         inter.rotateCatalog?.map((e) => e.id) ?? [
@@ -290,7 +290,7 @@ function buildInterPayload() {
         id,
         cardProbabilities(
           id as Parameters<typeof cardProbabilities>[0],
-          authBets,
+          authStakes,
           recentWins,
         ),
       ]),
@@ -357,12 +357,18 @@ app.post("/api/auth/gift-xu", (req, res) => {
   }
   const toUserId = String(req.body?.toUserId ?? "").trim();
   const toCode = String(req.body?.toCode ?? "").trim();
-  if (!toUserId && !toCode) {
+  const toUsername = String(req.body?.toUsername ?? "").trim();
+  if (!toUserId && !toCode && !toUsername) {
     return res.status(400).json({ ok: false, reason: "Thiếu người nhận" });
   }
+  const giftKey = String(req.body?.giftKey ?? "").trim().slice(0, 32);
   const result = authStore.giftXu(
     me.id,
-    { userId: toUserId || undefined, code: toCode || undefined },
+    {
+      userId: toUserId || undefined,
+      code: toCode || undefined,
+      username: toUsername || undefined,
+    },
     req.body?.amount,
   );
   if (!result.ok) return res.status(400).json(result);
@@ -372,15 +378,23 @@ app.post("/api/auth/gift-xu", (req, res) => {
   for (const sid of fromLive.socketIds) {
     io.to(sid).emit("balanceUpdate", { balance: fromLive.balance });
   }
+  const fromLabel =
+    result.from.displayName?.trim() || result.from.username;
   for (const sid of toLive.socketIds) {
     io.to(sid).emit("balanceUpdate", { balance: toLive.balance });
+    io.to(sid).emit("giftReceived", {
+      amount: result.amount,
+      fromName: fromLabel,
+      giftKey: giftKey || undefined,
+      note: String(req.body?.note ?? "").trim().slice(0, 80) || undefined,
+    });
   }
 
   const note = String(req.body?.note ?? "").trim().slice(0, 80);
   audit(me, "gift_xu", {
     targetId: result.to.id,
     targetName: result.to.username,
-    detail: `amount=${result.amount}${note ? ` note=${note}` : ""}`,
+    detail: `amount=${result.amount}${giftKey ? ` gift=${giftKey}` : ""}${note ? ` note=${note}` : ""}`,
   });
 
   res.json({
@@ -388,6 +402,7 @@ app.post("/api/auth/gift-xu", (req, res) => {
     amount: result.amount,
     from: result.from,
     to: result.to,
+    giftKey: giftKey || undefined,
   });
 });
 
@@ -500,13 +515,13 @@ app.post("/api/auth/login", (req, res) => {
         user: merged.user,
         token: result.token,
         guestMerged: true,
-        betLimits: tutienBetLimitsStore.limitsForUser(merged.user),
+        stakeLimits: tutienStakeLimitsStore.limitsForUser(merged.user),
       });
     }
   }
   res.json({
     ...result,
-    betLimits: tutienBetLimitsStore.limitsForUser(result.user),
+    stakeLimits: tutienStakeLimitsStore.limitsForUser(result.user),
   });
 });
 
@@ -560,7 +575,7 @@ app.get("/api/auth/me", (req, res) => {
   res.json({
     ok: true,
     user,
-    betLimits: tutienBetLimitsStore.limitsForUser(user),
+    stakeLimits: tutienStakeLimitsStore.limitsForUser(user),
   });
 });
 
@@ -584,15 +599,15 @@ app.get("/api/players/card", (req, res) => {
   res.json({ ok: true, card });
 });
 
-app.get("/api/auth/bets", (req, res) => {
+app.get("/api/auth/stakes", (req, res) => {
   const user = requireAuth(req, res);
   if (!user) return;
   const raw = Number(req.query.limit);
   const limit = Math.min(
-    PER_USER_BET_CAP,
+    PER_USER_STAKE_CAP,
     Math.max(1, Number.isFinite(raw) ? Math.floor(raw) : 50),
   );
-  res.json({ ok: true, bets: betStore.getByUser(user.id, limit) });
+  res.json({ ok: true, stakes: stakeStore.getByUser(user.id, limit) });
 });
 
 app.get("/api/auth/avatars", (_req, res) => {
@@ -789,12 +804,12 @@ app.post("/api/admin/coupons/toggle", (req, res) => {
 app.get("/api/admin/overview", (req, res) => {
   const me = requireAdmin(req, res);
   if (!me) return;
-  const recentBets = betStore.getRecent(40);
+  const recentStakes = stakeStore.getRecent(40);
   const history = engine.getHistory(40);
   let stakeTotal = 0;
   let payoutTotal = 0;
   let winCount = 0;
-  for (const b of recentBets) {
+  for (const b of recentStakes) {
     stakeTotal += b.amount;
     payoutTotal += b.payout;
     if (b.result === "win") winCount += 1;
@@ -806,13 +821,13 @@ app.get("/api/admin/overview", (req, res) => {
     users: authStore.listUsers(),
     botPanel: engine.getBotPanel(),
     history,
-    recentBets,
-    betStats: {
-      rows: recentBets.length,
+    recentStakes,
+    stakeStats: {
+      rows: recentStakes.length,
       stakeTotal,
       payoutTotal,
       winCount,
-      loseCount: recentBets.length - winCount,
+      loseCount: recentStakes.length - winCount,
     },
   };
   // Coupon ẩn: staff dashboard (trừ audit — tránh lộ mã nạp)
@@ -835,7 +850,7 @@ app.get("/api/admin/overview", (req, res) => {
   if (canVault || canTraffic || canInter || canChat || canInvites || canArcana) {
     const vault = vaultStore.getSnapshot();
     const vaultArcanaSnap = vaultArcana.getSnapshot();
-    const bets = betStore.getTrafficStats();
+    const stakes = stakeStore.getTrafficStats();
     const accounts = authStore.getAccountStats();
     const live = engine.getLiveTraffic();
     if (canVault) {
@@ -864,7 +879,7 @@ app.get("/api/admin/overview", (req, res) => {
       payload.traffic = {
         ...live,
         ...accounts,
-        ...bets,
+        ...stakes,
         vaultBalance: vault.balance,
         vaultStakeIn: vault.totalStakeIn,
         vaultPayoutOut: vault.totalPayoutOut,
@@ -896,20 +911,20 @@ app.get("/api/mainadmin/inter", (req, res) => {
 
 app.get("/api/mainadmin/inter/live", (req, res) => {
   if (!requireCapability(req, res, "inter_control", "Chỉ Inter")) return;
-  const authBets = engine.getAuthBets();
-  const realBets = engine.getRealBets();
+  const authStakes = engine.getAuthStakes();
+  const realStakes = engine.getRealStakes();
   const stats = engine.getOnlineStats();
   const botTotal = engine
     .getBotPanel()
-    .botBetsTotal.reduce((a, b) => a + b, 0);
-  const displayStake = realBets.reduce((a, b) => a + b, 0) + botTotal;
+    .botStakesTotal.reduce((a, b) => a + b, 0);
+  const displayStake = realStakes.reduce((a, b) => a + b, 0) + botTotal;
   res.json({
     ok: true,
     live: interObserveStore.buildLive({
       phase: String(stats.phase),
       roundNumber: Number(stats.roundNumber) || 0,
-      authBets,
-      realBets,
+      authStakes,
+      realStakes,
       displayStake,
       recentWins: engine.getHistory(3).map((h) => h.win),
     }),
@@ -1156,7 +1171,7 @@ app.patch("/api/mainadmin/arcana/config", (req, res) => {
   const result = arcanaWheelStore.updateConfig(
     {
       enabled: req.body?.enabled,
-      betTiers: req.body?.betTiers,
+      stakeTiers: req.body?.stakeTiers,
       tutienMaxByRank: req.body?.tutienMaxByRank,
       payoutScale: req.body?.payoutScale,
       streakBonusEnabled: req.body?.streakBonusEnabled,
@@ -1171,7 +1186,7 @@ app.patch("/api/mainadmin/arcana/config", (req, res) => {
   audit(me, "arcana_config", {
     detail: JSON.stringify({
       enabled: req.body?.enabled,
-      betTiers: req.body?.betTiers,
+      stakeTiers: req.body?.stakeTiers,
     }),
   });
   res.json({
@@ -1228,7 +1243,7 @@ app.post("/api/arcana-wheel/spin", (req, res) => {
     pickIds: req.body?.pickIds,
     pickId: req.body?.pickId,
     useBonusSpin: !!req.body?.useBonusSpin,
-    outerBet: req.body?.outerBet,
+    outerPick: req.body?.outerPick,
   });
   if (!result.ok) return res.status(400).json(result);
   const live = engine.applyAuthBalance(user.id, result.balance);
@@ -1443,6 +1458,29 @@ app.post("/api/admin/user-ban", (req, res) => {
   res.json(result);
 });
 
+/** Mainadmin: xóa hẳn tài khoản (tab riêng — bắt buộc gõ username). */
+app.post("/api/mainadmin/user-delete", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const userId = String(req.body?.userId ?? "");
+  const confirmUsername = String(req.body?.confirmUsername ?? "");
+  if (!userId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId" });
+  }
+  if (userId === me.id) {
+    return res.status(400).json({ ok: false, reason: "Không tự xóa mình" });
+  }
+  const result = authStore.deleteUser(userId, confirmUsername);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "user_delete", {
+    targetId: userId,
+    targetName: result.username,
+    detail: `code=${result.code}`,
+  });
+  kickUserSockets(userId, "Tài khoản đã bị xóa");
+  res.json(result);
+});
+
 /** Admin: mute chat (minutes; 0 = unmute; permanent = true). */
 app.post("/api/admin/user-mute", (req, res) => {
   const me = requireAdmin(req, res);
@@ -1564,7 +1602,7 @@ async function enrichIpRows() {
   return rows.map((row) => {
     const userStats = row.userIds.map((id) => {
       const u = usersById.get(id);
-      const stats = betStore.getUserStats24h(id);
+      const stats = stakeStore.getUserStats24h(id);
       return {
         id,
         code: u?.code ?? "—",
@@ -1575,21 +1613,21 @@ async function enrichIpRows() {
         banned: !!u?.banned,
         muted: !!u?.muted,
         roundsPlayed: u?.roundsPlayed ?? 0,
-        stake24h: stats.stake24h,
-        bets24h: stats.bets24h,
+        xu24h: stats.xu24h,
+        stakes24h: stats.stakes24h,
         profit24h: stats.profit24h,
       };
     });
-    const stake24h = userStats.reduce((s, u) => s + u.stake24h, 0);
-    const bets24h = userStats.reduce((s, u) => s + u.bets24h, 0);
+    const xu24h = userStats.reduce((s, u) => s + u.xu24h, 0);
+    const stakes24h = userStats.reduce((s, u) => s + u.stakes24h, 0);
     const profit24h = userStats.reduce((s, u) => s + u.profit24h, 0);
     return {
       ...row,
       geo: geoMap.get(row.ip) ?? null,
       devices: deviceStore.getByIp(row.ip),
       users: userStats,
-      stake24h,
-      bets24h,
+      xu24h,
+      stakes24h,
       profit24h,
     };
   });
@@ -1600,7 +1638,7 @@ app.get("/api/mainadmin/ips", async (req, res) => {
   res.json({ ok: true, rows: await enrichIpRows() });
 });
 
-/** Lịch sử user (IP + cược) — chỉ mainadmin; không lộ ra client player. */
+/** Lịch sử user (IP + xu đặt) — chỉ mainadmin; không lộ ra client player. */
 app.get("/api/mainadmin/users/:userId/history", (req, res) => {
   if (!requireCapability(req, res, "ip_audit", "Cần quyền IP (audit)")) return;
   const userId = String(req.params.userId ?? "").trim();
@@ -1629,9 +1667,9 @@ app.get("/api/mainadmin/users/:userId/history", (req, res) => {
     lastIpAt: intel.lastIpAt ?? null,
     ipHistory: intel.ipHistory,
     relatedIps: guestIpStore.findIpsForUser(userId),
-    recentBets: betStore.getByUser(userId, 20),
+    recentStakes: stakeStore.getByUser(userId, 20),
     recentArcanaSpins: arcanaWheelStore.listSpins(40, userId),
-    stake24h: betStore.getUserStats24h(userId),
+    xu24h: stakeStore.getUserStats24h(userId),
   });
 });
 
@@ -1645,7 +1683,7 @@ app.get("/api/mainadmin/lookup", async (req, res) => {
   const qLower = q.toLowerCase();
   const users = authStore.searchUsers(q, 40).map((u) => ({
     ...u,
-    ...betStore.getUserStats24h(u.id),
+    ...stakeStore.getUserStats24h(u.id),
   }));
 
   const allIps = await enrichIpRows();
@@ -1677,8 +1715,8 @@ app.get("/api/mainadmin/lookup", async (req, res) => {
   }
 
   const primary = users[0];
-  const recentBets = primary
-    ? betStore.getByUser(primary.id, 20)
+  const recentStakes = primary
+    ? stakeStore.getByUser(primary.id, 20)
     : [];
 
   res.json({
@@ -1686,7 +1724,7 @@ app.get("/api/mainadmin/lookup", async (req, res) => {
     q,
     users,
     ips: ips.slice(0, 40),
-    recentBets,
+    recentStakes,
     counts: {
       users: users.length,
       ips: ips.length,
@@ -2325,7 +2363,7 @@ io.on("connection", (socket) => {
         balance: joined.session.balance,
         userId: joined.session.userId,
         avatar: joined.session.avatar,
-        recoveredBets: !!joined.recoveredOrphan,
+        recoveredStakes: !!joined.recoveredOrphan,
         guestPlayExpired: joined.guestPlayExpired,
         guestPlayRemainingMs: joined.guestPlayRemainingMs,
       });
@@ -2372,26 +2410,26 @@ io.on("connection", (socket) => {
   );
 
   socket.on(
-    "placeBet",
+    "placeStake",
     (
       payload: { cardId: number; amount: number; roundId?: number },
       ack?: (r: unknown) => void,
     ) => {
       const ip = socketIp(socket);
-      if (!rateLimit(`bet:${socket.id}`, 40, 10_000) || !rateLimit(`betip:${ip}`, 80, 10_000)) {
+      if (!rateLimit(`stake:${socket.id}`, 40, 10_000) || !rateLimit(`stakeip:${ip}`, 80, 10_000)) {
         const result = { ok: false as const, reason: "Đặt xu quá nhanh" };
-        socket.emit("betRejected", { reason: result.reason });
+        socket.emit("stakeRejected", { reason: result.reason });
         ack?.(result);
         return;
       }
-      const result = engine.placeBet(
+      const result = engine.placeStake(
         socket.id,
         Number(payload?.cardId),
         Number(payload?.amount),
         payload?.roundId != null ? Number(payload.roundId) : undefined,
       );
       if (!result.ok) {
-        socket.emit("betRejected", { reason: result.reason });
+        socket.emit("stakeRejected", { reason: result.reason });
         ack?.(result);
         return;
       }

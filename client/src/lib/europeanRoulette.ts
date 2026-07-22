@@ -9,7 +9,7 @@ const RED_SET = new Set([
   1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36,
 ]);
 
-export type OuterEvenMoneyBet = "red" | "black" | "odd" | "even";
+export type OuterEvenMoneyPick = "red" | "black" | "odd" | "even";
 
 export function isRed(n: number): boolean {
   return RED_SET.has(n);
@@ -36,8 +36,8 @@ export function outerIndexOnWheel(n: number): number {
   return i >= 0 ? i : 0;
 }
 
-export function outerBetLabelVi(bet: OuterEvenMoneyBet): string {
-  switch (bet) {
+export function outerPickLabelVi(pick: OuterEvenMoneyPick): string {
+  switch (pick) {
     case "red":
       return "Đỏ";
     case "black":

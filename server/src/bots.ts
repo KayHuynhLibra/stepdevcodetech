@@ -1,4 +1,4 @@
-import { MAX_BET, MIN_BET, todayKey, weekKey } from "./types.js";
+import { MAX_STAKE, MIN_STAKE, todayKey, weekKey } from "./types.js";
 import { AVATARS, DEFAULT_AVATAR } from "./avatars.js";
 
 /**
@@ -146,10 +146,10 @@ export function createIdentityPool(size = 50): BotIdentity[] {
   return pool;
 }
 
-type BetTier = { min: number; max: number; weight: number };
+type StakeTier = { min: number; max: number; weight: number };
 
 /** Mệnh giá đa dạng — giống người chơi (nhỏ nhiều, lớn hiếm). */
-const NORMAL_BET_TIERS: BetTier[] = [
+const NORMAL_STAKE_TIERS: StakeTier[] = [
   { min: 10, max: 100, weight: 28 },
   { min: 100, max: 500, weight: 22 },
   { min: 500, max: 2_000, weight: 18 },
@@ -159,15 +159,15 @@ const NORMAL_BET_TIERS: BetTier[] = [
   { min: 200_000, max: 800_000, weight: 2 },
 ];
 
-const CHASER_BET_TIERS: BetTier[] = [
+const CHASER_STAKE_TIERS: StakeTier[] = [
   { min: 500, max: 5_000, weight: 15 },
   { min: 5_000, max: 30_000, weight: 25 },
   { min: 30_000, max: 150_000, weight: 28 },
   { min: 150_000, max: 500_000, weight: 20 },
-  { min: 500_000, max: MAX_BET, weight: 12 },
+  { min: 500_000, max: MAX_STAKE, weight: 12 },
 ];
 
-function pickWeightedTier(tiers: BetTier[]): BetTier {
+function pickWeightedTier(tiers: StakeTier[]): StakeTier {
   let total = 0;
   for (const t of tiers) total += t.weight;
   let r = Math.random() * total;
@@ -178,33 +178,33 @@ function pickWeightedTier(tiers: BetTier[]): BetTier {
   return tiers[tiers.length - 1]!;
 }
 
-function roundHumanBetAmount(raw: number): number {
+function roundHumanStakeAmount(raw: number): number {
   let n = Math.floor(raw);
   if (n >= 100_000) n = Math.round(n / 10_000) * 10_000;
   else if (n >= 10_000) n = Math.round(n / 1_000) * 1_000;
   else if (n >= 1_000) n = Math.round(n / 100) * 100;
   else n = Math.round(n / 10) * 10;
-  return Math.max(MIN_BET, Math.min(MAX_BET, n));
+  return Math.max(MIN_STAKE, Math.min(MAX_STAKE, n));
 }
 
-function randomAmountInTier(tier: BetTier): number {
+function randomAmountInTier(tier: StakeTier): number {
   const span = tier.max - tier.min;
   const raw = tier.min + Math.random() * (span > 0 ? span : 1);
-  return roundHumanBetAmount(raw);
+  return roundHumanStakeAmount(raw);
 }
 
-/** Cược bot thường — nhiều mức nhỏ/lớn như user. */
-export function randomBotBetAmount(): number {
-  return randomAmountInTier(pickWeightedTier(NORMAL_BET_TIERS));
+/** Xu đặt bot thường — nhiều mức nhỏ/lớn như user. */
+export function randomBotStakeAmount(): number {
+  return randomAmountInTier(pickWeightedTier(NORMAL_STAKE_TIERS));
 }
 
 /** Bot dí cầu — thiên về mệnh giá lớn hơn. */
-export function randomChaserBetAmount(): number {
-  return randomAmountInTier(pickWeightedTier(CHASER_BET_TIERS));
+export function randomChaserStakeAmount(): number {
+  return randomAmountInTier(pickWeightedTier(CHASER_STAKE_TIERS));
 }
 
-/** Số lệnh cược mỗi bot thường trong một ván (1–4). */
-export function randomBotBetsPerRound(): number {
+/** Số lệnh đặt xu mỗi bot thường trong một ván (1–4). */
+export function randomBotStakesPerRound(): number {
   const r = Math.random();
   if (r < 0.35) return 1;
   if (r < 0.65) return 2;

@@ -105,7 +105,7 @@ export const MODE_PACK_ROTATIONS: Record<PackMode, RotateMode[]> = {
 export const MODE_PACK_LABELS: Record<PackMode, string> = {
   pack1: "Bộ 1 — Cân bằng / bias nhóm",
   pack2: "Bộ 2 — Giữ xu / nhà / kho",
-  pack3: "Bộ 3 — Trả thưởng / cầu",
+  pack3: "Bộ 3 — Trả xu / cầu",
   pack4: "Bộ 4 — Hỗn hợp + guard",
 };
 

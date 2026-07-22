@@ -1,4 +1,4 @@
-export type Phase = "betting" | "revealing" | "payout";
+export type Phase = "placing" | "revealing" | "payout";
 
 export interface CardDef {
   id: number;
@@ -14,13 +14,13 @@ export interface PlayerSession {
   id: string;
   /** Linked auth user id (if logged in) */
   userId?: string;
-  /** Mã khách (localStorage) — khôi phục cược khi reconnect */
+  /** Mã khách (localStorage) — khôi phục xu đặt khi reconnect */
   guestCode?: string;
   name: string;
   avatar: string;
   balance: number;
   /** cardId -> amount for current round */
-  bets: Map<number, number>;
+  stakes: Map<number, number>;
   /** Số lần đặt xu trong ngày (mỗi lần confirm = 1) */
   guessesToday: number;
   /** Tổng xu thắng trong ngày (chỉ phần lời) */
@@ -29,7 +29,7 @@ export interface PlayerSession {
   /** Tổng xu đã đặt xu trong tuần (Sao bài Tarot) */
   stakeWeek: number;
   weekKey: string;
-  /** Chuỗi thua/thắng Tarot (có cược khi settle) */
+  /** Chuỗi thua/thắng Tarot (có đặt xu khi settle) */
   tarotLossStreak?: number;
   tarotWinStreak?: number;
 }
@@ -70,7 +70,7 @@ export interface TarotStarEntry {
   isVip?: boolean;
 }
 
-/** Top 3 cao thủ + lá đang cược ván này (nếu có) */
+/** Top 3 cao thủ + lá đang đặt xu ván này (nếu có) */
 export interface TopAcePreview {
   rank: number;
   name: string;
@@ -128,13 +128,13 @@ export interface PublicState {
   serverTime: number;
   roundNumber: number;
   roundId: number;
-  displayBets: number[];
+  displayStakes: number[];
   playerCounts: number[];
   history: RoundResult[];
   winningCard: number | null;
   yourBalance?: number;
   yourAvatar?: string;
-  yourBets?: number[];
+  yourStakes?: number[];
   guessesToday?: number;
   winToday?: number;
   onlineReal?: number;
@@ -154,7 +154,7 @@ export interface PublicState {
   tarotStars: TarotStarEntry[];
   /** Quỹ VIP hiển thị (cosmetic, dao động) */
   vipPool: number;
-  /** Quỹ hũ Tarot thật (cộng dồn từ cược, trả bonus ngẫu nhiên) */
+  /** Quỹ hũ Tarot thật (cộng dồn từ xu đặt, trả bonus ngẫu nhiên) */
   jackpotPool: number;
   lastJackpotWin?: { name: string; amount: number; round: number } | null;
   cardHeat: {
@@ -185,17 +185,17 @@ export interface PublicState {
 }
 
 export const PHASE_MS = {
-  betting: 30_000,
+  placing: 30_000,
   revealing: 5_000,
   payout: 4_000,
 } as const;
 
 export const STARTING_BALANCE = 20_000;
-export const MIN_BET = 10;
+export const MIN_STAKE = 10;
 /** Trần xu trên 1 lá trong 1 ván. */
-export const MAX_BET = 1_000_000;
+export const MAX_STAKE = 1_000_000;
 /** Bước tăng xu khi đặt xu */
-export const BET_STEP = 10;
+export const STAKE_STEP = 10;
 /** Tối đa số lá khác nhau mỗi người được đặt trong 1 ván */
 export const MAX_CARDS_PER_ROUND = 5;
 export const TARGET_DISPLAY_CCU = 2;
@@ -212,7 +212,7 @@ export interface BotPublic {
   /** Bot dí theo cầu stake lớn */
   isChaser: boolean;
   /** Lá đã đặt trong ván hiện tại */
-  bets: { cardId: number; amount: number }[];
+  stakes: { cardId: number; amount: number }[];
 }
 
 export interface BotLogEntry {
@@ -223,7 +223,7 @@ export interface BotLogEntry {
   botName: string;
   cardId: number;
   amount: number;
-  action: "bet" | "scale" | "round_reset";
+  action: "stake" | "scale" | "round_reset";
   message: string;
 }
 
@@ -232,7 +232,7 @@ export interface BotPanelState {
   activeCount: number;
   bots: BotPublic[];
   logs: BotLogEntry[];
-  botBetsTotal: number[];
+  botStakesTotal: number[];
 }
 
 export function todayKey(d = new Date()): string {

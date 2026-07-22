@@ -3,15 +3,15 @@ import { CARDS, formatXu, type Phase, type GameState } from "../cards";
 import { usePhaseRemaining } from "../hooks/usePhaseRemaining";
 
 const MAX_CARDS_PER_ROUND = 5;
-/** Đồng bộ server PHASE_MS.betting — dùng cho thanh tiến trình */
+/** Đồng bộ server PHASE_MS.placing — dùng cho thanh tiến trình */
 const BETTING_SECONDS = 30;
 
 interface PlayBoardProps {
   phaseEndsAt: number;
   serverTime: number;
-  canBet: boolean;
+  canPlace: boolean;
   playerCounts: number[];
-  yourBets: number[];
+  yourStakes: number[];
   winningCardId: number | null;
   phase: Phase | null;
   cardHeat?: GameState["cardHeat"];
@@ -21,9 +21,9 @@ interface PlayBoardProps {
 function PlayBoardInner({
   phaseEndsAt,
   serverTime,
-  canBet,
+  canPlace,
   playerCounts,
-  yourBets,
+  yourStakes,
   winningCardId,
   phase,
   cardHeat,
@@ -33,10 +33,10 @@ function PlayBoardInner({
   const showWin =
     winningCardId != null &&
     (phase === "revealing" || phase === "payout");
-  const selectedCount = yourBets.filter((v) => v > 0).length;
+  const selectedCount = yourStakes.filter((v) => v > 0).length;
   const atCardLimit = selectedCount >= MAX_CARDS_PER_ROUND;
-  const seconds = canBet || phase === "betting" ? remaining : 0;
-  const urgent = canBet && remaining > 0 && remaining <= 5;
+  const seconds = canPlace || phase === "placing" ? remaining : 0;
+  const urgent = canPlace && remaining > 0 && remaining <= 5;
   const timerPct = Math.max(
     0,
     Math.min(100, (seconds / BETTING_SECONDS) * 100),
@@ -79,21 +79,21 @@ function PlayBoardInner({
           {CARDS.map((card) => {
             const idx = card.id - 1;
             const people = playerCounts[idx] ?? 0;
-            const mine = yourBets[idx] ?? 0;
+            const mine = yourStakes[idx] ?? 0;
             const isWin = showWin && winningCardId === card.id;
-            const lockedOut = canBet && atCardLimit && mine <= 0;
-            const hasBet = mine > 0;
+            const lockedOut = canPlace && atCardLimit && mine <= 0;
+            const hasStake = mine > 0;
             const heat = heatById.get(card.id);
 
             return (
               <button
                 key={card.id}
                 type="button"
-                disabled={!canBet || lockedOut}
+                disabled={!canPlace || lockedOut}
                 onClick={() => onPick(card.id)}
                 className={`tarot-board-card flex flex-col items-center ${
                   lockedOut ? "tarot-board-card--locked" : ""
-                } ${canBet && !lockedOut ? "tarot-board-card--active" : ""}`}
+                } ${canPlace && !lockedOut ? "tarot-board-card--active" : ""}`}
               >
                 <span className="tarot-board-card__index font-play tabular-nums">
                   {card.id}
@@ -113,8 +113,8 @@ function PlayBoardInner({
                   className={`tarot-board-card__frame relative aspect-[3/4] w-full ${
                     isWin
                       ? "tarot-board-card__frame--win"
-                      : hasBet
-                        ? "tarot-board-card__frame--bet"
+                      : hasStake
+                        ? "tarot-board-card__frame--stake"
                         : ""
                   }`}
                 >
@@ -126,7 +126,7 @@ function PlayBoardInner({
                     decoding="async"
                     loading="eager"
                   />
-                  {hasBet && (
+                  {hasStake && (
                     <span className="tarot-board-card__stake font-play tabular-nums">
                       {formatXu(mine)}
                     </span>

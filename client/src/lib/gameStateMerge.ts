@@ -85,8 +85,8 @@ export function mergeGameState(
     prev.roundNumber === next.roundNumber &&
     prev.winningCard === next.winningCard &&
     prev.yourBalance === next.yourBalance &&
-    arrEq(prev.yourBets, next.yourBets) &&
-    arrEq(prev.displayBets, next.displayBets) &&
+    arrEq(prev.yourStakes, next.yourStakes) &&
+    arrEq(prev.displayStakes, next.displayStakes) &&
     arrEq(prev.playerCounts, next.playerCounts) &&
     historyHeadSame(prev, next) &&
     chatSame(prev, next) &&

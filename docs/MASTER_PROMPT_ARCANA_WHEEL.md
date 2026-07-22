@@ -61,7 +61,7 @@ Prompt chi tiết để Cursor/Claude mở rộng mini-game **Bánh xe Arcana** 
 36. Tab User / Mod / Coupon / IP chung cả hai chế độ.
 37. Coupon luôn gắn Kho Tarot — ghi chú trên UI.
 38. `GET /api/mainadmin/games` liệt kê game + enabled.
-39. `GET/PATCH /api/mainadmin/arcana/config` — enabled, betTiers, slots ratio/weight.
+39. `GET/PATCH /api/mainadmin/arcana/config` — enabled, stakeTiers, slots ratio/weight.
 40. `GET /api/mainadmin/arcana/spins` — log admin.
 41. Header admin: nút vào cả 2 bàn.
 42. Role admin (không mainadmin): chơi được; không quản kho Arcana.
@@ -114,7 +114,7 @@ Prompt chi tiết để Cursor/Claude mở rộng mini-game **Bánh xe Arcana** 
 79. Skeleton/loading khi fetch config.
 80. Ban user → không quay được.
 81. Không đủ xu → lỗi rõ.
-82. Stake không thuộc betTiers → reject.
+82. Stake không thuộc stakeTiers → reject.
 83. pickId invalid → reject.
 84. Admin sửa ratio/weight từng lá, lưu ngay.
 85. Admin xem seed trong log (anti-dispute nhẹ).

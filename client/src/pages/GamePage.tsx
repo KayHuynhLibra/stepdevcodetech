@@ -3,7 +3,7 @@ import {
   CARDS,
   formatXu,
   type BalanceLeaderboardEntry,
-  type BetEntry,
+  type StakeEntry,
   type GameState,
   type LeaderboardEntry,
   type RoundResult,
@@ -31,6 +31,8 @@ import {
   saveAutoStake,
   type AutoStakeConfig,
 } from "../components/AutoStakeSheet";
+import { GiftHubSheet, type GiftHubTarget } from "../components/GiftHubSheet";
+import { findDemoGift } from "../gifts";
 import { ShoutBar } from "../components/ShoutBar";
 import { ShoutMarquee } from "../components/ShoutMarquee";
 import { SaintOverlay } from "../components/SaintOverlay";
@@ -79,9 +81,9 @@ import { Link, useNavigate } from "react-router-dom";
 import { usePlaySocket } from "../socket/PlaySocketContext";
 
 type Sheet =
-  | "bet"
+  | "stake"
   | "history"
-  | "myBets"
+  | "myStakes"
   | "leaderboard"
   | "balanceBoard"
   | "tarotStars"
@@ -90,8 +92,9 @@ type Sheet =
   | "coupon"
   | "playerInfo"
   | "vipTopups"
-  | "autoBet"
+  | "autoStake"
   | "rules"
+  | "giftHub"
   | null;
 
 export default function GamePage() {
@@ -108,11 +111,11 @@ export default function GamePage() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
   const renameRef = useRef<HTMLDivElement>(null);
-  const [betLimits, setBetLimits] = useState<{
-    maxBetPerCard: number;
+  const [stakeLimits, setStakeLimits] = useState<{
+    maxStakePerCard: number;
     quickAdds: number[];
   }>({
-    maxBetPerCard: 1_000_000,
+    maxStakePerCard: 1_000_000,
     quickAdds: [10, 100, 1_000, 10_000, 100_000, 1_000_000],
   });
   const [guestAvatar, setGuestAvatarState] = useState(() => getGuestAvatar());
@@ -120,13 +123,13 @@ export default function GamePage() {
   const [state, setState] = useState<GameState | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet>(null);
-  const [betCardId, setBetCardId] = useState<number | null>(null);
+  const [stakeCardId, setStakeCardId] = useState<number | null>(null);
   const [revealOpen, setRevealOpen] = useState(false);
   const [resultOpen, setResultOpen] = useState(false);
   const [historyRows, setHistoryRows] = useState<RoundResult[]>([]);
-  const [myBets, setMyBets] = useState<BetEntry[]>([]);
-  const [myBetsLoading, setMyBetsLoading] = useState(false);
-  const [myBetsError, setMyBetsError] = useState<string | null>(null);
+  const [myStakes, setMyStakes] = useState<StakeEntry[]>([]);
+  const [myStakesLoading, setMyStakesLoading] = useState(false);
+  const [myStakesError, setMyStakesError] = useState<string | null>(null);
   const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardEntry[]>(
     [],
   );
@@ -134,6 +137,7 @@ export default function GamePage() {
     BalanceLeaderboardEntry[]
   >([]);
   const [giftBusy, setGiftBusy] = useState(false);
+  const [giftPreset, setGiftPreset] = useState<GiftHubTarget | null>(null);
   const [tarotStarRows, setTarotStarRows] = useState<TarotStarEntry[]>([]);
   const [shouts, setShouts] = useState<(ShoutEvent & { key: string })[]>([]);
   const [saintItem, setSaintItem] = useState<
@@ -147,7 +151,7 @@ export default function GamePage() {
   const [topupRows, setTopupRows] = useState<TopupRow[]>([]);
   const [topupTotalXu, setTopupTotalXu] = useState(0);
   const [topupBusy, setTopupBusy] = useState(false);
-  const [autoBet, setAutoBet] = useState<AutoStakeConfig>(() => loadAutoStake());
+  const [autoStake, setAutoStake] = useState<AutoStakeConfig>(() => loadAutoStake());
   const autoRoundRef = useRef<number | null>(null);
   const [profile, setProfile] = useState<PlayerInfoView | null>(null);
   const [adminBusy, setAdminBusy] = useState(false);
@@ -259,10 +263,10 @@ export default function GamePage() {
             const r = await api<{
               ok: true;
               user: AuthUser;
-              betLimits?: { maxBetPerCard: number; quickAdds: number[] };
+              stakeLimits?: { maxStakePerCard: number; quickAdds: number[] };
             }>("/api/auth/me");
             setMe(r.user);
-            if (r.betLimits) setBetLimits(r.betLimits);
+            if (r.stakeLimits) setStakeLimits(r.stakeLimits);
             saveSession(token, r.user);
           } catch {
             clearSession();
@@ -285,7 +289,7 @@ export default function GamePage() {
       name: string;
       balance: number;
       userId?: string;
-      recoveredBets?: boolean;
+      recoveredStakes?: boolean;
       guestPlayExpired?: boolean;
       guestPlayRemainingMs?: number;
     }) => {
@@ -299,7 +303,7 @@ export default function GamePage() {
           showToast("Hết 20 phút chơi khách — xu reset về 20.000");
         }
       }
-      if (payload.recoveredBets) {
+      if (payload.recoveredStakes) {
         showToast("Đã khôi phục xu ván đang chơi");
       }
       if (getToken() && getStoredUser() && !payload.userId) {
@@ -309,11 +313,11 @@ export default function GamePage() {
         void api<{
           ok: true;
           user: AuthUser;
-          betLimits?: { maxBetPerCard: number; quickAdds: number[] };
+          stakeLimits?: { maxStakePerCard: number; quickAdds: number[] };
         }>("/api/auth/me")
           .then((r) => {
             setMe(r.user);
-            if (r.betLimits) setBetLimits(r.betLimits);
+            if (r.stakeLimits) setStakeLimits(r.stakeLimits);
             const t = getToken();
             if (t) saveSession(t, r.user);
           })
@@ -348,7 +352,7 @@ export default function GamePage() {
       );
     };
 
-    const onBetRejected = (payload: { reason: string }) => {
+    const onStakeRejected = (payload: { reason: string }) => {
       showToast(payload.reason);
     };
 
@@ -399,19 +403,34 @@ export default function GamePage() {
       }, 4800);
     };
 
+    const onGiftReceived = (payload: {
+      amount?: number;
+      fromName?: string;
+      giftKey?: string;
+      note?: string;
+    }) => {
+      const gift = payload.giftKey ? findDemoGift(payload.giftKey) : undefined;
+      const label = gift
+        ? `${gift.emoji} ${gift.nameVi}`
+        : `${formatXu(payload.amount ?? 0)} xu`;
+      const from = payload.fromName?.trim() || "Ai đó";
+      showToast(`${from} tặng bạn ${label}`);
+    };
+
     s.on("connect", onConnect);
     s.on("disconnect", onDisconnect);
     s.on("joined", onJoined);
     s.on("joinRejected", onJoinRejected);
     s.on("sessionReplaced", onSessionReplaced);
     s.on("state", onState);
-    s.on("betRejected", onBetRejected);
+    s.on("stakeRejected", onStakeRejected);
     s.on("balanceUpdate", onBalanceUpdate);
     s.on("historyData", onHistoryData);
     s.on("leaderboardData", onLeaderboardData);
     s.on("balanceLeaderboardData", onBalanceLeaderboardData);
     s.on("tarotStarsData", onTarotStarsData);
     s.on("shout", onShout);
+    s.on("giftReceived", onGiftReceived);
 
     if (s.connected) onConnect();
 
@@ -426,13 +445,14 @@ export default function GamePage() {
       s.off("joinRejected", onJoinRejected);
       s.off("sessionReplaced", onSessionReplaced);
       s.off("state", onState);
-      s.off("betRejected", onBetRejected);
+      s.off("stakeRejected", onStakeRejected);
       s.off("balanceUpdate", onBalanceUpdate);
       s.off("historyData", onHistoryData);
       s.off("leaderboardData", onLeaderboardData);
       s.off("balanceLeaderboardData", onBalanceLeaderboardData);
       s.off("tarotStarsData", onTarotStarsData);
       s.off("shout", onShout);
+      s.off("giftReceived", onGiftReceived);
     };
   }, [socket, showToast, setMe, setSessionAuthed]);
 
@@ -520,7 +540,7 @@ export default function GamePage() {
 
   // Tick SFX 5 giây cuối (local timer — không re-render GamePage mỗi giây)
   useEffect(() => {
-    if (state?.phase !== "betting" || !state.phaseEndsAt) {
+    if (state?.phase !== "placing" || !state.phaseEndsAt) {
       lastTickSec.current = null;
       return;
     }
@@ -553,7 +573,7 @@ export default function GamePage() {
       setRevealOpen(false);
       setResultOpen(true);
     }
-    if (state.phase === "betting") {
+    if (state.phase === "placing") {
       setRevealOpen(false);
       setResultOpen(false);
     }
@@ -567,7 +587,7 @@ export default function GamePage() {
   const runAutoPlace = useCallback(
     async (cfg: AutoStakeConfig, roundId: number) => {
       if (!socket || !connected || !state) return;
-      if (state.phase !== "betting") return;
+      if (state.phase !== "placing") return;
       if (!cfg.enabled || cfg.slots.length === 0) return;
       if (autoRoundRef.current === roundId) return;
       if (state.yourBalance == null || !Number.isFinite(state.yourBalance)) {
@@ -577,14 +597,14 @@ export default function GamePage() {
       // Khóa ngay để tránh double-fire khi state cập nhật
       autoRoundRef.current = roundId;
 
-      const bets = [...(state.yourBets ?? [])];
+      const stakes = [...(state.yourStakes ?? [])];
       let balance = state.yourBalance;
       let placed = 0;
       let lastError: string | null = null;
 
       for (const slot of cfg.slots) {
         const idx = slot.cardId - 1;
-        const current = bets[idx] ?? 0;
+        const current = stakes[idx] ?? 0;
         const need = Math.max(0, slot.amount - current);
         if (need <= 0) continue;
         if (balance < need) {
@@ -598,7 +618,7 @@ export default function GamePage() {
           balance?: number;
         }>((resolve) => {
           socket.emit(
-            "placeBet",
+            "placeStake",
             { cardId: slot.cardId, amount: need, roundId },
             (r?: { ok?: boolean; reason?: string; balance?: number }) => {
               resolve(r ?? { ok: false, reason: "Không phản hồi" });
@@ -611,7 +631,7 @@ export default function GamePage() {
           continue;
         }
         placed += 1;
-        bets[idx] = current + need;
+        stakes[idx] = current + need;
         if (typeof result.balance === "number") balance = result.balance;
         else balance -= need;
       }
@@ -626,31 +646,31 @@ export default function GamePage() {
     [socket, connected, state, showToast],
   );
 
-  // Auto đặt khi vào betting / khi bật Auto giữa ván
+  // Auto đặt khi vào pha đặt xu / khi bật Auto giữa ván
   useEffect(() => {
-    if (!state || state.phase !== "betting") return;
-    void runAutoPlace(autoBet, state.roundId);
+    if (!state || state.phase !== "placing") return;
+    void runAutoPlace(autoStake, state.roundId);
   }, [
     state?.phase,
     state?.roundId,
     state?.yourBalance,
-    autoBet,
+    autoStake,
     runAutoPlace,
   ]);
 
-  const openBet = (cardId: number) => {
-    if (!state || state.phase !== "betting") return;
-    const bets = state.yourBets ?? [];
-    const alreadyOnCard = (bets[cardId - 1] ?? 0) > 0;
+  const openStake = (cardId: number) => {
+    if (!state || state.phase !== "placing") return;
+    const stakes = state.yourStakes ?? [];
+    const alreadyOnCard = (stakes[cardId - 1] ?? 0) > 0;
     if (!alreadyOnCard) {
-      const distinct = bets.filter((v) => v > 0).length;
+      const distinct = stakes.filter((v) => v > 0).length;
       if (distinct >= 5) {
         showToast("Mỗi lượt chỉ được đặt tối đa 5 lá");
         return;
       }
     }
-    setBetCardId(cardId);
-    setSheet("bet");
+    setStakeCardId(cardId);
+    setSheet("stake");
   };
 
   const openCoupon = () => {
@@ -1025,12 +1045,12 @@ export default function GamePage() {
     );
   };
 
-  const confirmBet = (cardId: number, amount: number) => {
+  const confirmStake = (cardId: number, amount: number) => {
     if (!socket || !state) return;
     // Đóng sheet ngay để đặt tiếp lá khác (Bước 2)
     setSheet(null);
-    setBetCardId(null);
-    socket.emit("placeBet", {
+    setStakeCardId(null);
+    socket.emit("placeStake", {
       cardId,
       amount,
       roundId: state.roundId,
@@ -1042,23 +1062,23 @@ export default function GamePage() {
     setSheet("history");
   };
 
-  const openMyBets = () => {
-    setSheet("myBets");
-    setMyBetsError(null);
+  const openMyStakes = () => {
+    setSheet("myStakes");
+    setMyStakesError(null);
     if (!getToken() || !getStoredUser()) {
-      setMyBets([]);
-      setMyBetsLoading(false);
+      setMyStakes([]);
+      setMyStakesLoading(false);
       return;
     }
-    setMyBetsLoading(true);
-    api<{ ok: true; bets: BetEntry[] }>("/api/auth/bets?limit=50")
-      .then((r) => setMyBets(r.bets))
+    setMyStakesLoading(true);
+    api<{ ok: true; stakes: StakeEntry[] }>("/api/auth/stakes?limit=50")
+      .then((r) => setMyStakes(r.stakes))
       .catch((e) =>
-        setMyBetsError(
+        setMyStakesError(
           e instanceof Error ? e.message : "Không tải được lịch sử",
         ),
       )
-      .finally(() => setMyBetsLoading(false));
+      .finally(() => setMyStakesLoading(false));
   };
 
   const openLeaderboard = () => {
@@ -1079,11 +1099,14 @@ export default function GamePage() {
   const giftXuToPlayer = async (opts: {
     toUserId?: string;
     toCode?: string;
+    toUsername?: string;
     amount: number;
+    giftKey?: string;
+    note?: string;
   }) => {
     if (giftBusy) return;
     if (!getToken() || !me) {
-      showToast("Đăng nhập để tặng xu");
+      showToast("Đăng nhập để tặng quà");
       return;
     }
     setGiftBusy(true);
@@ -1093,24 +1116,66 @@ export default function GamePage() {
         amount: number;
         from: AuthUser;
         to: AuthUser;
+        giftKey?: string;
       }>("/api/auth/gift-xu", {
         method: "POST",
         body: JSON.stringify({
           toUserId: opts.toUserId,
           toCode: opts.toCode,
+          toUsername: opts.toUsername,
           amount: opts.amount,
+          giftKey: opts.giftKey,
+          note: opts.note,
         }),
       });
       const token = getToken();
       if (token) saveSession(token, r.from);
       setMe(r.from);
+      const gift = opts.giftKey ? findDemoGift(opts.giftKey) : undefined;
+      const label = gift
+        ? `${gift.emoji} ${gift.nameVi}`
+        : `${formatXu(r.amount)} xu`;
       showToast(
-        `Đã tặng ${formatXu(r.amount)} xu cho ${r.to.displayName ?? r.to.username}`,
+        `Đã tặng ${label} cho ${r.to.displayName ?? r.to.username}`,
       );
+      return true;
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Không tặng được");
+      return false;
     } finally {
       setGiftBusy(false);
+    }
+  };
+
+  const openGiftHub = (preset?: GiftHubTarget | null) => {
+    if (!getToken() || !me) {
+      showToast("Đăng nhập để tặng quà");
+      return;
+    }
+    setGiftPreset(preset ?? null);
+    setSheet("giftHub");
+  };
+
+  const sendDemoGift = async (opts: {
+    gift: { key: string; nameVi: string; emoji: string; price: number };
+    toUserId?: string;
+    toCode?: string;
+    toUsername?: string;
+    note?: string;
+  }) => {
+    const ok = await giftXuToPlayer({
+      toUserId: opts.toUserId,
+      toCode: opts.toCode,
+      toUsername: opts.toUsername,
+      amount: opts.gift.price,
+      giftKey: opts.gift.key,
+      note: opts.note
+        ? `${opts.gift.nameVi}: ${opts.note}`.slice(0, 80)
+        : opts.gift.nameVi,
+    });
+    if (ok) {
+      setSheet(null);
+      setGiftPreset(null);
     }
   };
 
@@ -1187,27 +1252,27 @@ export default function GamePage() {
   };
 
   const balance = state?.yourBalance ?? 0;
-  const canBet = state?.phase === "betting";
+  const canPlace = state?.phase === "placing";
   const winning = state?.winningCard ?? null;
   const guessesToday = state?.guessesToday ?? 0;
   const myStakeOnWinner =
-    winning != null ? (state?.yourBets?.[winning - 1] ?? 0) : 0;
+    winning != null ? (state?.yourStakes?.[winning - 1] ?? 0) : 0;
   const winCard = winning != null ? CARDS.find((c) => c.id === winning) : null;
   const didWin = myStakeOnWinner > 0;
   const payoutAmount = winCard ? myStakeOnWinner * winCard.multiplier : 0;
   const profitAmount = payoutAmount - myStakeOnWinner;
   const topWinners = state?.roundTopWinners ?? [];
 
-  // Cập nhật snapshot trong lúc betting; giữ khi mở bài / trả thưởng
+  // Cập nhật snapshot trong lúc đặt xu; giữ khi mở bài / trả xu
   useEffect(() => {
-    if (!state || state.phase !== "betting") return;
-    const bets = state.yourBets ?? [];
-    const next = CARDS.filter((c) => (bets[c.id - 1] ?? 0) > 0).map((c) => ({
+    if (!state || state.phase !== "placing") return;
+    const stakes = state.yourStakes ?? [];
+    const next = CARDS.filter((c) => (stakes[c.id - 1] ?? 0) > 0).map((c) => ({
       cardId: c.id,
-      amount: bets[c.id - 1] ?? 0,
+      amount: stakes[c.id - 1] ?? 0,
     }));
     setPickedSnapshot(next);
-  }, [state?.phase, state?.yourBets, state?.roundId]);
+  }, [state?.phase, state?.yourStakes, state?.roundId]);
 
   const displayPicked = useMemo(() => {
     type Row = {
@@ -1216,7 +1281,7 @@ export default function GamePage() {
       pending?: boolean;
     };
     const phase = state?.phase;
-    if (phase !== "betting") {
+    if (phase !== "placing") {
       return pickedSnapshot
         .map(({ cardId, amount }) => {
           const card = CARDS.find((c) => c.id === cardId);
@@ -1225,17 +1290,17 @@ export default function GamePage() {
         .filter((x): x is Row => !!x);
     }
 
-    const bets = state?.yourBets ?? [];
-    const live = CARDS.filter((c) => (bets[c.id - 1] ?? 0) > 0).map((c) => ({
+    const stakes = state?.yourStakes ?? [];
+    const live = CARDS.filter((c) => (stakes[c.id - 1] ?? 0) > 0).map((c) => ({
       card: c,
-      amount: bets[c.id - 1] ?? 0,
+      amount: stakes[c.id - 1] ?? 0,
       pending: false as boolean,
     }));
 
     // Auto ON: hiện preset nếu chưa có đặt xu live (hoặc bổ sung slot pending)
-    if (autoBet.enabled && autoBet.slots.length > 0) {
+    if (autoStake.enabled && autoStake.slots.length > 0) {
       if (live.length === 0) {
-        return autoBet.slots
+        return autoStake.slots
           .map((s) => {
             const card = CARDS.find((c) => c.id === s.cardId);
             return card
@@ -1245,7 +1310,7 @@ export default function GamePage() {
           .filter((x): x is Exclude<typeof x, null> => x != null);
       }
       const liveIds = new Set(live.map((r) => r.card.id));
-      const pending = autoBet.slots
+      const pending = autoStake.slots
         .filter((s) => !liveIds.has(s.cardId))
         .map((s) => {
           const card = CARDS.find((c) => c.id === s.cardId);
@@ -1260,10 +1325,10 @@ export default function GamePage() {
     return live;
   }, [
     state?.phase,
-    state?.yourBets,
+    state?.yourStakes,
     pickedSnapshot,
-    autoBet.enabled,
-    autoBet.slots,
+    autoStake.enabled,
+    autoStake.slots,
   ]);
 
   return (
@@ -1310,6 +1375,14 @@ export default function GamePage() {
               title="Luật chơi"
             >
               Luật
+            </button>
+            <button
+              type="button"
+              onClick={() => openGiftHub()}
+              className="app-btn-ghost shrink-0 px-2 py-1 text-[10px] !text-[var(--jade-soft)]"
+              title="Tặng quà demo"
+            >
+              Quà
             </button>
             <button
               type="button"
@@ -1641,13 +1714,13 @@ export default function GamePage() {
         <PlayBoard
           phaseEndsAt={state?.phaseEndsAt ?? 0}
           serverTime={state?.serverTime ?? Date.now()}
-          canBet={canBet}
+          canPlace={canPlace}
           playerCounts={state?.playerCounts ?? []}
-          yourBets={state?.yourBets ?? []}
+          yourStakes={state?.yourStakes ?? []}
           winningCardId={winning}
           phase={state?.phase ?? null}
           cardHeat={state?.cardHeat}
-          onPick={openBet}
+          onPick={openStake}
         />
 
         {/* ===== ZONE 5: Lá bài đã chọn — khung cứng cố định ===== */}
@@ -1659,7 +1732,7 @@ export default function GamePage() {
             <div className="flex shrink-0 items-center gap-1.5">
               <button
                 type="button"
-                onClick={openMyBets}
+                onClick={openMyStakes}
                 className="app-btn-soft !px-2.5 !py-0.5 !text-[10px] font-extrabold uppercase tracking-wide"
                 title="Lịch sử thắng/thua của bạn"
               >
@@ -1667,15 +1740,15 @@ export default function GamePage() {
               </button>
               <button
                 type="button"
-                onClick={() => setSheet("autoBet")}
+                onClick={() => setSheet("autoStake")}
                 className={`rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${
-                  autoBet.enabled
+                  autoStake.enabled
                     ? "ui-pill ui-pill--strong"
                     : "app-btn-soft !px-2.5 !py-0.5 !text-[10px]"
                 }`}
                 title="Cấu hình tự động đặt lá"
               >
-                Auto{autoBet.enabled ? " · ON" : ""}
+                Auto{autoStake.enabled ? " · ON" : ""}
               </button>
             </div>
           </div>
@@ -1726,10 +1799,10 @@ export default function GamePage() {
           </div>
           <p className="mt-1 h-4 text-center text-[10px] text-[var(--play-muted)]">
             {displayPicked.length === 0
-              ? autoBet.enabled
-                ? `Auto ON · ${autoBet.slots.length} lá preset`
+              ? autoStake.enabled
+                ? `Auto ON · ${autoStake.slots.length} lá preset`
                 : "Chạm lá trên bàn để đặt"
-              : state?.phase === "betting"
+              : state?.phase === "placing"
                 ? `${displayPicked.length}/5 lá`
                 : "Giữ nguyên tới ván sau"}
           </p>
@@ -1984,19 +2057,19 @@ export default function GamePage() {
       />
 
       <StakeSheet
-        open={sheet === "bet"}
-        cardId={betCardId}
+        open={sheet === "stake"}
+        cardId={stakeCardId}
         balance={balance}
         currentStake={
-          betCardId != null ? (state?.yourBets?.[betCardId - 1] ?? 0) : 0
+          stakeCardId != null ? (state?.yourStakes?.[stakeCardId - 1] ?? 0) : 0
         }
-        maxBetPerCard={betLimits.maxBetPerCard}
-        quickAdds={betLimits.quickAdds}
+        maxStakePerCard={stakeLimits.maxStakePerCard}
+        quickAdds={stakeLimits.quickAdds}
         onClose={() => {
           setSheet(null);
-          setBetCardId(null);
+          setStakeCardId(null);
         }}
-        onConfirm={confirmBet}
+        onConfirm={confirmStake}
       />
       {onlineViewer && (
       <PlayersSheet
@@ -2032,21 +2105,21 @@ export default function GamePage() {
         }}
       />
       <AutoStakeSheet
-        open={sheet === "autoBet"}
-        initial={autoBet}
-        maxBetPerCard={betLimits.maxBetPerCard}
-        quickAdds={betLimits.quickAdds}
+        open={sheet === "autoStake"}
+        initial={autoStake}
+        maxStakePerCard={stakeLimits.maxStakePerCard}
+        quickAdds={stakeLimits.quickAdds}
         onClose={() => setSheet(null)}
         onSave={(cfg) => {
-          // Cho phép đặt lại ngay trong ván betting hiện tại khi bật/đổi preset
-          if (cfg.enabled && state?.phase === "betting") {
+          // Cho phép đặt lại ngay trong ván đặt xu hiện tại khi bật/đổi preset
+          if (cfg.enabled && state?.phase === "placing") {
             autoRoundRef.current = null;
           }
-          setAutoBet(cfg);
+          setAutoStake(cfg);
           saveAutoStake(cfg);
           showToast(
             cfg.enabled
-              ? state?.phase === "betting"
+              ? state?.phase === "placing"
                 ? `Auto ON · đang đặt ${cfg.slots.length} lá…`
                 : `Auto ON · ${cfg.slots.length} lá (ván sau)`
               : "Đã tắt Auto",
@@ -2075,6 +2148,43 @@ export default function GamePage() {
           isStaff(me) ? adminAdjustGuestBalance : undefined
         }
         onGiftXu={me && getToken() ? giftXuToPlayer : undefined}
+        onOpenGiftHub={
+          me && getToken()
+            ? () => {
+                if (!profile) return;
+                openGiftHub({
+                  userId: profile.userId,
+                  code: profile.code,
+                  name: profile.name,
+                });
+              }
+            : undefined
+        }
+      />
+
+      <GiftHubSheet
+        open={sheet === "giftHub"}
+        balance={me?.balance ?? state?.yourBalance}
+        busy={giftBusy}
+        preset={giftPreset}
+        onlineHints={(state?.onlinePlayers ?? [])
+          .filter(
+            (p) =>
+              !p.isBot &&
+              !!p.userId &&
+              p.userId !== me?.id &&
+              !!(p.code || p.userId),
+          )
+          .map((p) => ({
+            userId: p.userId,
+            code: p.code,
+            name: p.name,
+          }))}
+        onClose={() => {
+          setSheet(null);
+          setGiftPreset(null);
+        }}
+        onSend={sendDemoGift}
       />
 
       <HistorySheet
@@ -2083,10 +2193,10 @@ export default function GamePage() {
         onClose={() => setSheet(null)}
       />
       <MyRoundsSheet
-        open={sheet === "myBets"}
-        bets={myBets}
-        loading={myBetsLoading}
-        error={myBetsError}
+        open={sheet === "myStakes"}
+        stakes={myStakes}
+        loading={myStakesLoading}
+        error={myStakesError}
         needsLogin={!getToken() || !me}
         onClose={() => setSheet(null)}
       />

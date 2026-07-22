@@ -1,6 +1,6 @@
 export const DEFAULT_PAYOUT_SCALE = 0.3;
 
-/** Stake tham chiếu khi ước lượng RTP (khớp floor payout thực tế hơn cược nhỏ). */
+/** Stake tham chiếu khi ước lượng RTP (khớp floor payout thực tế hơn xu đặt nhỏ). */
 export const RTP_REFERENCE_STAKE = 10_000;
 
 export interface ArcanaRtpSlot {

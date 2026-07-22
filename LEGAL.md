@@ -15,18 +15,18 @@
 | Malware / exploit kits | Not present — game + staff tools only |
 | Stolen IP / cracks / keygens | Not present |
 | Leaked PII dumps | Not present — do **not** commit `server/data/*.json` or `.env` |
-| Real-money gambling service | **Not designed as such** — see TERMS / README |
+| Real-money entertainment service | **Not designed as such** — see TERMS / README |
 
 Keep the repository **free of production secrets** and player data dumps.
 
 ## US-oriented themes (operator responsibility)
 
-### A. Gambling / betting
+### A. entertainment / betting
 
-UIGEA/PASPA and state gambling laws focus on **real-money** wagering and unlicensed offerings. Positioning this app as **virtual-currency entertainment** reduces that surface, but:
+UIGEA/PASPA and state entertainment laws focus on **real-money** wagering and unlicensed offerings. Positioning this app as **virtual-currency entertainment** reduces that surface, but:
 
 - Do **not** market cash prizes, fiat deposits, or “win real money”.
-- Do **not** offer the service as licensed US gambling unless you actually are licensed.
+- Do **not** offer the service as licensed US entertainment unless you actually are licensed.
 - Operators targeting specific countries must follow **local** law (VN, etc.) separately.
 
 ### B. Export / OFAC
@@ -45,7 +45,9 @@ No securities offering, money transmitter flow, or crypto token sale in this cod
 
 ## Naming note (source code)
 
-Internal identifiers may still use `bet` / `stake` (e.g. `betStore`, socket events). In this product those mean **virtual xu stakes for entertainment**, not real-money wagers. User-facing copy prefers “đặt xu / ván / kết toán”. Do not rename storage keys casually — it breaks persisted JSON.
+**User-facing copy** uses entertainment language: đặt xu / ván / kết toán / nhà game / kho — not “cược / casino / nhà cái”.
+
+**Internal identifiers** use stake vocabulary only: `stakeStore`, `stakes.json`, phase `"placing"`, socket `placeStake` / `stakeRejected`, API `/api/auth/stakes`. Legacy `bets.json` / `tutien-bet-limits.json` are migrated on load when present.
 
 ## Operator must-dos before public launch
 

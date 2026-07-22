@@ -24,7 +24,7 @@ import {
   isCustomAvatar,
   normalizeAvatar,
 } from "../avatars";
-import { CARDS, formatXu, type BetEntry } from "../cards";
+import { CARDS, formatXu, type StakeEntry } from "../cards";
 import { AppShell } from "../components/AppShell";
 import { IdentityBadge } from "../components/IdentityBadge";
 import { uploadAvatarFromFile } from "../uploadAvatar";
@@ -34,7 +34,7 @@ function cardName(id: number) {
   return CARDS.find((c) => c.id === id)?.nameVi ?? `Lá ${id}`;
 }
 
-function groupBetsByRound(bets: BetEntry[]) {
+function groupStakesByRound(stakes: StakeEntry[]) {
   const map = new Map<
     string,
     {
@@ -42,12 +42,12 @@ function groupBetsByRound(bets: BetEntry[]) {
       round: number;
       at: number;
       winningCardId: number;
-      bets: BetEntry[];
+      stakes: StakeEntry[];
       profit: number;
       stake: number;
     }
   >();
-  for (const b of bets) {
+  for (const b of stakes) {
     const key = `${b.round}-${b.at}`;
     let g = map.get(key);
     if (!g) {
@@ -56,18 +56,18 @@ function groupBetsByRound(bets: BetEntry[]) {
         round: b.round,
         at: b.at,
         winningCardId: b.winningCardId,
-        bets: [],
+        stakes: [],
         profit: 0,
         stake: 0,
       };
       map.set(key, g);
     }
-    g.bets.push(b);
+    g.stakes.push(b);
     g.profit += b.profit;
     g.stake += b.amount;
   }
   for (const g of map.values()) {
-    g.bets.sort((a, b) => a.cardId - b.cardId);
+    g.stakes.sort((a, b) => a.cardId - b.cardId);
   }
   return [...map.values()].sort((a, b) => b.at - a.at);
 }
@@ -75,7 +75,7 @@ function groupBetsByRound(bets: BetEntry[]) {
 export default function UserDashboard() {
   const nav = useNavigate();
   const [user, setUser] = useState<AuthUser | null>(getStoredUser());
-  const [bets, setBets] = useState<BetEntry[]>([]);
+  const [stakes, setStakes] = useState<StakeEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [savingAvatar, setSavingAvatar] = useState(false);
@@ -107,9 +107,9 @@ export default function UserDashboard() {
         }
         setRenameDraft(r.user.username);
         setNicknameDraft(r.user.nickname ?? "");
-        return api<{ ok: true; bets: BetEntry[] }>(
-          "/api/auth/bets?limit=50",
-        ).then((b) => setBets(b.bets));
+        return api<{ ok: true; stakes: StakeEntry[] }>(
+          "/api/auth/stakes?limit=50",
+        ).then((b) => setStakes(b.stakes));
       })
       .catch((e) => {
         setError(e instanceof Error ? e.message : "Lỗi");
@@ -576,13 +576,13 @@ export default function UserDashboard() {
       <section className="app-panel mt-5 p-3">
         <p className="play-heading text-sm">Lịch sử ván</p>
         <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-          {bets.length === 0
+          {stakes.length === 0
             ? "Chưa có ván nào — vào bàn để đặt xu."
-            : `${bets.length} dòng gần nhất`}
+            : `${stakes.length} dòng gần nhất`}
         </p>
-        {bets.length > 0 && (
+        {stakes.length > 0 && (
           <ul className="mt-2 max-h-72 space-y-2 overflow-y-auto">
-            {groupBetsByRound(bets).map((g) => (
+            {groupStakesByRound(stakes).map((g) => (
               <li
                 key={g.key}
                 className="rounded-lg bg-white/70 px-2.5 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
@@ -616,7 +616,7 @@ export default function UserDashboard() {
                   </div>
                 </div>
                 <div className="mt-1.5 flex gap-1 overflow-x-auto">
-                  {g.bets.map((b) => {
+                  {g.stakes.map((b) => {
                     const c = CARDS.find((x) => x.id === b.cardId);
                     return (
                       <div

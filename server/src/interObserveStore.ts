@@ -92,21 +92,21 @@ class InterObserveStore {
   buildLive(opts: {
     phase: string;
     roundNumber: number;
-    authBets: number[];
-    realBets: number[];
+    authStakes: number[];
+    realStakes: number[];
     displayStake: number;
     recentWins: number[];
   }) {
     const snap = interStore.getSnapshot();
-    const authStake = opts.authBets.reduce((a, b) => a + Math.max(0, b), 0);
+    const authStake = opts.authStakes.reduce((a, b) => a + Math.max(0, b), 0);
     const effective = interStore.getEffectiveMode({
       authStake,
       displayStake: opts.displayStake,
     }) as Exclude<InterMode, "all" | "pack1" | "pack2" | "pack3" | "pack4">;
-    const policyBets = isPolicyMode(effective) ? opts.authBets : opts.realBets;
-    const probs = cardProbabilities(effective, policyBets, opts.recentWins);
-    const liab = cardLiabilities(opts.authBets);
-    const profits = houseProfitByCard(opts.authBets);
+    const policyStakes = isPolicyMode(effective) ? opts.authStakes : opts.realStakes;
+    const probs = cardProbabilities(effective, policyStakes, opts.recentWins);
+    const liab = cardLiabilities(opts.authStakes);
+    const profits = houseProfitByCard(opts.authStakes);
     const vault = vaultStore.getSnapshot();
     const vaultArcanaSnap = vaultArcana.getSnapshot();
     const vaultNet = vault.netFromPlay ?? vault.netHouse ?? 0;
@@ -223,12 +223,12 @@ class InterObserveStore {
       vaultLink: link,
       authStake,
       displayStake: opts.displayStake,
-      authBets: opts.authBets,
+      authStakes: opts.authStakes,
       cards: CARDS.map((c, i) => ({
         cardId: c.id,
         nameVi: c.nameVi,
         multiplier: c.multiplier,
-        authBet: opts.authBets[i] ?? 0,
+        authStake: opts.authStakes[i] ?? 0,
         liability: liab[i]!,
         houseProfit: profits[i]!,
         percent: probs[i]?.percent ?? 0,

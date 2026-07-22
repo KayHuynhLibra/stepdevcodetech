@@ -12,7 +12,7 @@ const TERMS_VI = {
       h: "1. Bản chất dịch vụ",
       p: [
         "Đây là demo giải trí web (tarot / bánh xe). Số dư trong game gọi là «xu» — điểm ảo, không phải tiền, không có giá trị quy đổi tiền mặt / crypto / hàng hóa tiền thật qua dịch vụ này.",
-        "Không phải dịch vụ cá cược tiền thật có giấy phép. Không có cổng thanh toán nạp/rút tiền thật trong mã nguồn công bố.",
+        "Không phải dịch vụ đặt xu giải trí tiền thật có giấy phép. Không có cổng thanh toán nạp/rút tiền thật trong mã nguồn công bố.",
       ],
     },
     {

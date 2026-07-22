@@ -29,10 +29,10 @@ export function ArcanaHowItWorksBody({
         thường có hệ số cao hơn. Không có nghĩa “bỏ 1 xu nhận 8 xu”.
       </p>
       <p className="mt-2 rounded-lg bg-white/60 p-2 font-mono text-[10px] ring-1 ring-[var(--wood-deep)]/10">
-        thưởng = làm tròn xuống( cược × hệ số × {payoutScale} ÷ số ô đã chọn )
+        thưởng = làm tròn xuống( xu × hệ số × {payoutScale} ÷ số ô đã chọn )
       </p>
       <p className="mt-2 text-[var(--play-muted)]">
-        Ví dụ: cược {formatXu(exampleStake)}, chọn {k} ô, trúng ô ×
+        Ví dụ: xu {formatXu(exampleStake)}, chọn {k} ô, trúng ô ×
         {exampleRatio} → nhận <strong>{formatXu(examplePay)}</strong> xu (lãi{" "}
         {formatXu(Math.max(0, examplePay - exampleStake))}).
       </p>

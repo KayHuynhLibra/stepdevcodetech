@@ -18,7 +18,7 @@ export function ArcanaHistoryList({
             <tr className="border-b border-[var(--gold)]/25 text-[10px] text-[var(--play-muted)]">
               <th className="py-1 text-left">Ra</th>
               <th className="py-1 text-center">KQ</th>
-              <th className="py-1 text-right">Cược</th>
+              <th className="py-1 text-right">Xu đặt</th>
               <th className="py-1 text-right">Thưởng</th>
               <th className="py-1 text-right">Lãi</th>
             </tr>
@@ -89,7 +89,7 @@ export function ArcanaHistoryList({
                   Chọn: {picks.map((id) => slotName(id)).join(", ")}
                 </p>
                 <p className="text-[10px] text-[var(--play-muted)]">
-                  {sp.at ? new Date(sp.at).toLocaleString("vi-VN") : ""} · cược{" "}
+                  {sp.at ? new Date(sp.at).toLocaleString("vi-VN") : ""} · xu đặt{" "}
                   {formatXu(sp.stake)}
                 </p>
               </div>

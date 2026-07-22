@@ -112,14 +112,14 @@ export function getCard(id: number): CardDef | undefined {
 }
 
 /** Liability = stake × hệ số nhân nếu lá đó thắng. */
-export function cardLiabilities(realBets: number[] = []): number[] {
-  return CARDS.map((c, i) => Math.max(0, realBets[i] ?? 0) * c.multiplier);
+export function cardLiabilities(realStakes: number[] = []): number[] {
+  return CARDS.map((c, i) => Math.max(0, realStakes[i] ?? 0) * c.multiplier);
 }
 
-/** Lời nhà cái nếu lá i thắng = tổng stake − trả thưởng lá đó. */
-export function houseProfitByCard(realBets: number[] = []): number[] {
-  const totalStake = realBets.reduce((a, b) => a + Math.max(0, b), 0);
-  return cardLiabilities(realBets).map((L) => totalStake - L);
+/** Lời nhà game nếu lá i thắng = tổng stake − trả xu lá đó. */
+export function houseProfitByCard(realStakes: number[] = []): number[] {
+  const totalStake = realStakes.reduce((a, b) => a + Math.max(0, b), 0);
+  return cardLiabilities(realStakes).map((L) => totalStake - L);
 }
 
 /**
@@ -127,20 +127,20 @@ export function houseProfitByCard(realBets: number[] = []): number[] {
  * Fed = đọc cầu → 100% lá app lời tối đa (min liability).
  * Hedge = soft-Fed — weight ∝ max(houseProfit,0)^2.
  * User = nhả xu (weight cao khi liability cao).
- * Không có cược → fallback weight gốc.
+ * Không có đặt xu → fallback weight gốc.
  */
 export function policyWeights(
   mode: PolicyMode,
-  realBets: number[] = [],
+  realStakes: number[] = [],
 ): number[] {
-  const liab = cardLiabilities(realBets);
-  const totalStake = realBets.reduce((a, b) => a + Math.max(0, b), 0);
+  const liab = cardLiabilities(realStakes);
+  const totalStake = realStakes.reduce((a, b) => a + Math.max(0, b), 0);
   if (totalStake <= 0) return CARDS.map((c) => c.weight);
 
   const modeKey = mode as PolicyMode;
 
   if (modeKey === "fed" || modeKey === "softfed") {
-    const profits = houseProfitByCard(realBets);
+    const profits = houseProfitByCard(realStakes);
     const maxProfit = Math.max(...profits);
     const mask = profits.map((p) => (p === maxProfit ? 1 : 0));
     const n = mask.reduce<number>((a, b) => a + b, 0) || 1;
@@ -152,7 +152,7 @@ export function policyWeights(
   }
 
   if (modeKey === "hedge") {
-    const profits = houseProfitByCard(realBets);
+    const profits = houseProfitByCard(realStakes);
     return profits.map((p) => Math.pow(Math.max(p, 0) + 1, 2));
   }
 
@@ -269,7 +269,7 @@ export function coolWeights(
 
 function resolveWeights(
   mode: InterMode,
-  realBets?: number[],
+  realStakes?: number[],
   recentWins?: number[],
 ): number[] {
   let weights: number[];
@@ -290,7 +290,7 @@ function resolveWeights(
   } else if (mode === "wild") {
     weights = wildWeights(CARDS.map((c) => c.weight));
   } else if (isPolicyMode(mode)) {
-    weights = policyWeights(mode, realBets ?? []);
+    weights = policyWeights(mode, realStakes ?? []);
   } else {
     weights = effectiveWeights(
       CARDS.map((c) => c.weight),
@@ -319,15 +319,15 @@ function weightedPick(weights: number[]): number {
 /**
  * Weighted random theo mode Inter (mainadmin).
  * auto / small / big / flat / cool / ép lá — không nhìn stake (cool dùng history).
- * app / user / fed / hedge — nhìn stake user đăng nhập (auth bets).
+ * app / user / fed / hedge — nhìn stake user đăng nhập (auth stakes).
  */
 export function pickWinningCard(
   mode: InterMode = "auto",
-  realBets?: number[],
+  realStakes?: number[],
   recentWins?: number[],
   engagement?: PickEngagement,
 ): number {
-  let weights = resolveWeights(mode, realBets, recentWins);
+  let weights = resolveWeights(mode, realStakes, recentWins);
   if (engagement) {
     weights = applyEngagementToWeights(weights, engagement);
   }
@@ -336,26 +336,26 @@ export function pickWinningCard(
 
 export type UserRoundBias = {
   /** Stake theo 8 lá (index 0 = lá 1) */
-  bets: number[];
+  stakes: number[];
   mode: "win" | "lose";
 };
 
 /**
  * Ưu tiên mode win/lose từng user (admin) trước Inter phòng.
- * win → chọn lá user đó đã cược; lose → tránh lá họ cược.
+ * win → chọn lá user đó đã xu đặt; lose → tránh lá họ xu đặt.
  */
 export function pickWinningCardWithUserBias(
   mode: InterMode,
-  policyBets: number[],
+  policyStakes: number[],
   biases: UserRoundBias[],
   recentWins?: number[],
   engagement?: PickEngagement,
 ): number {
   const winBiases = biases.filter(
-    (b) => b.mode === "win" && b.bets.some((x) => x > 0),
+    (b) => b.mode === "win" && b.stakes.some((x) => x > 0),
   );
   const loseBiases = biases.filter(
-    (b) => b.mode === "lose" && b.bets.some((x) => x > 0),
+    (b) => b.mode === "lose" && b.stakes.some((x) => x > 0),
   );
 
   if (winBiases.length > 0) {
@@ -363,12 +363,12 @@ export function pickWinningCardWithUserBias(
     const loseLiab = new Array(CARDS.length).fill(0) as number[];
     for (const b of winBiases) {
       for (let i = 0; i < CARDS.length; i++) {
-        winStake[i]! += b.bets[i] ?? 0;
+        winStake[i]! += b.stakes[i] ?? 0;
       }
     }
     for (const b of loseBiases) {
       for (let i = 0; i < CARDS.length; i++) {
-        const amt = b.bets[i] ?? 0;
+        const amt = b.stakes[i] ?? 0;
         if (amt > 0) loseLiab[i]! += amt * CARDS[i]!.multiplier;
       }
     }
@@ -389,10 +389,10 @@ export function pickWinningCardWithUserBias(
     const loseStake = new Array(CARDS.length).fill(0) as number[];
     for (const b of loseBiases) {
       for (let i = 0; i < CARDS.length; i++) {
-        loseStake[i]! += b.bets[i] ?? 0;
+        loseStake[i]! += b.stakes[i] ?? 0;
       }
     }
-    const base = resolveWeights(mode, policyBets, recentWins);
+    const base = resolveWeights(mode, policyStakes, recentWins);
     let safeWeights = base.map((w, i) => (loseStake[i]! <= 0 ? w : 0));
     if (engagement) {
       safeWeights = applyEngagementToWeights(safeWeights, engagement);
@@ -411,7 +411,7 @@ export function pickWinningCardWithUserBias(
     for (let i = 0; i < CARDS.length; i++) {
       let liab = 0;
       for (const b of loseBiases) {
-        const amt = b.bets[i] ?? 0;
+        const amt = b.stakes[i] ?? 0;
         if (amt > 0) liab += amt * CARDS[i]!.multiplier;
       }
       if (liab < bestLiab) {
@@ -422,13 +422,13 @@ export function pickWinningCardWithUserBias(
     return CARDS[best]!.id;
   }
 
-  return pickWinningCard(mode, policyBets, recentWins, engagement);
+  return pickWinningCard(mode, policyStakes, recentWins, engagement);
 }
 
-/** Xác suất hiển thị cho tab Inter (%). Policy modes cần auth bets ván hiện tại. */
+/** Xác suất hiển thị cho tab Inter (%). Policy modes cần auth stakes ván hiện tại. */
 export function cardProbabilities(
   mode: InterMode = "auto",
-  realBets?: number[],
+  realStakes?: number[],
   recentWins?: number[],
 ): {
   cardId: number;
@@ -439,10 +439,10 @@ export function cardProbabilities(
   liability: number;
   houseProfit: number;
 }[] {
-  const bets = realBets ?? [];
-  const weights = resolveWeights(mode, bets, recentWins);
-  const liab = cardLiabilities(bets);
-  const profits = houseProfitByCard(bets);
+  const stakes = realStakes ?? [];
+  const weights = resolveWeights(mode, stakes, recentWins);
+  const liab = cardLiabilities(stakes);
+  const profits = houseProfitByCard(stakes);
   const total = weights.reduce((sum, w) => sum + w, 0) || 1;
   return CARDS.map((c, i) => ({
     cardId: c.id,

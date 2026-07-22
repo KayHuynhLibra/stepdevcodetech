@@ -9,7 +9,7 @@ const RED_SET = new Set([
   1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36,
 ]);
 
-export type OuterEvenMoneyBet = "red" | "black" | "odd" | "even";
+export type OuterEvenMoneyPick = "red" | "black" | "odd" | "even";
 
 export function isRed(n: number): boolean {
   return RED_SET.has(n);
@@ -32,7 +32,7 @@ export function pocketHex(n: number): string {
   return "#1a1a1a";
 }
 
-export function parseOuterBet(raw: unknown): OuterEvenMoneyBet | null {
+export function parseOuterPick(raw: unknown): OuterEvenMoneyPick | null {
   if (raw === "red" || raw === "black" || raw === "odd" || raw === "even") {
     return raw;
   }
@@ -40,15 +40,15 @@ export function parseOuterBet(raw: unknown): OuterEvenMoneyBet | null {
 }
 
 /**
- * Even-money bets lose on 0 (European house edge).
+ * Even-money stakes lose on 0 (European house edge).
  * Win pays 1:1 → return stake × 2 total (stake recovered + equal win).
  */
 export function checkEvenMoney(
-  bet: OuterEvenMoneyBet,
+  pick: OuterEvenMoneyPick,
   n: number,
 ): boolean {
   if (n === 0) return false;
-  switch (bet) {
+  switch (pick) {
     case "red":
       return isRed(n);
     case "black":

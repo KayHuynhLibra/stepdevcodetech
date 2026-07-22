@@ -1,7 +1,7 @@
 # Voice rooms (V2)
 
 5 phòng cố định × 8 ghế. Signaling Socket.IO (`voice:*`), audio WebRTC mesh.
-**Không** đụng `GameEngine` / chat trả xu / vault cược.
+**Không** đụng `GameEngine` / chat trả xu / vault xu đặt.
 
 ## Host / Room status
 - Host (hoặc staff/mod) `voice:setOpen` — đóng phòng chặn join mới.

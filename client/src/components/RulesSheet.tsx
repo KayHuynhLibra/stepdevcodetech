@@ -41,7 +41,7 @@ export function RulesSheet({ open, onClose }: RulesSheetProps) {
           <p>
             Mỗi ván chọn tối đa <strong className="text-white">5 lá</strong>,
             mỗi lá tối đa <strong className="text-white">100.000 xu</strong>.
-            Thắng = cược × hệ số lá đó.
+            Thắng = xu × hệ số lá đó.
           </p>
           <p>
             VIP khi đủ{" "}

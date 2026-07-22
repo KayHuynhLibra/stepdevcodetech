@@ -5,7 +5,7 @@ import { randomBytes } from "crypto";
 import { todayKey, weekKey } from "./types.js";
 import { trafficRollupStore } from "./trafficRollupStore.js";
 
-export interface BetEntry {
+export interface StakeEntry {
   id: string;
   at: number;
   userId: string;
@@ -20,28 +20,28 @@ export interface BetEntry {
   winningCardId: number;
 }
 
-interface BetsFile {
+interface StakesFile {
   version: 1;
-  entries: BetEntry[];
+  entries: StakeEntry[];
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, "..", "data");
-const BETS_PATH = join(DATA_DIR, "bets.json");
-const BETS_TMP = join(DATA_DIR, "bets.json.tmp");
+const STAKES_PATH = join(DATA_DIR, "stakes.json");
+const STAKES_TMP = join(DATA_DIR, "stakes.json.tmp");
 const GLOBAL_CAP = 2000;
 /** Max rows returned / kept per user — used by API clamp */
-export const PER_USER_BET_CAP = 80;
-const PER_USER_CAP = PER_USER_BET_CAP;
+export const PER_USER_STAKE_CAP = 80;
+const PER_USER_CAP = PER_USER_STAKE_CAP;
 
 function periodFromEntries(
-  entries: BetEntry[],
-  predicate: (e: BetEntry) => boolean,
+  entries: StakeEntry[],
+  predicate: (e: StakeEntry) => boolean,
 ) {
   let stake = 0;
   let payout = 0;
   let profit = 0;
-  let bets = 0;
+  let stakes = 0;
   let wins = 0;
   let loses = 0;
   const users = new Set<string>();
@@ -51,7 +51,7 @@ function periodFromEntries(
     stake += e.amount;
     payout += e.payout;
     profit += e.profit;
-    bets += 1;
+    stakes += 1;
     if (e.result === "win") wins += 1;
     else loses += 1;
     users.add(e.userId);
@@ -61,7 +61,7 @@ function periodFromEntries(
     stake,
     payout,
     profit,
-    bets,
+    stakes,
     wins,
     loses,
     uniqueUsers: users.size,
@@ -70,18 +70,24 @@ function periodFromEntries(
   };
 }
 
-export class BetStore {
-  private entries: BetEntry[] = [];
+export class StakeStore {
+  private entries: StakeEntry[] = [];
 
   constructor() {
     this.load();
-    trafficRollupStore.seedFromBets(this.entries);
+    trafficRollupStore.seedFromStakes(this.entries);
   }
 
   private load() {
     try {
-      if (!existsSync(BETS_PATH)) return;
-      const parsed = JSON.parse(readFileSync(BETS_PATH, "utf8")) as BetsFile;
+      const betsLegacy = join(DATA_DIR, "bets.json");
+      let path = STAKES_PATH;
+      if (!existsSync(STAKES_PATH) && existsSync(betsLegacy)) {
+        path = betsLegacy;
+        console.log("[stakes] Migrating bets.json → stakes.json");
+      }
+      if (!existsSync(path)) return;
+      const parsed = JSON.parse(readFileSync(path, "utf8")) as StakesFile;
       if (parsed?.version !== 1 || !Array.isArray(parsed.entries)) return;
       this.entries = parsed.entries.filter(
         (e) =>
@@ -91,28 +97,29 @@ export class BetStore {
           typeof e.cardId === "number" &&
           typeof e.amount === "number",
       );
-      console.log(`[bets] Loaded ${this.entries.length} bet rows`);
+      console.log(`[stakes] Loaded ${this.entries.length} stake rows`);
+      if (path !== STAKES_PATH) this.save();
     } catch (err) {
-      console.warn("[bets] Failed to load bets.json:", err);
+      console.warn("[stakes] Failed to load stakes.json:", err);
     }
   }
 
   private save() {
     try {
       if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-      const payload: BetsFile = {
+      const payload: StakesFile = {
         version: 1,
         entries: this.entries.slice(0, GLOBAL_CAP),
       };
-      writeFileSync(BETS_TMP, JSON.stringify(payload, null, 2), "utf8");
-      renameSync(BETS_TMP, BETS_PATH);
+      writeFileSync(STAKES_TMP, JSON.stringify(payload, null, 2), "utf8");
+      renameSync(STAKES_TMP, STAKES_PATH);
     } catch (err) {
-      console.warn("[bets] Failed to save bets.json:", err);
+      console.warn("[stakes] Failed to save stakes.json:", err);
     }
   }
 
-  /** Ghi toàn bộ cược của user trong 1 ván (sau khi biết lá thắng). */
-  recordRoundBets(rows: Omit<BetEntry, "id" | "at">[]) {
+  /** Ghi toàn bộ xu đặt của user trong 1 ván (sau khi biết lá thắng). */
+  recordRoundStakes(rows: Omit<StakeEntry, "id" | "at">[]) {
     const at = Date.now();
     for (const row of rows) {
       this.entries.unshift({
@@ -125,11 +132,11 @@ export class BetStore {
       this.entries.length = GLOBAL_CAP;
     }
     this.save();
-    trafficRollupStore.recordBets(rows, at);
+    trafficRollupStore.recordStakes(rows, at);
   }
 
-  getByUser(userId: string, limit = 30): BetEntry[] {
-    const out: BetEntry[] = [];
+  getByUser(userId: string, limit = 30): StakeEntry[] {
+    const out: StakeEntry[] = [];
     for (const e of this.entries) {
       if (e.userId !== userId) continue;
       out.push(e);
@@ -138,32 +145,32 @@ export class BetStore {
     return out;
   }
 
-  getRecent(limit = 50): BetEntry[] {
+  getRecent(limit = 50): StakeEntry[] {
     return this.entries.slice(0, Math.min(limit, 100));
   }
 
-  /** Thống kê cược 24h theo userId. */
+  /** Thống kê xu 24h theo userId. */
   getUserStats24h(userId: string): {
-    stake24h: number;
-    bets24h: number;
+    xu24h: number;
+    stakes24h: number;
     profit24h: number;
   } {
     const since = Date.now() - 24 * 60 * 60 * 1000;
-    let stake24h = 0;
-    let bets24h = 0;
+    let xu24h = 0;
+    let stakes24h = 0;
     let profit24h = 0;
     for (const e of this.entries) {
       if (e.userId !== userId) continue;
       if (e.at < since) continue;
-      stake24h += e.amount;
-      bets24h += 1;
+      xu24h += e.amount;
+      stakes24h += 1;
       profit24h += e.profit;
     }
-    return { stake24h, bets24h, profit24h };
+    return { xu24h, stakes24h, profit24h };
   }
 
   /**
-   * Tổng lưu lượng cược đã ghi + cửa sổ rolling + lịch UTC.
+   * Tổng lưu lượng xu đã ghi + cửa sổ rolling + lịch UTC.
    * `periods` ưu tiên rollup (bền); live window từ bản ghi còn trong store.
    */
   getTrafficStats() {
@@ -177,9 +184,9 @@ export class BetStore {
     const now = Date.now();
     const dayMs = 24 * 60 * 60 * 1000;
     let stakeToday = 0;
-    let betsToday = 0;
+    let stakesToday = 0;
     let stakeHour = 0;
-    let betsHour = 0;
+    let stakesHour = 0;
 
     for (const e of this.entries) {
       stakeTotal += e.amount;
@@ -191,11 +198,11 @@ export class BetStore {
       rounds.add(e.round);
       if (now - e.at < dayMs) {
         stakeToday += e.amount;
-        betsToday += 1;
+        stakesToday += 1;
       }
       if (now - e.at < 60 * 60 * 1000) {
         stakeHour += e.amount;
-        betsHour += 1;
+        stakesHour += 1;
       }
     }
 
@@ -224,7 +231,7 @@ export class BetStore {
     const rollup = trafficRollupStore.getPeriods(nowDate);
 
     return {
-      betRows: this.entries.length,
+      stakeRows: this.entries.length,
       uniqueUsers: users.size,
       uniqueRounds: rounds.size,
       stakeTotal,
@@ -234,13 +241,13 @@ export class BetStore {
       loseCount,
       /** rolling 24h — giữ tương thích UI cũ */
       stakeToday,
-      betsToday,
+      stakesToday,
       stakeHour,
-      betsHour,
+      stakesHour,
       rolling,
       periods: rollup,
     };
   }
 }
 
-export const betStore = new BetStore();
+export const stakeStore = new StakeStore();

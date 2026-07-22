@@ -8,15 +8,15 @@ export interface CardDef {
   image: string;
 }
 
-export type Phase = "betting" | "revealing" | "payout";
+export type Phase = "placing" | "revealing" | "payout";
 
 export interface RoundResult {
   round: number;
   win: number;
 }
 
-/** Lịch sử ván cá nhân (auth) — khớp server betStore.BetEntry */
-export interface BetEntry {
+/** Lịch sử ván cá nhân (auth) — khớp server stakeStore.StakeEntry */
+export interface StakeEntry {
   id: string;
   at: number;
   userId?: string;
@@ -88,7 +88,7 @@ export interface BotPublic {
   name: string;
   isVip: boolean;
   isChaser?: boolean;
-  bets: { cardId: number; amount: number }[];
+  stakes: { cardId: number; amount: number }[];
 }
 
 export interface BotLogEntry {
@@ -99,7 +99,7 @@ export interface BotLogEntry {
   botName: string;
   cardId: number;
   amount: number;
-  action: "bet" | "scale" | "round_reset";
+  action: "stake" | "scale" | "round_reset";
   message: string;
 }
 
@@ -108,7 +108,7 @@ export interface BotPanelState {
   activeCount: number;
   bots: BotPublic[];
   logs: BotLogEntry[];
-  botBetsTotal: number[];
+  botStakesTotal: number[];
 }
 
 export interface OnlinePlayerPublic {
@@ -135,13 +135,13 @@ export interface GameState {
   serverTime: number;
   roundNumber: number;
   roundId: number;
-  displayBets: number[];
+  displayStakes: number[];
   playerCounts: number[];
   history: RoundResult[];
   winningCard: number | null;
   yourBalance?: number;
   yourAvatar?: string;
-  yourBets?: number[];
+  yourStakes?: number[];
   guessesToday?: number;
   winToday?: number;
   onlineReal?: number;
@@ -255,8 +255,8 @@ export const CARDS: CardDef[] = [
   },
 ];
 
-/** Trần xu trên 1 lá — đồng bộ server MAX_BET. */
-export const MAX_BET_PER_CARD = 1_000_000;
+/** Trần xu trên 1 lá — đồng bộ server MAX_STAKE. */
+export const MAX_STAKE_PER_CARD = 1_000_000;
 
 export const QUICK_ADDS = [10, 100, 1_000, 10_000, 100_000, 1_000_000] as const;
 
@@ -266,7 +266,7 @@ export function formatXu(n: number): string {
 
 export function phaseLabel(phase: Phase): string {
   switch (phase) {
-    case "betting":
+    case "placing":
       return "Đặt xu";
     case "revealing":
       return "Mở bài";

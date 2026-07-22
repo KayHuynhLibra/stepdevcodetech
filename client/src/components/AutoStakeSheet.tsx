@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import {
   CARDS,
-  MAX_BET_PER_CARD,
+  MAX_STAKE_PER_CARD,
   QUICK_ADDS,
   formatXu,
 } from "../cards";
 
 const MAX_AUTO_CARDS = 5;
-const MIN_BET = 10;
-const BET_STEP = 10;
+const MIN_STAKE = 10;
+const STAKE_STEP = 10;
 
 export interface AutoStakeSlot {
   cardId: number;
@@ -49,10 +49,10 @@ export function loadAutoStake(): AutoStakeConfig {
           .map((s) => ({
             cardId: Math.floor(s.cardId),
             amount: Math.max(
-              MIN_BET,
+              MIN_STAKE,
               Math.min(
-                MAX_BET_PER_CARD,
-                Math.floor(s.amount / BET_STEP) * BET_STEP,
+                MAX_STAKE_PER_CARD,
+                Math.floor(s.amount / STAKE_STEP) * STAKE_STEP,
               ),
             ),
           }))
@@ -84,7 +84,7 @@ export function saveAutoStake(cfg: AutoStakeConfig) {
 interface AutoStakeSheetProps {
   open: boolean;
   initial: AutoStakeConfig;
-  maxBetPerCard?: number;
+  maxStakePerCard?: number;
   quickAdds?: number[];
   onClose: () => void;
   onSave: (cfg: AutoStakeConfig) => void;
@@ -93,7 +93,7 @@ interface AutoStakeSheetProps {
 export function AutoStakeSheet({
   open,
   initial,
-  maxBetPerCard = MAX_BET_PER_CARD,
+  maxStakePerCard = MAX_STAKE_PER_CARD,
   quickAdds = [...QUICK_ADDS],
   onClose,
   onSave,
@@ -101,7 +101,7 @@ export function AutoStakeSheet({
   const [enabled, setEnabled] = useState(initial.enabled);
   const [slots, setSlots] = useState<AutoStakeSlot[]>(initial.slots);
   const [formError, setFormError] = useState<string | null>(null);
-  const cap = Math.max(MAX_BET_PER_CARD, maxBetPerCard);
+  const cap = Math.max(MAX_STAKE_PER_CARD, maxStakePerCard);
   const adds = quickAdds.length ? quickAdds : [...QUICK_ADDS];
 
   useEffect(() => {
@@ -122,7 +122,7 @@ export function AutoStakeSheet({
       return;
     }
     if (slots.length >= MAX_AUTO_CARDS) return;
-    setSlots((prev) => [...prev, { cardId, amount: MIN_BET }]);
+    setSlots((prev) => [...prev, { cardId, amount: MIN_STAKE }]);
   };
 
   const addAmount = (cardId: number, n: number) => {
@@ -144,7 +144,7 @@ export function AutoStakeSheet({
         s.cardId === cardId
           ? {
               ...s,
-              amount: Math.max(MIN_BET, Math.min(cap, amount)),
+              amount: Math.max(MIN_STAKE, Math.min(cap, amount)),
             }
           : s,
       ),
@@ -158,7 +158,7 @@ export function AutoStakeSheet({
   };
 
   const save = () => {
-    const clean = slots.filter((s) => s.amount >= MIN_BET);
+    const clean = slots.filter((s) => s.amount >= MIN_STAKE);
     if (enabled && clean.length === 0) {
       setFormError("Chọn ít nhất 1 lá trước khi bật Auto");
       return;
@@ -292,7 +292,7 @@ export function AutoStakeSheet({
                       </div>
                       <button
                         type="button"
-                        onClick={() => setAmount(slot.cardId, MIN_BET)}
+                        onClick={() => setAmount(slot.cardId, MIN_STAKE)}
                         className="rounded-full bg-white/10 px-2 py-0.5 text-[9px] font-bold text-white/60"
                       >
                         Reset

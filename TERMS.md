@@ -10,7 +10,7 @@ These Terms govern use of the SOFIAORE / Tarot entertainment demo (the “Servic
 
 1.1. The Service is an **entertainment / skill-and-chance web demo**.  
 1.2. In-app balances (“**xu**”) are **virtual points only**. They have **no monetary value**, are **not** currency, and **cannot** be redeemed, sold, or withdrawn for real money, crypto, or goods of cash value through this Service.  
-1.3. The Service does **not** provide licensed real-money gambling, sports betting, or casino banking.  
+1.3. The Service does **not** provide licensed real-money entertainment, sports betting, or game banking.  
 1.4. There is **no** fiat or crypto payment processor for buying xu in this codebase as published.
 
 ## 2. Eligibility (18+)
@@ -33,7 +33,7 @@ These Terms govern use of the SOFIAORE / Tarot entertainment demo (the “Servic
 
 ## 5. Acceptable use
 
-You will not: attack the Service; scrape or harvest data unlawfully; impersonate others; exploit bugs for gain then refuse remediation; use the Service for money laundering or real-money gambling schemes; or violate applicable law.
+You will not: attack the Service; scrape or harvest data unlawfully; impersonate others; exploit bugs for gain then refuse remediation; use the Service for money laundering or real-money entertainment schemes; or violate applicable law.
 
 ## 6. Privacy
 
@@ -45,7 +45,7 @@ THE SERVICE IS PROVIDED “AS IS” WITHOUT WARRANTIES OF ANY KIND. TO THE MAXIM
 
 ## 8. Geographic & regulatory notice
 
-The Service is operated as a **demo / entertainment** product. It is **not** offered as a licensed US gambling product. If local law prohibits this type of entertainment product for you, do not use the Service.
+The Service is operated as a **demo / entertainment** product. It is **not** offered as a licensed US entertainment product. If local law prohibits this type of entertainment product for you, do not use the Service.
 
 ## 9. Changes
 

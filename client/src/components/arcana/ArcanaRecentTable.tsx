@@ -36,7 +36,7 @@ export function ArcanaRecentTable({
             {!compact && <th className="py-1 pr-1 text-left font-semibold">Giờ</th>}
             <th className="py-1 pr-1 text-left font-semibold">Ra</th>
             <th className="py-1 pr-1 text-center font-semibold">KQ</th>
-            <th className="py-1 pr-1 text-right font-semibold">Cược</th>
+            <th className="py-1 pr-1 text-right font-semibold">Xu đặt</th>
             <th className="py-1 text-right font-semibold">+/-</th>
           </tr>
         </thead>

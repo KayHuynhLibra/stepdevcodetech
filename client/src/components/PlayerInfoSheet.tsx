@@ -50,6 +50,8 @@ interface PlayerInfoSheetProps {
     toCode?: string;
     amount: number;
   }) => void;
+  /** Mở hub catalog quà demo với người này */
+  onOpenGiftHub?: () => void;
 }
 
 export function PlayerInfoSheet({
@@ -67,6 +69,7 @@ export function PlayerInfoSheet({
   onAdjustBalance,
   onAdjustGuestBalance,
   onGiftXu,
+  onOpenGiftHub,
 }: PlayerInfoSheetProps) {
   const [delta, setDelta] = useState("");
   const [giftAmount, setGiftAmount] = useState("");
@@ -263,11 +266,21 @@ export function PlayerInfoSheet({
         {showGift && (
           <div className="mt-4 space-y-2 rounded-xl bg-white/5 px-3 py-3 ring-1 ring-[var(--jade)]/35">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--jade-soft)]">
-              Tặng xu
+              Tặng quà / xu
             </p>
             <p className="text-[10px] text-white/45">
               Chuyển xu trực tiếp · tối thiểu 10 · tối đa 100.000 / lần
             </p>
+            {onOpenGiftHub && (
+              <button
+                type="button"
+                disabled={giftBusy}
+                onClick={onOpenGiftHub}
+                className="w-full rounded-lg bg-[var(--jade)]/90 px-3 py-2 text-xs font-bold text-white disabled:opacity-45"
+              >
+                Mở hub quà demo
+              </button>
+            )}
             <div className="flex flex-wrap gap-1">
               {[100, 500, 1000, 5000].map((n) => (
                 <button

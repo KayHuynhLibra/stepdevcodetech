@@ -7,7 +7,7 @@ import {
   isAllowedAvatar,
   normalizeAvatar,
 } from "./avatars.js";
-import { STARTING_BALANCE, weekKey, MIN_BET } from "./types.js";
+import { STARTING_BALANCE, weekKey, MIN_STAKE } from "./types.js";
 
 /** Trần tặng xu mỗi lần (P2P) */
 export const GIFT_XU_MAX = 100_000;
@@ -103,7 +103,7 @@ export interface UserRecord {
   bannedAt?: number;
   /** Chat mute đến timestamp; 0/undefined = không mute. Number.MAX_SAFE_INTEGER ≈ vĩnh viễn */
   mutedUntil?: number;
-  /** Tarot — chuỗi thua/thắng liên tiếp (có cược khi settle) */
+  /** Tarot — chuỗi thua/thắng liên tiếp (có đặt xu khi settle) */
   tarotLossStreak?: number;
   tarotWinStreak?: number;
   /** Mã khôi phục mật khẩu (hiển thị 1 lần khi tạo / reset) */
@@ -895,6 +895,36 @@ export class AuthStore {
     return { ok: true, user: toPublic(user) };
   }
 
+  /**
+   * Mainadmin: xóa hẳn tài khoản (không thể hoàn tác).
+   * Phải gõ đúng username để xác nhận — không xóa mainadmin.
+   */
+  deleteUser(
+    userId: string,
+    confirmUsername: string,
+  ):
+    | { ok: true; username: string; code: string }
+    | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    if (user.role === "mainadmin") {
+      return { ok: false, reason: "Không xóa mainadmin" };
+    }
+    const confirm = String(confirmUsername ?? "").trim().toLowerCase();
+    if (!confirm || confirm !== user.username.toLowerCase()) {
+      return { ok: false, reason: "Username xác nhận không khớp" };
+    }
+    for (const [tok, entry] of this.tokens) {
+      if (entry.userId === userId) this.tokens.delete(tok);
+    }
+    this.scheduleTokenSave();
+    this.users.delete(user.username.toLowerCase());
+    this.byId.delete(user.id);
+    this.byCode.delete(user.code.toUpperCase());
+    this.scheduleSave();
+    return { ok: true, username: user.username, code: user.code };
+  }
+
   /** Mainadmin: đổi role (không đụng mainadmin). */
   setUserRole(
     userId: string,
@@ -1586,11 +1616,11 @@ export class AuthStore {
 
   /**
    * Tặng xu P2P — zero-sum, không đụng vault.
-   * amount ≥ MIN_BET, ≤ GIFT_XU_MAX.
+   * amount ≥ MIN_STAKE, ≤ GIFT_XU_MAX.
    */
   giftXu(
     fromId: string,
-    toRef: { userId?: string; code?: string },
+    toRef: { userId?: string; code?: string; username?: string },
     amountRaw: unknown,
   ):
     | {
@@ -1601,8 +1631,8 @@ export class AuthStore {
       }
     | { ok: false; reason: string } {
     const amount = Math.floor(Number(amountRaw));
-    if (!Number.isFinite(amount) || amount < MIN_BET) {
-      return { ok: false, reason: `Tối thiểu ${MIN_BET} xu` };
+    if (!Number.isFinite(amount) || amount < MIN_STAKE) {
+      return { ok: false, reason: `Tối thiểu ${MIN_STAKE} xu` };
     }
     if (amount > GIFT_XU_MAX) {
       return {
@@ -1617,8 +1647,10 @@ export class AuthStore {
     let to: UserRecord | undefined;
     const tid = String(toRef.userId ?? "").trim();
     const code = String(toRef.code ?? "").trim();
+    const username = String(toRef.username ?? "").trim().toLowerCase();
     if (tid) to = this.byId.get(tid);
     else if (code) to = this.getByCode(code);
+    else if (username) to = this.users.get(username);
     if (!to) return { ok: false, reason: "Không tìm thấy người nhận" };
     if (to.banned) return { ok: false, reason: "Người nhận bị khóa" };
     if (to.id === from.id) {

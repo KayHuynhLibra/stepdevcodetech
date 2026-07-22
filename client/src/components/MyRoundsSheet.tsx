@@ -1,11 +1,11 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { CARDS, formatXu, type BetEntry } from "../cards";
+import { CARDS, formatXu, type StakeEntry } from "../cards";
 import { BottomSheet } from "./BottomSheet";
 
 interface MyRoundsSheetProps {
   open: boolean;
-  bets: BetEntry[];
+  stakes: StakeEntry[];
   loading?: boolean;
   error?: string | null;
   /** Guest / chưa đăng nhập */
@@ -26,16 +26,16 @@ interface RoundGroup {
   round: number;
   at: number;
   winningCardId: number;
-  bets: BetEntry[];
+  stakes: StakeEntry[];
   profit: number;
   stake: number;
   won: boolean;
 }
 
-function groupByRound(bets: BetEntry[]): RoundGroup[] {
+function groupByRound(stakes: StakeEntry[]): RoundGroup[] {
   const map = new Map<string, RoundGroup>();
-  for (const b of bets) {
-    // Cùng ván được ghi cùng timestamp trong recordRoundBets
+  for (const b of stakes) {
+    // Cùng ván được ghi cùng timestamp trong recordRoundStakes
     const key = `${b.round}-${b.at}`;
     let g = map.get(key);
     if (!g) {
@@ -44,37 +44,37 @@ function groupByRound(bets: BetEntry[]): RoundGroup[] {
         round: b.round,
         at: b.at,
         winningCardId: b.winningCardId,
-        bets: [],
+        stakes: [],
         profit: 0,
         stake: 0,
         won: false,
       };
       map.set(key, g);
     }
-    g.bets.push(b);
+    g.stakes.push(b);
     g.profit += b.profit;
     g.stake += b.amount;
     if (b.result === "win") g.won = true;
   }
   // Giữ thứ tự lá theo cardId cho dễ nhìn
   for (const g of map.values()) {
-    g.bets.sort((a, b) => a.cardId - b.cardId);
+    g.stakes.sort((a, b) => a.cardId - b.cardId);
   }
   return [...map.values()].sort((a, b) => b.at - a.at);
 }
 
 export function MyRoundsSheet({
   open,
-  bets,
+  stakes,
   loading,
   error,
   needsLogin,
   onClose,
 }: MyRoundsSheetProps) {
-  const wins = bets.filter((b) => b.result === "win").length;
-  const losses = bets.filter((b) => b.result === "lose").length;
-  const profitTotal = bets.reduce((s, b) => s + b.profit, 0);
-  const rounds = useMemo(() => groupByRound(bets), [bets]);
+  const wins = stakes.filter((b) => b.result === "win").length;
+  const losses = stakes.filter((b) => b.result === "lose").length;
+  const profitTotal = stakes.reduce((s, b) => s + b.profit, 0);
+  const rounds = useMemo(() => groupByRound(stakes), [stakes]);
 
   return (
     <BottomSheet
@@ -140,7 +140,7 @@ export function MyRoundsSheet({
               </p>
             )}
 
-            {!loading && !error && bets.length === 0 && (
+            {!loading && !error && stakes.length === 0 && (
               <p className="py-8 text-center text-xs text-white/40">
                 Chưa có ván nào — đặt xu để ghi lịch sử.
               </p>
@@ -186,7 +186,7 @@ export function MyRoundsSheet({
 
                       <div className="flex items-end gap-1.5">
                         <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto pb-0.5">
-                          {g.bets.map((b) => {
+                          {g.stakes.map((b) => {
                             const c = cardDef(b.cardId);
                             const isWin = b.result === "win";
                             return (

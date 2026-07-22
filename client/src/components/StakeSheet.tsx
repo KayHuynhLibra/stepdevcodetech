@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CARDS,
-  MAX_BET_PER_CARD,
+  MAX_STAKE_PER_CARD,
   QUICK_ADDS,
   formatXu,
   type CardDef,
@@ -14,7 +14,7 @@ interface StakeSheetProps {
   /** Số xu đã đặt trên lá này trong ván hiện tại */
   currentStake?: number;
   /** Trần / lá (tutien có thể >1M) */
-  maxBetPerCard?: number;
+  maxStakePerCard?: number;
   quickAdds?: number[];
   onClose: () => void;
   onConfirm: (cardId: number, amount: number) => void;
@@ -25,13 +25,13 @@ export function StakeSheet({
   cardId,
   balance,
   currentStake = 0,
-  maxBetPerCard = MAX_BET_PER_CARD,
+  maxStakePerCard = MAX_STAKE_PER_CARD,
   quickAdds = [...QUICK_ADDS],
   onClose,
   onConfirm,
 }: StakeSheetProps) {
   const [amount, setAmount] = useState(0);
-  const cap = Math.max(MAX_BET_PER_CARD, maxBetPerCard);
+  const cap = Math.max(MAX_STAKE_PER_CARD, maxStakePerCard);
   const adds = quickAdds.length ? quickAdds : [...QUICK_ADDS];
 
   const card: CardDef | undefined = useMemo(
@@ -81,47 +81,47 @@ export function StakeSheet({
   };
 
   return (
-    <div className="bet-sheet-root fixed inset-0 z-[60] flex flex-col justify-end">
+    <div className="stake-sheet-root fixed inset-0 z-[60] flex flex-col justify-end">
       <button
         type="button"
         aria-label="Đóng"
-        className="bet-sheet-backdrop absolute inset-0"
+        className="stake-sheet-backdrop absolute inset-0"
         onClick={resetAndClose}
       />
 
       <div className="pointer-events-none relative z-10 mx-auto mb-[-1.5rem] flex justify-center">
-        <div className="bet-sheet-hero relative">
-          <span className="arcana-aura bet-sheet-hero__aura" aria-hidden />
+        <div className="stake-sheet-hero relative">
+          <span className="arcana-aura stake-sheet-hero__aura" aria-hidden />
           <span
-            className="arcana-aura-inner bet-sheet-hero__aura bet-sheet-hero__aura--inner"
+            className="arcana-aura-inner stake-sheet-hero__aura stake-sheet-hero__aura--inner"
             aria-hidden
           />
-          <span className="bet-sheet-hero__star bet-sheet-hero__star--tl" aria-hidden>
+          <span className="stake-sheet-hero__star stake-sheet-hero__star--tl" aria-hidden>
             ✦
           </span>
-          <span className="bet-sheet-hero__star bet-sheet-hero__star--br" aria-hidden>
+          <span className="stake-sheet-hero__star stake-sheet-hero__star--br" aria-hidden>
             ✦
           </span>
           <img
             src={card.image}
             alt={card.nameVi}
-            className="bet-sheet-hero__card"
+            className="stake-sheet-hero__card"
           />
-          <span className="bet-sheet-hero__id font-play">{card.id}</span>
+          <span className="stake-sheet-hero__id font-play">{card.id}</span>
         </div>
       </div>
 
       <div className="relative z-20 mx-auto w-full max-w-md animate-[sheet-up_0.2s_ease-out]">
-        <div className="bet-sheet-panel relative rounded-t-2xl border-b-0 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-8">
-          <div className="bet-sheet-panel__rim pointer-events-none absolute inset-0 rounded-t-2xl" aria-hidden />
+        <div className="stake-sheet-panel relative rounded-t-2xl border-b-0 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-8">
+          <div className="stake-sheet-panel__rim pointer-events-none absolute inset-0 rounded-t-2xl" aria-hidden />
 
-          <div className="bet-sheet-ribbon absolute -top-3 left-1/2 z-10 w-[92%] -translate-x-1/2">
-            <p className="bet-sheet-ribbon__text text-center text-[12px] font-bold leading-tight">
+          <div className="stake-sheet-ribbon absolute -top-3 left-1/2 z-10 w-[92%] -translate-x-1/2">
+            <p className="stake-sheet-ribbon__text text-center text-[12px] font-bold leading-tight">
               May mắn cũng là 1 loại sức mạnh
             </p>
           </div>
 
-          <p className="bet-sheet-meta mb-2 text-center text-[11px] font-semibold">
+          <p className="stake-sheet-meta mb-2 text-center text-[11px] font-semibold">
             Lá {card.id} · x{card.multiplier} · Số dư {formatXu(balance)} · Max{" "}
             {formatXu(cap)}/lá
           </p>
@@ -133,25 +133,25 @@ export function StakeSheet({
           )}
 
           <div
-            className={`bet-sheet-status mx-auto mb-3 w-[90%] py-2.5 text-center text-sm font-semibold ${
+            className={`stake-sheet-status mx-auto mb-3 w-[90%] py-2.5 text-center text-sm font-semibold ${
               insufficient && amount > 0
-                ? "bet-sheet-status--error"
+                ? "stake-sheet-status--error"
                 : already > 0 && amount <= 0
-                  ? "bet-sheet-status--warn"
+                  ? "stake-sheet-status--warn"
                   : ""
             }`}
           >
             {status}
           </div>
 
-          <div className="bet-sheet-chips mx-auto grid w-[92%] grid-cols-3 gap-2">
+          <div className="stake-sheet-chips mx-auto grid w-[92%] grid-cols-3 gap-2">
             {adds.map((n) => (
               <button
                 key={n}
                 type="button"
                 disabled={roomLeft <= 0 || balance <= 0}
                 onClick={() => add(n)}
-                className="bet-sheet-chip font-play tabular-nums"
+                className="stake-sheet-chip font-play tabular-nums"
               >
                 +{formatXu(n)}
               </button>
@@ -162,8 +162,8 @@ export function StakeSheet({
             type="button"
             disabled={insufficient}
             onClick={confirm}
-            className={`bet-sheet-confirm font-play relative mx-auto mt-4 flex w-[90%] items-center justify-center py-3 text-lg font-extrabold tracking-wide transition ${
-              insufficient ? "bet-sheet-confirm--disabled" : ""
+            className={`stake-sheet-confirm font-play relative mx-auto mt-4 flex w-[90%] items-center justify-center py-3 text-lg font-extrabold tracking-wide transition ${
+              insufficient ? "stake-sheet-confirm--disabled" : ""
             }`}
           >
             Xác nhận

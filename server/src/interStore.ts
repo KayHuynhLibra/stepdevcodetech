@@ -274,7 +274,7 @@ const TMP = join(DATA_DIR, "inter.json.tmp");
  * App = hút xu mềm — ưu tiên lá trả thấp (vẫn random).
  * Hedge = soft-Fed — lệch mạnh theo house profit^2, vẫn random.
  * Fed = đọc cầu user đăng nhập → chọn lá app lời tối đa (cứng).
- * User = nhả xu — ưu tiên lá user thật trả thưởng cao.
+ * User = nhả xu — ưu tiên lá user thật trả xu cao.
  * ALL = xoay các mode tác động mỗi 5 phút.
  * 1–8 = ép thắng đúng lá đó (100%).
  */

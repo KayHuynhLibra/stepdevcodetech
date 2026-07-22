@@ -5,7 +5,7 @@ export type TrafficPeriodStats = {
   stake: number;
   payout: number;
   profit: number;
-  bets: number;
+  stakes: number;
   wins: number;
   loses: number;
   uniqueUsers: number;
@@ -32,8 +32,8 @@ export type TrafficPayload = {
   realStakeRound: number;
   botStakeRound: number;
   displayStakeRound: number;
-  realBettorsRound: number;
-  botBettorsRound: number;
+  realPlacersRound: number;
+  botPlacersRound: number;
   loggedInOnline: number;
   guestOnline: number;
   historyRounds: number;
@@ -43,7 +43,7 @@ export type TrafficPayload = {
   adminAccounts: number;
   mainadminAccounts: number;
   balanceTotal: number;
-  betRows: number;
+  stakeRows: number;
   uniqueUsers: number;
   uniqueRounds: number;
   stakeTotal: number;
@@ -52,9 +52,9 @@ export type TrafficPayload = {
   winCount: number;
   loseCount: number;
   stakeToday: number;
-  betsToday: number;
+  stakesToday: number;
   stakeHour: number;
-  betsHour: number;
+  stakesHour: number;
   vaultBalance: number;
   vaultStakeIn: number;
   vaultPayoutOut: number;
@@ -98,7 +98,7 @@ export type TrafficPayload = {
       stake: number;
       payout: number;
       profit: number;
-      bets: number;
+      stakes: number;
       wins: number;
       loses: number;
       uniqueUsers: number;
@@ -114,33 +114,33 @@ type Mode = "live" | "day" | "week" | "month" | "guide";
 const GLOSSARY: { key: string; title: string; body: string }[] = [
   {
     key: "stake",
-    title: "Stake (cược vào)",
+    title: "Stake (xu vào)",
     body: "Xu user login đặt trên bàn Tarot. Vào ví user trừ → cộng vào Kho (vault). Guest không vào kho.",
   },
   {
     key: "payout",
-    title: "Payout (trả thưởng)",
-    body: "Xu trả khi user thắng. Trừ khỏi Kho → cộng ví user. Edge nhà cái ≈ tổng stake − tổng payout (không kể mint/coupon).",
+    title: "Xu trả (payout)",
+    body: "Xu trả khi user thắng. Trừ khỏi Kho → cộng ví user. Edge kho ≈ tổng stake − tổng payout (không kể mint/coupon).",
   },
   {
     key: "profit",
     title: "Profit user",
-    body: "Tổng lãi/lỗ của người chơi trên các dòng cược đã ghi (payout − stake từng dòng). Dương = user thắng ròng.",
+    body: "Tổng lãi/lỗ của người chơi trên các dòng xu đã ghi (payout − stake từng dòng). Dương = user thắng ròng.",
   },
   {
     key: "vault",
     title: "Kho xu (vault)",
-    body: "Sổ nhà cái: balance hiện tại + totalStakeIn / totalPayoutOut all-time. Coupon, grant, phí chat/cảnh giới cũng ghi ledger.",
+    body: "Sổ nhà game: balance hiện tại + totalStakeIn / totalPayoutOut all-time. Coupon, grant, phí chat/cảnh giới cũng ghi ledger.",
   },
   {
     key: "edge",
-    title: "Edge nhà cái",
-    body: "stake_in − payout_out (all-time trên vault). Dương = nhà cái lời từ cược. Khác Net kho (còn gồm mint/burn/coupon).",
+    title: "Edge kho",
+    body: "stake_in − payout_out (all-time trên vault). Dương = nhà game lời từ xu đặt. Khác Net kho (còn gồm mint/burn/coupon).",
   },
   {
     key: "rolling",
     title: "Rolling vs lịch",
-    body: "«1 giờ / 24h» = cửa sổ lùi từ bây giờ trên bets.json (cap 2000 dòng). «Ngày / tuần / tháng» = lịch UTC từ traffic-rollup (giữ lâu hơn).",
+    body: "«1 giờ / 24h» = cửa sổ lùi từ bây giờ trên stakes.json (cap 2000 dòng). «Ngày / tuần / tháng» = lịch UTC từ traffic-rollup (giữ lâu hơn).",
   },
   {
     key: "display",
@@ -150,7 +150,7 @@ const GLOSSARY: { key: string; title: string; body: string }[] = [
   {
     key: "balanceHeld",
     title: "Xu đang cầm",
-    body: "Tổng balance mọi tài khoản login. Xu «ngoài bàn»; khi cược thì chuyển sang kho rồi trả lại khi thắng/hoàn.",
+    body: "Tổng balance mọi tài khoản login. Xu «ngoài bàn»; khi xu đặt thì chuyển sang kho rồi trả lại khi thắng/hoàn.",
   },
 ];
 
@@ -206,7 +206,7 @@ function periodCards(p: TrafficPeriodStats, onHelp: (k: string) => void) {
       help: "stake",
     },
     {
-      label: "Trả thưởng",
+      label: "Trả xu",
       value: formatXu(p.payout),
       help: "payout",
     },
@@ -221,7 +221,7 @@ function periodCards(p: TrafficPeriodStats, onHelp: (k: string) => void) {
       help: "edge",
       accent: true,
     },
-    { label: "Số xu đặt", value: String(p.bets) },
+    { label: "Số xu đặt", value: String(p.stakes) },
     { label: "Win / Lose", value: `${p.wins}/${p.loses}` },
     {
       label: "User (ước lượng)",
@@ -249,9 +249,9 @@ function FlowGrid({
   title: string;
 }) {
   const rows: [string, string][] = [
-    ["Cược vào kho", formatXu(flow.stakeIn)],
-    ["Hoàn cược", formatXu(flow.stakeRefund)],
-    ["Trả thưởng", formatXu(flow.payoutOut)],
+    ["Xu vào kho", formatXu(flow.stakeIn)],
+    ["Hoàn xu", formatXu(flow.stakeRefund)],
+    ["Trả xu", formatXu(flow.payoutOut)],
     ["Coupon ra", formatXu(flow.couponOut)],
     ["Grant ra", formatXu(flow.grantOut)],
     ["Seize vào", formatXu(flow.seizeIn)],
@@ -390,11 +390,11 @@ export function TrafficPanel({
               />
               <StatCard
                 label="Người đặt (thật)"
-                value={String(traffic.realBettorsRound)}
+                value={String(traffic.realPlacersRound)}
               />
               <StatCard
                 label="Bot đặt"
-                value={String(traffic.botBettorsRound)}
+                value={String(traffic.botPlacersRound)}
               />
               <StatCard
                 label="Ván tiếp theo"
@@ -404,9 +404,9 @@ export function TrafficPanel({
           </section>
 
           <section className="mt-4">
-            <p className="play-heading text-sm">Cửa sổ gần (bets.json)</p>
+            <p className="play-heading text-sm">Cửa sổ gần (stakes.json)</p>
             <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
-              Rolling — không phải «hôm nay» lịch. Cap {traffic.betRows} dòng
+              Rolling — không phải «hôm nay» lịch. Cap {traffic.stakeRows} dòng
               đang giữ.
             </p>
             <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
@@ -415,7 +415,7 @@ export function TrafficPanel({
                   stake: traffic.stakeHour,
                   payout: 0,
                   profit: 0,
-                  bets: traffic.betsHour,
+                  stakes: traffic.stakesHour,
                   wins: 0,
                   loses: 0,
                   uniqueUsers: 0,
@@ -434,7 +434,7 @@ export function TrafficPanel({
                   stake: traffic.stakeToday,
                   payout: 0,
                   profit: 0,
-                  bets: traffic.betsToday,
+                  stakes: traffic.stakesToday,
                   wins: 0,
                   loses: 0,
                   uniqueUsers: 0,
@@ -469,7 +469,7 @@ export function TrafficPanel({
                 onHelp={() => openHelp("vault")}
               />
               <StatCard
-                label="Cược vào kho"
+                label="Xu vào kho"
                 value={formatXu(traffic.vaultStakeIn)}
                 onHelp={() => openHelp("stake")}
               />
@@ -479,7 +479,7 @@ export function TrafficPanel({
                 onHelp={() => openHelp("payout")}
               />
               <StatCard
-                label="Edge nhà cái"
+                label="Edge kho"
                 value={formatXu(traffic.houseEdgeXu)}
                 accent
                 onHelp={() => openHelp("edge")}
@@ -518,7 +518,7 @@ export function TrafficPanel({
                   : `Tháng ${traffic.periods?.monthKey}`}
             </p>
             <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
-              Rollup bền (`traffic-rollup.json`) — không mất khi bets bị cắt
+              Rollup bền (`traffic-rollup.json`) — không mất khi stakes bị cắt
               2000 dòng.
             </p>
             <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
@@ -560,7 +560,7 @@ export function TrafficPanel({
                       <span className="font-semibold">{row.day}</span>
                       <span className="tabular-nums text-[var(--play-muted)]">
                         stake {formatXu(row.stake)} · edge{" "}
-                        {formatXu(row.stake - row.payout)} · {row.bets} cược
+                        {formatXu(row.stake - row.payout)} · {row.stakes} ván
                       </span>
                     </li>
                   ))}
@@ -577,8 +577,8 @@ export function TrafficPanel({
                       <span className="font-semibold">{row.week}</span>
                       <span className="tabular-nums text-[var(--play-muted)]">
                         stake {formatXu(row.stats.stake)} · edge{" "}
-                        {formatXu(row.stats.houseEdge)} · {row.stats.bets}{" "}
-                        cược
+                        {formatXu(row.stats.houseEdge)} · {row.stats.stakes}{" "}
+                        xu đặt
                       </span>
                     </li>
                   ))}
@@ -595,8 +595,8 @@ export function TrafficPanel({
                       <span className="font-semibold">{row.month}</span>
                       <span className="tabular-nums text-[var(--play-muted)]">
                         stake {formatXu(row.stats.stake)} · edge{" "}
-                        {formatXu(row.stats.houseEdge)} · {row.stats.bets}{" "}
-                        cược
+                        {formatXu(row.stats.houseEdge)} · {row.stats.stakes}{" "}
+                        xu đặt
                       </span>
                     </li>
                   ))}
@@ -615,11 +615,11 @@ export function TrafficPanel({
               thắng → cộng ví.
             </li>
             <li>
-              <strong>Kho (vault)</strong> — đối ứng: cược vào cộng kho, trả
+              <strong>Kho (vault)</strong> — đối ứng: xu vào cộng kho, trả
               thưởng trừ kho. Guest không đi qua kho.
             </li>
             <li>
-              <strong>bets.json</strong> — log từng dòng cược (cap 2000) → Live /
+              <strong>stakes.json</strong> — log từng dòng xu (cap 2000) → Live /
               rolling.
             </li>
             <li>

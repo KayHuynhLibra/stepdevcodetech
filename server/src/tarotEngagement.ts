@@ -35,7 +35,7 @@ export type CardHeatRow = {
 };
 
 export type WarmPlayerBias = {
-  bets: number[];
+  stakes: number[];
   lossStreak: number;
 };
 
@@ -94,7 +94,7 @@ export function applyEngagementToWeights(
       let best = -1;
       let bestAmt = 0;
       for (let i = 0; i < CARDS.length; i++) {
-        const amt = p.bets[i] ?? 0;
+        const amt = p.stakes[i] ?? 0;
         if (amt > bestAmt) {
           bestAmt = amt;
           best = i;
@@ -113,7 +113,7 @@ export function applyEngagementToWeights(
   return next;
 }
 
-/** ALL: điều chỉnh mode slot theo lưu lượng cược. */
+/** ALL: điều chỉnh mode slot theo lưu lượng xu. */
 export function adaptAllEffectiveMode(
   base: RotateMode,
   traffic: { authStake: number; displayStake: number },

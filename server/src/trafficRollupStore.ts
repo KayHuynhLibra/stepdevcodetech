@@ -1,5 +1,5 @@
 /**
- * Rollup lưu lượng theo ngày (UTC YYYY-MM-DD) — giữ lịch sử khi bets.json bị cap.
+ * Rollup lưu lượng theo ngày (UTC YYYY-MM-DD) — giữ lịch sử khi stakes.json bị cap.
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
@@ -11,7 +11,7 @@ export interface TrafficDayBucket {
   stake: number;
   payout: number;
   profit: number;
-  bets: number;
+  stakes: number;
   wins: number;
   loses: number;
   uniqueUsers: number;
@@ -27,7 +27,7 @@ export interface TrafficPeriodStats {
   stake: number;
   payout: number;
   profit: number;
-  bets: number;
+  stakes: number;
   wins: number;
   loses: number;
   uniqueUsers: number;
@@ -47,7 +47,7 @@ function emptyPeriod(): TrafficPeriodStats {
     stake: 0,
     payout: 0,
     profit: 0,
-    bets: 0,
+    stakes: 0,
     wins: 0,
     loses: 0,
     uniqueUsers: 0,
@@ -63,7 +63,7 @@ function sumBuckets(list: TrafficDayBucket[]): TrafficPeriodStats {
     out.stake += d.stake;
     out.payout += d.payout;
     out.profit += d.profit;
-    out.bets += d.bets;
+    out.stakes += d.stakes;
     out.wins += d.wins;
     out.loses += d.loses;
     out.uniqueRounds += d.uniqueRounds;
@@ -103,7 +103,7 @@ export class TrafficRollupStore {
           stake: row.stake || 0,
           payout: row.payout || 0,
           profit: row.profit || 0,
-          bets: row.bets || 0,
+          stakes: row.stakes || 0,
           wins: row.wins || 0,
           loses: row.loses || 0,
           uniqueUsers: row.uniqueUsers || 0,
@@ -130,8 +130,8 @@ export class TrafficRollupStore {
     }
   }
 
-  /** Rebuild từ bets nếu rollup trống (một lần). */
-  seedFromBets(
+  /** Rebuild từ stakes nếu rollup trống (một lần). */
+  seedFromStakes(
     entries: {
       at: number;
       userId: string;
@@ -154,7 +154,7 @@ export class TrafficRollupStore {
           stake: 0,
           payout: 0,
           profit: 0,
-          bets: 0,
+          stakes: 0,
           wins: 0,
           loses: 0,
           uniqueUsers: 0,
@@ -165,7 +165,7 @@ export class TrafficRollupStore {
       bucket.stake += e.amount;
       bucket.payout += e.payout;
       bucket.profit += e.profit;
-      bucket.bets += 1;
+      bucket.stakes += 1;
       if (e.result === "win") bucket.wins += 1;
       else bucket.loses += 1;
       let us = usersByDay.get(day);
@@ -191,11 +191,11 @@ export class TrafficRollupStore {
     }
     this.save();
     console.log(
-      `[traffic-rollup] Seeded ${this.days.size} days from ${entries.length} bets`,
+      `[traffic-rollup] Seeded ${this.days.size} days from ${entries.length} stakes`,
     );
   }
 
-  recordBets(
+  recordStakes(
     rows: {
       userId: string;
       amount: number;
@@ -215,7 +215,7 @@ export class TrafficRollupStore {
         stake: 0,
         payout: 0,
         profit: 0,
-        bets: 0,
+        stakes: 0,
         wins: 0,
         loses: 0,
         uniqueUsers: 0,
@@ -237,7 +237,7 @@ export class TrafficRollupStore {
       bucket.stake += row.amount;
       bucket.payout += row.payout;
       bucket.profit += row.profit;
-      bucket.bets += 1;
+      bucket.stakes += 1;
       if (row.result === "win") bucket.wins += 1;
       else bucket.loses += 1;
       us.add(row.userId);
@@ -310,7 +310,7 @@ export class TrafficRollupStore {
             stake: todayBucket.stake,
             payout: todayBucket.payout,
             profit: todayBucket.profit,
-            bets: todayBucket.bets,
+            stakes: todayBucket.stakes,
             wins: todayBucket.wins,
             loses: todayBucket.loses,
             uniqueUsers: todayBucket.uniqueUsers,

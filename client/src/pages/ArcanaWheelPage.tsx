@@ -32,11 +32,11 @@ import {
 import { onArcanaImgError } from "../lib/arcanaImages";
 import {
   EU_WHEEL_ORDER,
-  outerBetLabelVi,
+  outerPickLabelVi,
   outerIndexOnWheel,
   pocketColor,
   pocketHex,
-  type OuterEvenMoneyBet,
+  type OuterEvenMoneyPick,
 } from "../lib/europeanRoulette";
 import { usePlaySocket } from "../socket/PlaySocketContext";
 
@@ -61,7 +61,7 @@ interface RecentSpin {
   payout?: number;
   profit?: number;
   outerNumber?: number;
-  outerBet?: OuterEvenMoneyBet;
+  outerPick?: OuterEvenMoneyPick;
   outerWon?: boolean;
 }
 
@@ -311,7 +311,7 @@ export default function ArcanaWheelPage() {
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
   const [balance, setBalance] = useState(user?.balance ?? 0);
   const [enabled, setEnabled] = useState(true);
-  const [betTiers, setBetTiers] = useState<number[]>([
+  const [stakeTiers, setStakeTiers] = useState<number[]>([
     300, 800, 1500, 3000, 10_000, 30_000, 100_000, 1_000_000,
   ]);
   const [pickMin, setPickMin] = useState(DEFAULT_PICK_MIN);
@@ -327,7 +327,7 @@ export default function ArcanaWheelPage() {
   const [displayWinId, setDisplayWinId] = useState<number | null>(null);
   const [displayOuter, setDisplayOuter] = useState<number | null>(null);
   const [lastResult, setLastResult] = useState<SpinResult | null>(null);
-  const [outerBet, setOuterBet] = useState<OuterEvenMoneyBet | null>(null);
+  const [outerPick, setOuterPick] = useState<OuterEvenMoneyPick | null>(null);
   const [luckStreak, setLuckStreak] = useState(0);
   const [streakBonus, setStreakBonus] = useState<StreakBonusRules>(
     DEFAULT_STREAK_BONUS,
@@ -357,7 +357,7 @@ export default function ArcanaWheelPage() {
   const spinningRef = useRef(false);
   const pickIdsRef = useRef<number[]>([]);
   const stakeRef = useRef(300);
-  const outerBetRef = useRef<OuterEvenMoneyBet | null>(null);
+  const outerPickRef = useRef<OuterEvenMoneyPick | null>(null);
   const enabledRef = useRef(true);
   const balanceRef = useRef(0);
 
@@ -371,8 +371,8 @@ export default function ArcanaWheelPage() {
     stakeRef.current = stake;
   }, [stake]);
   useEffect(() => {
-    outerBetRef.current = outerBet;
-  }, [outerBet]);
+    outerPickRef.current = outerPick;
+  }, [outerPick]);
   useEffect(() => {
     enabledRef.current = enabled;
   }, [enabled]);
@@ -398,17 +398,17 @@ export default function ArcanaWheelPage() {
   };
 
   const arcanaStakePreview =
-    outerBet && !useBonusSpin
+    outerPick && !useBonusSpin
       ? stake - Math.floor(stake / 2)
       : stake;
   const outerStakePreview =
-    outerBet && !useBonusSpin ? Math.floor(stake / 2) : 0;
+    outerPick && !useBonusSpin ? Math.floor(stake / 2) : 0;
 
   const load = useCallback(async () => {
     try {
       const r = await api<{
         enabled: boolean;
-        betTiers: number[];
+        stakeTiers: number[];
         pickMin?: number;
         pickMax?: number;
         maxStake?: number;
@@ -422,7 +422,7 @@ export default function ArcanaWheelPage() {
       }>("/api/arcana-wheel");
       setEnabled(r.enabled);
       enabledRef.current = r.enabled;
-      setBetTiers(r.betTiers);
+      setStakeTiers(r.stakeTiers);
       setPickMin(r.pickMin ?? DEFAULT_PICK_MIN);
       setPickMax(r.pickMax ?? DEFAULT_PICK_MAX);
       setPayoutScale(
@@ -444,9 +444,9 @@ export default function ArcanaWheelPage() {
       }
       syncUserBalance(r.balance);
       if (r.mission) setMission(r.mission);
-      if (r.betTiers.length && !r.betTiers.includes(stakeRef.current)) {
-        setStake(r.betTiers[0]!);
-        stakeRef.current = r.betTiers[0]!;
+      if (r.stakeTiers.length && !r.stakeTiers.includes(stakeRef.current)) {
+        setStake(r.stakeTiers[0]!);
+        stakeRef.current = r.stakeTiers[0]!;
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Không tải được bàn");
@@ -583,7 +583,7 @@ export default function ArcanaWheelPage() {
           stake: bonus ? mission.bonusStake : stakeRef.current,
           pickIds: picks,
           useBonusSpin: bonus,
-          outerBet: bonus ? null : outerBetRef.current,
+          outerPick: bonus ? null : outerPickRef.current,
         }),
       });
 
@@ -815,17 +815,17 @@ export default function ArcanaWheelPage() {
                 : "";
             const outer =
               typeof n === "number" ? `${n}${col !== "0" ? col : ""}` : "";
-            const oBet =
-              lastResult.outerBet && (lastResult.outerStake ?? 0) > 0
+            const oPick =
+              lastResult.outerPick && (lastResult.outerStake ?? 0) > 0
                 ? lastResult.outerWon
-                  ? ` · ${outerBetLabelVi(lastResult.outerBet)}+`
-                  : ` · ${outerBetLabelVi(lastResult.outerBet)}−`
+                  ? ` · ${outerPickLabelVi(lastResult.outerPick)}+`
+                  : ` · ${outerPickLabelVi(lastResult.outerPick)}−`
                 : "";
             const arc = lastResult.won
               ? ` · ${slotById.get(lastResult.winId)?.nameVi ?? "Arcana"}+`
               : ` · ${slotById.get(lastResult.winId)?.nameVi ?? "Arcana"}−`;
             const sign = lastResult.profit >= 0 ? "+" : "−";
-            return `${outer}${oBet}${arc} ${sign}${formatXu(Math.abs(lastResult.profit))}`;
+            return `${outer}${oPick}${arc} ${sign}${formatXu(Math.abs(lastResult.profit))}`;
           })()}
         </p>
       )}
@@ -878,14 +878,14 @@ export default function ArcanaWheelPage() {
               { key: "odd" as const, label: "Lẻ" },
             ] as const
           ).map((t) => {
-            const active = outerBet === t.key;
+            const active = outerPick === t.key;
             return (
               <button
                 key={t.key}
                 type="button"
                 disabled={spinning || !enabled || useBonusSpin}
                 onClick={() =>
-                  setOuterBet((prev) => (prev === t.key ? null : t.key))
+                  setOuterPick((prev) => (prev === t.key ? null : t.key))
                 }
                 className={`arcana-eu-chip arcana-eu-chip--${t.key} ${
                   active ? "arcana-eu-chip--active" : ""
@@ -919,7 +919,7 @@ export default function ArcanaWheelPage() {
             ?
           </ArcanaInfoButton>
         </div>
-        {outerBet && !useBonusSpin && (
+        {outerPick && !useBonusSpin && (
           <p className="mt-1 text-center text-[9px] text-[var(--play-muted)]">
             ½ ngoài {formatXu(outerStakePreview)} · ½ Arcana{" "}
             {formatXu(arcanaStakePreview)}
@@ -962,7 +962,7 @@ export default function ArcanaWheelPage() {
         </div>
 
         <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-          {betTiers.map((t) => (
+          {stakeTiers.map((t) => (
             <button
               key={t}
               type="button"

@@ -9,9 +9,10 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, "..", "data");
-const PATH = join(DATA_DIR, "tutien-bet-limits.json");
+const PATH = join(DATA_DIR, "tutien-stake-limits.json");
+const LEGACY_PATH = join(DATA_DIR, "tutien-bet-limits.json");
 
-/** Trần cược công khai (mọi role) — Tarot / lá & Arcana chip thường. */
+/** Trần xu đặt công khai (mọi role) — Tarot / lá & Arcana chip thường. */
 export const PUBLIC_MAX_STAKE = 1_000_000;
 export const ABSOLUTE_MAX_STAKE = 100_000_000;
 
@@ -60,7 +61,7 @@ export function personalTutienMax(
   map?: TutienMaxByRank,
 ): number | null {
   if (!user) return null;
-  const m = map ?? tutienBetLimitsStore.getMap();
+  const m = map ?? tutienStakeLimitsStore.getMap();
   const hasRank =
     !!user.cultivationRank && isCultivationRank(user.cultivationRank);
   /** role tutien/mainadmin, hoặc đã có cảnh giới công khai */
@@ -79,12 +80,12 @@ export function maxStakeForUser(
   return personalTutienMax(user) ?? PUBLIC_MAX_STAKE;
 }
 
-export function effectiveBetTiersForUser(
+export function effectiveStakeTiersForUser(
   user: { role: string; cultivationRank?: string } | null | undefined,
   publicTiers: number[],
   map?: TutienMaxByRank,
 ): number[] {
-  const limits = map ?? tutienBetLimitsStore.getMap();
+  const limits = map ?? tutienStakeLimitsStore.getMap();
   const base = [
     ...new Set(
       publicTiers
@@ -104,15 +105,15 @@ export function isStakeAllowedForUser(
   publicTiers: number[],
   map?: TutienMaxByRank,
 ): boolean {
-  return effectiveBetTiersForUser(user, publicTiers, map).includes(stake);
+  return effectiveStakeTiersForUser(user, publicTiers, map).includes(stake);
 }
 
-/** Quick-add chips for Tarot bet sheet (public + tutien highs ≤ personal max). */
+/** Quick-add chips for Tarot stake sheet (public + tutien highs ≤ personal max). */
 export function quickAddsForUser(
   user: { role: string; cultivationRank?: string } | null | undefined,
 ): number[] {
   const publicAdds = [10, 100, 1_000, 10_000, 100_000, 1_000_000];
-  return effectiveBetTiersForUser(user, publicAdds);
+  return effectiveStakeTiersForUser(user, publicAdds);
 }
 
 function atomicWrite(path: string, data: unknown) {
@@ -122,7 +123,7 @@ function atomicWrite(path: string, data: unknown) {
   renameSync(tmp, path);
 }
 
-class TutienBetLimitsStore {
+class TutienStakeLimitsStore {
   private map: TutienMaxByRank = { ...DEFAULT_TUTIEN_MAX_BY_RANK };
 
   constructor() {
@@ -131,16 +132,22 @@ class TutienBetLimitsStore {
 
   private load() {
     try {
-      if (!existsSync(PATH)) {
+      const src = existsSync(PATH)
+        ? PATH
+        : existsSync(LEGACY_PATH)
+          ? LEGACY_PATH
+          : null;
+      if (!src) {
         this.save();
         return;
       }
-      const parsed = JSON.parse(readFileSync(PATH, "utf8")) as {
+      const parsed = JSON.parse(readFileSync(src, "utf8")) as {
         tutienMaxByRank?: Partial<Record<string, number>>;
       };
       this.map = normalizeTutienMaxByRank(parsed.tutienMaxByRank);
+      if (src !== PATH) this.save();
     } catch (err) {
-      console.warn("[tutien-bet-limits] load failed:", err);
+      console.warn("[tutien-stake-limits] load failed:", err);
       this.map = { ...DEFAULT_TUTIEN_MAX_BY_RANK };
     }
   }
@@ -153,7 +160,7 @@ class TutienBetLimitsStore {
         updatedAt: Date.now(),
       });
     } catch (err) {
-      console.warn("[tutien-bet-limits] save failed:", err);
+      console.warn("[tutien-stake-limits] save failed:", err);
     }
   }
 
@@ -176,7 +183,7 @@ class TutienBetLimitsStore {
     if (!stillDefault) return;
     this.map = next;
     this.save();
-    console.log("[tutien-bet-limits] Seeded from legacy arcana config");
+    console.log("[tutien-stake-limits] Seeded from legacy arcana config");
   }
 
   setMap(
@@ -209,9 +216,9 @@ class TutienBetLimitsStore {
     role: string;
     cultivationRank?: string;
   } | null) {
-    const maxBetPerCard = maxStakeForUser(user);
+    const maxStakePerCard = maxStakeForUser(user);
     return {
-      maxBetPerCard,
+      maxStakePerCard,
       publicMaxStake: PUBLIC_MAX_STAKE,
       quickAdds: quickAddsForUser(user),
       tutienMaxByRank:
@@ -222,4 +229,4 @@ class TutienBetLimitsStore {
   }
 }
 
-export const tutienBetLimitsStore = new TutienBetLimitsStore();
+export const tutienStakeLimitsStore = new TutienStakeLimitsStore();

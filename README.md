@@ -2,7 +2,7 @@
 
 Realtime tarot / wheel **entertainment demo** (Vite + React client, Express + Socket.io server).
 
-> This is a purely fictional educational demo project. No real-money gambling, financial transactions, or actual currency conversion are involved.
+> This is a purely fictional educational demo project. No real-money entertainment, financial transactions, or actual currency conversion are involved.
 
 ## Important (GitHub / operators)
 
@@ -10,7 +10,7 @@ Realtime tarot / wheel **entertainment demo** (Vite + React client, Express + So
 |--|--|
 | **Currency** | In-app **xu** = virtual points only — **no cash value**, no real-money deposit/withdraw in this codebase |
 | **Age** | **18+** (see in-app gate + [`TERMS.md`](./TERMS.md)) |
-| **Not** | Licensed US real-money gambling, money transmitter, or crypto cashout |
+| **Not** | Licensed US real-money entertainment, money transmitter, or crypto cashout |
 | **Compliance pack** | [`LEGAL.md`](./LEGAL.md) · [`TERMS.md`](./TERMS.md) · [`PRIVACY.md`](./PRIVACY.md) · routes `/terms` `/privacy` |
 
 This is **not legal advice**. If you add real-money payments or cash prizes, get counsel and licensing review before offering the service.

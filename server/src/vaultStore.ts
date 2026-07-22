@@ -71,7 +71,7 @@ export interface VaultHealth {
   balance: number;
   totalStakeIn: number;
   totalPayoutOut: number;
-  /** (stake−payout)/stake × 100 — edge nhà cái all-time chơi */
+  /** (stake−payout)/stake × 100 — edge nhà game all-time chơi */
   edgePct: number;
   /** netFromPlay / balance × 100 */
   netVsBalancePct: number;
@@ -430,7 +430,7 @@ export class VaultStore {
         this.totalPayoutOut +
         this.totalMinted -
         this.totalBurned,
-      /** Lãi/lỗ thuần từ cược user (không gồm mint/burn admin) */
+      /** Lãi/lỗ thuần từ xu user (không gồm mint/burn admin) */
       netFromPlay: this.totalStakeIn - this.totalPayoutOut,
       breakdown,
       ledger: this.ledger.slice(0, 50),
@@ -503,25 +503,25 @@ export class VaultStore {
     if (amt <= 0) return;
     this.balance += amt;
     this.totalStakeIn += amt;
-    this.push("stake_in", amt, "system", `Cược vào kho`, {
+    this.push("stake_in", amt, "system", `Xu vào kho`, {
       userId,
       username,
     });
   }
 
-  /** Hoàn cược (disconnect lúc betting) — trừ lại stake_in. */
+  /** Hoàn xu (disconnect lúc đặt xu) — trừ lại stake_in. */
   recordStakeRefund(amount: number, username: string, userId: string) {
     const amt = Math.floor(amount);
     if (amt <= 0) return;
     this.balance -= amt;
     this.totalStakeIn = Math.max(0, this.totalStakeIn - amt);
-    this.push("stake_refund", -amt, "system", `Hoàn cược (thoát bàn)`, {
+    this.push("stake_refund", -amt, "system", `Hoàn xu (thoát bàn)`, {
       userId,
       username,
     });
   }
 
-  /** Trả thưởng user thật → trừ kho (cho phép âm — nợ nhà cái). */
+  /** Trả xu user thật → trừ kho (cho phép âm — nợ nhà game). */
   recordPayoutOut(amount: number, username: string, userId: string) {
     const amt = Math.floor(amount);
     if (amt <= 0) return;
@@ -532,7 +532,7 @@ export class VaultStore {
         `[vault:${this.label}] Kho âm ${this.balance} sau trả ${amt} cho ${username}`,
       );
     }
-    this.push("payout_out", -amt, "system", `Trả thưởng từ kho`, {
+    this.push("payout_out", -amt, "system", `Trả xu từ kho`, {
       userId,
       username,
     });
@@ -620,7 +620,7 @@ export class VaultStore {
 
   /**
    * Coupon redeem: trừ kho (cho phép âm — nợ nạp xu).
-   * Xu user lấy từ kho nhà cái.
+   * Xu user lấy từ kho nhà game.
    */
   recordCouponMint(
     amount: number,
