@@ -3,7 +3,7 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { ITEM_XU_MAX, MIN_STAKE } from "./types.js";
 
-/** Trần giá quà catalog — 10 chữ số */
+/** Trần giá quà catalog — 12 chữ số */
 export const GIFT_XU_MAX = ITEM_XU_MAX;
 
 export type GiftCategory = "warm" | "prestige" | "legend" | "fun";

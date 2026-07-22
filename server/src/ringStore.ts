@@ -4,7 +4,7 @@ import { fileURLToPath } from "url";
 import { randomBytes } from "crypto";
 import { ITEM_XU_MAX, MIN_STAKE } from "./types.js";
 
-/** Trần giá nhẫn — tối đa 10 chữ số. */
+/** Trần giá nhẫn — tối đa 12 chữ số. */
 export const RING_XU_MAX = ITEM_XU_MAX;
 
 export type RingEffect = "none" | "glow" | "pulse" | "sparkle" | "orbit";

@@ -174,7 +174,7 @@ export function GiftHubSheet({
               Tặng quà
             </p>
             <p className="text-[10px] text-white/45">
-              Xu ảo P2P · không tiền thật · tối đa 10 chữ số xu / lần
+              Xu ảo P2P · không tiền thật · tối đa 12 chữ số xu / lần
             </p>
           </div>
           <button

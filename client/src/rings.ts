@@ -1,7 +1,7 @@
 /** Catalog nhẫn — đồng bộ server ringStore (xu ảo, không tiền thật). */
 
-/** Trần giá vật phẩm / nhẫn — 10 chữ số (khớp server ITEM_XU_MAX). */
-export const ITEM_XU_MAX = 9_999_999_999;
+/** Trần giá vật phẩm / nhẫn — 12 chữ số (khớp server ITEM_XU_MAX). */
+export const ITEM_XU_MAX = 999_999_999_999;
 
 export type RingEffect = "none" | "glow" | "pulse" | "sparkle" | "orbit";
 

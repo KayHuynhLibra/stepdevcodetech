@@ -64,6 +64,7 @@ import {
   PHASE_MS,
   STARTING_BALANCE,
   TARGET_DISPLAY_CCU,
+  ACCOUNT_BALANCE_MAX,
   todayKey,
   weekKey,
   type BotLogEntry,
@@ -750,7 +751,10 @@ export class GameEngine {
     if (!Number.isFinite(delta) || delta === 0) {
       return { ok: false, reason: "Delta không hợp lệ" };
     }
-    session.balance = Math.max(0, session.balance + delta);
+    session.balance = Math.max(
+      0,
+      Math.min(ACCOUNT_BALANCE_MAX, session.balance + delta),
+    );
     const socketIds: string[] = [];
     if (this.players.has(session.id)) {
       socketIds.push(session.id);

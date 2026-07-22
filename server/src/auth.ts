@@ -9,8 +9,8 @@ import {
 } from "./avatars.js";
 import { STARTING_BALANCE, weekKey, MIN_STAKE } from "./types.js";
 
-import { ITEM_XU_MAX } from "./types.js";
-/** Trần tặng xu / vật phẩm mỗi lần — 10 chữ số */
+import { ITEM_XU_MAX, ACCOUNT_BALANCE_MAX } from "./types.js";
+/** Trần tặng xu / vật phẩm mỗi lần — 12 chữ số */
 export const GIFT_XU_MAX = ITEM_XU_MAX;
 import {
   demoteRank,
@@ -1902,6 +1902,12 @@ export class AuthStore {
     if (!user) return { ok: false, reason: "Không tìm thấy user" };
     const next = user.balance + Math.floor(delta);
     if (next < 0) return { ok: false, reason: "Số dư không đủ để trừ" };
+    if (next > ACCOUNT_BALANCE_MAX) {
+      return {
+        ok: false,
+        reason: `Số dư tối đa ${ACCOUNT_BALANCE_MAX.toLocaleString("vi-VN")} xu`,
+      };
+    }
     user.balance = next;
     this.scheduleSave();
     return { ok: true, user: toPublic(user) };
@@ -1997,6 +2003,12 @@ export class AuthStore {
     if (from.balance < amount) {
       return { ok: false, reason: "Số dư không đủ" };
     }
+    if (to.balance + amount > ACCOUNT_BALANCE_MAX) {
+      return {
+        ok: false,
+        reason: `Người nhận đã gần trần ${ACCOUNT_BALANCE_MAX.toLocaleString("vi-VN")} xu`,
+      };
+    }
 
     from.balance -= amount;
     to.balance += amount;
@@ -2059,7 +2071,10 @@ export class AuthStore {
   setBalance(userId: string, balance: number) {
     const user = this.byId.get(userId);
     if (!user) return;
-    user.balance = Math.max(0, Math.floor(balance));
+    user.balance = Math.max(
+      0,
+      Math.min(ACCOUNT_BALANCE_MAX, Math.floor(balance)),
+    );
     this.scheduleSave();
   }
 
@@ -2073,7 +2088,10 @@ export class AuthStore {
     const user = this.byId.get(userId);
     if (!user) return;
     ensureDay(user);
-    user.balance = Math.max(0, Math.floor(balance));
+    user.balance = Math.max(
+      0,
+      Math.min(ACCOUNT_BALANCE_MAX, Math.floor(balance)),
+    );
     user.winToday = Math.max(0, Math.floor(winToday));
     user.guessesToday = Math.max(0, Math.floor(guessesToday));
     if (typeof stakeWeek === "number" && Number.isFinite(stakeWeek)) {

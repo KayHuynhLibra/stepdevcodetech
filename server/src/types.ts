@@ -205,8 +205,10 @@ export const PHASE_MS = {
 
 export const STARTING_BALANCE = 20_000;
 export const MIN_STAKE = 10;
-/** Trần giá vật phẩm / nhẫn / tặng xu P2P — tối đa 10 chữ số. */
-export const ITEM_XU_MAX = 9_999_999_999;
+/** Trần xu tài khoản / vật phẩm / nhẫn / tặng xu P2P — tối đa 12 chữ số. */
+export const ITEM_XU_MAX = 999_999_999_999;
+/** Trần số dư tài khoản (đồng bộ ITEM_XU_MAX). */
+export const ACCOUNT_BALANCE_MAX = ITEM_XU_MAX;
 /** Trần xu trên 1 lá trong 1 ván. */
 export const MAX_STAKE = 1_000_000;
 /** Bước tăng xu khi đặt xu */

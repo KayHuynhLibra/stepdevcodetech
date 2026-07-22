@@ -5058,7 +5058,7 @@ export default function AdminDashboard() {
           <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
             <p className="play-heading text-sm">Catalog quà</p>
             <p className="text-[11px] text-[var(--play-muted)]">
-              Giá clamp 10–{ITEM_XU_MAX.toLocaleString("vi-VN")} xu (tối đa 10
+              Giá clamp 10–{ITEM_XU_MAX.toLocaleString("vi-VN")} xu (tối đa 12
               chữ số). Category: warm / prestige / legend / fun.
             </p>
             <ul className="max-h-80 space-y-2 overflow-y-auto">
@@ -5188,7 +5188,7 @@ export default function AdminDashboard() {
                 ) : null}
               </label>
               <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                Giá (tối đa 10 chữ số)
+                Giá (tối đa 12 chữ số)
                 <input
                   type="number"
                   min={10}
@@ -5648,7 +5648,7 @@ export default function AdminDashboard() {
               />
             </label>
             <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-              Giá (tối đa 10 chữ số)
+              Giá (tối đa 12 chữ số)
               <input
                 type="number"
                 min={10}
