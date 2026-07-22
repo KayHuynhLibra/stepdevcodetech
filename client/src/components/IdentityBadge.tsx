@@ -16,6 +16,8 @@ import {
   getCultivationColor,
   isCultivationRank,
 } from "../cultivation";
+import { PlayLevelBadge } from "./PlayLevelBadge";
+import { coupleWithLabel } from "../rings";
 
 function roleMeta(role?: UserRole | "guest"): { glyph: string; label: string } {
   if (role === "mainadmin") return { glyph: "✦", label: "Mainadmin" };
@@ -90,7 +92,13 @@ export function IdentityBadge({
     onNameClick
       ? "max-w-full rounded px-0.5 -mx-0.5 underline decoration-dotted decoration-[var(--gold)]/70 underline-offset-2 active:opacity-80"
       : ""
-  } ${user?.nameColor ? "" : "text-[var(--play-ink)]"}`;
+  } ${
+    user?.nameColor
+      ? ""
+      : bondActive
+        ? "text-[#FFE8F0]"
+        : "text-[var(--play-ink)]"
+  }`;
 
   const avatarSize = compact ? "sm" : "md";
 
@@ -107,6 +115,8 @@ export function IdentityBadge({
       size={avatarSize}
       frame={user?.avatarFrame}
       isVip={isVip}
+      bonded={bondActive}
+      accountRole={isGuest ? "guest" : role}
       decoding="async"
       onError={onAvatarError}
     />
@@ -155,21 +165,9 @@ export function IdentityBadge({
     />
   );
 
-  const meta = (
-    <div className="identity-badge__meta min-w-0">
-      <div className="identity-badge__name-row">{nameNode}</div>
-      {loginHint && (
-        <p
-          className={`truncate font-mono text-[9px] text-[var(--play-muted)] ${
-            compact ? "mt-0" : "mt-0.5"
-          }`}
-          title="Username đăng nhập"
-        >
-          @{loginHint}
-        </p>
-      )}
-
-      <div className="role-rail" aria-label="Vai trò">
+  const rolesTable = (
+    <div className="identity-badge__roles-table" aria-label="Vai trò">
+      <div className="role-rail">
         <div className="role-rail__pills">
           {bondActive && (
             <span className="role-pill role-pill--couple" title="Cặp đôi">
@@ -179,8 +177,15 @@ export function IdentityBadge({
               <span className="role-pill__text">Cặp đôi</span>
             </span>
           )}
+          {user && !compact && (
+            <PlayLevelBadge
+              rounds={user.roundsPlayed ?? 0}
+              size="sm"
+              className="role-rail__level"
+            />
+          )}
           <span
-            className="role-pill role-pill--role"
+            className={`role-pill role-pill--role role-pill--${role}`}
             title={roleName}
             data-role={role}
           >
@@ -232,46 +237,93 @@ export function IdentityBadge({
           </div>
         )}
       </div>
-
-      {showPath && (
-        <p
-          className={`mt-1 truncate font-mono text-[var(--play-muted)] ${
-            compact ? "text-[9px]" : "text-[10px]"
-          }`}
-        >
-          {compact ? play : `${path} · chơi ${play}`}
-        </p>
-      )}
     </div>
   );
 
+  if (coupleNode) {
+    return (
+      <div className={shellClass}>
+        <div className="identity-badge__couple-stage">
+          <div className="identity-badge__couple-bg" aria-hidden />
+          <div className="identity-badge__couple-stars" aria-hidden />
+          <div className="identity-badge__couple-wrap">{coupleNode}</div>
+          <div className="identity-badge__couple-identity">
+            <div className="identity-badge__name-row">{nameNode}</div>
+            {loginHint && (
+              <p
+                className="truncate font-mono text-[9px] text-[var(--play-muted)]"
+                title="Username đăng nhập"
+              >
+                @{loginHint}
+              </p>
+            )}
+            {user?.bond && (
+              <p className="identity-badge__partner-line">
+                <span className="identity-badge__with">
+                  {coupleWithLabel(user.bond.couplePhrase)}
+                </span>
+                <span aria-hidden>💖</span>
+                <span className="truncate">{user.bond.partnerName}</span>
+              </p>
+            )}
+          </div>
+        </div>
+        {rolesTable}
+        {showPath && (
+          <p
+            className={`identity-badge__path truncate font-mono text-[var(--play-muted)] ${
+              compact ? "text-[9px]" : "text-[10px]"
+            }`}
+          >
+            {compact ? play : `${path} · chơi ${play}`}
+          </p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className={shellClass}>
-      {coupleNode ? (
-        <>
-          <div className="identity-badge__couple-wrap">{coupleNode}</div>
-          {meta}
-        </>
-      ) : (
-        <>
-          {onAvatarClick ? (
-            <button
-              type="button"
-              onClick={onAvatarClick}
-              className="relative shrink-0 active:scale-[0.97]"
-              title="Đổi avatar"
+      <div className="identity-badge__solo-row">
+        {onAvatarClick ? (
+          <button
+            type="button"
+            onClick={onAvatarClick}
+            className="relative shrink-0 active:scale-[0.97]"
+            title="Đổi avatar"
+          >
+            {avatarNode}
+            <span className="absolute -bottom-0.5 -right-0.5 z-10 rounded-full bg-[var(--wood-deep)] px-1 text-[8px] font-bold leading-tight text-[var(--cream)] ring-1 ring-[var(--gold)]/50">
+              Đổi
+            </span>
+          </button>
+        ) : (
+          <span className="relative shrink-0">{avatarNode}</span>
+        )}
+        <div className="identity-badge__meta min-w-0 flex-1">
+          <div className="identity-badge__name-row">{nameNode}</div>
+          {loginHint && (
+            <p
+              className={`truncate font-mono text-[9px] text-[var(--play-muted)] ${
+                compact ? "mt-0" : "mt-0.5"
+              }`}
+              title="Username đăng nhập"
             >
-              {avatarNode}
-              <span className="absolute -bottom-0.5 -right-0.5 z-10 rounded-full bg-[var(--wood-deep)] px-1 text-[8px] font-bold leading-tight text-[var(--cream)] ring-1 ring-[var(--gold)]/50">
-                Đổi
-              </span>
-            </button>
-          ) : (
-            <span className="relative shrink-0">{avatarNode}</span>
+              @{loginHint}
+            </p>
           )}
-          {meta}
-        </>
-      )}
+          {showPath && (
+            <p
+              className={`mt-1 truncate font-mono text-[var(--play-muted)] ${
+                compact ? "text-[9px]" : "text-[10px]"
+              }`}
+            >
+              {compact ? play : `${path} · chơi ${play}`}
+            </p>
+          )}
+        </div>
+      </div>
+      {rolesTable}
     </div>
   );
 }

@@ -2090,6 +2090,46 @@ app.get("/api/auth/ring-status", (req, res) => {
   });
 });
 
+/** Kim Cương: đặt chữ giữa A — … — B (trống = «Với»). */
+app.post("/api/auth/ring-couple-phrase", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  const ip = clientIp(req);
+  if (
+    !rateLimit(`ringphrase:${me.id}`, 12, 60_000) ||
+    !rateLimit(`ringphraseip:${ip}`, 24, 60_000)
+  ) {
+    return res
+      .status(429)
+      .json({ ok: false, reason: "Đổi chữ quá nhanh — thử lại sau" });
+  }
+  const result = ringStore.setCouplePhrase(me.id, req.body?.phrase);
+  if (!result.ok) return res.status(400).json(result);
+  const token = String(req.headers.authorization ?? "")
+    .replace(/^Bearer\s+/i, "")
+    .trim();
+  const user = authStore.resolveToken(token || undefined) ?? me;
+  const partnerId =
+    result.bond.aUserId === me.id
+      ? result.bond.bUserId
+      : result.bond.aUserId;
+  const partner = authStore.getById(partnerId);
+  if (partner) {
+    const live = engine.applyAuthBalance(partner.id, partner.balance);
+    for (const sid of live.socketIds) {
+      io.to(sid).emit("ringPhraseUpdated", {
+        couplePhrase: result.couplePhrase ?? null,
+        byUserId: me.id,
+      });
+    }
+  }
+  res.json({
+    ok: true,
+    couplePhrase: result.couplePhrase ?? null,
+    user,
+  });
+});
+
 app.get("/api/users/:userId/bond", (req, res) => {
   const userId = String(req.params.userId ?? "").trim();
   if (!userId) {

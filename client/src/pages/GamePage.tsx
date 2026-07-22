@@ -85,6 +85,8 @@ import {
 import { normalizeAvatar } from "../avatars";
 import { AvatarPickerSheet } from "../components/AvatarPickerSheet";
 import { IdentityBadge } from "../components/IdentityBadge";
+import { PlayToolsBar } from "../components/PlayToolsBar";
+import { PlayRecentBar } from "../components/PlayRecentBar";
 import { uploadAvatarFromFile } from "../uploadAvatar";
 import { getDevicePayload } from "../device";
 import { Link, useNavigate } from "react-router-dom";
@@ -520,6 +522,18 @@ export default function GamePage() {
         .catch(() => {});
     };
 
+    const onRingPhraseUpdated = () => {
+      void api<{ ok: true; user: AuthUser }>("/api/auth/me")
+        .then((r) => {
+          const token = getToken();
+          if (token && r.user) {
+            saveSession(token, r.user);
+            setMe(r.user);
+          }
+        })
+        .catch(() => {});
+    };
+
     s.on("connect", onConnect);
     s.on("disconnect", onDisconnect);
     s.on("joined", onJoined);
@@ -538,6 +552,7 @@ export default function GamePage() {
     s.on("ringProposed", onRingProposed);
     s.on("ringAccepted", onRingAccepted);
     s.on("ringBroken", onRingBroken);
+    s.on("ringPhraseUpdated", onRingPhraseUpdated);
 
     if (s.connected) onConnect();
 
@@ -564,6 +579,7 @@ export default function GamePage() {
       s.off("ringProposed", onRingProposed);
       s.off("ringAccepted", onRingAccepted);
       s.off("ringBroken", onRingBroken);
+      s.off("ringPhraseUpdated", onRingPhraseUpdated);
     };
   }, [socket, showToast, setMe, setSessionAuthed]);
 
@@ -581,11 +597,13 @@ export default function GamePage() {
     const nextRounds = v.roundsPlayed ?? me.roundsPlayed ?? 0;
     const nextGranted = v.vipGranted ?? me.vipGranted ?? false;
     const nextCode = v.code ?? me.code;
+    const nextLevel = v.playLevel ?? me.playLevel;
     if (
       nextVip === !!me.isVip &&
       nextRounds === (me.roundsPlayed ?? 0) &&
       nextGranted === !!me.vipGranted &&
-      nextCode === me.code
+      nextCode === me.code &&
+      nextLevel === me.playLevel
     ) {
       return;
     }
@@ -593,6 +611,7 @@ export default function GamePage() {
       ...me,
       isVip: nextVip,
       roundsPlayed: nextRounds,
+      playLevel: nextLevel,
       vipGranted: nextGranted,
       code: nextCode,
     };
@@ -1504,6 +1523,34 @@ export default function GamePage() {
     }
   };
 
+  const saveCouplePhrase = async (phrase: string) => {
+    if (ringBusy) return;
+    setRingBusy(true);
+    try {
+      const r = await api<{ ok: true; user: AuthUser; couplePhrase: string | null }>(
+        "/api/auth/ring-couple-phrase",
+        {
+          method: "POST",
+          body: JSON.stringify({ phrase }),
+        },
+      );
+      const token = getToken();
+      if (token && r.user) {
+        saveSession(token, r.user);
+        setMe(r.user);
+      }
+      showToast(
+        r.couplePhrase
+          ? `Đã đặt chữ «${r.couplePhrase}»`
+          : "Đã về chữ mặc định «Với»",
+      );
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Không lưu chữ được");
+    } finally {
+      setRingBusy(false);
+    }
+  };
+
   const openAvatarPicker = () => setSheet("avatar");
 
   const applyAvatar = async (next: string) => {
@@ -1693,48 +1740,23 @@ export default function GamePage() {
                 SOFIAORE-TAROT
               </h1>
             </div>
-            <button
-              type="button"
-              onClick={() => setSheet("rules")}
-              className="app-btn-ghost shrink-0 px-2 py-1 text-[10px]"
-              title="Luật chơi"
-            >
-              Luật
-            </button>
-            <button
-              type="button"
-              onClick={() => openGiftHub()}
-              className="app-btn-ghost shrink-0 px-2 py-1 text-[10px] !text-[var(--jade-soft)]"
-              title="Tặng quà demo"
-            >
-              Quà
-            </button>
-            <button
-              type="button"
-              onClick={() => openRingHub()}
-              className="app-btn-ghost shrink-0 px-2 py-1 text-[10px] !text-rose-200"
-              title="Nhẫn / cầu hôn"
-            >
-              Nhẫn
-            </button>
-            {lbFlags.balance && (
-              <button
-                type="button"
-                onClick={openBalanceBoard}
-                className="app-btn-ghost shrink-0 px-2 py-1 text-[10px] !text-[var(--gold-soft)]"
-                title="Top xu đang cầm"
-              >
-                Đại gia
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={toggleMute}
-              className="app-btn-ghost shrink-0 px-2 py-1 text-[10px]"
-              title={muted ? "Bật tiếng" : "Tắt tiếng"}
-            >
-              {muted ? "Tắt" : "Âm"}
-            </button>
+            <PlayToolsBar
+              muted={muted}
+              showBalance={lbFlags.balance}
+              jackpotLabel={`Hũ ${formatXu(state?.jackpotPool ?? 0)}`}
+              voiceLabel={
+                voiceStatus.inRoom && voiceStatus.roomId
+                  ? `Room ${voiceStatus.roomId}${voiceStatus.isHost ? " · H" : ""}`
+                  : "Room"
+              }
+              voiceLive={!!(voiceStatus.inRoom && voiceStatus.roomOpen)}
+              onRules={() => setSheet("rules")}
+              onGift={() => openGiftHub()}
+              onRing={() => openRingHub()}
+              onBalance={openBalanceBoard}
+              onToggleMute={toggleMute}
+              onVoice={() => playSock.openVoiceRoom()}
+            />
           </div>
           {!!(getToken() && getStoredUser() && !sessionAuthed) && (
             <div className="mb-2 flex items-center justify-between gap-2 rounded-xl bg-rose-500/15 px-2.5 py-2 ring-1 ring-rose-400/40">
@@ -1769,16 +1791,19 @@ export default function GamePage() {
                 setRenameOpen((v) => !v);
               }}
             />
-            {me && !userShowsVip(me) && (
-              <p className="mt-1 px-0.5 text-[10px] font-semibold tabular-nums text-amber-200/90">
-                VIP {(me.roundsPlayed ?? 0).toLocaleString("vi-VN")}/
-                {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván
-              </p>
-            )}
-            {me && userShowsVip(me) && (
-              <p className="mt-1 px-0.5 text-[10px] font-extrabold text-amber-300">
-                VIP
-              </p>
+            {me && (
+              <div className="mt-1 flex flex-wrap items-center gap-2 px-0.5">
+                {!userShowsVip(me) ? (
+                  <p className="text-[10px] font-semibold tabular-nums text-amber-200/90">
+                    VIP {(me.roundsPlayed ?? 0).toLocaleString("vi-VN")}/
+                    {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván
+                  </p>
+                ) : (
+                  <p className="text-[10px] font-extrabold text-amber-300">
+                    VIP
+                  </p>
+                )}
+              </div>
             )}
             <p
               className="mt-1 px-0.5 text-[10px] font-semibold tabular-nums text-[var(--play-muted)]"
@@ -1883,7 +1908,7 @@ export default function GamePage() {
               onClick={openHistory}
               className="min-w-0 truncate text-left text-[11px] font-medium text-[var(--play-ink)]/85 underline-offset-2 hover:underline"
             >
-              Hôm nay đã đoán: {guessesToday} lần ›
+              Hôm nay: {guessesToday} lần ›
             </button>
             <div className="flex shrink-0 items-center gap-1.5">
               <div className="ui-pill flex items-center gap-1 px-2.5 py-1 !text-[var(--play-ink)]">
@@ -1911,38 +1936,6 @@ export default function GamePage() {
                 }`}
               >
                 Nạp!
-              </button>
-              <button
-                type="button"
-                title="Quỹ hũ Tarot"
-                className="ui-pill ui-pill--deep flex items-center gap-1 px-2 py-1"
-              >
-                <span className="font-play text-[9px] font-semibold text-amber-100 tabular-nums">
-                  Hũ {formatXu(state?.jackpotPool ?? 0)}
-                </span>
-              </button>
-              <button
-                type="button"
-                title="Phòng voice giao lưu"
-                onClick={() => playSock.openVoiceRoom()}
-                className="ui-pill ui-pill--deep flex items-center gap-1 px-2 py-1"
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    voiceStatus.inRoom
-                      ? voiceStatus.roomOpen
-                        ? "bg-emerald-400"
-                        : "bg-amber-400"
-                      : "bg-white/35"
-                  }`}
-                />
-                <span className="font-play text-[9px] font-semibold text-amber-200">
-                  {voiceStatus.inRoom && voiceStatus.roomId
-                    ? `Room ${voiceStatus.roomId}`
-                    : "Room"}
-                  {voiceStatus.inRoom && voiceStatus.isHost ? " · H" : ""}
-                  {!voiceStatus.inRoom ? " · Off" : ""}
-                </span>
               </button>
             </div>
           </div>
@@ -2000,44 +1993,21 @@ export default function GamePage() {
         </>
         )}
 
-        {/* ===== ZONE 3: Lịch sử nhanh (strip) ===== */}
-        <button
-          type="button"
-          onClick={openHistory}
-          className="game-task mt-2.5 w-full overflow-hidden px-2 py-2 text-left"
-        >
-          <p className="play-section-title mb-1 px-1">
-            Kết quả gần đây ›
-          </p>
-          <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-            {(state?.history ?? []).length === 0 && (
-              <span className="px-1 text-xs text-[var(--play-muted)]">
-                Chưa có kết quả
-              </span>
-            )}
-            {(state?.history ?? []).map((row, i) => {
+        {/* ===== ZONE 3: Kết quả gần đây (bar popup) ===== */}
+        <div className="mt-2.5">
+          <PlayRecentBar
+            onOpenFull={openHistory}
+            items={(state?.history ?? []).map((row, i) => {
               const card = CARDS.find((c) => c.id === row.win);
-              return (
-                <span
-                  key={`${row.round}-${i}`}
-                  className="relative h-12 w-9 shrink-0 overflow-hidden rounded shadow ring-1 ring-[var(--gold)]/35"
-                  title={card ? `#${card.id} ${card.nameVi}` : `#${row.win}`}
-                >
-                  <img
-                    src={card?.image}
-                    alt={card?.nameVi ?? `#${row.win}`}
-                    decoding="async"
-                    loading="lazy"
-                    className="h-full w-full object-cover"
-                  />
-                  <span className="font-play absolute left-0.5 top-0.5 z-[1] rounded bg-[var(--wood-deep)]/92 px-1 text-[9px] font-bold leading-tight text-[var(--gold-soft)] tabular-nums shadow-sm">
-                    {row.win}
-                  </span>
-                </span>
-              );
+              return {
+                key: `${row.round}-${i}`,
+                image: card?.image,
+                badge: row.win,
+                title: card ? `#${card.id} ${card.nameVi}` : `#${row.win}`,
+              };
             })}
-          </div>
-        </button>
+          />
+        </div>
 
         {/* ===== ZONE 4+6: Form bàn đặt xu (deck) ===== */}
         {state?.viewerEngagement?.warmActive && (
@@ -2551,6 +2521,7 @@ export default function GamePage() {
         onAccept={acceptRing}
         onReject={rejectRing}
         onBreak={breakRing}
+        onSaveCouplePhrase={saveCouplePhrase}
       />
 
       <RingProposeSheet

@@ -288,6 +288,8 @@ export interface UserBondSnippet {
   coupleLayout?: CoupleLayout | string;
   ringFrame?: RingFrameStyle | string;
   ringFrameScale?: RingFrameScale | string;
+  /** Chữ giữa A — … — B (Kim Cương); trống = «Với» */
+  couplePhrase?: string;
   since: number;
   status: BondStatus;
 }
@@ -358,7 +360,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     nameVi: "Kim cương",
     image: "/assets/rings/ring-diamond.svg",
     price: 50_000,
-    blurb: "Đỉnh cao",
+    blurb: "Đỉnh cao · chữ tuỳ chỉnh A — … — B",
     enabled: true,
     sort: 40,
     category: "legend",
@@ -481,4 +483,31 @@ export function normalizeCoupleLayout(raw: unknown): CoupleLayout {
   return COUPLE_LAYOUTS.includes(s as CoupleLayout)
     ? (s as CoupleLayout)
     : "classic";
+}
+
+/** Nhẫn Kim Cương (và bản sao key diamond_*) được phép chữ tuỳ chỉnh. */
+export function ringAllowsCustomPhrase(ringKey: unknown): boolean {
+  const k = String(ringKey ?? "")
+    .trim()
+    .toLowerCase();
+  return k === "diamond" || k.startsWith("diamond_");
+}
+
+export const COUPLE_PHRASE_MAX = 20;
+export const COUPLE_PHRASE_DEFAULT = "Với";
+
+/** Làm sạch chữ giữa A — … — B. Rỗng → dùng mặc định khi hiển thị. */
+export function normalizeCouplePhrase(raw: unknown): string {
+  const s = String(raw ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, COUPLE_PHRASE_MAX);
+  // Chặn ký tự điều khiển / URL-ish thô
+  return s.replace(/[<>{}[\]\\|`]/g, "").trim();
+}
+
+/** Nhãn giữa hai tên: phrase tuỳ chỉnh hoặc «Với». */
+export function coupleWithLabel(phrase?: string | null): string {
+  const p = normalizeCouplePhrase(phrase);
+  return p || COUPLE_PHRASE_DEFAULT;
 }

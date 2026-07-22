@@ -1,5 +1,6 @@
 import { CARDS, formatXu } from "../cards";
 import { VIP_ROUNDS_REQUIRED } from "../auth";
+import { PLAY_LEVEL_MAX, roundsToReachLevel } from "../playLevel";
 import {
   CHAT_COST,
   VIP_CHAT_COST,
@@ -48,7 +49,11 @@ export function RulesSheet({ open, onClose }: RulesSheetProps) {
             <strong className="text-white">
               {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván
             </strong>{" "}
-            hoặc được admin cấp. Chat: thường {formatXu(CHAT_COST)} · VIP bay{" "}
+            hoặc được admin cấp. Cấp độ chơi{" "}
+            <strong className="text-white">Lv.1–{PLAY_LEVEL_MAX}</strong> tăng
+            theo số ván (Lv.{PLAY_LEVEL_MAX} ≈{" "}
+            {roundsToReachLevel(PLAY_LEVEL_MAX).toLocaleString("vi-VN")} ván).
+            Chat: thường {formatXu(CHAT_COST)} · VIP bay{" "}
             {formatXu(VIP_CHAT_COST)} · Saint {formatXu(SAINT_CHAT_COST)} xu.
           </p>
           <p className="text-[11px] text-white/50">

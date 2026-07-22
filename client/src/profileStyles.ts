@@ -137,3 +137,31 @@ export function normalizeIdFrame(raw: unknown): IdFrameId {
     .toLowerCase();
   return ID_FRAME_IDS.has(s as IdFrameId) ? (s as IdFrameId) : "classic";
 }
+
+/**
+ * Khung avatar hiển thị: ưu tiên RoleAD; nếu none thì gợi ý theo VIP / role / couple.
+ */
+export function resolveDisplayAvatarFrame(
+  raw: unknown,
+  hints?: {
+    isVip?: boolean;
+    bonded?: boolean;
+    role?: string | null;
+  },
+): AvatarFrameId {
+  const explicit = normalizeAvatarFrame(raw);
+  if (explicit !== "none") return explicit;
+  const role = String(hints?.role ?? "")
+    .trim()
+    .toLowerCase();
+  if (role === "mainadmin" || role === "admin") return "admin";
+  if (role === "mod") return "rune";
+  if (role === "tutien") return "jade";
+  if (role === "eco") return "jade";
+  if (role === "audit") return "celestial";
+  if (role === "sgift") return "pearl";
+  if (role === "ring") return "heart";
+  if (hints?.bonded) return "heart";
+  if (hints?.isVip) return "vip";
+  return "gold";
+}

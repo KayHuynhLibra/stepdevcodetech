@@ -42,6 +42,8 @@ export interface AuthUser {
   outcomeWinPct?: number;
   /** Số ván lifetime */
   roundsPlayed?: number;
+  /** Cấp 1–99 suy từ roundsPlayed */
+  playLevel?: number;
   /** Admin cấp VIP */
   vipGranted?: boolean;
   /** VIP hiệu lực (admin hoặc đủ 10k ván) */
@@ -93,6 +95,7 @@ export interface AuthUser {
     coupleLayout?: string;
     ringFrame?: string;
     ringFrameScale?: string;
+    couplePhrase?: string;
     since: number;
     status: "pending" | "active";
   };

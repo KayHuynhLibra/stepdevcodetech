@@ -37,6 +37,7 @@ import {
   type NameFrameId,
   type IdFrameId,
 } from "./profileStyles.js";
+import { playLevelFromRounds } from "./playLevel.js";
 import {
   canControlVoiceRoomLock as grantsCanControlVoiceRoomLock,
   clampStaffGrantLevel,
@@ -219,6 +220,8 @@ export interface PublicUser {
   /** Chỉ meaningful khi outcomeMode=win — 80…100 */
   outcomeWinPct?: number;
   roundsPlayed: number;
+  /** Cấp 1–99 suy từ roundsPlayed */
+  playLevel: number;
   vipGranted: boolean;
   /** vipGranted || roundsPlayed >= VIP_ROUNDS_REQUIRED */
   isVip: boolean;
@@ -272,6 +275,7 @@ export interface PublicUser {
     coupleLayout?: string;
     ringFrame?: string;
     ringFrameScale?: string;
+    couplePhrase?: string;
     since: number;
     status: "pending" | "active";
   };
@@ -443,6 +447,7 @@ function toPublic(
     outcomeMode: normalizeOutcomeMode(u.outcomeMode),
     outcomeWinPct: clampOutcomeWinPct(u.outcomeWinPct),
     roundsPlayed,
+    playLevel: playLevelFromRounds(roundsPlayed),
     vipGranted,
     isVip: computeIsVip(u),
     banned: !!u.banned,
@@ -1609,6 +1614,7 @@ export class AuthStore {
         isVip: boolean;
         vipGranted: boolean;
         roundsPlayed: number;
+        playLevel: number;
         cultivationRank?: CultivationRank;
         nameColor?: string;
         nameEffect?: string;
@@ -1638,6 +1644,7 @@ export class AuthStore {
       isVip: boolean;
       vipGranted: boolean;
       roundsPlayed: number;
+      playLevel: number;
       cultivationRank?: CultivationRank;
       nameColor?: string;
       nameEffect?: string;
@@ -1654,6 +1661,7 @@ export class AuthStore {
       isVip: computeIsVip(user),
       vipGranted: !!user.vipGranted,
       roundsPlayed: Math.max(0, Math.floor(user.roundsPlayed ?? 0)),
+      playLevel: playLevelFromRounds(user.roundsPlayed),
     };
     if (user.cultivationRank && isCultivationRank(user.cultivationRank)) {
       card.cultivationRank = user.cultivationRank;

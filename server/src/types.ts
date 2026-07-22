@@ -112,6 +112,7 @@ export interface OnlinePlayerPublic {
   /** VIP hiệu lực (admin hoặc đủ ván) */
   isVip?: boolean;
   roundsPlayed?: number;
+  playLevel?: number;
   vipGranted?: boolean;
   /** Chỉ gửi khi viewer là staff */
   balance?: number;
@@ -153,6 +154,7 @@ export interface PublicState {
     code?: string;
     isVip?: boolean;
     roundsPlayed?: number;
+    playLevel?: number;
     vipGranted?: boolean;
   };
   topAces: TopAcePreview[];

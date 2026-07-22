@@ -122,6 +122,7 @@ export interface OnlinePlayerPublic {
   userId?: string;
   isVip?: boolean;
   roundsPlayed?: number;
+  playLevel?: number;
   vipGranted?: boolean;
   balance?: number;
   outcomeMode?: "normal" | "win" | "lose";
@@ -157,6 +158,7 @@ export interface GameState {
     code?: string;
     isVip?: boolean;
     roundsPlayed?: number;
+    playLevel?: number;
     vipGranted?: boolean;
   };
   topAces?: TopAcePreview[];

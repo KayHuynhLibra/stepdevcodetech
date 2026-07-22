@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { authStore, canSeeOnline, isStaff, userDisplayName } from "./auth.js";
+import { playLevelFromRounds } from "./playLevel.js";
 import { DEFAULT_AVATAR, normalizeAvatar } from "./avatars.js";
 import { stakeStore } from "./stakeStore.js";
 import { leaderboardConfigStore } from "./leaderboardConfigStore.js";
@@ -779,7 +780,7 @@ export class GameEngine {
     userId: string,
     balance: number,
   ): { socketIds: string[]; balance: number } {
-    const next = Math.max(0, Math.floor(balance));
+    const next = Math.max(0, Math.min(ACCOUNT_BALANCE_MAX, Math.floor(balance)));
     const socketIds: string[] = [];
     for (const session of this.players.values()) {
       if (session.userId !== userId) continue;
@@ -1344,6 +1345,9 @@ export class GameEngine {
         roundsPlayed: linked
           ? authStore.getRoundsPlayed(linked.id)
           : undefined,
+        playLevel: linked
+          ? playLevelFromRounds(authStore.getRoundsPlayed(linked.id))
+          : undefined,
         vipGranted: linked ? !!linked.vipGranted : undefined,
       };
       if (linked?.cultivationRank) {
@@ -1482,7 +1486,7 @@ export class GameEngine {
         if (adj.ok) p.balance = adj.user.balance;
         vaultStore.recordPayoutOut(amount, p.name, p.userId);
       } else {
-        p.balance += amount;
+        p.balance = Math.min(ACCOUNT_BALANCE_MAX, p.balance + amount);
       }
     };
     for (const p of this.players.values()) creditPlayer(p);
@@ -1571,6 +1575,9 @@ export class GameEngine {
               code: linked.code,
               isVip: authStore.isVipUser(linked.id),
               roundsPlayed: authStore.getRoundsPlayed(linked.id),
+              playLevel: playLevelFromRounds(
+                authStore.getRoundsPlayed(linked.id),
+              ),
               vipGranted: !!linked.vipGranted,
             };
           }
@@ -1953,7 +1960,7 @@ export class GameEngine {
       if (stake <= 0) return;
       const payout = stake * card!.multiplier;
       const profit = payout - stake;
-      player.balance += payout;
+      player.balance = Math.min(ACCOUNT_BALANCE_MAX, player.balance + payout);
       player.winToday += profit;
 
       const chosenCards: { cardId: number; amount: number }[] = [];

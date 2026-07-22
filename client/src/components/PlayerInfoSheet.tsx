@@ -4,11 +4,13 @@ import { formatXu } from "../cards";
 import { CoupleAvatar } from "./CoupleAvatar";
 import { ColoredName } from "./ColoredName";
 import { RoleAvatarFrame } from "./RoleAvatarFrame";
-import { isRingEmoji, type UserBondSnippet } from "../rings";
+import { PlayLevelBadge } from "./PlayLevelBadge";
+import { isRingEmoji, coupleWithLabel, type UserBondSnippet } from "../rings";
 import {
   normalizeProfileTheme,
   normalizeNameFrame,
   normalizeIdFrame,
+  resolveDisplayAvatarFrame,
   type ProfileThemeId,
 } from "../profileStyles";
 import {
@@ -198,6 +200,16 @@ export function PlayerInfoSheet({
   const theme: ProfileThemeId = normalizeProfileTheme(player.profileTheme);
   const nameFrame = normalizeNameFrame(player.nameFrame);
   const idFrame = normalizeIdFrame(player.idFrame);
+  const displayFrame = resolveDisplayAvatarFrame(player.avatarFrame, {
+    isVip: showVip,
+    bonded: targetBonded,
+    role: player.isGuest ? "guest" : player.isBot ? "bot" : "user",
+  });
+  const roleKindClass = player.isBot
+    ? "role-pill--bot"
+    : player.isGuest
+      ? "role-pill--guest"
+      : "role-pill--player";
 
   return (
     <div className="fixed inset-0 z-[66] flex items-end justify-center backdrop-blur-md sm:items-center">
@@ -257,6 +269,10 @@ export function PlayerInfoSheet({
                 src={player.avatar || "/assets/ui/avatar-default.png"}
                 frame={player.avatarFrame}
                 isVip={showVip}
+                bonded={targetBonded}
+                accountRole={
+                  player.isGuest ? "guest" : player.isBot ? "bot" : "user"
+                }
                 alt=""
               />
             )}
@@ -264,7 +280,10 @@ export function PlayerInfoSheet({
         </div>
 
         {/* Identity — name / ID / roles căn giữa đồng bộ */}
-        <div className="profile-celestial__identity relative z-[1]">
+        <div
+          className="profile-celestial__identity relative z-[1]"
+          data-avatar-frame={displayFrame}
+        >
           <div
             className={`profile-name-frame profile-name-frame--${nameFrame}`}
             data-frame={nameFrame}
@@ -280,7 +299,12 @@ export function PlayerInfoSheet({
 
           {targetBonded && player.bond && (
             <p className="profile-celestial__partner">
-              <span className="opacity-70">Với</span>
+              <span className="mx-1 text-[#8A9EB8]" aria-hidden>
+                ——
+              </span>
+              <span className="profile-celestial__with font-semibold text-[#FFD0DC]">
+                {coupleWithLabel(player.bond.couplePhrase)}
+              </span>
               <span className="mx-1 text-[#8A9EB8]" aria-hidden>
                 ——
               </span>
@@ -354,9 +378,12 @@ export function PlayerInfoSheet({
                   </span>
                 </span>
               ) : null}
-              <span className="role-pill role-pill--role" role="listitem">
+              <span
+                className={`role-pill role-pill--role ${roleKindClass}`}
+                role="listitem"
+              >
                 <span className="role-pill__glyph" aria-hidden>
-                  👤
+                  {player.isBot ? "⚙" : player.isGuest ? "◌" : "👤"}
                 </span>
                 <span className="role-pill__text">{kind}</span>
               </span>
@@ -364,9 +391,20 @@ export function PlayerInfoSheet({
           </div>
 
           {player.userId && !player.isBot && (
+            <div className="profile-celestial__level w-full max-w-[16rem]">
+              <PlayLevelBadge
+                rounds={rounds}
+                size="md"
+                showTitle
+                showBar
+              />
+            </div>
+          )}
+
+          {player.userId && !player.isBot && (
             <p className="profile-celestial__rounds">
               Đã chơi {rounds.toLocaleString("vi-VN")} /{" "}
-              {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván
+              {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván (VIP)
             </p>
           )}
         </div>

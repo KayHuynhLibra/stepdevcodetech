@@ -198,6 +198,8 @@ export interface Bond {
   proposedAt: number;
   acceptedAt?: number;
   note?: string;
+  /** Chữ giữa tên cặp (chỉ Kim Cương) */
+  couplePhrase?: string;
 }
 
 export interface RingStoreSnapshot {
@@ -253,6 +255,7 @@ export interface UserBondSnippet {
   coupleLayout: CoupleLayout;
   ringFrame: RingFrameStyle;
   ringFrameScale: RingFrameScale;
+  couplePhrase?: string;
   since: number;
   status: BondStatus;
 }
@@ -344,7 +347,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     nameVi: "Kim cương",
     image: "/assets/rings/ring-diamond.svg",
     price: 50_000,
-    blurb: "Đỉnh cao",
+    blurb: "Đỉnh cao · chữ tuỳ chỉnh A — … — B",
     enabled: true,
     sort: 40,
     category: "legend",
@@ -550,6 +553,7 @@ function normalizeBond(raw: unknown): Bond | null {
   const acceptedAt = b.acceptedAt != null ? Math.floor(Number(b.acceptedAt)) : undefined;
   const note =
     typeof b.note === "string" ? b.note.trim().slice(0, 80) : undefined;
+  const couplePhrase = normalizeCouplePhrase(b.couplePhrase);
   return {
     id,
     aUserId,
@@ -560,6 +564,7 @@ function normalizeBond(raw: unknown): Bond | null {
     proposedAt,
     acceptedAt: acceptedAt && acceptedAt > 0 ? acceptedAt : undefined,
     note: note || undefined,
+    couplePhrase: couplePhrase || undefined,
   };
 }
 
@@ -575,6 +580,29 @@ function newBondId(): string {
 
 function bondInvolves(bond: Bond, userId: string): boolean {
   return bond.aUserId === userId || bond.bUserId === userId;
+}
+
+export const COUPLE_PHRASE_MAX = 20;
+export const COUPLE_PHRASE_DEFAULT = "Với";
+
+export function ringAllowsCustomPhrase(ringKey: unknown): boolean {
+  const k = String(ringKey ?? "")
+    .trim()
+    .toLowerCase();
+  return k === "diamond" || k.startsWith("diamond_");
+}
+
+export function normalizeCouplePhrase(raw: unknown): string {
+  const s = String(raw ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, COUPLE_PHRASE_MAX);
+  return s.replace(/[<>{}[\]\\|`]/g, "").trim();
+}
+
+export function coupleWithLabel(phrase?: string | null): string {
+  const p = normalizeCouplePhrase(phrase);
+  return p || COUPLE_PHRASE_DEFAULT;
 }
 
 class RingStore {
@@ -746,6 +774,10 @@ class RingStore {
     if (!id) return undefined;
     const active = this.getActiveBondPublic(id, resolveUser);
     if (active) {
+      const raw = this.bonds.find(
+        (b) => b.status === "active" && bondInvolves(b, id),
+      );
+      const phrase = normalizeCouplePhrase(raw?.couplePhrase);
       return {
         partnerId: active.partner.id,
         partnerCode: active.partner.code,
@@ -764,6 +796,7 @@ class RingStore {
         coupleLayout: active.ring.coupleLayout,
         ringFrame: active.ring.ringFrame,
         ringFrameScale: active.ring.ringFrameScale,
+        couplePhrase: phrase || undefined,
         since: active.since,
         status: "active",
       };
@@ -928,6 +961,39 @@ class RingStore {
     this.bonds.splice(idx, 1);
     this.save();
     return { ok: true, bond: removed };
+  }
+
+  /**
+   * Đặt chữ giữa A — … — B. Chỉ cặp active + nhẫn Kim Cương.
+   * Truyền chuỗi rỗng để về mặc định «Với».
+   */
+  setCouplePhrase(
+    userId: string,
+    phraseRaw: unknown,
+  ):
+    | { ok: true; bond: Bond; couplePhrase?: string }
+    | { ok: false; reason: string } {
+    const uid = String(userId ?? "").trim();
+    if (!uid) return { ok: false, reason: "Thiếu user" };
+    const bond = this.bonds.find(
+      (b) => b.status === "active" && bondInvolves(b, uid),
+    );
+    if (!bond) return { ok: false, reason: "Bạn chưa kết đôi" };
+    if (!ringAllowsCustomPhrase(bond.ringKey)) {
+      return {
+        ok: false,
+        reason: "Chỉ nhẫn Kim Cương mới được đặt chữ tuỳ chỉnh",
+      };
+    }
+    const phrase = normalizeCouplePhrase(phraseRaw);
+    if (phrase) bond.couplePhrase = phrase;
+    else delete bond.couplePhrase;
+    this.save();
+    return {
+      ok: true,
+      bond: { ...bond },
+      couplePhrase: bond.couplePhrase,
+    };
   }
 
   breakBond(

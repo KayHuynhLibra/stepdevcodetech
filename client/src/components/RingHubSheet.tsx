@@ -7,6 +7,10 @@ import {
   normalizeRingCategory,
   normalizeRingEffect,
   RING_CATEGORIES,
+  COUPLE_PHRASE_DEFAULT,
+  COUPLE_PHRASE_MAX,
+  coupleWithLabel,
+  ringAllowsCustomPhrase,
   type RingCategory,
   type RingItem,
   type UserBondSnippet,
@@ -410,6 +414,77 @@ interface RingHubSheetProps {
   onAccept?: () => void | Promise<void>;
   onReject?: () => void | Promise<void>;
   onBreak?: () => void | Promise<void>;
+  onSaveCouplePhrase?: (phrase: string) => void | Promise<void>;
+}
+
+function DiamondPhraseEditor({
+  bond,
+  busy,
+  onSave,
+}: {
+  bond: UserBondSnippet;
+  busy?: boolean;
+  onSave?: (phrase: string) => void | Promise<void>;
+}) {
+  const [draft, setDraft] = useState(bond.couplePhrase ?? "");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDraft(bond.couplePhrase ?? "");
+  }, [bond.couplePhrase, bond.partnerId]);
+
+  if (!ringAllowsCustomPhrase(bond.ringKey) || !onSave) return null;
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (saving || busy) return;
+    setSaving(true);
+    try {
+      await onSave(draft);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form
+      onSubmit={(e) => void submit(e)}
+      className="mt-3 rounded-lg bg-white/5 px-2.5 py-2 ring-1 ring-amber-300/25"
+    >
+      <p className="text-[10px] font-bold uppercase tracking-wide text-amber-200/85">
+        Chữ Kim Cương · A — … — B
+      </p>
+      <p className="mt-0.5 text-[10px] text-white/45">
+        Để trống = «{COUPLE_PHRASE_DEFAULT}» · tối đa {COUPLE_PHRASE_MAX} ký tự
+      </p>
+      <div className="mt-1.5 flex gap-1.5">
+        <input
+          value={draft}
+          maxLength={COUPLE_PHRASE_MAX}
+          disabled={busy || saving}
+          onChange={(e) => setDraft(e.target.value.slice(0, COUPLE_PHRASE_MAX))}
+          placeholder={COUPLE_PHRASE_DEFAULT}
+          className="app-input !px-2 !py-1.5 flex-1 text-[11px]"
+        />
+        <button
+          type="submit"
+          disabled={busy || saving}
+          className="shrink-0 rounded-lg bg-gradient-to-r from-amber-600 to-rose-500 px-2.5 py-1.5 text-[10px] font-bold text-white disabled:opacity-45"
+        >
+          Lưu
+        </button>
+      </div>
+      <p className="mt-1.5 truncate text-center text-[11px] text-white/70">
+        <span className="opacity-60">Bạn</span>
+        <span className="mx-1.5 text-rose-200/80">——</span>
+        <span className="font-bold text-amber-100">
+          {coupleWithLabel(draft)}
+        </span>
+        <span className="mx-1.5 text-rose-200/80">——</span>
+        <span className="font-medium text-white/90">{bond.partnerName}</span>
+      </p>
+    </form>
+  );
 }
 
 export function RingHubSheet({
@@ -424,6 +499,7 @@ export function RingHubSheet({
   onAccept,
   onReject,
   onBreak,
+  onSaveCouplePhrase,
 }: RingHubSheetProps) {
   if (!open) return null;
 
@@ -501,10 +577,16 @@ export function RingHubSheet({
                     {myBond.ringNameVi}
                   </p>
                   <p className="truncate text-[11px] text-white/55">
-                    với {myBond.partnerName} · ID {myBond.partnerCode}
+                    {coupleWithLabel(myBond.couplePhrase)} {myBond.partnerName} ·
+                    ID {myBond.partnerCode}
                   </p>
                 </div>
               </div>
+              <DiamondPhraseEditor
+                bond={myBond}
+                busy={busy}
+                onSave={onSaveCouplePhrase}
+              />
               {onBreak && (
                 <button
                   type="button"

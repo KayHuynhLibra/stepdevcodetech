@@ -1,7 +1,7 @@
 import type { ImgHTMLAttributes, SyntheticEvent } from "react";
 import { DEFAULT_AVATAR, normalizeAvatar } from "../avatars";
 import {
-  normalizeAvatarFrame,
+  resolveDisplayAvatarFrame,
   type AvatarFrameId,
 } from "../profileStyles";
 import { VipFantasyAvatar } from "./VipFantasyAvatar";
@@ -16,26 +16,34 @@ const SIZE_CLASS: Record<RoleAvatarSize, string> = {
 };
 
 interface RoleAvatarFrameProps
-  extends Omit<ImgHTMLAttributes<HTMLImageElement>, "className" | "size"> {
+  extends Omit<ImgHTMLAttributes<HTMLImageElement>, "className" | "size" | "role"> {
   src: string;
   frame?: AvatarFrameId | string | null;
   size?: RoleAvatarSize;
   className?: string;
-  /** Fallback VIP aura khi frame=none và isVip */
   isVip?: boolean;
+  bonded?: boolean;
+  /** Staff / account role — dùng gợi ý khung khi frame = none */
+  accountRole?: string | null;
 }
 
-/** Avatar đơn với khung role (RoleAD catalog). */
+/** Avatar đơn với khung role (RoleAD / gợi ý theo VIP·role·couple). */
 export function RoleAvatarFrame({
   src,
   frame,
   size = "md",
   className = "",
   isVip = false,
+  bonded = false,
+  accountRole = null,
   alt = "",
   ...imgProps
 }: RoleAvatarFrameProps) {
-  const id = normalizeAvatarFrame(frame);
+  const id = resolveDisplayAvatarFrame(frame, {
+    isVip,
+    bonded,
+    role: accountRole,
+  });
   const onError = (e: SyntheticEvent<HTMLImageElement>) => {
     const el = e.currentTarget;
     if (el.src.includes("avatar-default")) return;
@@ -43,29 +51,23 @@ export function RoleAvatarFrame({
     imgProps.onError?.(e);
   };
 
-  if (id === "none" && isVip) {
+  /** VIP fantasy aura khi khung hiển thị là VIP */
+  if (id === "vip") {
     const vipSize = size === "sm" ? "sm" : size === "md" ? "md" : "lg";
     return (
-      <VipFantasyAvatar
-        {...imgProps}
-        src={normalizeAvatar(src) || DEFAULT_AVATAR}
-        alt={alt}
-        size={vipSize}
-        className={className}
-        onError={onError}
-      />
-    );
-  }
-
-  if (id === "none") {
-    return (
-      <img
-        {...imgProps}
-        src={normalizeAvatar(src) || DEFAULT_AVATAR}
-        alt={alt}
-        className={`rounded-full object-cover border-4 border-[#C8A968] shadow-[0_0_15px_rgba(200,169,104,0.45)] ${SIZE_CLASS[size]} ${className}`}
-        onError={onError}
-      />
+      <span
+        className={`role-avatar-frame role-avatar-frame--vip role-avatar-frame--aura inline-flex shrink-0 items-center justify-center ${className}`}
+        data-frame="vip"
+        data-size={size}
+      >
+        <VipFantasyAvatar
+          {...imgProps}
+          src={normalizeAvatar(src) || DEFAULT_AVATAR}
+          alt={alt}
+          size={vipSize}
+          onError={onError}
+        />
+      </span>
     );
   }
 
