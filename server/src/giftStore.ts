@@ -14,6 +14,8 @@ export interface GiftItem {
   key: string;
   nameVi: string;
   emoji: string;
+  /** URL ảnh catalog (ưu tiên hiển thị); emoji là fallback */
+  image?: string;
   price: number;
   category: GiftCategory;
   blurb?: string;
@@ -192,6 +194,9 @@ function normalizeGift(raw: unknown): GiftItem | null {
   if (!key) return null;
   const nameVi = String(g.nameVi ?? "").trim().slice(0, 40) || key;
   const emoji = String(g.emoji ?? "🎁").trim().slice(0, 8) || "🎁";
+  const imageRaw =
+    typeof g.image === "string" ? g.image.trim().slice(0, 240) : "";
+  const image = imageRaw || undefined;
   const category: GiftCategory = isGiftCategory(g.category) ? g.category : "fun";
   const blurb =
     typeof g.blurb === "string" ? g.blurb.trim().slice(0, 80) : undefined;
@@ -199,6 +204,7 @@ function normalizeGift(raw: unknown): GiftItem | null {
     key,
     nameVi,
     emoji,
+    image,
     price: clampGiftPrice(g.price),
     category,
     blurb: blurb || undefined,

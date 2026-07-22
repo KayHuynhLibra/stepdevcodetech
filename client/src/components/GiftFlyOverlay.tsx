@@ -10,6 +10,38 @@ interface GiftFlyOverlayProps {
   onDone: (key: string) => void;
 }
 
+function GiftVisual({
+  emoji,
+  image,
+  sizeClass,
+}: {
+  emoji: string;
+  image?: string;
+  sizeClass: string;
+}) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImg = Boolean(image) && !imgFailed;
+  if (showImg) {
+    return (
+      <span className={`relative inline-flex items-center justify-center ${sizeClass}`}>
+        <img
+          src={image}
+          alt=""
+          className="h-full w-full object-contain drop-shadow-lg"
+          onError={() => setImgFailed(true)}
+          draggable={false}
+        />
+        {emoji && (
+          <span className="absolute -bottom-1 -right-1 text-lg leading-none drop-shadow">
+            {emoji}
+          </span>
+        )}
+      </span>
+    );
+  }
+  return <span className={`leading-none ${sizeClass}`}>{emoji}</span>;
+}
+
 function FlyVisual({
   item,
   onDone,
@@ -19,6 +51,7 @@ function FlyVisual({
 }) {
   const durationMs = Math.max(800, item.fly.durationMs || 3000);
   const emoji = item.giftEmoji || "🎁";
+  const image = item.giftImage;
   const name = item.giftNameVi || "Quà";
   const line = `${item.fromName} → ${item.toName} · ${emoji} ${name} · ${formatXu(item.amount)} xu`;
 
@@ -39,8 +72,11 @@ function FlyVisual({
         transition={{ duration: 0.28 }}
         className="pointer-events-none fixed inset-x-0 bottom-20 z-[75] flex justify-center px-3"
       >
-        <div className="max-w-sm rounded-full bg-[#16100c]/92 px-4 py-2 text-center text-xs font-semibold text-[var(--jade-soft)] shadow-lg ring-1 ring-[var(--jade)]/40 backdrop-blur">
-          {line}
+        <div className="flex max-w-sm items-center gap-2 rounded-full bg-[#16100c]/92 px-4 py-2 text-center text-xs font-semibold text-[var(--jade-soft)] shadow-lg ring-1 ring-[var(--jade)]/40 backdrop-blur">
+          {image && (
+            <GiftVisual emoji={emoji} image={image} sizeClass="h-7 w-7 text-base" />
+          )}
+          <span>{line}</span>
         </div>
       </motion.div>
     );
@@ -56,8 +92,13 @@ function FlyVisual({
         className="pointer-events-none fixed inset-x-0 top-16 z-[75] px-3"
       >
         <div className="overflow-hidden rounded-full bg-[var(--wood-deep)]/90 py-2 shadow-lg ring-1 ring-[var(--gold)]/45 backdrop-blur-sm">
-          <p className="animate-shout-marquee whitespace-nowrap px-3 text-xs font-semibold text-[var(--gold-soft)]">
-            {emoji} {line}
+          <p className="animate-shout-marquee flex items-center gap-2 whitespace-nowrap px-3 text-xs font-semibold text-[var(--gold-soft)]">
+            {image ? (
+              <GiftVisual emoji={emoji} image={image} sizeClass="h-5 w-5 text-sm" />
+            ) : (
+              <span>{emoji}</span>
+            )}{" "}
+            {line}
           </p>
         </div>
       </motion.div>
@@ -75,14 +116,14 @@ function FlyVisual({
         className="pointer-events-none fixed inset-0 z-[75] flex items-center justify-center"
       >
         <div className="rounded-2xl bg-[#16100c]/88 px-6 py-5 text-center shadow-2xl ring-2 ring-[var(--jade)]/50 backdrop-blur">
-          <motion.p
+          <motion.div
             initial={{ y: 24, rotate: -12 }}
             animate={{ y: 0, rotate: 0 }}
             transition={{ type: "spring", stiffness: 260, damping: 14 }}
-            className="text-5xl"
+            className="flex justify-center text-5xl"
           >
-            {emoji}
-          </motion.p>
+            <GiftVisual emoji={emoji} image={image} sizeClass="h-16 w-16 text-5xl" />
+          </motion.div>
           <p className="mt-2 text-sm font-bold text-[var(--cream)]">{name}</p>
           <p className="mt-1 text-[11px] text-white/70">{line}</p>
         </div>
@@ -110,7 +151,9 @@ function FlyVisual({
         <p className="mb-2 text-[10px] font-extrabold uppercase tracking-[0.2em] text-[var(--jade-soft)]/90">
           {item.fly.label || "Quà lớn"}
         </p>
-        <p className="text-6xl leading-none">{emoji}</p>
+        <div className="flex justify-center text-6xl leading-none">
+          <GiftVisual emoji={emoji} image={image} sizeClass="h-24 w-24 text-6xl" />
+        </div>
         <p className="mt-3 font-play text-xl font-bold text-[var(--cream)]">
           {name}
         </p>

@@ -2196,7 +2196,7 @@ input {
 }
 
 
-/* Couple ring FX — d? nét ch?nh qua inline style; hi?u ?ng theo class */
+/* Couple ring FX ? ?? nét ch?nh qua inline style; hi?u ?ng theo class */
 .ring-fx {
   transform-origin: center center;
 }
@@ -2242,4 +2242,84 @@ input {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* CoupleAvatar ? ch?ng avatar + pedestal nh?n gi?a */
+.couple-avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0.2rem 0.35rem;
+  border-radius: 999px;
+  background:
+    radial-gradient(
+      ellipse 70% 90% at 50% 55%,
+      rgba(255, 140, 170, 0.22),
+      transparent 68%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(232, 176, 80, 0.18) 0%,
+      rgba(255, 120, 160, 0.12) 45%,
+      rgba(61, 184, 160, 0.1) 100%
+    );
+  box-shadow:
+    inset 0 0 0 1px rgba(232, 176, 80, 0.28),
+    0 4px 14px rgba(24, 12, 4, 0.28);
+}
+.couple-avatar--compact {
+  padding: 0.12rem 0.22rem;
+  box-shadow:
+    inset 0 0 0 1px rgba(232, 176, 80, 0.22),
+    0 2px 8px rgba(24, 12, 4, 0.22);
+}
+.couple-avatar__slot--a {
+  margin-right: -0.55rem;
+}
+.couple-avatar__slot--b {
+  margin-left: -0.55rem;
+}
+.couple-avatar--compact .couple-avatar__slot--a {
+  margin-right: -0.4rem;
+}
+.couple-avatar--compact .couple-avatar__slot--b {
+  margin-left: -0.4rem;
+}
+.couple-avatar__face {
+  box-shadow:
+    0 2px 8px rgba(24, 12, 4, 0.4),
+    0 0 0 1px rgba(255, 244, 224, 0.15);
+}
+.couple-avatar__ring-badge {
+  border-radius: 999px;
+  background:
+    radial-gradient(
+      circle at 50% 40%,
+      rgba(255, 244, 224, 0.95),
+      rgba(232, 176, 80, 0.55) 55%,
+      rgba(180, 90, 40, 0.45) 100%
+    );
+  box-shadow:
+    0 0 12px rgba(255, 160, 120, 0.55),
+    0 0 22px rgba(255, 120, 160, 0.28),
+    0 2px 6px rgba(24, 12, 4, 0.35),
+    inset 0 1px 2px rgba(255, 255, 255, 0.45);
+}
+.couple-avatar__heart {
+  position: absolute;
+  left: 50%;
+  bottom: 0.05rem;
+  z-index: 0;
+  transform: translateX(-50%);
+  font-size: 0.55rem;
+  line-height: 1;
+  color: rgba(255, 120, 160, 0.55);
+  pointer-events: none;
+  text-shadow: 0 0 6px rgba(255, 140, 170, 0.45);
+}
+.couple-avatar--compact .couple-avatar__heart {
+  font-size: 0.45rem;
+  bottom: 0;
 }

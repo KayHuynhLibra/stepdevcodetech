@@ -9,12 +9,28 @@ export const RING_XU_MAX = ITEM_XU_MAX;
 
 export type RingEffect = "none" | "glow" | "pulse" | "sparkle" | "orbit";
 
+export type RingCategory = "classic" | "luxury" | "romance" | "legend";
+
 export const RING_EFFECTS: RingEffect[] = [
   "none",
   "glow",
   "pulse",
   "sparkle",
   "orbit",
+];
+
+export const RING_CATEGORIES: { id: RingCategory; label: string }[] = [
+  { id: "classic", label: "Cổ điển" },
+  { id: "luxury", label: "Xa xỉ" },
+  { id: "romance", label: "Lãng mạn" },
+  { id: "legend", label: "Huyền thoại" },
+];
+
+const RING_CATEGORY_IDS: RingCategory[] = [
+  "classic",
+  "luxury",
+  "romance",
+  "legend",
 ];
 
 export interface RingItem {
@@ -26,6 +42,7 @@ export interface RingItem {
   blurb?: string;
   enabled: boolean;
   sort: number;
+  category: RingCategory;
   /** Hiệu ứng hiển thị trên avatar cặp */
   effect: RingEffect;
   /** Độ nét / phóng ảnh nhẫn 0–100 (mặc định 70) */
@@ -101,6 +118,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Khởi đầu nhẹ nhàng",
     enabled: true,
     sort: 10,
+    category: "classic",
     effect: "glow",
     imageSharpness: 75,
   },
@@ -112,6 +130,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Ánh vàng ấm",
     enabled: true,
     sort: 20,
+    category: "luxury",
     effect: "pulse",
     imageSharpness: 80,
   },
@@ -123,6 +142,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Hồng lãng mạn",
     enabled: true,
     sort: 30,
+    category: "romance",
     effect: "sparkle",
     imageSharpness: 85,
   },
@@ -134,11 +154,28 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Đỉnh cao",
     enabled: true,
     sort: 40,
+    category: "legend",
     effect: "orbit",
     imageSharpness: 95,
   },
 ];
 
+function defaultCategoryForKey(key: string): RingCategory {
+  if (key === "silver") return "classic";
+  if (key === "gold") return "luxury";
+  if (key === "rose") return "romance";
+  if (key === "diamond") return "legend";
+  return "classic";
+}
+
+function isRingCategory(v: unknown): v is RingCategory {
+  return typeof v === "string" && (RING_CATEGORY_IDS as string[]).includes(v);
+}
+
+function normalizeCategory(raw: unknown, key: string): RingCategory {
+  if (isRingCategory(raw)) return raw;
+  return defaultCategoryForKey(key);
+}
 function clampRingPrice(n: unknown): number {
   const v = Math.floor(Number(n));
   if (!Number.isFinite(v)) return MIN_STAKE;
@@ -187,6 +224,7 @@ function normalizeRing(raw: unknown): RingItem | null {
     blurb: blurb || undefined,
     enabled: g.enabled !== false,
     sort: Number.isFinite(sort) ? sort : 100,
+    category: normalizeCategory(g.category, key),
     effect: normalizeEffect(g.effect),
     imageSharpness: clampSharpness(g.imageSharpness),
   };
@@ -377,6 +415,7 @@ class RingStore {
         price: 0,
         enabled: true,
         sort: 0,
+        category: "classic" as const,
         effect: "glow" as const,
         imageSharpness: 70,
       } satisfies RingItem);
@@ -438,6 +477,7 @@ class RingStore {
         price: 0,
         enabled: true,
         sort: 0,
+        category: "classic" as const,
         effect: "glow" as const,
         imageSharpness: 70,
       } satisfies RingItem);

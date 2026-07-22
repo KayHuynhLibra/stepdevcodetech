@@ -4,6 +4,10 @@ import { formatXu } from "../cards";
 import {
   DEFAULT_RINGS,
   isRingEmoji,
+  normalizeRingCategory,
+  normalizeRingEffect,
+  RING_CATEGORIES,
+  type RingCategory,
   type RingItem,
   type UserBondSnippet,
 } from "../rings";
@@ -31,6 +35,55 @@ interface RingProposeSheetProps {
   }) => void | Promise<void>;
 }
 
+function RingThumb({
+  ring,
+  selected,
+}: {
+  ring: RingItem;
+  selected?: boolean;
+}) {
+  const effect = normalizeRingEffect(ring.effect);
+  const fxClass =
+    selected && effect === "glow"
+      ? "ring-fx ring-fx--glow"
+      : selected && effect === "pulse"
+        ? "ring-fx ring-fx--pulse"
+        : selected && effect === "sparkle"
+          ? "ring-fx ring-fx--sparkle"
+          : selected && effect === "orbit"
+            ? "ring-fx ring-fx--orbit"
+            : selected
+              ? "ring-fx ring-fx--glow"
+              : "";
+
+  return (
+    <div
+      className={`relative mx-auto flex h-16 w-16 items-center justify-center rounded-full ${
+        selected
+          ? "couple-avatar__ring-badge shadow-[0_0_16px_rgba(255,120,160,0.4)]"
+          : "bg-gradient-to-b from-white/12 to-white/[0.03] ring-1 ring-white/10"
+      }`}
+    >
+      <span
+        className={`relative flex h-12 w-12 items-center justify-center ${fxClass}`}
+      >
+        {isRingEmoji(ring.image) ? (
+          <span className="text-3xl leading-none drop-shadow-sm">
+            {ring.image}
+          </span>
+        ) : (
+          <img
+            src={ring.image}
+            alt=""
+            className="h-11 w-11 object-contain drop-shadow-md"
+            draggable={false}
+          />
+        )}
+      </span>
+    </div>
+  );
+}
+
 export function RingProposeSheet({
   open,
   balance,
@@ -41,6 +94,7 @@ export function RingProposeSheet({
   onPropose,
 }: RingProposeSheetProps) {
   const [catalog, setCatalog] = useState<RingItem[]>(DEFAULT_RINGS);
+  const [category, setCategory] = useState<RingCategory>("classic");
   const [ringKey, setRingKey] = useState(DEFAULT_RINGS[0]!.key);
   const [toCode, setToCode] = useState("");
   const [toUsername, setToUsername] = useState("");
@@ -65,18 +119,32 @@ export function RingProposeSheet({
     void api<{ ok: true; rings: RingItem[] }>("/api/rings")
       .then((r) => {
         if (cancelled) return;
-        const rings = (r.rings ?? []).filter((g) => g.enabled !== false);
+        const rings = (r.rings ?? [])
+          .filter((g) => g.enabled !== false)
+          .map((g) => ({
+            ...g,
+            category: normalizeRingCategory(g.category, g.key),
+          }));
         if (rings.length) {
           setCatalog(rings);
-          setRingKey(rings[0]!.key);
+          const firstCat =
+            RING_CATEGORIES.find((c) =>
+              rings.some((g) => g.category === c.id),
+            )?.id ?? "classic";
+          setCategory(firstCat);
+          const first =
+            rings.find((g) => g.category === firstCat) ?? rings[0]!;
+          setRingKey(first.key);
         } else {
           setCatalog(DEFAULT_RINGS);
+          setCategory("classic");
           setRingKey(DEFAULT_RINGS[0]!.key);
         }
       })
       .catch(() => {
         if (cancelled) return;
         setCatalog(DEFAULT_RINGS);
+        setCategory("classic");
         setRingKey(DEFAULT_RINGS[0]!.key);
         setLoadNote("Dùng catalog mặc định (API nhẫn lỗi)");
       });
@@ -85,13 +153,22 @@ export function RingProposeSheet({
     };
   }, [open, preset]);
 
+  const byCategory = useMemo(
+    () =>
+      catalog.filter(
+        (g) => normalizeRingCategory(g.category, g.key) === category,
+      ),
+    [catalog, category],
+  );
+
   const ring = useMemo(() => {
     return (
       catalog.find((g) => g.key === ringKey) ??
+      byCategory[0] ??
       catalog[0] ??
       DEFAULT_RINGS[0]!
     );
-  }, [catalog, ringKey]);
+  }, [catalog, ringKey, byCategory]);
 
   const insufficient =
     typeof balance === "number" && Number.isFinite(balance)
@@ -150,12 +227,43 @@ export function RingProposeSheet({
             <p className="text-[10px] text-amber-200/80">{loadNote}</p>
           )}
 
+          <div className="flex flex-wrap gap-1">
+            {RING_CATEGORIES.map((c) => {
+              const count = catalog.filter(
+                (g) => normalizeRingCategory(g.category, g.key) === c.id,
+              ).length;
+              if (!count) return null;
+              const on = category === c.id;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setCategory(c.id);
+                    const first = catalog.find(
+                      (g) => normalizeRingCategory(g.category, g.key) === c.id,
+                    );
+                    if (first) setRingKey(first.key);
+                  }}
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-bold transition ${
+                    on
+                      ? "bg-gradient-to-r from-rose-700 to-rose-500 text-white shadow-[0_0_12px_rgba(244,63,94,0.35)] ring-1 ring-rose-300/50"
+                      : "bg-white/10 text-white/75 ring-1 ring-white/15 hover:bg-white/14"
+                  }`}
+                >
+                  {c.label}
+                </button>
+              );
+            })}
+          </div>
+
           <div>
             <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-white/50">
               Chọn nhẫn
             </p>
-            <div className="grid grid-cols-2 gap-1.5">
-              {catalog.map((g) => {
+            <div className="grid grid-cols-2 gap-2">
+              {byCategory.map((g) => {
                 const on = g.key === ring.key;
                 return (
                   <button
@@ -163,35 +271,27 @@ export function RingProposeSheet({
                     type="button"
                     disabled={busy}
                     onClick={() => setRingKey(g.key)}
-                    className={`flex items-center gap-2 rounded-xl px-2.5 py-2 text-left ring-1 ${
+                    className={`rounded-xl px-2 py-2.5 text-left ring-1 transition ${
                       on
-                        ? "bg-rose-500/25 ring-rose-300/50"
-                        : "bg-white/5 ring-white/10"
+                        ? "bg-gradient-to-br from-rose-500/35 via-rose-900/25 to-amber-900/20 ring-rose-300/60 shadow-[0_0_16px_rgba(244,63,94,0.22)]"
+                        : "bg-white/5 ring-white/10 hover:bg-white/8 hover:ring-white/20"
                     }`}
                   >
-                    {isRingEmoji(g.image) ? (
-                      <span className="text-xl">{g.image}</span>
-                    ) : (
-                      <img
-                        src={g.image}
-                        alt=""
-                        className="h-8 w-8 object-contain"
-                      />
-                    )}
-                    <span className="min-w-0">
-                      <span className="block truncate text-[11px] font-bold text-white/90">
-                        {g.nameVi}
-                      </span>
-                      <span className="block text-[10px] text-white/45">
-                        {formatXu(g.price)} xu
-                      </span>
+                    <RingThumb ring={g} selected={on} />
+                    <span className="mt-1.5 block truncate text-center text-[11px] font-bold text-white/90">
+                      {g.nameVi}
+                    </span>
+                    <span className="block text-center text-[10px] tabular-nums text-rose-200/90">
+                      {formatXu(g.price)} xu
                     </span>
                   </button>
                 );
               })}
             </div>
             {ring.blurb && (
-              <p className="mt-1.5 text-[10px] text-white/45">{ring.blurb}</p>
+              <p className="mt-1.5 text-center text-[10px] text-white/45">
+                {ring.blurb}
+              </p>
             )}
           </div>
 
@@ -285,7 +385,7 @@ export function RingProposeSheet({
               insufficient ||
               (!picked?.userId && !toCode.trim() && !toUsername.trim())
             }
-            className="w-full rounded-xl bg-rose-500/90 px-3 py-2.5 text-sm font-bold text-white disabled:opacity-45"
+            className="w-full rounded-xl bg-gradient-to-r from-rose-700 to-rose-500 px-3 py-2.5 text-sm font-bold text-white shadow-[0_4px_18px_rgba(244,63,94,0.28)] disabled:opacity-45"
           >
             {busy ? "Đang gửi…" : "Gửi lời cầu hôn"}
           </button>
@@ -361,20 +461,41 @@ export function RingHubSheet({
 
         <div className="space-y-3 px-3 py-3">
           {active && myBond && (
-            <div className="rounded-xl bg-white/5 px-3 py-3 ring-1 ring-rose-300/30">
+            <div className="rounded-xl bg-gradient-to-br from-rose-500/20 via-white/5 to-amber-900/15 px-3 py-3 ring-1 ring-rose-300/35">
               <p className="text-[10px] font-bold uppercase tracking-wide text-rose-200/80">
                 Đang đeo nhẫn
               </p>
-              <div className="mt-2 flex items-center gap-2">
-                {isRingEmoji(myBond.ringImage) ? (
-                  <span className="text-2xl">{myBond.ringImage}</span>
-                ) : (
-                  <img
-                    src={myBond.ringImage}
-                    alt=""
-                    className="h-10 w-10 object-contain"
-                  />
-                )}
+              <div className="mt-2 flex items-center gap-3">
+                <div className="couple-avatar__ring-badge flex h-14 w-14 shrink-0 items-center justify-center">
+                  {(() => {
+                    const fx = normalizeRingEffect(myBond.ringEffect);
+                    const fxClass =
+                      fx === "glow"
+                        ? "ring-fx ring-fx--glow"
+                        : fx === "pulse"
+                          ? "ring-fx ring-fx--pulse"
+                          : fx === "sparkle"
+                            ? "ring-fx ring-fx--sparkle"
+                            : fx === "orbit"
+                              ? "ring-fx ring-fx--orbit"
+                              : "ring-fx";
+                    return (
+                      <span
+                        className={`flex h-11 w-11 items-center justify-center ${fxClass}`}
+                      >
+                        {isRingEmoji(myBond.ringImage) ? (
+                          <span className="text-3xl">{myBond.ringImage}</span>
+                        ) : (
+                          <img
+                            src={myBond.ringImage}
+                            alt=""
+                            className="h-10 w-10 object-contain"
+                          />
+                        )}
+                      </span>
+                    );
+                  })()}
+                </div>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-bold text-white/90">
                     {myBond.ringNameVi}
@@ -398,20 +519,22 @@ export function RingHubSheet({
           )}
 
           {pending && myBond && (
-            <div className="rounded-xl bg-white/5 px-3 py-3 ring-1 ring-amber-300/30">
+            <div className="rounded-xl bg-gradient-to-br from-amber-500/15 via-white/5 to-rose-900/10 px-3 py-3 ring-1 ring-amber-300/30">
               <p className="text-[10px] font-bold uppercase tracking-wide text-amber-200/80">
                 Lời cầu hôn đang chờ
               </p>
-              <div className="mt-2 flex items-center gap-2">
-                {isRingEmoji(myBond.ringImage) ? (
-                  <span className="text-2xl">{myBond.ringImage}</span>
-                ) : (
-                  <img
-                    src={myBond.ringImage}
-                    alt=""
-                    className="h-10 w-10 object-contain"
-                  />
-                )}
+              <div className="mt-2 flex items-center gap-3">
+                <div className="couple-avatar__ring-badge flex h-14 w-14 shrink-0 items-center justify-center opacity-90">
+                  {isRingEmoji(myBond.ringImage) ? (
+                    <span className="text-3xl">{myBond.ringImage}</span>
+                  ) : (
+                    <img
+                      src={myBond.ringImage}
+                      alt=""
+                      className="h-10 w-10 object-contain"
+                    />
+                  )}
+                </div>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-bold text-white/90">
                     {myBond.ringNameVi}
@@ -427,7 +550,7 @@ export function RingHubSheet({
                     type="button"
                     disabled={busy}
                     onClick={() => void onAccept()}
-                    className="flex-1 rounded-lg bg-rose-500/90 px-3 py-2 text-xs font-bold text-white disabled:opacity-45"
+                    className="flex-1 rounded-lg bg-gradient-to-r from-rose-700 to-rose-500 px-3 py-2 text-xs font-bold text-white disabled:opacity-45"
                   >
                     Chấp nhận
                   </button>
@@ -463,7 +586,7 @@ export function RingHubSheet({
                 type="button"
                 disabled={busy}
                 onClick={onOpenPropose}
-                className="mt-3 w-full rounded-xl bg-rose-500/90 px-3 py-2.5 text-sm font-bold text-white disabled:opacity-45"
+                className="mt-3 w-full rounded-xl bg-gradient-to-r from-rose-700 to-rose-500 px-3 py-2.5 text-sm font-bold text-white shadow-[0_4px_18px_rgba(244,63,94,0.28)] disabled:opacity-45"
               >
                 Cầu hôn / Lên nhẫn
               </button>

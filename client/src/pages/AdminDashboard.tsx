@@ -26,6 +26,7 @@ import { AVATARS, isCustomAvatar, normalizeAvatar } from "../avatars";
 import { CARDS, formatXu } from "../cards";
 import { AppShell } from "../components/AppShell";
 import { IdentityBadge } from "../components/IdentityBadge";
+import { ImageUploadPopup } from "../components/ImageUploadPopup";
 import { uploadAvatarFromFile } from "../uploadAvatar";
 import {
   CULTIVATION_LABELS,
@@ -48,9 +49,12 @@ import {
 } from "../gifts";
 import {
   isRingEmoji,
+  normalizeRingCategory,
+  RING_CATEGORIES,
   RING_EFFECT_LABELS,
   RING_EFFECTS,
   ITEM_XU_MAX,
+  type RingCategory,
   type RingEffect,
   type RingItem,
 } from "../rings";
@@ -606,6 +610,7 @@ interface Overview {
     label: string;
     enabled: boolean;
     oncePerUser: boolean;
+    maxUses: number;
     redeemCount: number;
   }[];
   invites?: InviteRow[];
@@ -815,6 +820,7 @@ export default function AdminDashboard() {
     label: "",
     oncePerUser: true,
     enabled: true,
+    maxUses: "0",
   });
   const [couponBusy, setCouponBusy] = useState(false);
   const [inviteForm, setInviteForm] = useState({
@@ -830,6 +836,7 @@ export default function AdminDashboard() {
     key: "",
     nameVi: "",
     emoji: "🎁",
+    image: "",
     price: "100",
     category: "warm" as GiftCategory,
     blurb: "",
@@ -845,9 +852,14 @@ export default function AdminDashboard() {
     blurb: "",
     sort: "10",
     enabled: true,
+    category: "classic" as RingCategory,
     effect: "glow" as RingEffect,
     imageSharpness: "70",
   });
+  const [catalogUpload, setCatalogUpload] = useState<{
+    kind: "gift" | "ring";
+    itemKey: string;
+  } | null>(null);
   const [extraStakeDraft, setExtraStakeDraft] = useState("");
   const [extraStakeBusy, setExtraStakeBusy] = useState(false);
   const [codeDrafts, setCodeDrafts] = useState<Record<string, string>>({});
@@ -2007,6 +2019,7 @@ export default function AdminDashboard() {
           label: couponForm.label.trim() || undefined,
           oncePerUser: couponForm.oncePerUser,
           enabled: couponForm.enabled,
+          maxUses: Number(couponForm.maxUses),
           secret: true,
         }),
       });
@@ -2457,6 +2470,7 @@ export default function AdminDashboard() {
           key,
           nameVi: giftDraft.nameVi.trim() || key,
           emoji: giftDraft.emoji.trim() || "🎁",
+          image: giftDraft.image.trim() || undefined,
           price: Math.floor(Number(giftDraft.price)),
           category: giftDraft.category,
           blurb: giftDraft.blurb.trim() || undefined,
@@ -2468,6 +2482,7 @@ export default function AdminDashboard() {
         key: "",
         nameVi: "",
         emoji: "🎁",
+        image: "",
         price: "100",
         category: "warm",
         blurb: "",
@@ -2547,6 +2562,7 @@ export default function AdminDashboard() {
           blurb: ringDraft.blurb.trim() || undefined,
           sort: Math.floor(Number(ringDraft.sort)) || 100,
           enabled: ringDraft.enabled,
+          category: ringDraft.category,
           effect: ringDraft.effect,
           imageSharpness: Math.floor(Number(ringDraft.imageSharpness)) || 70,
         }),
@@ -2560,6 +2576,7 @@ export default function AdminDashboard() {
         blurb: "",
         sort: "10",
         enabled: true,
+        category: "classic",
         effect: "glow",
         imageSharpness: "70",
       });
@@ -4617,8 +4634,17 @@ export default function AdminDashboard() {
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="font-semibold text-[var(--play-ink)]">
-                        {g.emoji} {g.nameVi}{" "}
+                      <p className="flex items-center gap-1.5 font-semibold text-[var(--play-ink)]">
+                        {g.image ? (
+                          <img
+                            src={g.image}
+                            alt=""
+                            className="h-6 w-6 object-contain"
+                          />
+                        ) : (
+                          <span>{g.emoji}</span>
+                        )}{" "}
+                        {g.nameVi}{" "}
                         <span className="font-mono text-[10px] text-[var(--play-muted)]">
                           {g.key}
                         </span>
@@ -4637,6 +4663,7 @@ export default function AdminDashboard() {
                             key: g.key,
                             nameVi: g.nameVi,
                             emoji: g.emoji,
+                            image: g.image ?? "",
                             price: String(g.price),
                             category: g.category,
                             blurb: g.blurb ?? "",
@@ -4690,14 +4717,40 @@ export default function AdminDashboard() {
                 />
               </label>
               <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                Emoji
-                <input
-                  value={giftDraft.emoji}
-                  onChange={(e) =>
-                    setGiftDraft((d) => ({ ...d, emoji: e.target.value }))
-                  }
-                  className="app-input mt-0.5 w-full"
-                />
+                Emoji / ảnh
+                <div className="mt-0.5 flex gap-1">
+                  <input
+                    value={giftDraft.emoji}
+                    onChange={(e) =>
+                      setGiftDraft((d) => ({ ...d, emoji: e.target.value }))
+                    }
+                    className="app-input w-full"
+                    placeholder="🎁"
+                  />
+                  <button
+                    type="button"
+                    disabled={giftBusy}
+                    onClick={() =>
+                      setCatalogUpload({
+                        kind: "gift",
+                        itemKey: giftDraft.key.trim().toLowerCase(),
+                      })
+                    }
+                    className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15 disabled:opacity-45"
+                  >
+                    Tải ảnh
+                  </button>
+                </div>
+                {giftDraft.image ? (
+                  <span className="mt-1 flex items-center gap-1.5 text-[10px] text-[var(--play-muted)]">
+                    <img
+                      src={giftDraft.image}
+                      alt=""
+                      className="h-6 w-6 object-contain"
+                    />
+                    <span className="truncate font-mono">{giftDraft.image}</span>
+                  </span>
+                ) : null}
               </label>
               <label className="text-[10px] font-semibold text-[var(--play-muted)]">
                 Giá (tối đa 10 chữ số)
@@ -4920,8 +4973,9 @@ export default function AdminDashboard() {
         <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
           <p className="play-heading text-sm">Catalog nhẫn</p>
           <p className="text-[11px] text-[var(--play-muted)]">
-            Giá tới {ITEM_XU_MAX.toLocaleString("vi-VN")} xu (10 chữ số). Effect
-            + độ nét ảnh chỉnh được theo từng loại nhẫn.
+            Giá tới {ITEM_XU_MAX.toLocaleString("vi-VN")} xu (10 chữ số). Category:
+            classic / luxury / romance / legend. Effect + độ nét ảnh chỉnh được
+            theo từng loại nhẫn.
           </p>
           <ul className="max-h-80 space-y-2 overflow-y-auto">
             {ringRows
@@ -4951,7 +5005,14 @@ export default function AdminDashboard() {
                           </span>
                         </p>
                         <p className="text-[10px] text-[var(--play-muted)]">
-                          sort {g.sort} · {formatXu(g.price)} xu ·{" "}
+                          {
+                            RING_CATEGORIES.find(
+                              (c) =>
+                                c.id ===
+                                normalizeRingCategory(g.category, g.key),
+                            )?.label
+                          }{" "}
+                          · sort {g.sort} · {formatXu(g.price)} xu ·{" "}
                           {RING_EFFECT_LABELS[
                             (g.effect as RingEffect) ?? "glow"
                           ] ?? g.effect}{" "}
@@ -4973,6 +5034,7 @@ export default function AdminDashboard() {
                             blurb: g.blurb ?? "",
                             sort: String(g.sort),
                             enabled: g.enabled,
+                            category: normalizeRingCategory(g.category, g.key),
                             effect: (g.effect as RingEffect) ?? "glow",
                             imageSharpness: String(g.imageSharpness ?? 70),
                           })
@@ -5037,6 +5099,25 @@ export default function AdminDashboard() {
               />
             </label>
             <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+              Category
+              <select
+                value={ringDraft.category}
+                onChange={(e) =>
+                  setRingDraft((d) => ({
+                    ...d,
+                    category: e.target.value as RingCategory,
+                  }))
+                }
+                className="app-input mt-0.5 w-full"
+              >
+                {RING_CATEGORIES.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[10px] font-semibold text-[var(--play-muted)]">
               Hiệu ứng
               <select
                 value={ringDraft.effect}
@@ -5073,13 +5154,28 @@ export default function AdminDashboard() {
             </label>
             <label className="col-span-2 text-[10px] font-semibold text-[var(--play-muted)] sm:col-span-2">
               Image (URL / emoji)
-              <input
-                value={ringDraft.image}
-                onChange={(e) =>
-                  setRingDraft((d) => ({ ...d, image: e.target.value }))
-                }
-                className="app-input mt-0.5 w-full font-mono"
-              />
+              <div className="mt-0.5 flex gap-1">
+                <input
+                  value={ringDraft.image}
+                  onChange={(e) =>
+                    setRingDraft((d) => ({ ...d, image: e.target.value }))
+                  }
+                  className="app-input w-full font-mono"
+                />
+                <button
+                  type="button"
+                  disabled={ringBusy}
+                  onClick={() =>
+                    setCatalogUpload({
+                      kind: "ring",
+                      itemKey: ringDraft.key.trim().toLowerCase(),
+                    })
+                  }
+                  className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15 disabled:opacity-45"
+                >
+                  Tải ảnh
+                </button>
+              </div>
             </label>
             <label className="text-[10px] font-semibold text-[var(--play-muted)]">
               Sort
@@ -5998,6 +6094,8 @@ export default function AdminDashboard() {
             <p className="play-heading text-sm">Tạo / cập nhật coupon</p>
             <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
               Mã trùng sẽ cập nhật số xu &amp; cấu hình. Redeem trừ kho xu.
+              Giới hạn lượt toàn hệ thống: 0 = không giới hạn (∞). Mỗi user vẫn
+              có thể bị chặn bởi «1 lần / user».
             </p>
             <form onSubmit={createCoupon} className="mt-3 space-y-2">
               <div className="flex flex-wrap gap-2">
@@ -6018,8 +6116,21 @@ export default function AdminDashboard() {
                   placeholder="Số xu"
                   type="number"
                   min={10}
+                  max={ITEM_XU_MAX}
                   className="app-input !w-28 !py-1.5 text-xs"
                   required
+                />
+                <input
+                  value={couponForm.maxUses}
+                  onChange={(e) =>
+                    setCouponForm((f) => ({ ...f, maxUses: e.target.value }))
+                  }
+                  placeholder="Max lượt (0=∞)"
+                  type="number"
+                  min={0}
+                  max={10_000_000}
+                  className="app-input !w-32 !py-1.5 text-xs"
+                  title="0 = không giới hạn"
                 />
               </div>
               <input
@@ -6095,7 +6206,8 @@ export default function AdminDashboard() {
                       {c.secret ? " · bí mật" : ""}
                       {c.oncePerUser ? " · 1 lần/user" : ""}
                       {c.enabled ? "" : " · tắt"}
-                      {" · "}đã đổi {c.redeemCount} lần
+                      {" · "}đã đổi {c.redeemCount}/
+                      {(c.maxUses ?? 0) > 0 ? c.maxUses : "∞"}
                     </p>
                     <div className="mt-1.5 flex gap-1">
                       <button
@@ -6120,6 +6232,7 @@ export default function AdminDashboard() {
                             label: c.label,
                             oncePerUser: c.oncePerUser,
                             enabled: c.enabled,
+                            maxUses: String(c.maxUses ?? 0),
                           })
                         }
                         className="rounded-full bg-white px-2.5 py-0.5 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
@@ -8391,6 +8504,21 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      <ImageUploadPopup
+        open={!!catalogUpload}
+        kind={catalogUpload?.kind ?? "gift"}
+        itemKey={catalogUpload?.itemKey ?? ""}
+        onClose={() => setCatalogUpload(null)}
+        onUploaded={(url) => {
+          if (catalogUpload?.kind === "ring") {
+            setRingDraft((d) => ({ ...d, image: url }));
+          } else {
+            setGiftDraft((d) => ({ ...d, image: url }));
+          }
+          setMsg("Đã tải ảnh catalog");
+        }}
+      />
     </AppShell>
   );
 }

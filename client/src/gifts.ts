@@ -8,6 +8,8 @@ export interface GiftItem {
   key: string;
   nameVi: string;
   emoji: string;
+  /** URL ảnh catalog (ưu tiên hiển thị); emoji là fallback */
+  image?: string;
   price: number;
   category: GiftCategory;
   blurb?: string;
@@ -30,6 +32,8 @@ export interface GiftFlyEvent {
   giftKey?: string;
   giftEmoji?: string;
   giftNameVi?: string;
+  /** URL ảnh catalog (nếu có) — ưu tiên hiển thị trên overlay */
+  giftImage?: string;
   fly: {
     id: string;
     label: string;

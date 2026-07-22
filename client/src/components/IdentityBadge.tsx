@@ -168,6 +168,15 @@ export function IdentityBadge({
         ) : (
           <p className={nameClass}>{name}</p>
         )}
+        {bondActive && (
+          <p
+            className={`inline-flex items-center rounded-full bg-gradient-to-r from-rose-500/20 to-amber-400/15 px-1.5 py-px text-[8px] font-bold uppercase tracking-wide text-rose-700/90 ring-1 ring-rose-400/35 ${
+              compact ? "mt-0" : "mt-0.5"
+            }`}
+          >
+            Cặp đôi
+          </p>
+        )}
         {loginHint && (
           <p
             className={`truncate font-mono text-[9px] text-[var(--play-muted)] ${

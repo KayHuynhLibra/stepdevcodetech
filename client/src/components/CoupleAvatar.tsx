@@ -24,10 +24,12 @@ function AvatarImg({
   src,
   sizeClass,
   ringClass,
+  className = "",
 }: {
   src: string;
   sizeClass: string;
   ringClass: string;
+  className?: string;
 }) {
   const onError = (e: SyntheticEvent<HTMLImageElement>) => {
     const el = e.currentTarget;
@@ -39,7 +41,7 @@ function AvatarImg({
       src={normalizeAvatar(src) || DEFAULT_AVATAR}
       alt=""
       decoding="async"
-      className={`rounded-full object-cover ${ringClass} ${sizeClass}`}
+      className={`couple-avatar__face rounded-full object-cover ${ringClass} ${sizeClass} ${className}`}
       onError={onError}
     />
   );
@@ -58,7 +60,7 @@ function ringVisualStyle(sharpness: number): CSSProperties {
   };
 }
 
-/** [avatarA] — [ring] — [avatarB] */
+/** [avatarA] ⧉ [ring] ⧉ [avatarB] — chồng nhẹ, nhẫn giữa trên pedestal */
 export function CoupleAvatar({
   avatarA,
   avatarB,
@@ -71,8 +73,10 @@ export function CoupleAvatar({
   className = "",
 }: CoupleAvatarProps) {
   const sizeClass = compact ? "h-9 w-9" : "h-14 w-14";
-  const ringSize = compact ? "h-7 w-7 text-lg" : "h-10 w-10 text-2xl";
-  const ringClass = "ring-2 ring-[var(--gold)]/55 shadow";
+  const ringSize = compact ? "h-6 w-6 text-base" : "h-9 w-9 text-xl";
+  const pedestalSize = compact ? "h-8 w-8" : "h-11 w-11";
+  const ringClass =
+    "ring-2 ring-[var(--gold)]/60 shadow-[0_2px_8px_rgba(24,12,4,0.45)]";
   const effect = normalizeRingEffect(ringEffect);
   const fxClass =
     effect === "glow"
@@ -87,43 +91,57 @@ export function CoupleAvatar({
 
   const ringNode = (
     <span
-      className={`relative flex shrink-0 items-center justify-center ${fxClass} ${ringSize}`}
+      className={`couple-avatar__ring-badge relative z-[3] flex shrink-0 items-center justify-center ${pedestalSize}`}
       title={ringAlt}
       aria-label={ringAlt}
     >
       <span
-        className="flex h-full w-full items-center justify-center"
-        style={ringVisualStyle(ringSharpness)}
+        className={`relative flex items-center justify-center ${fxClass} ${ringSize}`}
       >
-        {isRingEmoji(ringImage) ? (
-          <span className="leading-none">{ringImage || "💍"}</span>
-        ) : (
-          <img
-            src={ringImage}
-            alt={ringAlt}
-            decoding="async"
-            className="h-full w-full object-contain"
-            draggable={false}
-          />
-        )}
+        <span
+          className="flex h-full w-full items-center justify-center"
+          style={ringVisualStyle(ringSharpness)}
+        >
+          {isRingEmoji(ringImage) ? (
+            <span className="leading-none drop-shadow-sm">
+              {ringImage || "💍"}
+            </span>
+          ) : (
+            <img
+              src={ringImage}
+              alt={ringAlt}
+              decoding="async"
+              className="h-full w-full object-contain drop-shadow-sm"
+              draggable={false}
+            />
+          )}
+        </span>
       </span>
     </span>
   );
 
   const aNode = (
-    <AvatarImg src={avatarA} sizeClass={sizeClass} ringClass={ringClass} />
+    <AvatarImg
+      src={avatarA}
+      sizeClass={sizeClass}
+      ringClass={ringClass}
+      className="relative z-[2]"
+    />
   );
 
   return (
     <div
-      className={`flex shrink-0 items-center gap-1 ${className}`}
+      className={`couple-avatar ${compact ? "couple-avatar--compact" : ""} ${className}`}
       title="Cặp đôi"
     >
+      <span className="couple-avatar__heart" aria-hidden>
+        ♥
+      </span>
       {onAvatarAClick ? (
         <button
           type="button"
           onClick={onAvatarAClick}
-          className="relative shrink-0 active:scale-[0.97]"
+          className="couple-avatar__slot couple-avatar__slot--a relative shrink-0 active:scale-[0.97]"
           title="Đổi avatar"
         >
           {aNode}
@@ -132,10 +150,19 @@ export function CoupleAvatar({
           </span>
         </button>
       ) : (
-        <span className="relative shrink-0">{aNode}</span>
+        <span className="couple-avatar__slot couple-avatar__slot--a relative shrink-0">
+          {aNode}
+        </span>
       )}
       {ringNode}
-      <AvatarImg src={avatarB} sizeClass={sizeClass} ringClass={ringClass} />
+      <span className="couple-avatar__slot couple-avatar__slot--b relative shrink-0">
+        <AvatarImg
+          src={avatarB}
+          sizeClass={sizeClass}
+          ringClass={ringClass}
+          className="relative z-[1]"
+        />
+      </span>
     </div>
   );
 }

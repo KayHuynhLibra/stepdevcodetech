@@ -29,6 +29,11 @@ import {
   saveUploadedAvatar,
   UPLOADS_DIR,
 } from "./avatars.js";
+import {
+  saveCatalogImage,
+  UPLOADS_ROOT,
+  type CatalogKind,
+} from "./catalogUpload.js";
 import { stakeStore, PER_USER_STAKE_CAP } from "./stakeStore.js";
 import { couponStore } from "./couponStore.js";
 import { inviteStore } from "./inviteStore.js";
@@ -97,6 +102,9 @@ app.use(
 app.use(securityHeaders);
 app.use(express.json({ limit: "1.5mb" }));
 app.use(globalHttpRateLimit({ max: 160, windowMs: 60_000, skipPaths: ["/health"] }));
+/** /uploads/avatars + /uploads/catalog/... */
+app.use("/uploads", express.static(UPLOADS_ROOT));
+/** Giữ mount cũ nếu UPLOADS_DIR lệch (avatars nằm dưới data/uploads/avatars). */
 app.use("/uploads/avatars", express.static(UPLOADS_DIR));
 startRateLimitPrune(60_000);
 
@@ -371,7 +379,7 @@ app.post("/api/auth/gift-xu", (req, res) => {
   const giftKey = String(req.body?.giftKey ?? "").trim().slice(0, 32);
   let amountRaw: unknown = req.body?.amount;
   let giftMeta:
-    | { key: string; emoji: string; nameVi: string }
+    | { key: string; emoji: string; nameVi: string; image?: string }
     | undefined;
   if (giftKey) {
     const catalogGift = giftStore.getByKey(giftKey);
@@ -383,6 +391,7 @@ app.post("/api/auth/gift-xu", (req, res) => {
       key: catalogGift.key,
       emoji: catalogGift.emoji,
       nameVi: catalogGift.nameVi,
+      image: catalogGift.image,
     };
   }
   const result = authStore.giftXu(
@@ -413,6 +422,7 @@ app.post("/api/auth/gift-xu", (req, res) => {
       giftKey: giftMeta?.key || giftKey || undefined,
       giftEmoji: giftMeta?.emoji,
       giftNameVi: giftMeta?.nameVi,
+      giftImage: giftMeta?.image,
       note: String(req.body?.note ?? "").trim().slice(0, 80) || undefined,
     });
   }
@@ -424,6 +434,7 @@ app.post("/api/auth/gift-xu", (req, res) => {
     giftKey: giftMeta?.key || giftKey || undefined,
     giftEmoji: giftMeta?.emoji,
     giftNameVi: giftMeta?.nameVi,
+    giftImage: giftMeta?.image,
     fly: {
       id: fly.id,
       label: fly.label,
@@ -829,6 +840,8 @@ app.post("/api/admin/coupons", (req, res) => {
     enabled: req.body?.enabled,
     oncePerUser: req.body?.oncePerUser,
     secret: req.body?.secret,
+    maxUses:
+      req.body?.maxUses !== undefined ? Number(req.body.maxUses) : undefined,
   });
   if (!result.ok) return res.status(400).json(result);
   audit(me, "coupon_upsert", { detail: result.coupon.code });
@@ -1867,6 +1880,41 @@ app.post("/api/sgift/fly-tiers", (req, res) => {
     detail: result.flyTiers.map((t) => t.id).join(","),
   });
   res.json({ ok: true, ...giftStore.snapshot() });
+});
+
+/** Admin: upload ảnh catalog quà / nhẫn → /uploads/catalog/{kind}/... */
+app.post("/api/admin/catalog-upload", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  if (
+    !hasCapability(me, "gift_manage") &&
+    !hasCapability(me, "ring_manage")
+  ) {
+    return res
+      .status(403)
+      .json({ ok: false, reason: "Cần quyền SGift hoặc Ring" });
+  }
+  const ip = clientIp(req);
+  if (
+    !rateLimit(`catalog-up:${me.id}`, 30, 60_000) ||
+    !rateLimit(`catalog-up-ip:${ip}`, 40, 60_000)
+  ) {
+    return res.status(429).json({ ok: false, reason: "Quá nhiều lần upload" });
+  }
+  const kindRaw = String(req.body?.kind ?? "").trim().toLowerCase();
+  const kind: CatalogKind | null =
+    kindRaw === "gift" || kindRaw === "ring" ? kindRaw : null;
+  if (!kind) {
+    return res
+      .status(400)
+      .json({ ok: false, reason: "kind phải là gift hoặc ring" });
+  }
+  const key = String(req.body?.key ?? "");
+  const dataUrl = String(req.body?.dataUrl ?? "");
+  const saved = saveCatalogImage(kind, key, dataUrl);
+  if (!saved.ok) return res.status(400).json(saved);
+  audit(me, "catalog_upload", { detail: `${kind}/${key}` });
+  res.json({ ok: true, url: saved.url });
 });
 
 app.get("/api/rings", (_req, res) => {

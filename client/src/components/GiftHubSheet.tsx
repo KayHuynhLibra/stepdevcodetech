@@ -32,6 +32,31 @@ interface GiftHubSheetProps {
   }) => void | Promise<void>;
 }
 
+function GiftThumb({ gift }: { gift: GiftItem }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImg = Boolean(gift.image) && !imgFailed;
+  return (
+    <div className="relative flex h-16 w-full items-center justify-center overflow-hidden rounded-lg bg-gradient-to-b from-white/10 to-white/[0.03]">
+      {showImg ? (
+        <img
+          src={gift.image}
+          alt=""
+          className="h-14 w-14 object-contain drop-shadow-md"
+          onError={() => setImgFailed(true)}
+          draggable={false}
+        />
+      ) : (
+        <span className="text-3xl leading-none drop-shadow-sm">{gift.emoji}</span>
+      )}
+      {showImg && gift.emoji && (
+        <span className="absolute bottom-0.5 right-1 text-sm leading-none opacity-90 drop-shadow">
+          {gift.emoji}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function GiftHubSheet({
   open,
   balance,
@@ -149,7 +174,7 @@ export function GiftHubSheet({
               Tặng quà
             </p>
             <p className="text-[10px] text-white/45">
-              Xu ảo P2P · không tiền thật · tối đa 100.000 / lần
+              Xu ảo P2P · không tiền thật · tối đa 10 chữ số xu / lần
             </p>
           </div>
           <button
@@ -177,10 +202,10 @@ export function GiftHubSheet({
                     const first = catalog.find((g) => g.category === c.id);
                     if (first) setGiftKey(first.key);
                   }}
-                  className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-bold transition ${
                     on
-                      ? "bg-[var(--jade)] text-white"
-                      : "bg-white/10 text-white/75 ring-1 ring-white/15"
+                      ? "bg-gradient-to-r from-[var(--jade-deep)] to-[var(--jade)] text-white shadow-[0_0_12px_rgba(61,184,160,0.35)] ring-1 ring-[var(--jade-soft)]/50"
+                      : "bg-white/10 text-white/75 ring-1 ring-white/15 hover:bg-white/14"
                   }`}
                 >
                   {c.label}
@@ -193,7 +218,7 @@ export function GiftHubSheet({
             <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-white/50">
               Chọn quà
             </p>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-2 gap-2">
               {byCategory.map((g) => {
                 const on = g.key === gift.key;
                 return (
@@ -202,18 +227,20 @@ export function GiftHubSheet({
                     type="button"
                     disabled={busy}
                     onClick={() => setGiftKey(g.key)}
-                    className={`rounded-xl px-2.5 py-2 text-left ring-1 transition ${
+                    className={`rounded-xl px-2 py-2 text-left ring-1 transition ${
                       on
-                        ? "bg-[var(--jade)]/25 ring-[var(--jade)]/60"
-                        : "bg-white/5 ring-white/10 hover:bg-white/8"
+                        ? "bg-gradient-to-br from-[var(--jade)]/35 via-[var(--jade-deep)]/25 to-amber-900/20 ring-[var(--jade)]/70 shadow-[0_0_16px_rgba(61,184,160,0.22)]"
+                        : "bg-white/5 ring-white/10 hover:bg-white/8 hover:ring-white/20"
                     }`}
                   >
-                    <p className="text-base leading-none">{g.emoji}</p>
-                    <p className="mt-1 text-[11px] font-bold text-white/90">
+                    <GiftThumb gift={g} />
+                    <p className="mt-1.5 truncate text-[11px] font-bold text-white/90">
                       {g.nameVi}
                     </p>
                     {g.blurb && (
-                      <p className="text-[10px] text-white/45">{g.blurb}</p>
+                      <p className="truncate text-[10px] text-white/45">
+                        {g.blurb}
+                      </p>
                     )}
                     <p className="font-play mt-0.5 text-[11px] font-bold tabular-nums text-amber-200">
                       {formatXu(g.price)} xu
@@ -323,11 +350,11 @@ export function GiftHubSheet({
               insufficient ||
               (!picked?.userId && !toCode.trim() && !toUsername.trim())
             }
-            className="w-full rounded-xl bg-[var(--jade)] py-3 text-sm font-extrabold text-white disabled:opacity-40"
+            className="w-full rounded-xl bg-gradient-to-r from-[var(--jade-deep)] to-[var(--jade)] py-3 text-sm font-extrabold text-white shadow-[0_4px_18px_rgba(61,184,160,0.28)] disabled:opacity-40"
           >
             {busy
               ? "Đang gửi…"
-              : `Gửi ${gift.emoji} ${gift.nameVi} · ${formatXu(gift.price)} xu`}
+              : `Gửi ${gift.emoji ? `${gift.emoji} ` : ""}${gift.nameVi} · ${formatXu(gift.price)} xu`}
           </button>
         </form>
       </div>

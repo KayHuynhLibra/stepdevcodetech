@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { randomBytes } from "crypto";
+import { ITEM_XU_MAX } from "./types.js";
 
 export interface CouponDef {
   code: string;
@@ -12,6 +13,8 @@ export interface CouponDef {
   enabled: boolean;
   /** Mỗi user chỉ đổi 1 lần */
   oncePerUser: boolean;
+  /** 0 = không giới hạn tổng lượt đổi toàn hệ thống */
+  maxUses: number;
 }
 
 export interface CouponRedeem {
@@ -34,8 +37,33 @@ const DATA_DIR = join(__dirname, "..", "data");
 const PATH = join(DATA_DIR, "coupons.json");
 const TMP = join(DATA_DIR, "coupons.json.tmp");
 const REDEEM_CAP = 500;
+const MAX_USES_CAP = 10_000_000;
 
 const IS_PROD = process.env.NODE_ENV === "production";
+
+function clampMaxUses(n: unknown): number {
+  const v = Math.floor(Number(n));
+  if (!Number.isFinite(v) || v < 0) return 0;
+  return Math.min(MAX_USES_CAP, v);
+}
+
+function normalizeCoupon(raw: unknown): CouponDef | null {
+  if (!raw || typeof raw !== "object") return null;
+  const c = raw as Partial<CouponDef>;
+  const code = String(c.code ?? "").trim();
+  if (!code) return null;
+  const amount = Math.floor(Number(c.amount));
+  if (!Number.isFinite(amount) || amount < 10) return null;
+  return {
+    code,
+    amount: Math.min(ITEM_XU_MAX, amount),
+    secret: c.secret !== false,
+    label: String(c.label ?? "").trim().slice(0, 80) || `Nạp ${amount} xu`,
+    enabled: c.enabled !== false,
+    oncePerUser: !!c.oncePerUser,
+    maxUses: clampMaxUses(c.maxUses ?? 0),
+  };
+}
 
 function buildSeedCoupons(): CouponDef[] {
   const seeds: CouponDef[] = [];
@@ -51,6 +79,7 @@ function buildSeedCoupons(): CouponDef[] {
       label: "Nạp xu — không giới hạn",
       enabled: true,
       oncePerUser: false,
+      maxUses: 0,
     });
   }
   if (!IS_PROD) {
@@ -62,6 +91,7 @@ function buildSeedCoupons(): CouponDef[] {
         label: "Nạp cố định 100.000 xu",
         enabled: true,
         oncePerUser: true,
+        maxUses: 0,
       },
       {
         code: "TEPTHEMSOFIA",
@@ -70,6 +100,7 @@ function buildSeedCoupons(): CouponDef[] {
         label: "Nạp 200.000 xu — dùng nhiều lần",
         enabled: true,
         oncePerUser: false,
+        maxUses: 0,
       },
     );
   }
@@ -91,7 +122,11 @@ export class CouponStore {
       if (!existsSync(PATH)) return;
       const parsed = JSON.parse(readFileSync(PATH, "utf8")) as CouponsFile;
       if (parsed?.version !== 1) return;
-      if (Array.isArray(parsed.coupons)) this.coupons = parsed.coupons;
+      if (Array.isArray(parsed.coupons)) {
+        this.coupons = parsed.coupons
+          .map(normalizeCoupon)
+          .filter((x): x is CouponDef => !!x);
+      }
       if (Array.isArray(parsed.redemptions)) {
         this.redemptions = parsed.redemptions.slice(0, REDEEM_CAP);
       }
@@ -132,6 +167,11 @@ export class CouponStore {
     return this.coupons.find((c) => c.code.toLowerCase() === key);
   }
 
+  private redeemCountFor(code: string): number {
+    const key = code.trim().toLowerCase();
+    return this.redemptions.filter((r) => r.code.toLowerCase() === key).length;
+  }
+
   hasRedeemed(userId: string, code: string): boolean {
     const key = code.trim().toLowerCase();
     return this.redemptions.some(
@@ -155,6 +195,9 @@ export class CouponStore {
     }
     if (coupon.oncePerUser && this.hasRedeemed(userId, coupon.code)) {
       return { ok: false, reason: "Bạn đã dùng mã này rồi" };
+    }
+    if (coupon.maxUses > 0 && this.redeemCountFor(coupon.code) >= coupon.maxUses) {
+      return { ok: false, reason: "Mã đã hết lượt" };
     }
     return { ok: true, amount: coupon.amount, code: coupon.code };
   }
@@ -183,9 +226,7 @@ export class CouponStore {
   /** Admin xem đầy đủ (kể cả mã secret). */
   listForAdmin() {
     return this.coupons.map((c) => {
-      const used = this.redemptions.filter(
-        (r) => r.code.toLowerCase() === c.code.toLowerCase(),
-      ).length;
+      const used = this.redeemCountFor(c.code);
       return { ...c, redeemCount: used };
     });
   }
@@ -243,6 +284,7 @@ export class CouponStore {
     enabled?: boolean;
     oncePerUser?: boolean;
     secret?: boolean;
+    maxUses?: number;
   }): { ok: true; coupon: CouponDef } | { ok: false; reason: string } {
     const code = String(input.code ?? "").trim();
     if (code.length < 3 || code.length > 32) {
@@ -252,8 +294,24 @@ export class CouponStore {
       return { ok: false, reason: "Mã chỉ gồm chữ, số, _ hoặc -" };
     }
     const amount = Math.floor(Number(input.amount));
-    if (!Number.isFinite(amount) || amount < 10 || amount > 10_000_000) {
-      return { ok: false, reason: "Số xu 10 – 10.000.000" };
+    if (!Number.isFinite(amount) || amount < 10 || amount > ITEM_XU_MAX) {
+      return {
+        ok: false,
+        reason: `Số xu 10 – ${ITEM_XU_MAX.toLocaleString("vi-VN")}`,
+      };
+    }
+    const maxUses =
+      input.maxUses !== undefined ? clampMaxUses(input.maxUses) : undefined;
+    if (
+      input.maxUses !== undefined &&
+      (!Number.isFinite(Number(input.maxUses)) ||
+        Math.floor(Number(input.maxUses)) < 0 ||
+        Math.floor(Number(input.maxUses)) > MAX_USES_CAP)
+    ) {
+      return {
+        ok: false,
+        reason: `Giới hạn lượt 0 – ${MAX_USES_CAP.toLocaleString("vi-VN")} (0 = không giới hạn)`,
+      };
     }
     const key = code.toLowerCase();
     const existing = this.coupons.find((c) => c.code.toLowerCase() === key);
@@ -267,6 +325,7 @@ export class CouponStore {
         existing.oncePerUser = input.oncePerUser;
       }
       if (typeof input.secret === "boolean") existing.secret = input.secret;
+      if (maxUses !== undefined) existing.maxUses = maxUses;
       this.save();
       return { ok: true, coupon: { ...existing } };
     }
@@ -277,6 +336,7 @@ export class CouponStore {
       label: (input.label ?? "").trim().slice(0, 80) || `Nạp ${amount} xu`,
       enabled: input.enabled !== false,
       oncePerUser: !!input.oncePerUser,
+      maxUses: maxUses ?? 0,
     };
     this.coupons.push(coupon);
     this.save();
