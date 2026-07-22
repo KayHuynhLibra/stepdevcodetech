@@ -422,8 +422,11 @@ export async function api<T>(
   try {
     data = JSON.parse(text) as T & { ok?: boolean; reason?: string };
   } catch {
+    const snip = text.replace(/\s+/g, " ").trim().slice(0, 80);
     throw new Error(
-      "Phản hồi không phải JSON — thường do API chưa chạy hoặc proxy sai.",
+      res.status === 413
+        ? "Ảnh / payload quá lớn — hãy chọn ảnh nhỏ hơn (hệ thống sẽ tự nén)."
+        : `Phản hồi không phải JSON (HTTP ${res.status})${snip ? `: ${snip}` : ""}`,
     );
   }
   if (!res.ok) {

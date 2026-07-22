@@ -100,7 +100,24 @@ app.use(
   }),
 );
 app.use(securityHeaders);
-app.use(express.json({ limit: "1.5mb" }));
+app.use(express.json({ limit: "3mb" }));
+app.use(
+  (
+    err: { type?: string; status?: number; message?: string },
+    _req: express.Request,
+    res: express.Response,
+    next: express.NextFunction,
+  ) => {
+    if (err?.type === "entity.too.large" || err?.status === 413) {
+      return res.status(413).json({
+        ok: false,
+        reason:
+          "Payload quá lớn — chọn ảnh nhỏ hơn hoặc để client tự nén trước khi gửi.",
+      });
+    }
+    return next(err);
+  },
+);
 app.use(globalHttpRateLimit({ max: 160, windowMs: 60_000, skipPaths: ["/health"] }));
 /** /uploads/avatars + /uploads/catalog/... */
 app.use("/uploads", express.static(UPLOADS_ROOT));

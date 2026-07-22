@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
 import { api } from "../auth";
+import {
+  fileToCatalogDataUrl,
+  formatCatalogBytes,
+} from "../catalogImage";
 
 export type CatalogUploadKind = "gift" | "ring";
 
@@ -11,30 +15,6 @@ interface ImageUploadPopupProps {
   onUploaded: (url: string) => void;
 }
 
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    if (!file.type.startsWith("image/")) {
-      reject(new Error("Chỉ chọn file ảnh (JPG / PNG / WebP)"));
-      return;
-    }
-    if (file.size > 8 * 1024 * 1024) {
-      reject(new Error("Ảnh gốc tối đa 8MB"));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result ?? "");
-      if (!/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(result)) {
-        reject(new Error("Ảnh phải là JPG, PNG hoặc WebP"));
-        return;
-      }
-      resolve(result);
-    };
-    reader.onerror = () => reject(new Error("Không đọc được file"));
-    reader.readAsDataURL(file);
-  });
-}
-
 export function ImageUploadPopup({
   open,
   kind,
@@ -44,6 +24,8 @@ export function ImageUploadPopup({
 }: ImageUploadPopupProps) {
   const [preview, setPreview] = useState<string | null>(null);
   const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const [bytes, setBytes] = useState<number | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,6 +33,8 @@ export function ImageUploadPopup({
     if (!open) {
       setPreview(null);
       setDataUrl(null);
+      setBytes(null);
+      setFileName(null);
       setBusy(false);
       setError(null);
     }
@@ -65,13 +49,20 @@ export function ImageUploadPopup({
     setError(null);
     setPreview(null);
     setDataUrl(null);
+    setBytes(null);
+    setFileName(null);
     if (!file) return;
+    setBusy(true);
     try {
-      const url = await fileToDataUrl(file);
-      setDataUrl(url);
-      setPreview(url);
+      const { dataUrl: next, bytes: n } = await fileToCatalogDataUrl(file);
+      setDataUrl(next);
+      setPreview(next);
+      setBytes(n);
+      setFileName(file.name);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Không đọc được ảnh");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -120,7 +111,7 @@ export function ImageUploadPopup({
               <span className="font-mono font-semibold text-[var(--play-ink)]">
                 {itemKey.trim() || "—"}
               </span>
-              {" · "}JPG / PNG / WebP · tối đa ~800KB sau upload
+              {" · "}tự nén WebP/JPEG ≤ ~700KB
             </p>
           </div>
           <button
@@ -143,12 +134,18 @@ export function ImageUploadPopup({
           Chọn ảnh
           <input
             type="file"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp,image/*"
             disabled={busy || !keyOk}
             onChange={(e) => void onPick(e.target.files?.[0] ?? null)}
             className="app-input mt-0.5 w-full !py-1.5 text-xs file:mr-2 file:rounded-full file:border-0 file:bg-[var(--wood-deep)] file:px-2.5 file:py-1 file:text-[10px] file:font-bold file:text-[var(--cream)]"
           />
         </label>
+
+        {fileName && bytes != null && (
+          <p className="text-[10px] text-[var(--play-muted)]">
+            {fileName} → đã nén ~{formatCatalogBytes(bytes)}
+          </p>
+        )}
 
         {preview && (
           <div className="flex justify-center rounded-lg bg-white/70 p-3 ring-1 ring-[var(--wood-deep)]/10">
@@ -173,7 +170,7 @@ export function ImageUploadPopup({
             onClick={() => void confirm()}
             className="rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-45"
           >
-            {busy ? "Đang tải…" : "Xác nhận upload"}
+            {busy ? "Đang xử lý…" : "Xác nhận upload"}
           </button>
           <button
             type="button"

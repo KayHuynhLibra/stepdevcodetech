@@ -2460,11 +2460,14 @@ export default function AdminDashboard() {
     }
   };
 
-  const saveGiftUpsert = async () => {
-    const key = giftDraft.key.trim().toLowerCase();
+  const persistGiftDraft = async (
+    draft: typeof giftDraft,
+    opts?: { clearForm?: boolean; quietMsg?: string },
+  ) => {
+    const key = draft.key.trim().toLowerCase();
     if (!key) {
       setMsg("Thiếu key quà");
-      return;
+      return false;
     }
     setGiftBusy(true);
     try {
@@ -2472,32 +2475,40 @@ export default function AdminDashboard() {
         method: "POST",
         body: JSON.stringify({
           key,
-          nameVi: giftDraft.nameVi.trim() || key,
-          emoji: giftDraft.emoji.trim() || "🎁",
-          image: giftDraft.image.trim() || undefined,
-          price: Math.floor(Number(giftDraft.price)),
-          category: giftDraft.category,
-          blurb: giftDraft.blurb.trim() || undefined,
-          enabled: giftDraft.enabled,
+          nameVi: draft.nameVi.trim() || key,
+          emoji: draft.emoji.trim() || "🎁",
+          image: draft.image.trim() || undefined,
+          price: Math.floor(Number(draft.price)),
+          category: draft.category,
+          blurb: draft.blurb.trim() || undefined,
+          enabled: draft.enabled,
         }),
       });
-      setMsg(`Đã lưu quà ${key}`);
-      setGiftDraft({
-        key: "",
-        nameVi: "",
-        emoji: "🎁",
-        image: "",
-        price: "100",
-        category: "warm",
-        blurb: "",
-        enabled: true,
-      });
+      setMsg(opts?.quietMsg ?? `Đã lưu quà ${key}`);
+      if (opts?.clearForm !== false) {
+        setGiftDraft({
+          key: "",
+          nameVi: "",
+          emoji: "🎁",
+          image: "",
+          price: "100",
+          category: "warm",
+          blurb: "",
+          enabled: true,
+        });
+      }
       await loadGiftConfig();
+      return true;
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Lỗi lưu quà");
+      return false;
     } finally {
       setGiftBusy(false);
     }
+  };
+
+  const saveGiftUpsert = async () => {
+    await persistGiftDraft(giftDraft, { clearForm: true });
   };
 
   const toggleGiftRow = async (key: string, enabled: boolean) => {
@@ -2548,11 +2559,14 @@ export default function AdminDashboard() {
     }
   };
 
-  const saveRingUpsert = async () => {
-    const key = ringDraft.key.trim().toLowerCase();
+  const persistRingDraft = async (
+    draft: typeof ringDraft,
+    opts?: { clearForm?: boolean; quietMsg?: string },
+  ) => {
+    const key = draft.key.trim().toLowerCase();
     if (!key) {
       setMsg("Thiếu key nhẫn");
-      return;
+      return false;
     }
     setRingBusy(true);
     try {
@@ -2560,36 +2574,44 @@ export default function AdminDashboard() {
         method: "POST",
         body: JSON.stringify({
           key,
-          nameVi: ringDraft.nameVi.trim() || key,
-          image: ringDraft.image.trim() || "💍",
-          price: Math.floor(Number(ringDraft.price)),
-          blurb: ringDraft.blurb.trim() || undefined,
-          sort: Math.floor(Number(ringDraft.sort)) || 100,
-          enabled: ringDraft.enabled,
-          category: ringDraft.category,
-          effect: ringDraft.effect,
-          imageSharpness: Math.floor(Number(ringDraft.imageSharpness)) || 70,
+          nameVi: draft.nameVi.trim() || key,
+          image: draft.image.trim() || "💍",
+          price: Math.floor(Number(draft.price)),
+          blurb: draft.blurb.trim() || undefined,
+          sort: Math.floor(Number(draft.sort)) || 100,
+          enabled: draft.enabled,
+          category: draft.category,
+          effect: draft.effect,
+          imageSharpness: Math.floor(Number(draft.imageSharpness)) || 70,
         }),
       });
-      setMsg(`Đã lưu nhẫn ${key}`);
-      setRingDraft({
-        key: "",
-        nameVi: "",
-        image: "/assets/rings/ring-silver.svg",
-        price: "1000",
-        blurb: "",
-        sort: "10",
-        enabled: true,
-        category: "classic",
-        effect: "glow",
-        imageSharpness: "70",
-      });
+      setMsg(opts?.quietMsg ?? `Đã lưu nhẫn ${key}`);
+      if (opts?.clearForm !== false) {
+        setRingDraft({
+          key: "",
+          nameVi: "",
+          image: "/assets/rings/ring-silver.svg",
+          price: "1000",
+          blurb: "",
+          sort: "10",
+          enabled: true,
+          category: "classic",
+          effect: "glow",
+          imageSharpness: "70",
+        });
+      }
       await loadRingConfig();
+      return true;
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Lỗi lưu nhẫn");
+      return false;
     } finally {
       setRingBusy(false);
     }
+  };
+
+  const saveRingUpsert = async () => {
+    await persistRingDraft(ringDraft, { clearForm: true });
   };
 
   const toggleRingRow = async (key: string, enabled: boolean) => {
@@ -8615,12 +8637,22 @@ export default function AdminDashboard() {
         itemKey={catalogUpload?.itemKey ?? ""}
         onClose={() => setCatalogUpload(null)}
         onUploaded={(url) => {
-          if (catalogUpload?.kind === "ring") {
-            setRingDraft((d) => ({ ...d, image: url }));
+          const kind = catalogUpload?.kind ?? "gift";
+          if (kind === "ring") {
+            const next = { ...ringDraft, image: url };
+            setRingDraft(next);
+            void persistRingDraft(next, {
+              clearForm: false,
+              quietMsg: `Đã tải + lưu ảnh nhẫn ${next.key.trim() || "…"}`,
+            });
           } else {
-            setGiftDraft((d) => ({ ...d, image: url }));
+            const next = { ...giftDraft, image: url };
+            setGiftDraft(next);
+            void persistGiftDraft(next, {
+              clearForm: false,
+              quietMsg: `Đã tải + lưu ảnh quà ${next.key.trim() || "…"}`,
+            });
           }
-          setMsg("Đã tải ảnh catalog");
         }}
       />
     </AppShell>
