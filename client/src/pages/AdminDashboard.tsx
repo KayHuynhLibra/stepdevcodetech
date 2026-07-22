@@ -15,6 +15,7 @@ import {
   isEco,
   isMainAdmin,
   isMod,
+  isSGift,
   isStaff,
   isTutien,
   playPath,
@@ -41,6 +42,13 @@ import {
 import { CultivationChip } from "../components/CultivationChip";
 import { TrafficPanel, type TrafficPayload } from "../components/TrafficPanel";
 import { onArcanaImgError } from "../lib/arcanaImages";
+import {
+  GIFT_CATEGORIES,
+  type GiftCategory,
+  type GiftFlyStyle,
+  type GiftFlyTier,
+  type GiftItem,
+} from "../gifts";
 
 type CultBenefitDraft = Record<
   CultivationRank,
@@ -96,6 +104,7 @@ type TabId =
   | "arcana"
   | "rolead"
   | "tutien"
+  | "gifts"
   | "room"
   | "deleteAcc";
 
@@ -552,6 +561,8 @@ interface Overview {
     updatedAt?: number;
     updatedBy?: string;
   };
+  tutienMaxByRank?: Record<string, number>;
+  extraStakeTiers?: number[];
   botPanel?: {
     targetCount: number;
     activeCount: number;
@@ -659,9 +670,12 @@ export default function AdminDashboard() {
   const loc = useLocation();
   const [me, setMe] = useState<AuthUser | null>(getStoredUser());
   const [data, setData] = useState<Overview | null>(null);
-  const [tab, setTab] = useState<TabId>(() =>
-    getStoredUser()?.role === "tutien" ? "tutien" : "overview",
-  );
+  const [tab, setTab] = useState<TabId>(() => {
+    const u = getStoredUser();
+    if (u?.role === "tutien") return "tutien";
+    if (u?.role === "sgift") return "gifts";
+    return "overview";
+  });
   const [managedGame, setManagedGame] = useState<ManagedGame>(() => {
     try {
       const v = localStorage.getItem(MANAGED_GAME_KEY);
@@ -796,6 +810,20 @@ export default function AdminDashboard() {
     note: "",
   });
   const [inviteBusy, setInviteBusy] = useState(false);
+  const [giftRows, setGiftRows] = useState<GiftItem[]>([]);
+  const [flyTierRows, setFlyTierRows] = useState<GiftFlyTier[]>([]);
+  const [giftBusy, setGiftBusy] = useState(false);
+  const [giftDraft, setGiftDraft] = useState({
+    key: "",
+    nameVi: "",
+    emoji: "🎁",
+    price: "100",
+    category: "warm" as GiftCategory,
+    blurb: "",
+    enabled: true,
+  });
+  const [extraStakeDraft, setExtraStakeDraft] = useState("");
+  const [extraStakeBusy, setExtraStakeBusy] = useState(false);
   const [codeDrafts, setCodeDrafts] = useState<Record<string, string>>({});
   const [codeBusyId, setCodeBusyId] = useState<string | null>(null);
   const [selfNickDraft, setSelfNickDraft] = useState<string | null>(null);
@@ -892,6 +920,16 @@ export default function AdminDashboard() {
     setRoomLobby(r.rooms);
   }, []);
 
+  const loadGiftConfig = useCallback(async () => {
+    const r = await api<{
+      ok: true;
+      gifts: GiftItem[];
+      flyTiers: GiftFlyTier[];
+    }>("/api/sgift/config");
+    setGiftRows(r.gifts ?? []);
+    setFlyTierRows(r.flyTiers ?? []);
+  }, []);
+
   const load = useCallback(async () => {
     const stored = getStoredUser();
     if (stored?.role === "mod") {
@@ -923,6 +961,9 @@ export default function AdminDashboard() {
         : await api<Overview>("/api/admin/overview");
     setData(overview);
     setBotCount(overview.stats.botTarget);
+    if (overview.extraStakeTiers) {
+      setExtraStakeDraft(overview.extraStakeTiers.join(", "));
+    }
     if (overview.cultivation?.colors) {
       setCultivationColorsCache(overview.cultivation.colors);
       setCultivationColors(structuredClone(overview.cultivation.colors));
@@ -1047,6 +1088,7 @@ export default function AdminDashboard() {
         if (r.user.role === "mod") setTab("room");
         if (r.user.role === "eco") setTab("vault");
         if (r.user.role === "audit") setTab("tools");
+        if (r.user.role === "sgift") setTab("gifts");
         const token = getToken();
         if (token) saveSession(token, r.user);
         return load();
@@ -1065,6 +1107,14 @@ export default function AdminDashboard() {
     }, 4000);
     return () => window.clearInterval(id);
   }, [tab, me, loadRooms]);
+
+  useEffect(() => {
+    if (tab !== "gifts" || !me) return;
+    if (!isMainAdmin(me) && !hasCapability(me, "gift_manage")) return;
+    void loadGiftConfig().catch((e) =>
+      setMsg(e instanceof Error ? e.message : "Lỗi tải catalog quà"),
+    );
+  }, [tab, me, loadGiftConfig]);
 
   useEffect(() => {
     if (data?.inter?.allSlotMinutes != null) {
@@ -1306,7 +1356,16 @@ export default function AdminDashboard() {
 
   const setUserRole = async (
     userId: string,
-    role: "user" | "deal" | "admin" | "onl" | "tutien" | "mod" | "eco" | "audit",
+    role:
+      | "user"
+      | "deal"
+      | "admin"
+      | "onl"
+      | "tutien"
+      | "mod"
+      | "eco"
+      | "audit"
+      | "sgift",
   ) => {
     try {
       await api("/api/mainadmin/user-role", {
@@ -1328,7 +1387,9 @@ export default function AdminDashboard() {
                     ? "Đã cấp role Eco (kho / lưu lượng)"
                     : role === "audit"
                       ? "Đã cấp role Audit (IP / tra cứu)"
-                      : "Đã chuyển về user",
+                      : role === "sgift"
+                        ? "Đã cấp role SGift (quà)"
+                        : "Đã chuyển về user",
       );
       await load();
     } catch (err) {
@@ -2249,6 +2310,116 @@ export default function AdminDashboard() {
     }
   };
 
+  const saveGiftUpsert = async () => {
+    const key = giftDraft.key.trim().toLowerCase();
+    if (!key) {
+      setMsg("Thiếu key quà");
+      return;
+    }
+    setGiftBusy(true);
+    try {
+      await api("/api/sgift/gifts", {
+        method: "POST",
+        body: JSON.stringify({
+          key,
+          nameVi: giftDraft.nameVi.trim() || key,
+          emoji: giftDraft.emoji.trim() || "🎁",
+          price: Math.floor(Number(giftDraft.price)),
+          category: giftDraft.category,
+          blurb: giftDraft.blurb.trim() || undefined,
+          enabled: giftDraft.enabled,
+        }),
+      });
+      setMsg(`Đã lưu quà ${key}`);
+      setGiftDraft({
+        key: "",
+        nameVi: "",
+        emoji: "🎁",
+        price: "100",
+        category: "warm",
+        blurb: "",
+        enabled: true,
+      });
+      await loadGiftConfig();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi lưu quà");
+    } finally {
+      setGiftBusy(false);
+    }
+  };
+
+  const toggleGiftRow = async (key: string, enabled: boolean) => {
+    setGiftBusy(true);
+    try {
+      await api("/api/sgift/gifts/toggle", {
+        method: "POST",
+        body: JSON.stringify({ key, enabled }),
+      });
+      await loadGiftConfig();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi bật/tắt quà");
+    } finally {
+      setGiftBusy(false);
+    }
+  };
+
+  const removeGiftRow = async (key: string) => {
+    if (!window.confirm(`Xóa quà ${key}?`)) return;
+    setGiftBusy(true);
+    try {
+      await api("/api/sgift/gifts/remove", {
+        method: "POST",
+        body: JSON.stringify({ key }),
+      });
+      setMsg(`Đã xóa ${key}`);
+      await loadGiftConfig();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi xóa quà");
+    } finally {
+      setGiftBusy(false);
+    }
+  };
+
+  const saveFlyTiers = async () => {
+    setGiftBusy(true);
+    try {
+      await api("/api/sgift/fly-tiers", {
+        method: "POST",
+        body: JSON.stringify({ flyTiers: flyTierRows }),
+      });
+      setMsg("Đã lưu fly tiers");
+      await loadGiftConfig();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi lưu fly tiers");
+    } finally {
+      setGiftBusy(false);
+    }
+  };
+
+  const saveExtraStakeTiers = async () => {
+    const parts = extraStakeDraft
+      .split(/[,;\s]+/)
+      .map((s) => Math.floor(Number(s.replace(/_/g, ""))))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    setExtraStakeBusy(true);
+    try {
+      const r = await api<{ ok: true; extraStakeTiers: number[] }>(
+        "/api/tutien/extra-stake-tiers",
+        {
+          method: "POST",
+          body: JSON.stringify({ extraStakeTiers: parts }),
+        },
+      );
+      setExtraStakeDraft(r.extraStakeTiers.join(", "));
+      setMsg("Đã lưu mức đặt xu thêm (Tu Tiên)");
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi lưu mức đặt thêm");
+    } finally {
+      setExtraStakeBusy(false);
+    }
+  };
+
   const saveArcanaStreakBonus = async () => {
     if (!data?.arcanaConfig) return;
     const enabled = (
@@ -2304,6 +2475,7 @@ export default function AdminDashboard() {
   const modOnly = isMod(me);
   const ecoOnly = isEco(me);
   const auditOnly = isAudit(me);
+  const sgiftOnly = isSGift(me);
   const canVault = hasCapability(me, "vault_ops");
   const canTraffic = hasCapability(me, "traffic_view");
   const canInter = hasCapability(me, "inter_control");
@@ -2312,13 +2484,18 @@ export default function AdminDashboard() {
   const canChat = hasCapability(me, "chat_config");
   const canInvites = hasCapability(me, "invite_ops");
   const canArcanaCfg = hasCapability(me, "arcana_config");
+  const canGiftManage = hasCapability(me, "gift_manage");
   const canGameSwitch = canVault || canArcanaCfg || canInter;
   const canCultivation = canManageCultivation(me);
   const canRoom = canAccessRoomAdmin(me);
   const activeVault =
     managedGame === "arcana" ? data.vaultArcana : data.vault;
   const tabs: { id: TabId; label: string; show: boolean }[] = [
-    { id: "overview", label: "Tổng quan", show: !tutienOnly && !modOnly },
+    {
+      id: "overview",
+      label: "Tổng quan",
+      show: !tutienOnly && !modOnly && !sgiftOnly,
+    },
     { id: "tools", label: "Tra cứu", show: canTools },
     {
       id: "traffic",
@@ -2340,7 +2517,7 @@ export default function AdminDashboard() {
     {
       id: "users",
       label: "User & Bot",
-      show: !tutienOnly && !modOnly && !ecoOnly && !auditOnly,
+      show: !tutienOnly && !modOnly && !ecoOnly && !auditOnly && !sgiftOnly,
     },
     { id: "rolead", label: "RoleAD", show: main },
     {
@@ -2352,12 +2529,12 @@ export default function AdminDashboard() {
     {
       id: "mod",
       label: "Mod",
-      show: !tutienOnly && !modOnly && !ecoOnly && !auditOnly,
+      show: !tutienOnly && !modOnly && !ecoOnly && !auditOnly && !sgiftOnly,
     },
     {
       id: "coupons",
       label: "Coupon ẩn",
-      show: !tutienOnly && !modOnly && !auditOnly,
+      show: !tutienOnly && !modOnly && !auditOnly && !sgiftOnly,
     },
     { id: "invites", label: "Đăng ký", show: canInvites },
     {
@@ -2366,6 +2543,11 @@ export default function AdminDashboard() {
       show: canVault,
     },
     { id: "tutien", label: "Tu Tiên", show: canCultivation },
+    {
+      id: "gifts",
+      label: "Quà",
+      show: main || canGiftManage,
+    },
   ];
 
   const filteredUsers = data.users.filter((u) => {
@@ -3567,8 +3749,9 @@ export default function AdminDashboard() {
           <section className="app-panel mt-3 space-y-2 p-3">
             <p className="play-heading text-sm">Cấp / thu role</p>
             <p className="text-[11px] text-[var(--play-muted)]">
-              user · deal · admin · onl · tutien · mod · eco · audit. Không đụng
-              tài khoản mainadmin khác. Eco = kho/lưu lượng; Audit = IP/tra cứu.
+              user · deal · admin · onl · tutien · mod · eco · audit · sgift. Không đụng
+              tài khoản mainadmin khác. Eco = kho/lưu lượng; Audit = IP/tra cứu;
+              SGift = catalog quà / fly.
               Bậc L = override capability; Room# = đóng phòng / đặt MK.
             </p>
             <input
@@ -3617,6 +3800,7 @@ export default function AdminDashboard() {
                             ["admin", "Admin"],
                             ["eco", "Eco"],
                             ["audit", "Audit"],
+                            ["sgift", "SGift"],
                             ["onl", "Onl"],
                             ["tutien", "Tu Tiên"],
                             ["mod", "Mod"],
@@ -4049,6 +4233,355 @@ export default function AdminDashboard() {
               </button>
             </section>
           )}
+
+          <section className="app-panel mt-4 p-3 sm:p-4">
+            <p className="play-heading text-sm">Mức đặt xu thêm (Tu Tiên)</p>
+            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+              Chip nhanh giữa 1M (công khai) và trần cá nhân — nhập số cách nhau
+              bằng dấu phẩy.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {extraStakeDraft
+                .split(/[,;\s]+/)
+                .map((s) => Math.floor(Number(s.replace(/_/g, ""))))
+                .filter((n) => Number.isFinite(n) && n > 0)
+                .map((n) => (
+                  <span
+                    key={n}
+                    className="rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold tabular-nums text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
+                  >
+                    {formatXu(n)}
+                  </span>
+                ))}
+            </div>
+            <textarea
+              value={extraStakeDraft}
+              onChange={(e) => setExtraStakeDraft(e.target.value)}
+              rows={2}
+              placeholder="2000000, 3000000, 5000000, …"
+              className="app-input mt-2 w-full font-mono text-xs"
+            />
+            <button
+              type="button"
+              disabled={extraStakeBusy}
+              onClick={() => void saveExtraStakeTiers()}
+              className="mt-2 rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
+            >
+              Lưu mức đặt thêm
+            </button>
+          </section>
+        </>
+      )}
+
+      {tab === "gifts" && (main || canGiftManage) && (
+        <>
+          <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+            <p className="play-heading text-sm">Catalog quà</p>
+            <p className="text-[11px] text-[var(--play-muted)]">
+              Giá clamp {10}–100.000 xu. Category: warm / prestige / legend / fun.
+            </p>
+            <ul className="max-h-80 space-y-2 overflow-y-auto">
+              {giftRows.map((g) => (
+                <li
+                  key={g.key}
+                  className="rounded-lg bg-white/70 px-2 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-[var(--play-ink)]">
+                        {g.emoji} {g.nameVi}{" "}
+                        <span className="font-mono text-[10px] text-[var(--play-muted)]">
+                          {g.key}
+                        </span>
+                      </p>
+                      <p className="text-[10px] text-[var(--play-muted)]">
+                        {g.category} · {formatXu(g.price)} xu
+                        {g.enabled ? "" : " · tắt"}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        disabled={giftBusy}
+                        onClick={() =>
+                          setGiftDraft({
+                            key: g.key,
+                            nameVi: g.nameVi,
+                            emoji: g.emoji,
+                            price: String(g.price),
+                            category: g.category,
+                            blurb: g.blurb ?? "",
+                            enabled: g.enabled,
+                          })
+                        }
+                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15"
+                      >
+                        Sửa
+                      </button>
+                      <button
+                        type="button"
+                        disabled={giftBusy}
+                        onClick={() => void toggleGiftRow(g.key, !g.enabled)}
+                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15"
+                      >
+                        {g.enabled ? "Tắt" : "Bật"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={giftBusy}
+                        onClick={() => void removeGiftRow(g.key)}
+                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-red-800 ring-1 ring-red-300/60"
+                      >
+                        Xóa
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                Key
+                <input
+                  value={giftDraft.key}
+                  onChange={(e) =>
+                    setGiftDraft((d) => ({ ...d, key: e.target.value }))
+                  }
+                  className="app-input mt-0.5 w-full font-mono"
+                />
+              </label>
+              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                Tên
+                <input
+                  value={giftDraft.nameVi}
+                  onChange={(e) =>
+                    setGiftDraft((d) => ({ ...d, nameVi: e.target.value }))
+                  }
+                  className="app-input mt-0.5 w-full"
+                />
+              </label>
+              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                Emoji
+                <input
+                  value={giftDraft.emoji}
+                  onChange={(e) =>
+                    setGiftDraft((d) => ({ ...d, emoji: e.target.value }))
+                  }
+                  className="app-input mt-0.5 w-full"
+                />
+              </label>
+              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                Giá
+                <input
+                  type="number"
+                  value={giftDraft.price}
+                  onChange={(e) =>
+                    setGiftDraft((d) => ({ ...d, price: e.target.value }))
+                  }
+                  className="app-input mt-0.5 w-full"
+                />
+              </label>
+              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                Category
+                <select
+                  value={giftDraft.category}
+                  onChange={(e) =>
+                    setGiftDraft((d) => ({
+                      ...d,
+                      category: e.target.value as GiftCategory,
+                    }))
+                  }
+                  className="app-input mt-0.5 w-full"
+                >
+                  {GIFT_CATEGORIES.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-end gap-2 text-[10px] font-semibold text-[var(--play-muted)]">
+                <input
+                  type="checkbox"
+                  checked={giftDraft.enabled}
+                  onChange={(e) =>
+                    setGiftDraft((d) => ({ ...d, enabled: e.target.checked }))
+                  }
+                  className="h-4 w-4 accent-[var(--jade-deep)]"
+                />
+                Enabled
+              </label>
+            </div>
+            <label className="block text-[10px] font-semibold text-[var(--play-muted)]">
+              Blurb
+              <input
+                value={giftDraft.blurb}
+                onChange={(e) =>
+                  setGiftDraft((d) => ({ ...d, blurb: e.target.value }))
+                }
+                className="app-input mt-0.5 w-full"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={giftBusy}
+              onClick={() => void saveGiftUpsert()}
+              className="rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
+            >
+              Lưu / thêm quà
+            </button>
+          </section>
+
+          <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+            <p className="play-heading text-sm">Fly tiers</p>
+            <p className="text-[11px] text-[var(--play-muted)]">
+              Ngưỡng xu → toast / marquee / fly / fullscreen.
+            </p>
+            <ul className="space-y-2">
+              {flyTierRows.map((t, idx) => (
+                <li
+                  key={t.id}
+                  className="rounded-lg bg-white/70 px-2 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
+                >
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                      Id
+                      <input
+                        value={t.id}
+                        onChange={(e) =>
+                          setFlyTierRows((rows) =>
+                            rows.map((row, i) =>
+                              i === idx
+                                ? { ...row, id: e.target.value }
+                                : row,
+                            ),
+                          )
+                        }
+                        className="app-input mt-0.5 !w-24 font-mono"
+                      />
+                    </label>
+                    <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                      Label
+                      <input
+                        value={t.label}
+                        onChange={(e) =>
+                          setFlyTierRows((rows) =>
+                            rows.map((row, i) =>
+                              i === idx
+                                ? { ...row, label: e.target.value }
+                                : row,
+                            ),
+                          )
+                        }
+                        className="app-input mt-0.5 !w-28"
+                      />
+                    </label>
+                    <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                      minAmount
+                      <input
+                        type="number"
+                        value={t.minAmount}
+                        onChange={(e) =>
+                          setFlyTierRows((rows) =>
+                            rows.map((row, i) =>
+                              i === idx
+                                ? {
+                                    ...row,
+                                    minAmount: Math.floor(
+                                      Number(e.target.value),
+                                    ),
+                                  }
+                                : row,
+                            ),
+                          )
+                        }
+                        className="app-input mt-0.5 !w-28"
+                      />
+                    </label>
+                    <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                      durationMs
+                      <input
+                        type="number"
+                        value={t.durationMs}
+                        onChange={(e) =>
+                          setFlyTierRows((rows) =>
+                            rows.map((row, i) =>
+                              i === idx
+                                ? {
+                                    ...row,
+                                    durationMs: Math.floor(
+                                      Number(e.target.value),
+                                    ),
+                                  }
+                                : row,
+                            ),
+                          )
+                        }
+                        className="app-input mt-0.5 !w-24"
+                      />
+                    </label>
+                    <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                      Style
+                      <select
+                        value={t.style}
+                        onChange={(e) =>
+                          setFlyTierRows((rows) =>
+                            rows.map((row, i) =>
+                              i === idx
+                                ? {
+                                    ...row,
+                                    style: e.target.value as GiftFlyStyle,
+                                  }
+                                : row,
+                            ),
+                          )
+                        }
+                        className="app-input mt-0.5 !w-28"
+                      >
+                        {(
+                          [
+                            "toast",
+                            "marquee",
+                            "fly",
+                            "fullscreen",
+                          ] as GiftFlyStyle[]
+                        ).map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex items-center gap-1 pb-1 text-[10px] font-semibold">
+                      <input
+                        type="checkbox"
+                        checked={t.enabled}
+                        onChange={(e) =>
+                          setFlyTierRows((rows) =>
+                            rows.map((row, i) =>
+                              i === idx
+                                ? { ...row, enabled: e.target.checked }
+                                : row,
+                            ),
+                          )
+                        }
+                        className="h-4 w-4 accent-[var(--jade-deep)]"
+                      />
+                      On
+                    </label>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              disabled={giftBusy}
+              onClick={() => void saveFlyTiers()}
+              className="rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
+            >
+              Lưu fly tiers
+            </button>
+          </section>
         </>
       )}
 

@@ -49,6 +49,7 @@ import type { PublicState } from "./types.js";
 import { arcanaWheelStore } from "./arcanaWheelStore.js";
 import { arcanaMissionStore } from "./arcanaMissionStore.js";
 import { tutienStakeLimitsStore } from "./tutienStakeLimitsStore.js";
+import { giftStore } from "./giftStore.js";
 import { chatConfigStore } from "./chatConfigStore.js";
 import { vaultArcana, vaultStore } from "./vaultStore.js";
 import {
@@ -362,6 +363,22 @@ app.post("/api/auth/gift-xu", (req, res) => {
     return res.status(400).json({ ok: false, reason: "Thiếu người nhận" });
   }
   const giftKey = String(req.body?.giftKey ?? "").trim().slice(0, 32);
+  let amountRaw: unknown = req.body?.amount;
+  let giftMeta:
+    | { key: string; emoji: string; nameVi: string }
+    | undefined;
+  if (giftKey) {
+    const catalogGift = giftStore.getByKey(giftKey);
+    if (!catalogGift || !catalogGift.enabled) {
+      return res.status(400).json({ ok: false, reason: "Quà không tồn tại" });
+    }
+    amountRaw = catalogGift.price;
+    giftMeta = {
+      key: catalogGift.key,
+      emoji: catalogGift.emoji,
+      nameVi: catalogGift.nameVi,
+    };
+  }
   const result = authStore.giftXu(
     me.id,
     {
@@ -369,10 +386,11 @@ app.post("/api/auth/gift-xu", (req, res) => {
       code: toCode || undefined,
       username: toUsername || undefined,
     },
-    req.body?.amount,
+    amountRaw,
   );
   if (!result.ok) return res.status(400).json(result);
 
+  const fly = giftStore.resolveFlyTier(result.amount);
   const fromLive = engine.applyAuthBalance(result.from.id, result.from.balance);
   const toLive = engine.applyAuthBalance(result.to.id, result.to.balance);
   for (const sid of fromLive.socketIds) {
@@ -380,21 +398,39 @@ app.post("/api/auth/gift-xu", (req, res) => {
   }
   const fromLabel =
     result.from.displayName?.trim() || result.from.username;
+  const toLabel = result.to.displayName?.trim() || result.to.username;
   for (const sid of toLive.socketIds) {
     io.to(sid).emit("balanceUpdate", { balance: toLive.balance });
     io.to(sid).emit("giftReceived", {
       amount: result.amount,
       fromName: fromLabel,
-      giftKey: giftKey || undefined,
+      giftKey: giftMeta?.key || giftKey || undefined,
+      giftEmoji: giftMeta?.emoji,
+      giftNameVi: giftMeta?.nameVi,
       note: String(req.body?.note ?? "").trim().slice(0, 80) || undefined,
     });
   }
+
+  io.emit("giftFly", {
+    fromName: fromLabel,
+    toName: toLabel,
+    amount: result.amount,
+    giftKey: giftMeta?.key || giftKey || undefined,
+    giftEmoji: giftMeta?.emoji,
+    giftNameVi: giftMeta?.nameVi,
+    fly: {
+      id: fly.id,
+      label: fly.label,
+      style: fly.style,
+      durationMs: fly.durationMs,
+    },
+  });
 
   const note = String(req.body?.note ?? "").trim().slice(0, 80);
   audit(me, "gift_xu", {
     targetId: result.to.id,
     targetName: result.to.username,
-    detail: `amount=${result.amount}${giftKey ? ` gift=${giftKey}` : ""}${note ? ` note=${note}` : ""}`,
+    detail: `amount=${result.amount}${giftKey ? ` gift=${giftKey}` : ""}${note ? ` note=${note}` : ""} fly=${fly.id}`,
   });
 
   res.json({
@@ -402,7 +438,13 @@ app.post("/api/auth/gift-xu", (req, res) => {
     amount: result.amount,
     from: result.from,
     to: result.to,
-    giftKey: giftKey || undefined,
+    giftKey: giftMeta?.key || giftKey || undefined,
+    fly: {
+      id: fly.id,
+      label: fly.label,
+      style: fly.style,
+      durationMs: fly.durationMs,
+    },
   });
 });
 
@@ -874,6 +916,8 @@ app.get("/api/admin/overview", (req, res) => {
     }
     if (canCult || isMainAdmin(me)) {
       payload.cultivation = cultivationStore.getPublic();
+      payload.tutienMaxByRank = tutienStakeLimitsStore.getMap();
+      payload.extraStakeTiers = tutienStakeLimitsStore.getExtraStakeTiers();
     }
     if (canTraffic || canVault) {
       payload.traffic = {
@@ -1754,6 +1798,60 @@ app.post("/api/mainadmin/ips/clear-guest", async (req, res) => {
   res.json({ ok: true, rows: await enrichIpRows() });
 });
 
+app.get("/api/gifts", (_req, res) => {
+  res.json({ ok: true, gifts: giftStore.publicCatalog() });
+});
+
+app.get("/api/sgift/config", (req, res) => {
+  if (!requireCapability(req, res, "gift_manage", "Cần quyền SGift")) return;
+  res.json({ ok: true, ...giftStore.snapshot() });
+});
+
+app.post("/api/sgift/gifts", (req, res) => {
+  const me = requireCapability(req, res, "gift_manage", "Cần quyền SGift");
+  if (!me) return;
+  const result = giftStore.upsertGift(req.body?.gift ?? req.body);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "sgift_upsert", {
+    detail: `${result.gift.key} · ${result.gift.price}`,
+  });
+  res.json({ ok: true, gift: result.gift, ...giftStore.snapshot() });
+});
+
+app.post("/api/sgift/gifts/toggle", (req, res) => {
+  const me = requireCapability(req, res, "gift_manage", "Cần quyền SGift");
+  if (!me) return;
+  const key = String(req.body?.key ?? "");
+  const enabled = !!req.body?.enabled;
+  const result = giftStore.setGiftEnabled(key, enabled);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "sgift_toggle", {
+    detail: `${result.gift.key} → ${enabled ? "on" : "off"}`,
+  });
+  res.json({ ok: true, gift: result.gift, ...giftStore.snapshot() });
+});
+
+app.post("/api/sgift/gifts/remove", (req, res) => {
+  const me = requireCapability(req, res, "gift_manage", "Cần quyền SGift");
+  if (!me) return;
+  const key = String(req.body?.key ?? "");
+  const result = giftStore.removeGift(key);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "sgift_remove", { detail: result.key });
+  res.json({ ok: true, key: result.key, ...giftStore.snapshot() });
+});
+
+app.post("/api/sgift/fly-tiers", (req, res) => {
+  const me = requireCapability(req, res, "gift_manage", "Cần quyền SGift");
+  if (!me) return;
+  const result = giftStore.setFlyTiers(req.body?.flyTiers ?? req.body);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "sgift_fly_tiers", {
+    detail: result.flyTiers.map((t) => t.id).join(","),
+  });
+  res.json({ ok: true, ...giftStore.snapshot() });
+});
+
 app.get("/api/mainadmin/invites", (req, res) => {
   if (!requireCapability(req, res, "invite_ops", "Cần quyền mã TV (eco)")) return;
   res.json({
@@ -1832,12 +1930,13 @@ app.post("/api/mainadmin/user-role", (req, res) => {
       role !== "tutien" &&
       role !== "mod" &&
       role !== "eco" &&
-      role !== "audit")
+      role !== "audit" &&
+      role !== "sgift")
   ) {
     return res.status(400).json({
       ok: false,
       reason:
-        "Thiếu userId hoặc role (user|deal|admin|onl|tutien|mod|eco|audit)",
+        "Thiếu userId hoặc role (user|deal|admin|onl|tutien|mod|eco|audit|sgift)",
     });
   }
   const result = authStore.setUserRole(userId, role);
@@ -2030,7 +2129,27 @@ app.get("/api/tutien/overview", (req, res) => {
     users: authStore.listUsers(),
     cultivation: cultivationStore.getPublic(),
     stats: engine.getOnlineStats(),
+    tutienMaxByRank: tutienStakeLimitsStore.getMap(),
+    extraStakeTiers: tutienStakeLimitsStore.getExtraStakeTiers(),
   });
+});
+
+app.post("/api/tutien/extra-stake-tiers", (req, res) => {
+  const me = requireCapability(
+    req,
+    res,
+    "cultivation_manage",
+    "Cần quyền Tu Tiên",
+  );
+  if (!me) return;
+  const result = tutienStakeLimitsStore.setExtraStakeTiers(
+    req.body?.extraStakeTiers ?? req.body,
+  );
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "tutien_extra_stake_tiers", {
+    detail: result.extraStakeTiers.join(","),
+  });
+  res.json({ ok: true, extraStakeTiers: result.extraStakeTiers });
 });
 
 app.get("/api/tutien/cultivation/colors", (req, res) => {

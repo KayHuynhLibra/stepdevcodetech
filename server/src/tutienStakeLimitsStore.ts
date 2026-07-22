@@ -30,6 +30,19 @@ export const DEFAULT_TUTIEN_MAX_BY_RANK: TutienMaxByRank = {
   do_kiep: 50_000_000,
 };
 
+/** Extra chip amounts (between PUBLIC_MAX and personal max). */
+export const DEFAULT_EXTRA_STAKE_TIERS: number[] = [
+  2_000_000,
+  3_000_000,
+  5_000_000,
+  8_000_000,
+  10_000_000,
+  12_000_000,
+  20_000_000,
+  30_000_000,
+  50_000_000,
+];
+
 export function normalizeTutienMaxByRank(
   raw?: Partial<Record<string, number>> | null,
 ): TutienMaxByRank {
@@ -46,6 +59,22 @@ export function normalizeTutienMaxByRank(
     }
   }
   return out;
+}
+
+export function normalizeExtraStakeTiers(raw: unknown): number[] {
+  if (!Array.isArray(raw)) return [...DEFAULT_EXTRA_STAKE_TIERS];
+  const out = new Set<number>();
+  for (const x of raw) {
+    const n = Math.floor(Number(x));
+    if (
+      Number.isFinite(n) &&
+      n > PUBLIC_MAX_STAKE &&
+      n <= ABSOLUTE_MAX_STAKE
+    ) {
+      out.add(n);
+    }
+  }
+  return [...out].sort((a, b) => a - b);
 }
 
 function tutienHighTiers(map: TutienMaxByRank): number[] {
@@ -96,7 +125,10 @@ export function effectiveStakeTiersForUser(
   const max = personalTutienMax(user, limits);
   if (max == null) return base;
   const high = tutienHighTiers(limits).filter((n) => n <= max);
-  return [...new Set([...base, ...high])].sort((a, b) => a - b);
+  const extras = tutienStakeLimitsStore
+    .getExtraStakeTiers()
+    .filter((n) => n > PUBLIC_MAX_STAKE && n <= max);
+  return [...new Set([...base, ...high, ...extras])].sort((a, b) => a - b);
 }
 
 export function isStakeAllowedForUser(
@@ -125,6 +157,7 @@ function atomicWrite(path: string, data: unknown) {
 
 class TutienStakeLimitsStore {
   private map: TutienMaxByRank = { ...DEFAULT_TUTIEN_MAX_BY_RANK };
+  private extraStakeTiers: number[] = [...DEFAULT_EXTRA_STAKE_TIERS];
 
   constructor() {
     this.load();
@@ -143,12 +176,18 @@ class TutienStakeLimitsStore {
       }
       const parsed = JSON.parse(readFileSync(src, "utf8")) as {
         tutienMaxByRank?: Partial<Record<string, number>>;
+        extraStakeTiers?: unknown;
       };
       this.map = normalizeTutienMaxByRank(parsed.tutienMaxByRank);
+      this.extraStakeTiers =
+        parsed.extraStakeTiers !== undefined
+          ? normalizeExtraStakeTiers(parsed.extraStakeTiers)
+          : [...DEFAULT_EXTRA_STAKE_TIERS];
       if (src !== PATH) this.save();
     } catch (err) {
       console.warn("[tutien-stake-limits] load failed:", err);
       this.map = { ...DEFAULT_TUTIEN_MAX_BY_RANK };
+      this.extraStakeTiers = [...DEFAULT_EXTRA_STAKE_TIERS];
     }
   }
 
@@ -157,6 +196,7 @@ class TutienStakeLimitsStore {
       atomicWrite(PATH, {
         version: 1,
         tutienMaxByRank: this.map,
+        extraStakeTiers: this.extraStakeTiers,
         updatedAt: Date.now(),
       });
     } catch (err) {
@@ -166,6 +206,21 @@ class TutienStakeLimitsStore {
 
   getMap(): TutienMaxByRank {
     return { ...this.map };
+  }
+
+  getExtraStakeTiers(): number[] {
+    return [...this.extraStakeTiers];
+  }
+
+  setExtraStakeTiers(
+    raw: unknown,
+  ): { ok: true; extraStakeTiers: number[] } | { ok: false; reason: string } {
+    if (!Array.isArray(raw)) {
+      return { ok: false, reason: "extraStakeTiers phải là mảng số" };
+    }
+    this.extraStakeTiers = normalizeExtraStakeTiers(raw);
+    this.save();
+    return { ok: true, extraStakeTiers: this.getExtraStakeTiers() };
   }
 
   /** Seed from legacy arcana-wheel.json once if shared file was empty defaults. */
@@ -221,6 +276,9 @@ class TutienStakeLimitsStore {
       maxStakePerCard,
       publicMaxStake: PUBLIC_MAX_STAKE,
       quickAdds: quickAddsForUser(user),
+      extraStakeTiers: this.getExtraStakeTiers().filter(
+        (n) => n <= maxStakePerCard,
+      ),
       tutienMaxByRank:
         user?.role === "tutien" || user?.role === "mainadmin"
           ? this.getMap()

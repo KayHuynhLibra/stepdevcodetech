@@ -31,7 +31,8 @@ type DashRole =
   | "tutien"
   | "mod"
   | "eco"
-  | "audit";
+  | "audit"
+  | "sgift";
 
 function isNonPlayerRole(role: UserRole): boolean {
   return (
@@ -40,7 +41,8 @@ function isNonPlayerRole(role: UserRole): boolean {
     role === "tutien" ||
     role === "mod" ||
     role === "eco" ||
-    role === "audit"
+    role === "audit" ||
+    role === "sgift"
   );
 }
 
@@ -293,6 +295,31 @@ export default function App() {
       />
 
       <Route
+        path="/sgift/:userCode"
+        element={
+          <RequireOwnCode role="sgift">
+            <AdminDashboard />
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/sgift/:userCode/play"
+        element={
+          <RequireOwnCode role="sgift">
+            <GamePage />
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/sgift/:userCode/arcana"
+        element={
+          <RequireOwnCode role="sgift">
+            <ArcanaWheelPage />
+          </RequireOwnCode>
+        }
+      />
+
+      <Route
         path="/deal/:userCode"
         element={
           <RequireOwnCode role="deal">
@@ -378,6 +405,7 @@ export default function App() {
       />
       <Route path="/eco" element={<LegacyRoleRedirect role="eco" />} />
       <Route path="/audit" element={<LegacyRoleRedirect role="audit" />} />
+      <Route path="/sgift" element={<LegacyRoleRedirect role="sgift" />} />
       <Route path="/deal" element={<LegacyRoleRedirect role="deal" />} />
       <Route path="/tutien" element={<LegacyRoleRedirect role="tutien" />} />
       <Route path="/mod" element={<LegacyRoleRedirect role="mod" />} />

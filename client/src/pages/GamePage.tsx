@@ -32,7 +32,11 @@ import {
   type AutoStakeConfig,
 } from "../components/AutoStakeSheet";
 import { GiftHubSheet, type GiftHubTarget } from "../components/GiftHubSheet";
-import { findDemoGift } from "../gifts";
+import {
+  GiftFlyOverlay,
+  type GiftFlyQueueItem,
+} from "../components/GiftFlyOverlay";
+import { findDemoGift, type GiftFlyEvent } from "../gifts";
 import { ShoutBar } from "../components/ShoutBar";
 import { ShoutMarquee } from "../components/ShoutMarquee";
 import { SaintOverlay } from "../components/SaintOverlay";
@@ -138,6 +142,7 @@ export default function GamePage() {
   >([]);
   const [giftBusy, setGiftBusy] = useState(false);
   const [giftPreset, setGiftPreset] = useState<GiftHubTarget | null>(null);
+  const [giftFlyQueue, setGiftFlyQueue] = useState<GiftFlyQueueItem[]>([]);
   const [tarotStarRows, setTarotStarRows] = useState<TarotStarEntry[]>([]);
   const [shouts, setShouts] = useState<(ShoutEvent & { key: string })[]>([]);
   const [saintItem, setSaintItem] = useState<
@@ -407,14 +412,28 @@ export default function GamePage() {
       amount?: number;
       fromName?: string;
       giftKey?: string;
+      giftEmoji?: string;
+      giftNameVi?: string;
       note?: string;
     }) => {
+      // Fly overlay covers most styles; keep a brief recipient toast for toast-tier or missing fly.
       const gift = payload.giftKey ? findDemoGift(payload.giftKey) : undefined;
-      const label = gift
-        ? `${gift.emoji} ${gift.nameVi}`
-        : `${formatXu(payload.amount ?? 0)} xu`;
+      const label =
+        payload.giftEmoji && payload.giftNameVi
+          ? `${payload.giftEmoji} ${payload.giftNameVi}`
+          : gift
+            ? `${gift.emoji} ${gift.nameVi}`
+            : `${formatXu(payload.amount ?? 0)} xu`;
       const from = payload.fromName?.trim() || "Ai đó";
       showToast(`${from} tặng bạn ${label}`);
+    };
+
+    const onGiftFly = (payload: GiftFlyEvent) => {
+      if (!payload?.fly?.style) return;
+      const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setGiftFlyQueue((prev) =>
+        [...prev, { ...payload, key }].slice(-6),
+      );
     };
 
     s.on("connect", onConnect);
@@ -431,6 +450,7 @@ export default function GamePage() {
     s.on("tarotStarsData", onTarotStarsData);
     s.on("shout", onShout);
     s.on("giftReceived", onGiftReceived);
+    s.on("giftFly", onGiftFly);
 
     if (s.connected) onConnect();
 
@@ -453,6 +473,7 @@ export default function GamePage() {
       s.off("tarotStarsData", onTarotStarsData);
       s.off("shout", onShout);
       s.off("giftReceived", onGiftReceived);
+      s.off("giftFly", onGiftFly);
     };
   }, [socket, showToast, setMe, setSessionAuthed]);
 
@@ -2185,6 +2206,13 @@ export default function GamePage() {
           setGiftPreset(null);
         }}
         onSend={sendDemoGift}
+      />
+
+      <GiftFlyOverlay
+        queue={giftFlyQueue}
+        onDone={(key) =>
+          setGiftFlyQueue((prev) => prev.filter((x) => x.key !== key))
+        }
       />
 
       <HistorySheet

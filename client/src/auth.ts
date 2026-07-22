@@ -12,7 +12,8 @@ export type UserRole =
   | "tutien"
   | "mod"
   | "eco"
-  | "audit";
+  | "audit"
+  | "sgift";
 
 export interface AuthUser {
   id: string;
@@ -129,7 +130,11 @@ export function isAudit(user: { role: UserRole } | null | undefined): boolean {
   return user?.role === "audit";
 }
 
-/** Dashboard admin/main/eco/audit — không gồm deal/mod/tutien. */
+export function isSGift(user: { role: UserRole } | null | undefined): boolean {
+  return user?.role === "sgift";
+}
+
+/** Dashboard admin/main/eco/audit/sgift — không gồm deal/mod/tutien. */
 export function canAccessStaffDashboard(
   user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
 ): boolean {
@@ -224,6 +229,7 @@ export function homePath(
   if (user.role === "admin") return `/admin/${code}`;
   if (user.role === "eco") return `/eco/${code}`;
   if (user.role === "audit") return `/audit/${code}`;
+  if (user.role === "sgift") return `/sgift/${code}`;
   if (user.role === "deal") return `/deal/${code}`;
   if (user.role === "tutien") return `/tutien/${code}`;
   if (user.role === "mod") return `/mod/${code}`;

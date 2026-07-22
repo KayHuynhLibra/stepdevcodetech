@@ -54,7 +54,8 @@ export type UserRole =
   | "tutien"
   | "mod"
   | "eco"
-  | "audit";
+  | "audit"
+  | "sgift";
 
 /** Đủ số ván lifetime → VIP tự động */
 export const VIP_ROUNDS_REQUIRED = 10_000;
@@ -440,7 +441,8 @@ function isAssignableStaffRole(role: string): role is UserRole {
     role === "tutien" ||
     role === "mod" ||
     role === "eco" ||
-    role === "audit"
+    role === "audit" ||
+    role === "sgift"
   );
 }
 
@@ -456,7 +458,8 @@ function isUserRecord(u: unknown): u is UserRecord {
     r.role === "tutien" ||
     r.role === "mod" ||
     r.role === "eco" ||
-    r.role === "audit";
+    r.role === "audit" ||
+    r.role === "sgift";
   return (
     typeof r.id === "string" &&
     typeof r.username === "string" &&
@@ -928,7 +931,16 @@ export class AuthStore {
   /** Mainadmin: đổi role (không đụng mainadmin). */
   setUserRole(
     userId: string,
-    role: "user" | "deal" | "admin" | "onl" | "tutien" | "mod" | "eco" | "audit",
+    role:
+      | "user"
+      | "deal"
+      | "admin"
+      | "onl"
+      | "tutien"
+      | "mod"
+      | "eco"
+      | "audit"
+      | "sgift",
   ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
     const user = this.byId.get(userId);
     if (!user) return { ok: false, reason: "Không tìm thấy user" };
@@ -939,7 +951,12 @@ export class AuthStore {
       return { ok: false, reason: "Role không hợp lệ" };
     }
     user.role = role;
-    if (role === "admin" || role === "eco" || role === "audit") {
+    if (
+      role === "admin" ||
+      role === "eco" ||
+      role === "audit" ||
+      role === "sgift"
+    ) {
       user.mustChangePassword = user.mustChangePassword ?? true;
     }
     this.revokeAllTokens(userId);
@@ -1834,7 +1851,11 @@ export function isAudit(user: { role: UserRole } | null | undefined): boolean {
   return user?.role === "audit";
 }
 
-/** Dashboard staff (admin/main/eco/audit) — không gồm deal/mod/tutien. */
+export function isSGift(user: { role: UserRole } | null | undefined): boolean {
+  return user?.role === "sgift";
+}
+
+/** Dashboard staff (admin/main/eco/audit/sgift) — không gồm deal/mod/tutien. */
 export function canAccessStaffDashboard(
   user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
 ): boolean {
