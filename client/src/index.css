@@ -1335,7 +1335,205 @@ input {
   border-color: rgba(232, 176, 80, 0.35);
 }
 
-/* IdentityBadge ? solo ngang; couple x?p d?c (mobile kh?ng l?ch role/ID) */
+/* ---- Role rail: khung + ky tu noi ---- */
+.role-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  margin-top: 0.4rem;
+}
+.role-rail__pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 100%;
+}
+.role-rail__id {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+}
+
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.75rem;
+  max-width: 100%;
+  padding: 0.2rem 0.55rem 0.2rem 0.28rem;
+  border-radius: 999px;
+  border: 1px solid rgba(140, 118, 77, 0.45);
+  background: linear-gradient(180deg, #1a2638 0%, #121d2d 100%);
+  color: #e3d8c4;
+  box-sizing: border-box;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 236, 200, 0.12),
+    0 1px 3px rgba(20, 12, 4, 0.18);
+}
+.role-pill__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  line-height: 1;
+  background: radial-gradient(
+    circle at 35% 30%,
+    rgba(255, 236, 200, 0.35),
+    rgba(200, 169, 104, 0.2) 55%,
+    rgba(40, 28, 12, 0.55)
+  );
+  border: 1px solid rgba(229, 193, 88, 0.55);
+  box-shadow:
+    0 0 8px rgba(229, 193, 88, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  color: #fff4c8;
+  text-shadow: 0 0 6px rgba(255, 220, 140, 0.55);
+}
+.role-pill__text {
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  white-space: nowrap;
+  padding-right: 0.2rem;
+}
+.role-pill--couple {
+  border-color: rgba(244, 114, 182, 0.45);
+  background: linear-gradient(180deg, #3a1a28 0%, #241018 100%);
+  color: #ffd0dc;
+}
+.role-pill--couple .role-pill__glyph {
+  border-color: rgba(251, 113, 133, 0.65);
+  background: radial-gradient(
+    circle at 35% 30%,
+    rgba(255, 180, 200, 0.55),
+    rgba(190, 40, 80, 0.45)
+  );
+  color: #fff;
+  box-shadow: 0 0 10px rgba(255, 120, 160, 0.45);
+}
+.role-pill--vip {
+  border-color: rgba(251, 191, 36, 0.7);
+  background: linear-gradient(180deg, #fbbf24 0%, #e8b050 100%);
+  color: #1a1208;
+  box-shadow:
+    0 0 0 1px rgba(255, 220, 140, 0.45),
+    0 2px 8px rgba(180, 110, 20, 0.25);
+}
+.role-pill--vip .role-pill__glyph {
+  border-color: rgba(120, 70, 10, 0.45);
+  background: radial-gradient(circle at 35% 30%, #fff4c8, #e8b050 70%);
+  color: #5a3a08;
+  text-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+.role-pill--role {
+  border-color: rgba(232, 176, 80, 0.4);
+  background: linear-gradient(180deg, #3a2a18 0%, #24180c 100%);
+}
+.role-pill--cult {
+  padding-right: 0.4rem;
+  background: linear-gradient(180deg, #152238 0%, #0e1a2b 100%);
+  border-color: rgba(126, 200, 255, 0.35);
+}
+.role-pill--cult .role-pill__glyph {
+  border-color: rgba(126, 200, 255, 0.55);
+  background: radial-gradient(
+    circle at 35% 30%,
+    rgba(180, 220, 255, 0.45),
+    rgba(60, 100, 160, 0.4)
+  );
+  color: #e8f4ff;
+  box-shadow: 0 0 10px rgba(126, 200, 255, 0.35);
+}
+.role-pill__cult-chip {
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  font-size: 0.6875rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.02em !important;
+  line-height: 1.1 !important;
+}
+
+.role-id {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 1.9rem;
+  min-width: 7.25rem;
+  padding: 0.28rem 0.9rem 0.28rem 0.35rem;
+  border-radius: 999px;
+  border: 1px solid rgba(200, 169, 104, 0.7);
+  background: linear-gradient(90deg, #1a2638, #2a3b54, #1a2638);
+  color: #e5c158;
+  box-sizing: border-box;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 236, 200, 0.15),
+    0 2px 8px rgba(24, 12, 4, 0.2);
+}
+.role-id__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 900;
+  color: #1a1208;
+  background: linear-gradient(145deg, #f0d78c, #c8a968);
+  box-shadow:
+    0 0 10px rgba(229, 193, 88, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+.role-id__label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.role-id__value {
+  font-size: 0.8125rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.role-id--vip {
+  border-color: rgba(251, 191, 36, 0.85);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 214, 120, 0.98),
+    rgba(232, 176, 80, 0.95),
+    rgba(255, 196, 90, 0.98)
+  );
+  color: #3a2210;
+  box-shadow:
+    0 0 0 1px rgba(255, 220, 140, 0.55),
+    0 2px 10px rgba(180, 110, 20, 0.28);
+}
+.role-id--vip .role-id__glyph {
+  background: linear-gradient(145deg, #fff8e0, #e8b050);
+  color: #5a3a08;
+}
+.role-id--vip .role-id__label {
+  opacity: 0.7;
+  color: #5a3a08;
+}
+
+/* IdentityBadge - solo ngang; couple xep doc */
 .identity-badge {
   display: flex;
   width: 100%;
@@ -1378,12 +1576,16 @@ input {
 .identity-badge--couple .identity-badge__name-row {
   justify-content: center;
 }
-.identity-badge--couple .identity-badge__chips {
-  justify-content: center;
-}
 .identity-badge--couple .colored-name,
-.identity-badge--couple .identity-badge__meta p {
+.identity-badge--couple .identity-badge__meta > p {
   text-align: center;
+}
+.identity-badge--solo .role-rail {
+  align-items: flex-start;
+}
+.identity-badge--solo .role-rail__pills,
+.identity-badge--solo .role-rail__id {
+  justify-content: flex-start;
 }
 .identity-badge__name-row {
   display: flex;
@@ -1392,35 +1594,11 @@ input {
   gap: 0.35rem 0.5rem;
   min-width: 0;
 }
-.identity-badge__couple-tag {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  background: linear-gradient(
-    90deg,
-    rgba(244, 63, 94, 0.16),
-    rgba(251, 191, 36, 0.12)
-  );
-  padding: 0.1rem 0.45rem;
-  font-size: 0.5625rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgba(190, 18, 60, 0.9);
-  box-shadow: inset 0 0 0 1px rgba(251, 113, 133, 0.35);
-}
-.identity-badge__chips {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
-  margin-top: 0.35rem;
-}
 .identity-badge--solo .identity-badge__meta {
   flex: 1 1 auto;
 }
 
-/* Admin header ? Tho?t tr?n thanh ri?ng, kh?ng chen badge */
+/* Admin header - Thoat tren thanh rieng */
 .admin-header {
   display: flex;
   flex-direction: column;

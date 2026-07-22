@@ -1,7 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { VIP_ROUNDS_REQUIRED, userShowsVip } from "../auth";
 import { formatXu } from "../cards";
-import { CultivationChip } from "./CultivationChip";
 import { CoupleAvatar } from "./CoupleAvatar";
 import { ColoredName } from "./ColoredName";
 import { RoleAvatarFrame } from "./RoleAvatarFrame";
@@ -12,6 +11,11 @@ import {
   normalizeIdFrame,
   type ProfileThemeId,
 } from "../profileStyles";
+import {
+  cultivationLabel,
+  getCultivationColor,
+  isCultivationRank,
+} from "../cultivation";
 
 export interface PlayerInfoView {
   name: string;
@@ -310,23 +314,53 @@ export function PlayerInfoSheet({
             </div>
           )}
 
-          <div className="profile-celestial__roles" role="list">
-            {showVip && (
-              <span className="profile-role-chip" role="listitem">
-                👑 VIP
+          <div className="profile-celestial__roles role-rail" role="list">
+            <div className="role-rail__pills">
+              {targetBonded && (
+                <span className="role-pill role-pill--couple" role="listitem">
+                  <span className="role-pill__glyph" aria-hidden>
+                    ♥
+                  </span>
+                  <span className="role-pill__text">Cặp đôi</span>
+                </span>
+              )}
+              {showVip && (
+                <span className="role-pill role-pill--vip" role="listitem">
+                  <span className="role-pill__glyph" aria-hidden>
+                    ★
+                  </span>
+                  <span className="role-pill__text">VIP</span>
+                </span>
+              )}
+              {player.cultivationRank &&
+              isCultivationRank(player.cultivationRank) ? (
+                <span
+                  className="role-pill role-pill--cult"
+                  role="listitem"
+                  title={
+                    cultivationLabel(player.cultivationRank) ?? "Cảnh giới"
+                  }
+                  style={{
+                    borderColor: getCultivationColor(player.cultivationRank)
+                      ?.border,
+                    color: getCultivationColor(player.cultivationRank)?.text,
+                  }}
+                >
+                  <span className="role-pill__glyph" aria-hidden>
+                    ᚱ
+                  </span>
+                  <span className="role-pill__text">
+                    {cultivationLabel(player.cultivationRank)}
+                  </span>
+                </span>
+              ) : null}
+              <span className="role-pill role-pill--role" role="listitem">
+                <span className="role-pill__glyph" aria-hidden>
+                  👤
+                </span>
+                <span className="role-pill__text">{kind}</span>
               </span>
-            )}
-            {player.cultivationRank ? (
-              <span className="profile-role-chip profile-role-chip--cult" role="listitem">
-                <CultivationChip
-                  rank={player.cultivationRank}
-                  className="!px-0 !py-0 !text-[11px] !font-bold !tracking-normal !ring-0 !shadow-none"
-                />
-              </span>
-            ) : null}
-            <span className="profile-role-chip" role="listitem">
-              👤 {kind}
-            </span>
+            </div>
           </div>
 
           {player.userId && !player.isBot && (

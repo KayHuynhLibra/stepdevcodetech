@@ -8,37 +8,38 @@ import {
   type UserRole,
 } from "../auth";
 import { normalizeAvatar, DEFAULT_AVATAR } from "../avatars";
-import { CultivationChip } from "./CultivationChip";
 import { CoupleAvatar } from "./CoupleAvatar";
 import { ColoredName } from "./ColoredName";
 import { RoleAvatarFrame } from "./RoleAvatarFrame";
+import {
+  cultivationLabel,
+  getCultivationColor,
+  isCultivationRank,
+} from "../cultivation";
 
-function roleLabel(role?: UserRole | "guest"): string {
-  if (role === "mainadmin") return "Mainadmin";
-  if (role === "admin") return "Admin";
-  if (role === "eco") return "Eco";
-  if (role === "audit") return "Audit";
-  if (role === "sgift") return "SGift";
-  if (role === "ring") return "Ring";
-  if (role === "deal") return "Deal";
-  if (role === "onl") return "Onl";
-  if (role === "tutien") return "Tu Tiên";
-  if (role === "mod") return "Mod";
-  if (role === "guest") return "Khách";
-  return "Player";
+function roleMeta(role?: UserRole | "guest"): { glyph: string; label: string } {
+  if (role === "mainadmin") return { glyph: "✦", label: "Mainadmin" };
+  if (role === "admin") return { glyph: "🛡", label: "Admin" };
+  if (role === "eco") return { glyph: "🌿", label: "Eco" };
+  if (role === "audit") return { glyph: "👁", label: "Audit" };
+  if (role === "sgift") return { glyph: "🎁", label: "SGift" };
+  if (role === "ring") return { glyph: "💍", label: "Ring" };
+  if (role === "deal") return { glyph: "⚖", label: "Deal" };
+  if (role === "onl") return { glyph: "📡", label: "Onl" };
+  if (role === "tutien") return { glyph: "☯", label: "Tu Tiên" };
+  if (role === "mod") return { glyph: "⚔", label: "Mod" };
+  if (role === "guest") return { glyph: "◌", label: "Khách" };
+  return { glyph: "👤", label: "Player" };
 }
 
 interface IdentityBadgeProps {
   user?: AuthUser | null;
-  /** Phiên khách */
   guestCode?: string | null;
   guestName?: string | null;
   guestAvatar?: string | null;
   compact?: boolean;
   showPath?: boolean;
-  /** Mở chọn avatar khi chạm */
   onAvatarClick?: () => void;
-  /** Mở đổi tên khi chạm tên (khách hoặc user đăng nhập) */
   onNameClick?: () => void;
 }
 
@@ -61,6 +62,7 @@ export function IdentityBadge({
       : null;
   const code = user?.code || (guestCode ? guestCode.toUpperCase() : "");
   const role = isGuest ? "guest" : user!.role;
+  const { glyph: roleGlyph, label: roleName } = roleMeta(role);
   const avatar = user
     ? normalizeAvatar(user.avatar)
     : normalizeAvatar(guestAvatar) || DEFAULT_AVATAR;
@@ -110,7 +112,6 @@ export function IdentityBadge({
     />
   );
 
-  /** Badge: luôn compact scale — không dùng size hero từ catalog nhẫn. */
   const coupleNode =
     bondActive && user?.bond ? (
       <CoupleAvatar
@@ -156,12 +157,7 @@ export function IdentityBadge({
 
   const meta = (
     <div className="identity-badge__meta min-w-0">
-      <div className="identity-badge__name-row">
-        {nameNode}
-        {bondActive && (
-          <span className="identity-badge__couple-tag">Cặp đôi</span>
-        )}
-      </div>
+      <div className="identity-badge__name-row">{nameNode}</div>
       {loginHint && (
         <p
           className={`truncate font-mono text-[9px] text-[var(--play-muted)] ${
@@ -172,31 +168,71 @@ export function IdentityBadge({
           @{loginHint}
         </p>
       )}
-      <div className="identity-badge__chips">
-        <span className="identity-chip identity-chip--role">
-          {roleLabel(role)}
-        </span>
-        {user?.cultivationRank && (
-          <CultivationChip rank={user.cultivationRank} />
-        )}
-        {isVip && (
-          <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-[#1a1208] shadow ring-1 ring-amber-200/80">
-            VIP
-          </span>
-        )}
-        {code && (
+
+      <div className="role-rail" aria-label="Vai trò">
+        <div className="role-rail__pills">
+          {bondActive && (
+            <span className="role-pill role-pill--couple" title="Cặp đôi">
+              <span className="role-pill__glyph" aria-hidden>
+                ♥
+              </span>
+              <span className="role-pill__text">Cặp đôi</span>
+            </span>
+          )}
           <span
-            className={`identity-chip identity-chip--code identity-chip--code-lg${
-              isVip ? " identity-chip--code-vip" : ""
-            }`}
-            title={
-              isVip ? "ID VIP — hiện với người chơi khác" : "ID người chơi"
-            }
+            className="role-pill role-pill--role"
+            title={roleName}
+            data-role={role}
           >
-            ID {code}
+            <span className="role-pill__glyph" aria-hidden>
+              {roleGlyph}
+            </span>
+            <span className="role-pill__text">{roleName}</span>
           </span>
+          {user?.cultivationRank && isCultivationRank(user.cultivationRank) && (
+            <span
+              className="role-pill role-pill--cult"
+              title={cultivationLabel(user.cultivationRank) ?? "Cảnh giới"}
+              style={{
+                borderColor: getCultivationColor(user.cultivationRank)?.border,
+                color: getCultivationColor(user.cultivationRank)?.text,
+              }}
+            >
+              <span className="role-pill__glyph" aria-hidden>
+                ᚱ
+              </span>
+              <span className="role-pill__text">
+                {cultivationLabel(user.cultivationRank)}
+              </span>
+            </span>
+          )}
+          {isVip && (
+            <span className="role-pill role-pill--vip" title="VIP">
+              <span className="role-pill__glyph" aria-hidden>
+                ★
+              </span>
+              <span className="role-pill__text">VIP</span>
+            </span>
+          )}
+        </div>
+        {code && (
+          <div className="role-rail__id">
+            <span
+              className={`role-id${isVip ? " role-id--vip" : ""}`}
+              title={
+                isVip ? "ID VIP — hiện với người chơi khác" : "ID người chơi"
+              }
+            >
+              <span className="role-id__glyph" aria-hidden>
+                #
+              </span>
+              <span className="role-id__label">ID</span>
+              <span className="role-id__value">{code}</span>
+            </span>
+          </div>
         )}
       </div>
+
       {showPath && (
         <p
           className={`mt-1 truncate font-mono text-[var(--play-muted)] ${
