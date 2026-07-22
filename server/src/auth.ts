@@ -13,6 +13,11 @@ import { ITEM_XU_MAX, ACCOUNT_BALANCE_MAX } from "./types.js";
 /** Trần tặng xu / vật phẩm mỗi lần — 12 chữ số */
 export const GIFT_XU_MAX = ITEM_XU_MAX;
 import {
+  ACCOUNT_GEM_MAX,
+  STARTING_GEM,
+  clampGem,
+} from "./gem.js";
+import {
   demoteRank,
   isCultivationRank,
   periodMs,
@@ -105,6 +110,8 @@ export interface UserRecord {
   extraRoles?: UserRole[];
   avatar: string;
   balance: number;
+  /** Ví Gem (Kim Cương) — tách xu; bàn Gem để sau */
+  gemBalance?: number;
   winToday: number;
   guessesToday: number;
   dayKey: string;
@@ -211,6 +218,8 @@ export interface PublicUser {
   extraRoles?: UserRole[];
   avatar: string;
   balance: number;
+  /** Ví Gem (Kim Cương) */
+  gemBalance: number;
   winToday: number;
   guessesToday: number;
   stakeWeek: number;
@@ -392,6 +401,11 @@ function ensureDay(u: UserRecord) {
   if (typeof u.roundsPlayed !== "number" || !Number.isFinite(u.roundsPlayed)) {
     u.roundsPlayed = 0;
   }
+  if (typeof u.gemBalance !== "number" || !Number.isFinite(u.gemBalance)) {
+    u.gemBalance = STARTING_GEM;
+  } else {
+    u.gemBalance = clampGem(u.gemBalance);
+  }
   // Legacy isVip → vipGranted (một lần)
   if (u.isVip && !u.vipGranted) {
     u.vipGranted = true;
@@ -439,6 +453,7 @@ function toPublic(
     extraRoles: normalizeExtraRoles(u.extraRoles, u.role),
     avatar: u.avatar,
     balance: u.balance,
+    gemBalance: clampGem(u.gemBalance),
     winToday: u.winToday,
     guessesToday: u.guessesToday,
     stakeWeek: u.stakeWeek,
@@ -746,6 +761,11 @@ export class AuthStore {
         if (typeof rec.roundsPlayed !== "number" || !Number.isFinite(rec.roundsPlayed)) {
           rec.roundsPlayed = 0;
         }
+        if (typeof rec.gemBalance !== "number" || !Number.isFinite(rec.gemBalance)) {
+          rec.gemBalance = STARTING_GEM;
+        } else {
+          rec.gemBalance = clampGem(rec.gemBalance);
+        }
         if (rec.isVip && !rec.vipGranted) {
           rec.vipGranted = true;
         }
@@ -819,6 +839,7 @@ export class AuthStore {
       role,
       avatar: DEFAULT_AVATAR,
       balance: isStaffRole(role) ? 100_000 : STARTING_BALANCE,
+      gemBalance: STARTING_GEM,
       winToday: 0,
       guessesToday: 0,
       dayKey: todayKey(),
@@ -927,6 +948,7 @@ export class AuthStore {
       role: "user",
       avatar: DEFAULT_AVATAR,
       balance: STARTING_BALANCE,
+      gemBalance: STARTING_GEM,
       winToday: 0,
       guessesToday: 0,
       dayKey: todayKey(),
@@ -1919,6 +1941,35 @@ export class AuthStore {
     user.balance = next;
     this.scheduleSave();
     return { ok: true, user: toPublic(user) };
+  }
+
+  /** Cộng/trừ Gem (Kim Cương) — không đụng xu. */
+  adjustGem(
+    userId: string,
+    delta: number,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    ensureDay(user);
+    const cur = clampGem(user.gemBalance);
+    const next = cur + Math.floor(delta);
+    if (next < 0) return { ok: false, reason: "Gem không đủ để trừ" };
+    if (next > ACCOUNT_GEM_MAX) {
+      return {
+        ok: false,
+        reason: `Gem tối đa ${ACCOUNT_GEM_MAX.toLocaleString("vi-VN")}`,
+      };
+    }
+    user.gemBalance = next;
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  setGemBalance(userId: string, gemBalance: number) {
+    const user = this.byId.get(userId);
+    if (!user) return;
+    user.gemBalance = clampGem(gemBalance);
+    this.scheduleSave();
   }
 
   /**

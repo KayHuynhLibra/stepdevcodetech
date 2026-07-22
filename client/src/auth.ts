@@ -31,6 +31,8 @@ export interface AuthUser {
   extraRoles?: UserRole[];
   avatar: string;
   balance: number;
+  /** Ví Gem (Kim Cương) — tách xu */
+  gemBalance?: number;
   winToday: number;
   guessesToday: number;
   stakeWeek?: number;

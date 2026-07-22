@@ -89,6 +89,7 @@ import { PlayToolsBar } from "../components/PlayToolsBar";
 import { PlayRecentBar } from "../components/PlayRecentBar";
 import { uploadAvatarFromFile } from "../uploadAvatar";
 import { getDevicePayload } from "../device";
+import { formatGem } from "../gem";
 import { Link, useNavigate } from "react-router-dom";
 import { usePlaySocket } from "../socket/PlaySocketContext";
 
@@ -1921,6 +1922,19 @@ export default function GamePage() {
                   {formatXu(balance)}
                 </span>
               </div>
+              {me && (
+                <div
+                  className="ui-pill flex items-center gap-1 px-2.5 py-1 !text-[var(--play-ink)]"
+                  title="Gem (Kim Cương) — bàn Gem để sau"
+                >
+                  <span aria-hidden className="text-[11px]">
+                    ◆
+                  </span>
+                  <span className="font-play text-xs font-bold text-sky-800 tabular-nums">
+                    {formatGem(me.gemBalance ?? 0)}
+                  </span>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={openCoupon}

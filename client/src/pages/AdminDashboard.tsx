@@ -24,6 +24,7 @@ import {
 } from "../auth";
 import { AVATARS, DEFAULT_AVATAR, isCustomAvatar, normalizeAvatar } from "../avatars";
 import { CARDS, formatXu } from "../cards";
+import { formatGem } from "../gem";
 import { AppShell } from "../components/AppShell";
 import { IdentityBadge } from "../components/IdentityBadge";
 import { ImageUploadPopup } from "../components/ImageUploadPopup";
@@ -152,8 +153,35 @@ function defaultMaintDraft(): CultMaintDraft {
   return o;
 }
 
-type ManagedGame = "tarot" | "arcana";
+type ManagedGame = "tarot" | "arcana" | "gem";
 const MANAGED_GAME_KEY = "tarot_admin_managed_game";
+
+function vaultLabel(g: ManagedGame): string {
+  if (g === "arcana") return "Kho Arcana";
+  if (g === "gem") return "Kho Gem";
+  return "Kho Tarot";
+}
+
+function vaultApiBase(g: ManagedGame): string {
+  if (g === "arcana") return "/api/mainadmin/vault-arcana";
+  if (g === "gem") return "/api/mainadmin/vault-gem";
+  return "/api/mainadmin/vault";
+}
+
+function vaultKeyOf(g: ManagedGame): "tarot" | "arcana" | "gem" {
+  return g;
+}
+
+function pickVault(
+  g: ManagedGame,
+  data: { vault?: VaultSnapshot; vaultArcana?: VaultSnapshot; vaultGem?: VaultSnapshot } | null,
+): VaultSnapshot | undefined {
+  if (!data) return undefined;
+  if (g === "arcana") return data.vaultArcana;
+  if (g === "gem") return data.vaultGem;
+  return data.vault;
+}
+
 
 type TabId =
   | "overview"
@@ -656,6 +684,7 @@ interface Overview {
   };
   vault?: VaultSnapshot;
   vaultArcana?: VaultSnapshot;
+  vaultGem?: VaultSnapshot;
   arcanaStats?: ArcanaStats;
   arcanaConfig?: ArcanaConfig;
   arcanaRtpPreview?: ArcanaRtpRow[];
@@ -748,7 +777,8 @@ export default function AdminDashboard() {
   const [managedGame, setManagedGame] = useState<ManagedGame>(() => {
     try {
       const v = localStorage.getItem(MANAGED_GAME_KEY);
-      return v === "arcana" ? "arcana" : "tarot";
+      if (v === "arcana" || v === "gem" || v === "tarot") return v;
+      return "tarot";
     } catch {
       return "tarot";
     }
@@ -1121,8 +1151,7 @@ export default function AdminDashboard() {
         idleMode: v.idleMode ?? "",
       });
     }
-    const activeVault =
-      managedGame === "arcana" ? overview.vaultArcana : overview.vault;
+    const activeVault = pickVault(managedGame, overview);
     if (activeVault) {
       setVaultSet(String(activeVault.balance));
       if (activeVault.interFlags) {
@@ -1147,18 +1176,31 @@ export default function AdminDashboard() {
                 lossPct: 10,
                 profitPct: 15,
               }
-            : {
-                interSignal: true,
-                interWeightPct: 100,
-                interPriority: 10,
-                lossThresholdXu: 0,
-                profitThresholdXu: 0,
-                onLossMode: "",
-                onProfitMode: "",
-                usePercent: true,
-                lossPct: 8,
-                profitPct: 12,
-              },
+            : managedGame === "gem"
+              ? {
+                  interSignal: false,
+                  interWeightPct: 0,
+                  interPriority: 0,
+                  lossThresholdXu: 0,
+                  profitThresholdXu: 0,
+                  onLossMode: "",
+                  onProfitMode: "",
+                  usePercent: true,
+                  lossPct: 10,
+                  profitPct: 15,
+                }
+              : {
+                  interSignal: true,
+                  interWeightPct: 100,
+                  interPriority: 10,
+                  lossThresholdXu: 0,
+                  profitThresholdXu: 0,
+                  onLossMode: "",
+                  onProfitMode: "",
+                  usePercent: true,
+                  lossPct: 8,
+                  profitPct: 12,
+                },
         );
       }
     }
@@ -1761,13 +1803,11 @@ export default function AdminDashboard() {
       await api("/api/mainadmin/vault-flags", {
         method: "POST",
         body: JSON.stringify({
-          vaultKey: managedGame === "arcana" ? "arcana" : "tarot",
+          vaultKey: vaultKeyOf(managedGame),
           flags: vaultFlagsDraft,
         }),
       });
-      setMsg(
-        `Đã lưu flag Inter · ${managedGame === "arcana" ? "Kho Arcana" : "Kho Tarot"}`,
-      );
+      setMsg(`Đã lưu flag Inter · ${vaultLabel(managedGame)}`);
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi lưu flag kho");
@@ -2237,18 +2277,14 @@ export default function AdminDashboard() {
 
   const vaultAdjust = async (delta: number) => {
     try {
-      const path =
-        managedGame === "arcana"
-          ? "/api/mainadmin/vault-arcana/adjust"
-          : "/api/mainadmin/vault/adjust";
-      await api(path, {
+      await api(`${vaultApiBase(managedGame)}/adjust`, {
         method: "POST",
         body: JSON.stringify({ delta, note: vaultNote }),
       });
       setMsg(
         delta > 0
-          ? `Đã bơm ${managedGame === "arcana" ? "Kho Arcana" : "Kho Tarot"}`
-          : `Đã rút ${managedGame === "arcana" ? "Kho Arcana" : "Kho Tarot"}`,
+          ? `Đã bơm ${vaultLabel(managedGame)}`
+          : `Đã rút ${vaultLabel(managedGame)}`,
       );
       await load();
     } catch (e) {
@@ -2259,22 +2295,14 @@ export default function AdminDashboard() {
   const vaultSetBalance = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      const path =
-        managedGame === "arcana"
-          ? "/api/mainadmin/vault-arcana/set"
-          : "/api/mainadmin/vault/set";
-      await api(path, {
+      await api(`${vaultApiBase(managedGame)}/set`, {
         method: "POST",
         body: JSON.stringify({
           balance: Number(vaultSet),
           note: vaultNote,
         }),
       });
-      setMsg(
-        managedGame === "arcana"
-          ? "Đã đặt số dư Kho Arcana"
-          : "Đã đặt số dư Kho Tarot",
-      );
+      setMsg(`Đã đặt số dư ${vaultLabel(managedGame)}`);
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi");
@@ -2287,7 +2315,8 @@ export default function AdminDashboard() {
       return;
     }
     try {
-      await api("/api/mainadmin/vault/grant", {
+      const unit = managedGame === "gem" ? "Gem" : "xu";
+      await api(`${vaultApiBase(managedGame)}/grant`, {
         method: "POST",
         body: JSON.stringify({
           userId: vaultUser.userId,
@@ -2295,7 +2324,7 @@ export default function AdminDashboard() {
           note: vaultNote,
         }),
       });
-      setMsg("Đã cấp xu từ kho cho user");
+      setMsg(`Đã cấp ${unit} từ kho cho user`);
       await load();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Lỗi");
@@ -2427,7 +2456,8 @@ export default function AdminDashboard() {
       return;
     }
     try {
-      await api("/api/mainadmin/vault/seize", {
+      const unit = managedGame === "gem" ? "Gem" : "xu";
+      await api(`${vaultApiBase(managedGame)}/seize`, {
         method: "POST",
         body: JSON.stringify({
           userId: vaultUser.userId,
@@ -2435,7 +2465,7 @@ export default function AdminDashboard() {
           note: vaultNote,
         }),
       });
-      setMsg("Đã thu xu user về kho");
+      setMsg(`Đã thu ${unit} user về kho`);
       await load();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Lỗi");
@@ -2902,8 +2932,7 @@ export default function AdminDashboard() {
   const canGameSwitch = canVault || canArcanaCfg || canInter;
   const canCultivation = canManageCultivation(me);
   const canRoom = canAccessRoomAdmin(me);
-  const activeVault =
-    managedGame === "arcana" ? data.vaultArcana : data.vault;
+  const activeVault = pickVault(managedGame, data);
   const tabs: { id: TabId; label: string; show: boolean }[] = [
     {
       id: "overview",
@@ -2965,7 +2994,7 @@ export default function AdminDashboard() {
     { id: "invites", label: "Đăng ký", show: canInvites },
     {
       id: "vault",
-      label: managedGame === "arcana" ? "Kho Arcana" : "Kho Tarot",
+      label: vaultLabel(managedGame),
       show: canVault,
     },
     { id: "tutien", label: "Tu Tiên", show: canCultivation },
@@ -3055,6 +3084,7 @@ export default function AdminDashboard() {
               [
                 ["tarot", "Bàn Tarot"],
                 ["arcana", "Bánh xe Arcana"],
+                ["gem", "Gem"],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -8163,7 +8193,7 @@ export default function AdminDashboard() {
           <section className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
             {[
               [
-                managedGame === "arcana" ? "Kho Arcana hiện tại" : "Kho Tarot hiện tại",
+                vaultLabel(managedGame) + " hiện tại",
                 formatXu(activeVault.balance),
                 true,
               ],
@@ -8462,12 +8492,14 @@ export default function AdminDashboard() {
 
           <section className="app-panel mt-4 space-y-3 p-3">
             <p className="play-heading text-sm">
-              Can thiệp {managedGame === "arcana" ? "Kho Arcana" : "Kho Tarot"}
+              Can thiệp {vaultLabel(managedGame)}
             </p>
             <p className="text-[11px] text-[var(--play-muted)]">
               {managedGame === "arcana"
                 ? "Chỉ xu/trả bánh xe ghi kho này. Coupon/cấp xu user dùng Kho Tarot."
-                : "Xu bàn Tarot + coupon/cấp/thu xu. Không lẫn Kho Arcana."}
+                : managedGame === "gem"
+                  ? "Kho Gem độc lập — cấp/thu Gem ví user. Bàn Gem (settle) để sau."
+                  : "Xu bàn Tarot + coupon/cấp/thu xu. Không lẫn Kho Arcana/Gem."}
             </p>
             <input
               value={vaultNote}
@@ -8513,9 +8545,11 @@ export default function AdminDashboard() {
             </form>
           </section>
 
-          {managedGame === "tarot" && (
+          {managedGame !== "arcana" && (
           <section className="app-panel mt-4 space-y-2 p-3">
-            <p className="play-heading text-sm">Xu kho ↔ user</p>
+            <p className="play-heading text-sm">
+              {managedGame === "gem" ? "Gem kho ↔ user" : "Xu kho ↔ user"}
+            </p>
             <select
               value={vaultUser.userId}
               onChange={(e) =>
@@ -8526,7 +8560,11 @@ export default function AdminDashboard() {
               <option value="">Chọn user…</option>
               {data.users.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {u.username} ({formatXu(u.balance)})
+                  {u.username} ({formatXu(u.balance)} xu
+                  {typeof u.gemBalance === "number"
+                    ? ` · ${formatGem(u.gemBalance)} Gem`
+                    : ""}
+                  )
                 </option>
               ))}
             </select>
@@ -8537,7 +8575,7 @@ export default function AdminDashboard() {
                   setVaultUser((v) => ({ ...v, amount: e.target.value }))
                 }
                 className="app-input w-36"
-                placeholder="Số xu"
+                placeholder={managedGame === "gem" ? "Số Gem" : "Số xu"}
               />
               <button
                 type="button"

@@ -112,6 +112,20 @@ export const DEFAULT_ARCANA_INTER_FLAGS: VaultInterFlags = {
   profitPct: 15,
 };
 
+/** Kho Gem — Inter tắt mặc định (bàn Gem chưa ship). */
+export const DEFAULT_GEM_INTER_FLAGS: VaultInterFlags = {
+  interSignal: false,
+  interWeightPct: 0,
+  interPriority: 0,
+  lossThresholdXu: 0,
+  profitThresholdXu: 0,
+  onLossMode: "",
+  onProfitMode: "",
+  usePercent: true,
+  lossPct: 10,
+  profitPct: 15,
+};
+
 function edgePctFrom(stake: number, payout: number): number {
   const s = Math.max(0, stake);
   if (s <= 0) return 0;
@@ -715,4 +729,10 @@ export const vaultArcana = new VaultStore(
   "vault-arcana.json",
   "Kho Arcana",
   DEFAULT_ARCANA_INTER_FLAGS,
+);
+/** Kho Gem (Kim Cương) — độc lập xu / Arcana; bàn Gem để sau */
+export const vaultGem = new VaultStore(
+  "vault-gem.json",
+  "Kho Gem",
+  DEFAULT_GEM_INTER_FLAGS,
 );

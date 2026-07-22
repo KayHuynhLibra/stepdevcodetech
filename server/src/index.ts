@@ -58,7 +58,8 @@ import { giftStore } from "./giftStore.js";
 import { ringStore } from "./ringStore.js";
 import { chatConfigStore } from "./chatConfigStore.js";
 import { leaderboardConfigStore } from "./leaderboardConfigStore.js";
-import { vaultArcana, vaultStore } from "./vaultStore.js";
+import { vaultArcana, vaultGem, vaultStore } from "./vaultStore.js";
+import { ACCOUNT_GEM_MAX, ITEM_GEM_MAX } from "./gem.js";
 import {
   cultivationStore,
   isCultivationRank,
@@ -939,12 +940,14 @@ app.get("/api/admin/overview", (req, res) => {
   if (canVault || canTraffic || canInter || canChat || canInvites || canArcana) {
     const vault = vaultStore.getSnapshot();
     const vaultArcanaSnap = vaultArcana.getSnapshot();
+    const vaultGemSnap = vaultGem.getSnapshot();
     const stakes = stakeStore.getTrafficStats();
     const accounts = authStore.getAccountStats();
     const live = engine.getLiveTraffic();
     if (canVault) {
       payload.vault = vault;
       payload.vaultArcana = vaultArcanaSnap;
+      payload.vaultGem = vaultGemSnap;
     }
     if (canArcana) {
       payload.arcanaStats = arcanaWheelStore.getStats();
@@ -984,6 +987,13 @@ app.get("/api/admin/overview", (req, res) => {
         arcanaHouseEdgeXu:
           vaultArcanaSnap.totalStakeIn - vaultArcanaSnap.totalPayoutOut,
         vaultArcanaFlows: vaultArcanaSnap.flows,
+        vaultGemBalance: vaultGemSnap.balance,
+        vaultGemStakeIn: vaultGemSnap.totalStakeIn,
+        vaultGemPayoutOut: vaultGemSnap.totalPayoutOut,
+        vaultGemNetHouse: vaultGemSnap.netHouse,
+        gemHouseEdgeXu:
+          vaultGemSnap.totalStakeIn - vaultGemSnap.totalPayoutOut,
+        vaultGemFlows: vaultGemSnap.flows,
         interMode: interStore.getMode(),
         interEffectiveMode: interStore.getEffectiveMode(),
       };
@@ -1165,15 +1175,18 @@ app.post("/api/mainadmin/vault/seize", (req, res) => {
   res.json({ ok: true, user: adj.user, vault: vaultStore.getSnapshot() });
 });
 
-/** Flag Inter trên từng kho (Tarot | Arcana). */
+/** Flag Inter trên từng kho (Tarot | Arcana | Gem). */
 app.post("/api/mainadmin/vault-flags", (req, res) => {
   const me = requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)");
   if (!me) return;
   const key = String(req.body?.vaultKey ?? "tarot").trim();
-  if (key !== "tarot" && key !== "arcana") {
-    return res.status(400).json({ ok: false, reason: "vaultKey tarot|arcana" });
+  if (key !== "tarot" && key !== "arcana" && key !== "gem") {
+    return res
+      .status(400)
+      .json({ ok: false, reason: "vaultKey tarot|arcana|gem" });
   }
-  const store = key === "arcana" ? vaultArcana : vaultStore;
+  const store =
+    key === "arcana" ? vaultArcana : key === "gem" ? vaultGem : vaultStore;
   const flagsBody =
     req.body?.flags && typeof req.body.flags === "object"
       ? req.body.flags
@@ -1224,6 +1237,98 @@ app.post("/api/mainadmin/vault-arcana/set", (req, res) => {
   res.json({ ok: true, vault: vaultArcana.getSnapshot() });
 });
 
+/** Kho Gem — nền tảng bàn Gem (chưa settle). */
+app.get("/api/mainadmin/vault-gem", (req, res) => {
+  if (!requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)")) return;
+  res.json({ ok: true, vault: vaultGem.getSnapshot() });
+});
+
+app.post("/api/mainadmin/vault-gem/adjust", (req, res) => {
+  const me = requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)");
+  if (!me) return;
+  const result = vaultGem.adjust(
+    Number(req.body?.delta),
+    me.username,
+    String(req.body?.note ?? ""),
+  );
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "vault_gem_adjust", {
+    detail: `${req.body?.delta} ${req.body?.note ?? ""}`,
+  });
+  res.json({ ok: true, vault: vaultGem.getSnapshot() });
+});
+
+app.post("/api/mainadmin/vault-gem/set", (req, res) => {
+  const me = requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)");
+  if (!me) return;
+  const result = vaultGem.setBalance(
+    Number(req.body?.balance),
+    me.username,
+    String(req.body?.note ?? ""),
+  );
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "vault_gem_set", { detail: String(req.body?.balance) });
+  res.json({ ok: true, vault: vaultGem.getSnapshot() });
+});
+
+app.post("/api/mainadmin/vault-gem/grant", (req, res) => {
+  const me = requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)");
+  if (!me) return;
+  const userId = String(req.body?.userId ?? "").trim();
+  const amount = Math.floor(Number(req.body?.amount));
+  if (!userId || !Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId/amount" });
+  }
+  if (amount > ITEM_GEM_MAX) {
+    return res.status(400).json({
+      ok: false,
+      reason: `Tối đa ${ITEM_GEM_MAX.toLocaleString("vi-VN")} Gem / lần`,
+    });
+  }
+  const prep = vaultGem.prepareGrant(amount);
+  if (!prep.ok) return res.status(400).json(prep);
+  const adj = authStore.adjustGem(userId, prep.amount);
+  if (!adj.ok) return res.status(400).json(adj);
+  vaultGem.commitGrant(
+    prep.amount,
+    me.username,
+    adj.user.id,
+    adj.user.username,
+    String(req.body?.note ?? "Cấp Gem"),
+  );
+  audit(me, "vault_gem_grant", {
+    targetId: userId,
+    targetName: adj.user.username,
+    detail: String(prep.amount),
+  });
+  res.json({ ok: true, user: adj.user, vault: vaultGem.getSnapshot() });
+});
+
+app.post("/api/mainadmin/vault-gem/seize", (req, res) => {
+  const me = requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)");
+  if (!me) return;
+  const userId = String(req.body?.userId ?? "").trim();
+  const amount = Math.floor(Number(req.body?.amount));
+  if (!userId || !Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId/amount" });
+  }
+  const adj = authStore.adjustGem(userId, -amount);
+  if (!adj.ok) return res.status(400).json(adj);
+  vaultGem.commitSeize(
+    amount,
+    me.username,
+    adj.user.id,
+    adj.user.username,
+    String(req.body?.note ?? "Thu Gem"),
+  );
+  audit(me, "vault_gem_seize", {
+    targetId: userId,
+    targetName: adj.user.username,
+    detail: String(amount),
+  });
+  res.json({ ok: true, user: adj.user, vault: vaultGem.getSnapshot() });
+});
+
 app.get("/api/mainadmin/games", (req, res) => {
   if (!requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)")) return;
   const cfg = arcanaWheelStore.getConfig();
@@ -1241,6 +1346,12 @@ app.get("/api/mainadmin/games", (req, res) => {
         label: "Bánh xe Arcana",
         vaultKey: "arcana",
         enabled: cfg.enabled,
+      },
+      {
+        id: "gem",
+        label: "Gem (nền tảng)",
+        vaultKey: "gem",
+        enabled: true,
       },
     ],
   });
@@ -1378,6 +1489,37 @@ app.post("/api/admin/adjust-balance", (req, res) => {
   for (const sid of live.socketIds) {
     io.to(sid).emit("balanceUpdate", { balance: live.balance });
   }
+  res.json(result);
+});
+
+/** Staff: cộng/trừ Gem ví user (không đụng xu / bàn). */
+app.post("/api/admin/adjust-gem", (req, res) => {
+  const me = requireBalanceOperator(req, res);
+  if (!me) return;
+  const userId = String(req.body?.userId ?? "").trim();
+  const delta = Math.floor(Number(req.body?.delta));
+  if (!userId || !Number.isFinite(delta) || delta === 0) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId/delta" });
+  }
+  if (Math.abs(delta) > ACCOUNT_GEM_MAX) {
+    return res.status(400).json({
+      ok: false,
+      reason: `Delta Gem vượt trần ${ACCOUNT_GEM_MAX.toLocaleString("vi-VN")}`,
+    });
+  }
+  const result = authStore.adjustGem(userId, delta);
+  if (!result.ok) return res.status(400).json(result);
+  vaultGem.recordAdminAdjust(
+    delta,
+    me.username,
+    result.user.id,
+    result.user.username,
+  );
+  audit(me, "adjust_gem", {
+    targetId: result.user.id,
+    targetName: result.user.username,
+    detail: String(delta),
+  });
   res.json(result);
 });
 
