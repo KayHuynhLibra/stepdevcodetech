@@ -574,10 +574,10 @@ export default function UserDashboard() {
       </div>
 
       <section className="app-panel mt-5 p-3">
-        <p className="play-heading text-sm">Lịch sử cược</p>
+        <p className="play-heading text-sm">Lịch sử ván</p>
         <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
           {bets.length === 0
-            ? "Chưa có ván nào — vào bàn để đặt cược."
+            ? "Chưa có ván nào — vào bàn để đặt xu."
             : `${bets.length} dòng gần nhất`}
         </p>
         {bets.length > 0 && (
@@ -611,7 +611,7 @@ export default function UserDashboard() {
                       {formatXu(g.profit)}
                     </p>
                     <p className="text-[10px] text-[var(--play-muted)]">
-                      cược {formatXu(g.stake)}
+                      xu {formatXu(g.stake)}
                     </p>
                   </div>
                 </div>

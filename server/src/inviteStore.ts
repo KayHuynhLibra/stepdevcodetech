@@ -18,7 +18,9 @@ export interface InviteCode {
 }
 
 interface InvitesFile {
-  version: 1;
+  version: 1 | 2;
+  /** Khi true: đăng ký bắt buộc mã thành viên. false = mở đăng ký tự do. */
+  requireInvite?: boolean;
   invites: InviteCode[];
 }
 
@@ -49,6 +51,8 @@ function makeRandomCode(): string {
 
 export class InviteStore {
   private invites: InviteCode[] = [];
+  /** Mặc định bật — an toàn hơn mở đăng ký công khai. */
+  private requireInvite = true;
 
   constructor() {
     this.load();
@@ -62,7 +66,8 @@ export class InviteStore {
         return;
       }
       const parsed = JSON.parse(readFileSync(PATH, "utf8")) as InvitesFile;
-      if (parsed?.version !== 1 || !Array.isArray(parsed.invites)) return;
+      if (!parsed || !Array.isArray(parsed.invites)) return;
+      this.requireInvite = parsed.requireInvite !== false;
       this.invites = parsed.invites
         .filter(
           (x) =>
@@ -80,7 +85,9 @@ export class InviteStore {
           createdAt: Number(x.createdAt) || Date.now(),
           createdBy: String(x.createdBy ?? ""),
         }));
-      console.log(`[invite] Loaded ${this.invites.length} codes`);
+      console.log(
+        `[invite] Loaded ${this.invites.length} codes · requireInvite=${this.requireInvite}`,
+      );
     } catch (err) {
       console.warn("[invite] Failed to load invites.json:", err);
     }
@@ -90,7 +97,8 @@ export class InviteStore {
     try {
       if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
       const payload: InvitesFile = {
-        version: 1,
+        version: 2,
+        requireInvite: this.requireInvite,
         invites: this.invites,
       };
       writeFileSync(TMP, JSON.stringify(payload, null, 2), "utf8");
@@ -105,10 +113,24 @@ export class InviteStore {
     return this.invites.find((c) => c.code === key);
   }
 
+  isInviteRequired(): boolean {
+    return this.requireInvite;
+  }
+
+  setRequireInvite(enabled: boolean): { ok: true; requireInvite: boolean } {
+    this.requireInvite = !!enabled;
+    this.save();
+    return { ok: true, requireInvite: this.requireInvite };
+  }
+
   list(): InviteCode[] {
     return this.invites
       .map((c) => ({ ...c }))
       .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  getPublicConfig(): { requireInvite: boolean } {
+    return { requireInvite: this.requireInvite };
   }
 
   /** Kiểm tra mã còn dùng được — không tăng usedCount. */

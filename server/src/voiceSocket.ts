@@ -1,6 +1,7 @@
 import type { Server, Socket } from "socket.io";
 import {
   authStore,
+  canControlVoiceRoomLock,
   canModerateVoiceRoom,
   userDisplayName,
 } from "./auth.js";
@@ -55,6 +56,7 @@ export function attachVoiceSocket(io: Server) {
           roomId?: number;
           seat?: number;
           token?: string;
+          password?: string;
         },
         ack?: Ack,
       ) => {
@@ -76,6 +78,7 @@ export function attachVoiceSocket(io: Server) {
           name: userDisplayName(auth.user),
           avatar: normalizeAvatar(auth.user.avatar),
           voiceSeatPriority: benefit.voiceSeatPriority,
+          password: payload?.password,
         });
         if (!result.ok) {
           socket.emit("voice:error", result);
@@ -262,16 +265,58 @@ export function attachVoiceSocket(io: Server) {
           ack?.({ ok: false, reason: auth.reason });
           return;
         }
+        const mem = voiceRoomStore.getMembership(socket.id);
+        const canLock = mem
+          ? canControlVoiceRoomLock(auth.user, mem.roomId)
+          : false;
         const result = voiceRoomStore.setOpen(
           socket.id,
           !!payload?.open,
-          canModerateVoiceRoom(auth.user),
+          canLock,
         );
         if (!result.ok) {
           ack?.(result);
           return;
         }
         emitRoom(io, result.room.roomId, result.room);
+        auditStore.log({
+          actorId: auth.user.id,
+          actorName: auth.user.username,
+          action: "voice_set_open",
+          detail: `room=${result.room.roomId} open=${!!payload?.open}`,
+        });
+        ack?.({ ok: true, room: result.room });
+      },
+    );
+
+    socket.on(
+      "voice:setPassword",
+      (payload: { password?: string; token?: string }, ack?: Ack) => {
+        const auth = resolveVoiceUser(payload?.token);
+        if (!auth.ok) {
+          ack?.({ ok: false, reason: auth.reason });
+          return;
+        }
+        const mem = voiceRoomStore.getMembership(socket.id);
+        const canLock = mem
+          ? canControlVoiceRoomLock(auth.user, mem.roomId)
+          : false;
+        const result = voiceRoomStore.setPassword(
+          socket.id,
+          payload?.password,
+          canLock,
+        );
+        if (!result.ok) {
+          ack?.(result);
+          return;
+        }
+        emitRoom(io, result.room.roomId, result.room);
+        auditStore.log({
+          actorId: auth.user.id,
+          actorName: auth.user.username,
+          action: "voice_set_password",
+          detail: `room=${result.room.roomId} hasPassword=${result.room.hasPassword}`,
+        });
         ack?.({ ok: true, room: result.room });
       },
     );

@@ -1,7 +1,22 @@
-# Tarot Demo
+# SOFIAORE — Tarot entertainment demo
 
-Realtime tarot  demo (Vite + React client, Express + Socket.io server).
-“This is a purely fictional educational demo project. No real-money gambling, financial transactions, or actual currency conversion are involved.”
+Realtime tarot / wheel **entertainment demo** (Vite + React client, Express + Socket.io server).
+
+> This is a purely fictional educational demo project. No real-money gambling, financial transactions, or actual currency conversion are involved.
+
+## Important (GitHub / operators)
+
+| | |
+|--|--|
+| **Currency** | In-app **xu** = virtual points only — **no cash value**, no real-money deposit/withdraw in this codebase |
+| **Age** | **18+** (see in-app gate + [`TERMS.md`](./TERMS.md)) |
+| **Not** | Licensed US real-money gambling, money transmitter, or crypto cashout |
+| **Compliance pack** | [`LEGAL.md`](./LEGAL.md) · [`TERMS.md`](./TERMS.md) · [`PRIVACY.md`](./PRIVACY.md) · routes `/terms` `/privacy` |
+
+This is **not legal advice**. If you add real-money payments or cash prizes, get counsel and licensing review before offering the service.
+
+**Do not commit** `server/data/*.json`, `.env`, or player dumps (GitHub AUP / privacy).
+
 ## Local development
 
 ```bash
@@ -46,7 +61,7 @@ npm run backup:data
 # → server/data/backups/YYYYMMDD-HHMMSS/
 ```
 
-On Railway, run this before risky deploys, or schedule a cron that executes the same command / snapshots the volume. Keep `users.json`, `vault.json`, `vault-arcana.json`, `arcana-wheel.json`, `arcana-spins.json`, `tokens.json`, `tebs.json`, `coupons.json`, `inter.json`, `history.json`, `audit.json`, `reports.json`, `guest-ips.json`.
+On Railway, run this before risky deploys, or schedule a cron that executes the same command / snapshots the volume. Keep `users.json`, `vault.json`, `vault-arcana.json`, `arcana-wheel.json`, `arcana-spins.json`, `tokens.json`, `bets.json`, `coupons.json`, `inter.json`, `history.json`, `audit.json`, `reports.json`, `guest-ips.json`.
 
 ### Scale migrate (÷10) — one-shot
 

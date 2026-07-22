@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { io, Socket } from "socket.io-client";
 import {
   CARDS,
   formatXu,
+  type BalanceLeaderboardEntry,
   type BetEntry,
   type GameState,
   type LeaderboardEntry,
@@ -10,11 +10,12 @@ import {
   type TarotStarEntry,
 } from "../cards";
 import { mergeGameState } from "../lib/gameStateMerge";
-import { BettingBoard } from "../components/BettingBoard";
-import { BetSheet } from "../components/BetSheet";
+import { PlayBoard } from "../components/PlayBoard";
+import { StakeSheet } from "../components/StakeSheet";
 import { HistorySheet } from "../components/HistorySheet";
-import { MyBetsSheet } from "../components/MyBetsSheet";
+import { MyRoundsSheet } from "../components/MyRoundsSheet";
 import { LeaderboardSheet } from "../components/LeaderboardSheet";
+import { BalanceLeaderboardSheet } from "../components/BalanceLeaderboardSheet";
 import { RevealPopup } from "../components/RevealPopup";
 import { ResultSummaryPopup } from "../components/ResultSummaryPopup";
 import { PlayersSheet } from "../components/PlayersSheet";
@@ -25,17 +26,16 @@ import {
   type TopupRow,
 } from "../components/VipTopupSheet";
 import {
-  AutoBetSheet,
-  loadAutoBet,
-  saveAutoBet,
-  type AutoBetConfig,
-} from "../components/AutoBetSheet";
+  AutoStakeSheet,
+  loadAutoStake,
+  saveAutoStake,
+  type AutoStakeConfig,
+} from "../components/AutoStakeSheet";
 import { ShoutBar } from "../components/ShoutBar";
 import { ShoutMarquee } from "../components/ShoutMarquee";
 import { SaintOverlay } from "../components/SaintOverlay";
 import { TarotStarsSheet } from "../components/TarotStarsSheet";
 import { RulesSheet } from "../components/RulesSheet";
-import { VoiceRoomHub } from "../components/VoiceRoomHub";
 import type { ChatMode, ShoutEvent } from "../shouts";
 import { SAINT_DISPLAY_MS } from "../shouts";
 import type { OnlinePlayerPublic } from "../cards";
@@ -76,16 +76,14 @@ import { IdentityBadge } from "../components/IdentityBadge";
 import { uploadAvatarFromFile } from "../uploadAvatar";
 import { getDevicePayload } from "../device";
 import { Link, useNavigate } from "react-router-dom";
-
-const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_URL ??
-  (import.meta.env.DEV ? "http://localhost:3001" : undefined);
+import { usePlaySocket } from "../socket/PlaySocketContext";
 
 type Sheet =
   | "bet"
   | "history"
   | "myBets"
   | "leaderboard"
+  | "balanceBoard"
   | "tarotStars"
   | "avatar"
   | "players"
@@ -94,18 +92,22 @@ type Sheet =
   | "vipTopups"
   | "autoBet"
   | "rules"
-  | "voiceRoom"
   | null;
 
 export default function GamePage() {
   const nav = useNavigate();
-  const [socket, setSocket] = useState<Socket | null>(null);
-  const [connected, setConnected] = useState(false);
+  const playSock = usePlaySocket();
+  const socket = playSock.socket;
+  const connected = playSock.connected;
+  const me = playSock.me;
+  const setMe = playSock.setMe;
+  const sessionAuthed = playSock.sessionAuthed;
+  const setSessionAuthed = playSock.setSessionAuthed;
+  const voiceStatus = playSock.voiceStatus;
   const [name, setName] = useState("");
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
   const renameRef = useRef<HTMLDivElement>(null);
-  const [me, setMe] = useState<AuthUser | null>(() => getStoredUser());
   const [betLimits, setBetLimits] = useState<{
     maxBetPerCard: number;
     quickAdds: number[];
@@ -128,6 +130,10 @@ export default function GamePage() {
   const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardEntry[]>(
     [],
   );
+  const [balanceBoardRows, setBalanceBoardRows] = useState<
+    BalanceLeaderboardEntry[]
+  >([]);
+  const [giftBusy, setGiftBusy] = useState(false);
   const [tarotStarRows, setTarotStarRows] = useState<TarotStarEntry[]>([]);
   const [shouts, setShouts] = useState<(ShoutEvent & { key: string })[]>([]);
   const [saintItem, setSaintItem] = useState<
@@ -141,18 +147,10 @@ export default function GamePage() {
   const [topupRows, setTopupRows] = useState<TopupRow[]>([]);
   const [topupTotalXu, setTopupTotalXu] = useState(0);
   const [topupBusy, setTopupBusy] = useState(false);
-  const [autoBet, setAutoBet] = useState<AutoBetConfig>(() => loadAutoBet());
+  const [autoBet, setAutoBet] = useState<AutoStakeConfig>(() => loadAutoStake());
   const autoRoundRef = useRef<number | null>(null);
   const [profile, setProfile] = useState<PlayerInfoView | null>(null);
   const [adminBusy, setAdminBusy] = useState(false);
-  /** Session socket đã gắn userId (tin cậy hơn localStorage) */
-  const [sessionAuthed, setSessionAuthed] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState<{
-    inRoom: boolean;
-    roomId: number | null;
-    isHost: boolean;
-    roomOpen: boolean;
-  }>({ inRoom: false, roomId: null, isHost: false, roomOpen: true });
   const { play, muted, toggleMute } = useSfx();
   const {
     sessionMs,
@@ -224,12 +222,8 @@ export default function GamePage() {
   }, [renameOpen]);
 
   useEffect(() => {
-    const s = io(SOCKET_URL, {
-      transports: ["websocket", "polling"],
-      reconnection: true,
-      reconnectionAttempts: 20,
-    });
-    setSocket(s);
+    const s = socket;
+    if (!s) return;
 
     const emitJoin = () => {
       const auth = getStoredUser();
@@ -256,8 +250,7 @@ export default function GamePage() {
       });
     };
 
-    s.on("connect", () => {
-      setConnected(true);
+    const onConnect = () => {
       void (async () => {
         const token = getToken();
         const stored = getStoredUser();
@@ -275,114 +268,114 @@ export default function GamePage() {
             clearSession();
             setMe(null);
             showToast(
-              "Phiên đăng nhập hết hạn — đăng nhập lại để khôi phục cược ván này",
+              "Phiên đăng nhập hết hạn — đăng nhập lại để khôi phục xu ván này",
             );
             return;
           }
         }
         emitJoin();
       })();
-    });
+    };
 
-    s.on("disconnect", () => {
-      setConnected(false);
+    const onDisconnect = () => {
       setSessionAuthed(false);
-    });
+    };
 
-    s.on(
-      "joined",
-      (payload: {
-        name: string;
-        balance: number;
-        userId?: string;
-        recoveredBets?: boolean;
-        guestPlayExpired?: boolean;
-        guestPlayRemainingMs?: number;
-      }) => {
-        setName(payload.name);
-        prevBalance.current = payload.balance;
-        setSessionAuthed(!!payload.userId);
-        if (!payload.userId) {
-          setGuestBalanceHint(payload.balance);
-          if (payload.guestPlayExpired) {
-            clearGuestBalanceAfterLimit();
-            showToast("Hết 20 phút chơi khách — xu reset về 20.000");
-          }
+    const onJoined = (payload: {
+      name: string;
+      balance: number;
+      userId?: string;
+      recoveredBets?: boolean;
+      guestPlayExpired?: boolean;
+      guestPlayRemainingMs?: number;
+    }) => {
+      setName(payload.name);
+      prevBalance.current = payload.balance;
+      setSessionAuthed(!!payload.userId);
+      if (!payload.userId) {
+        setGuestBalanceHint(payload.balance);
+        if (payload.guestPlayExpired) {
+          clearGuestBalanceAfterLimit();
+          showToast("Hết 20 phút chơi khách — xu reset về 20.000");
         }
-        if (payload.recoveredBets) {
-          showToast("Đã khôi phục cược ván đang chơi");
-        }
-        // Token hết hạn phía server nhưng localStorage còn → nhắc đăng nhập lại
-        if (getToken() && getStoredUser() && !payload.userId) {
-          showToast("Phiên hết hạn — đăng nhập lại để chat & lưu cược");
-        }
-        if (payload.userId && getToken()) {
-          void api<{
-            ok: true;
-            user: AuthUser;
-            betLimits?: { maxBetPerCard: number; quickAdds: number[] };
-          }>("/api/auth/me")
-            .then((r) => {
-              setMe(r.user);
-              if (r.betLimits) setBetLimits(r.betLimits);
-              const t = getToken();
-              if (t) saveSession(t, r.user);
-            })
-            .catch(() => {});
-        }
-      },
-    );
+      }
+      if (payload.recoveredBets) {
+        showToast("Đã khôi phục xu ván đang chơi");
+      }
+      if (getToken() && getStoredUser() && !payload.userId) {
+        showToast("Phiên hết hạn — đăng nhập lại để chat & lưu ván");
+      }
+      if (payload.userId && getToken()) {
+        void api<{
+          ok: true;
+          user: AuthUser;
+          betLimits?: { maxBetPerCard: number; quickAdds: number[] };
+        }>("/api/auth/me")
+          .then((r) => {
+            setMe(r.user);
+            if (r.betLimits) setBetLimits(r.betLimits);
+            const t = getToken();
+            if (t) saveSession(t, r.user);
+          })
+          .catch(() => {});
+      }
+      s.emit("getBalanceLeaderboard");
+    };
 
-    s.on("joinRejected", (payload: { reason?: string }) => {
+    const onJoinRejected = (payload: { reason?: string }) => {
       showToast(payload.reason || "Không vào được phòng");
       if (payload.reason?.includes("khóa") || payload.reason?.includes("hết hạn")) {
         clearSession();
         setMe(null);
         setSessionAuthed(false);
       }
-    });
+    };
 
-    s.on("sessionReplaced", (payload: { reason?: string }) => {
+    const onSessionReplaced = (payload: { reason?: string }) => {
       showToast(payload.reason || "Phiên đã bị thay thế");
       if (payload.reason?.includes("khóa") || payload.reason?.includes("Mật khẩu")) {
         clearSession();
         setMe(null);
         setSessionAuthed(false);
       }
-    });
+    };
 
-    s.on("state", (payload: GameState) => {
+    const onState = (payload: GameState) => {
       setState((prev) =>
         mergeGameState(prev, payload, {
           trackOnlinePlayers: onlineViewerRef.current,
         }),
       );
-    });
+    };
 
-    s.on("betRejected", (payload: { reason: string }) => {
+    const onBetRejected = (payload: { reason: string }) => {
       showToast(payload.reason);
-    });
+    };
 
-    s.on("balanceUpdate", (payload: { balance: number }) => {
+    const onBalanceUpdate = (payload: { balance: number }) => {
       setState((prev) =>
         prev ? { ...prev, yourBalance: payload.balance } : prev,
       );
       if (!getStoredUser()) setGuestBalanceHint(payload.balance);
-    });
+    };
 
-    s.on("historyData", (rows: RoundResult[]) => {
+    const onHistoryData = (rows: RoundResult[]) => {
       setHistoryRows(rows);
-    });
+    };
 
-    s.on("leaderboardData", (rows: LeaderboardEntry[]) => {
+    const onLeaderboardData = (rows: LeaderboardEntry[]) => {
       setLeaderboardRows(rows);
-    });
+    };
 
-    s.on("tarotStarsData", (rows: TarotStarEntry[]) => {
+    const onBalanceLeaderboardData = (rows: BalanceLeaderboardEntry[]) => {
+      setBalanceBoardRows(rows);
+    };
+
+    const onTarotStarsData = (rows: TarotStarEntry[]) => {
       setTarotStarRows(rows);
-    });
+    };
 
-    s.on("shout", (payload: ShoutEvent) => {
+    const onShout = (payload: ShoutEvent) => {
       setChatLines((prev) => [...prev, payload].slice(-24));
       const isVipFly = !!(payload.fly || payload.mode === "vip");
       const isSaint = !!(payload.saint || payload.mode === "saint");
@@ -404,16 +397,44 @@ export default function GamePage() {
       window.setTimeout(() => {
         setShouts((prev) => prev.filter((x) => x.key !== key));
       }, 4800);
-    });
+    };
+
+    s.on("connect", onConnect);
+    s.on("disconnect", onDisconnect);
+    s.on("joined", onJoined);
+    s.on("joinRejected", onJoinRejected);
+    s.on("sessionReplaced", onSessionReplaced);
+    s.on("state", onState);
+    s.on("betRejected", onBetRejected);
+    s.on("balanceUpdate", onBalanceUpdate);
+    s.on("historyData", onHistoryData);
+    s.on("leaderboardData", onLeaderboardData);
+    s.on("balanceLeaderboardData", onBalanceLeaderboardData);
+    s.on("tarotStarsData", onTarotStarsData);
+    s.on("shout", onShout);
+
+    if (s.connected) onConnect();
 
     return () => {
       if (saintTimerRef.current != null) {
         window.clearTimeout(saintTimerRef.current);
         saintTimerRef.current = null;
       }
-      s.disconnect();
+      s.off("connect", onConnect);
+      s.off("disconnect", onDisconnect);
+      s.off("joined", onJoined);
+      s.off("joinRejected", onJoinRejected);
+      s.off("sessionReplaced", onSessionReplaced);
+      s.off("state", onState);
+      s.off("betRejected", onBetRejected);
+      s.off("balanceUpdate", onBalanceUpdate);
+      s.off("historyData", onHistoryData);
+      s.off("leaderboardData", onLeaderboardData);
+      s.off("balanceLeaderboardData", onBalanceLeaderboardData);
+      s.off("tarotStarsData", onTarotStarsData);
+      s.off("shout", onShout);
     };
-  }, [showToast]);
+  }, [socket, showToast, setMe, setSessionAuthed]);
 
   useEffect(() => {
     if (state?.chatLines) {
@@ -544,7 +565,7 @@ export default function GamePage() {
   }, [state]);
 
   const runAutoPlace = useCallback(
-    async (cfg: AutoBetConfig, roundId: number) => {
+    async (cfg: AutoStakeConfig, roundId: number) => {
       if (!socket || !connected || !state) return;
       if (state.phase !== "betting") return;
       if (!cfg.enabled || cfg.slots.length === 0) return;
@@ -1006,7 +1027,7 @@ export default function GamePage() {
 
   const confirmBet = (cardId: number, amount: number) => {
     if (!socket || !state) return;
-    // Đóng sheet ngay để cược tiếp lá khác (Bước 2)
+    // Đóng sheet ngay để đặt tiếp lá khác (Bước 2)
     setSheet(null);
     setBetCardId(null);
     socket.emit("placeBet", {
@@ -1045,9 +1066,52 @@ export default function GamePage() {
     setSheet("leaderboard");
   };
 
+  const openBalanceBoard = () => {
+    socket?.emit("getBalanceLeaderboard");
+    setSheet("balanceBoard");
+  };
+
   const openTarotStars = () => {
     socket?.emit("getTarotStars");
     setSheet("tarotStars");
+  };
+
+  const giftXuToPlayer = async (opts: {
+    toUserId?: string;
+    toCode?: string;
+    amount: number;
+  }) => {
+    if (giftBusy) return;
+    if (!getToken() || !me) {
+      showToast("Đăng nhập để tặng xu");
+      return;
+    }
+    setGiftBusy(true);
+    try {
+      const r = await api<{
+        ok: true;
+        amount: number;
+        from: AuthUser;
+        to: AuthUser;
+      }>("/api/auth/gift-xu", {
+        method: "POST",
+        body: JSON.stringify({
+          toUserId: opts.toUserId,
+          toCode: opts.toCode,
+          amount: opts.amount,
+        }),
+      });
+      const token = getToken();
+      if (token) saveSession(token, r.from);
+      setMe(r.from);
+      showToast(
+        `Đã tặng ${formatXu(r.amount)} xu cho ${r.to.displayName ?? r.to.username}`,
+      );
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Không tặng được");
+    } finally {
+      setGiftBusy(false);
+    }
   };
 
   const openAvatarPicker = () => setSheet("avatar");
@@ -1168,7 +1232,7 @@ export default function GamePage() {
       pending: false as boolean,
     }));
 
-    // Auto ON: hiện preset nếu chưa có cược live (hoặc bổ sung slot pending)
+    // Auto ON: hiện preset nếu chưa có đặt xu live (hoặc bổ sung slot pending)
     if (autoBet.enabled && autoBet.slots.length > 0) {
       if (live.length === 0) {
         return autoBet.slots
@@ -1249,6 +1313,14 @@ export default function GamePage() {
             </button>
             <button
               type="button"
+              onClick={openBalanceBoard}
+              className="app-btn-ghost shrink-0 px-2 py-1 text-[10px] !text-[var(--gold-soft)]"
+              title="Top xu đang cầm"
+            >
+              Đại gia
+            </button>
+            <button
+              type="button"
               onClick={toggleMute}
               className="app-btn-ghost shrink-0 px-2 py-1 text-[10px]"
               title={muted ? "Bật tiếng" : "Tắt tiếng"}
@@ -1259,7 +1331,7 @@ export default function GamePage() {
           {!!(getToken() && getStoredUser() && !sessionAuthed) && (
             <div className="mb-2 flex items-center justify-between gap-2 rounded-xl bg-rose-500/15 px-2.5 py-2 ring-1 ring-rose-400/40">
               <p className="text-[11px] font-semibold text-rose-100">
-                Phiên đăng nhập hết hạn — vào lại để chat, nạp xu và lưu lịch sử cược.
+                Phiên đăng nhập hết hạn — vào lại để chat, nạp xu và lưu lịch sử ván.
               </p>
               <button
                 type="button"
@@ -1444,7 +1516,7 @@ export default function GamePage() {
               <button
                 type="button"
                 title="Phòng voice giao lưu"
-                onClick={() => setSheet("voiceRoom")}
+                onClick={() => playSock.openVoiceRoom()}
                 className="ui-pill ui-pill--deep flex items-center gap-1 px-2 py-1"
               >
                 <span
@@ -1559,14 +1631,14 @@ export default function GamePage() {
           </div>
         </button>
 
-        {/* ===== ZONE 4+6: Form bàn cược (deck) ===== */}
+        {/* ===== ZONE 4+6: Form bàn đặt xu (deck) ===== */}
         {state?.viewerEngagement?.warmActive && (
           <p className="mt-2 px-1 text-center text-[10px] font-semibold text-amber-700">
             Chuỗi thua {state.viewerEngagement.lossStreak} — vận ấm nhẹ lá bạn
-            cược nhiều nhất
+            đặt xu nhiều nhất
           </p>
         )}
-        <BettingBoard
+        <PlayBoard
           phaseEndsAt={state?.phaseEndsAt ?? 0}
           serverTime={state?.serverTime ?? Date.now()}
           canBet={canBet}
@@ -1911,7 +1983,7 @@ export default function GamePage() {
         onClose={() => setResultOpen(false)}
       />
 
-      <BetSheet
+      <StakeSheet
         open={sheet === "bet"}
         cardId={betCardId}
         balance={balance}
@@ -1959,7 +2031,7 @@ export default function GamePage() {
           });
         }}
       />
-      <AutoBetSheet
+      <AutoStakeSheet
         open={sheet === "autoBet"}
         initial={autoBet}
         maxBetPerCard={betLimits.maxBetPerCard}
@@ -1971,7 +2043,7 @@ export default function GamePage() {
             autoRoundRef.current = null;
           }
           setAutoBet(cfg);
-          saveAutoBet(cfg);
+          saveAutoStake(cfg);
           showToast(
             cfg.enabled
               ? state?.phase === "betting"
@@ -1984,6 +2056,9 @@ export default function GamePage() {
       <PlayerInfoSheet
         open={sheet === "playerInfo"}
         player={profile}
+        meId={me?.id}
+        canGift={!!me && !!getToken()}
+        giftBusy={giftBusy}
         staff={isStaff(me)}
         balanceOperator={isBalanceOperator(me)}
         busy={adminBusy}
@@ -1999,6 +2074,7 @@ export default function GamePage() {
         onAdjustGuestBalance={
           isStaff(me) ? adminAdjustGuestBalance : undefined
         }
+        onGiftXu={me && getToken() ? giftXuToPlayer : undefined}
       />
 
       <HistorySheet
@@ -2006,7 +2082,7 @@ export default function GamePage() {
         rows={historyRows}
         onClose={() => setSheet(null)}
       />
-      <MyBetsSheet
+      <MyRoundsSheet
         open={sheet === "myBets"}
         bets={myBets}
         loading={myBetsLoading}
@@ -2019,6 +2095,20 @@ export default function GamePage() {
         rows={leaderboardRows}
         onClose={() => setSheet(null)}
       />
+      <BalanceLeaderboardSheet
+        open={sheet === "balanceBoard"}
+        rows={balanceBoardRows}
+        onClose={() => setSheet(null)}
+        onOpenPlayer={(row) => {
+          openPlayerInfo({
+            name: row.name,
+            avatar: row.avatar,
+            userId: row.userId,
+            code: row.code,
+            balance: row.balance,
+          });
+        }}
+      />
       <TarotStarsSheet
         open={sheet === "tarotStars"}
         rows={
@@ -2029,19 +2119,6 @@ export default function GamePage() {
         onClose={() => setSheet(null)}
       />
       <RulesSheet open={sheet === "rules"} onClose={() => setSheet(null)} />
-      <VoiceRoomHub
-        open={sheet === "voiceRoom"}
-        socket={socket}
-        me={me}
-        sessionAuthed={sessionAuthed}
-        onClose={() => setSheet(null)}
-        onOpen={() => setSheet("voiceRoom")}
-        onNeedLogin={() => {
-          setSheet(null);
-          nav("/login");
-        }}
-        onStatus={setVoiceStatus}
-      />
       <AvatarPickerSheet
         open={sheet === "avatar"}
         current={me ? me.avatar : guestAvatar}

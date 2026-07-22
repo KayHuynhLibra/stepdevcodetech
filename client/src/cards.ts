@@ -15,7 +15,7 @@ export interface RoundResult {
   win: number;
 }
 
-/** Lịch sử cược cá nhân (auth) — khớp server betStore.BetEntry */
+/** Lịch sử ván cá nhân (auth) — khớp server betStore.BetEntry */
 export interface BetEntry {
   id: string;
   at: number;
@@ -36,6 +36,16 @@ export interface LeaderboardEntry {
   avatar: string;
   winToday: number;
   isYou?: boolean;
+}
+
+export interface BalanceLeaderboardEntry {
+  rank: number;
+  name: string;
+  avatar: string;
+  balance: number;
+  isYou?: boolean;
+  userId?: string;
+  code?: string;
 }
 
 export interface TarotStarEntry {
@@ -257,10 +267,10 @@ export function formatXu(n: number): string {
 export function phaseLabel(phase: Phase): string {
   switch (phase) {
     case "betting":
-      return "Đặt cược";
+      return "Đặt xu";
     case "revealing":
       return "Mở bài";
     case "payout":
-      return "Trả thưởng";
+      return "Kết toán";
   }
 }

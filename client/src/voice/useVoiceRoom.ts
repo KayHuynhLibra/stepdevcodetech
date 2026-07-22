@@ -297,7 +297,11 @@ export function useVoiceRoom({ socket, enabled = true }: UseVoiceRoomOpts) {
   }, [socket]);
 
   const joinRoom = useCallback(
-    async (roomId: VoiceRoomId, seat?: VoiceSeatIndex) => {
+    async (
+      roomId: VoiceRoomId,
+      seat?: VoiceSeatIndex,
+      password?: string,
+    ) => {
       if (!socket) {
         setError("Chưa kết nối");
         setStatus("error");
@@ -321,7 +325,12 @@ export function useVoiceRoom({ socket, enabled = true }: UseVoiceRoomOpts) {
       await new Promise<void>((resolve) => {
         socket.emit(
           "voice:join",
-          { roomId, seat, token: token() },
+          {
+            roomId,
+            seat,
+            token: token(),
+            password: password || undefined,
+          },
           (r: {
             ok?: boolean;
             reason?: string;
@@ -483,6 +492,20 @@ export function useVoiceRoom({ socket, enabled = true }: UseVoiceRoomOpts) {
     [socket],
   );
 
+  const setRoomPassword = useCallback(
+    (password: string) => {
+      socket?.emit(
+        "voice:setPassword",
+        { password, token: token() },
+        (r: { ok?: boolean; reason?: string; room?: VoiceRoomPublic }) => {
+          if (!r?.ok) setError(r?.reason || "Không đặt mật khẩu");
+          else if (r.room) setRoom(r.room);
+        },
+      );
+    },
+    [socket],
+  );
+
   useEffect(() => {
     if (!socket || !enabled) return;
     socketIdRef.current = socket.id ?? null;
@@ -578,17 +601,22 @@ export function useVoiceRoom({ socket, enabled = true }: UseVoiceRoomOpts) {
     applyLocalMute,
   ]);
 
-  // Rời voice khi unmount / mất socket — không đụng Tarot
+  // Rời voice chỉ khi socket disconnect — đổi bàn Tarot↔Arcana không unmount hub
   useEffect(() => {
-    return () => {
-      if (socket?.connected) {
-        socket.emit("voice:leave", { token: token() });
-      }
+    if (!socket) return;
+    const onDisc = () => {
       cleanupAllPeers();
       stopLocalMedia();
+      setRoom(null);
+      setSeat(null);
+      setIsHost(false);
+      setStatus("idle");
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    socket.on("disconnect", onDisc);
+    return () => {
+      socket.off("disconnect", onDisc);
+    };
+  }, [socket, cleanupAllPeers, stopLocalMedia]);
 
   return {
     status,
@@ -615,5 +643,6 @@ export function useVoiceRoom({ socket, enabled = true }: UseVoiceRoomOpts) {
     forceMutePeer,
     claimHost,
     setRoomOpen,
+    setRoomPassword,
   };
 }

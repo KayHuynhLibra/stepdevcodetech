@@ -1,3 +1,5 @@
+import { createHash, randomBytes, timingSafeEqual } from "crypto";
+
 /** Voice lounge — 5 phòng × 8 ghế (ephemeral, tách bàn Tarot). */
 
 export const VOICE_ROOM_COUNT = 5;
@@ -25,6 +27,8 @@ export interface VoiceRoomPublic {
   occupied: number;
   /** Host/staff có thể đóng — không cho join mới */
   open: boolean;
+  /** Có mật khẩu vào phòng (không lộ hash) */
+  hasPassword: boolean;
 }
 
 interface SeatInternal {
@@ -43,6 +47,8 @@ interface RoomInternal {
   hostUserId: string | null;
   seats: (SeatInternal | null)[];
   open: boolean;
+  passwordHash: string | null;
+  passwordSalt: string | null;
 }
 
 function emptySeats(): (SeatInternal | null)[] {
@@ -57,6 +63,26 @@ function isRoomId(v: unknown): v is VoiceRoomId {
 function isSeatIndex(v: unknown): v is VoiceSeatIndex {
   const n = Number(v);
   return Number.isInteger(n) && n >= 1 && n <= VOICE_SEATS_PER_ROOM;
+}
+
+function hashRoomPassword(password: string, salt: string): string {
+  return createHash("sha256")
+    .update(`${salt}:${password}`, "utf8")
+    .digest("hex");
+}
+
+function passwordOk(room: RoomInternal, password: unknown): boolean {
+  if (!room.passwordHash || !room.passwordSalt) return true;
+  const pw = String(password ?? "");
+  if (!pw) return false;
+  const h = hashRoomPassword(pw, room.passwordSalt);
+  try {
+    const a = Buffer.from(h, "hex");
+    const b = Buffer.from(room.passwordHash, "hex");
+    return a.length === b.length && timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
 }
 
 function toPublicSeat(
@@ -86,6 +112,7 @@ function toPublicRoom(roomId: VoiceRoomId, room: RoomInternal): VoiceRoomPublic 
     seats,
     occupied: seats.filter(Boolean).length,
     open: room.open !== false,
+    hasPassword: !!(room.passwordHash && room.passwordSalt),
   };
 }
 
@@ -101,6 +128,8 @@ class VoiceRoomStore {
         hostUserId: null,
         seats: emptySeats(),
         open: true,
+        passwordHash: null,
+        passwordSalt: null,
       });
     }
   }
@@ -138,6 +167,7 @@ class VoiceRoomStore {
     name: string;
     avatar: string;
     voiceSeatPriority?: number;
+    password?: unknown;
   }):
     | {
         ok: true;
@@ -189,6 +219,9 @@ class VoiceRoomStore {
     const room = this.rooms.get(roomId)!;
     if (room.open === false) {
       return { ok: false, reason: "Phòng đang đóng" };
+    }
+    if (!passwordOk(room, opts.password)) {
+      return { ok: false, reason: "Sai mật khẩu phòng" };
     }
 
     const priority = Math.max(
@@ -417,21 +450,92 @@ class VoiceRoomStore {
     return { ok: true, room: toPublicRoom(mem.roomId, room) };
   }
 
+  /**
+   * Đóng/mở phòng — chỉ khi caller có quyền lock (Room# grant / mainadmin).
+   * Không còn dựa vào host thường.
+   */
   setOpen(
     actorSocketId: string,
     open: boolean,
-    asStaff: boolean,
+    canLock: boolean,
   ):
     | { ok: true; room: VoiceRoomPublic }
     | { ok: false; reason: string } {
     const mem = this.getMembership(actorSocketId);
     if (!mem) return { ok: false, reason: "Bạn chưa ngồi ghế" };
-    const room = this.rooms.get(mem.roomId)!;
-    if (!asStaff && room.hostSocketId !== actorSocketId) {
-      return { ok: false, reason: "Chỉ host / staff" };
+    if (!canLock) {
+      return {
+        ok: false,
+        reason: "Cần được admin cấp đúng Room# này để đóng/mở",
+      };
     }
+    const room = this.rooms.get(mem.roomId)!;
     room.open = !!open;
     return { ok: true, room: toPublicRoom(mem.roomId, room) };
+  }
+
+  /** Đặt / xóa mật khẩu phòng — cùng quyền lock như đóng phòng. */
+  setPassword(
+    actorSocketId: string,
+    passwordRaw: unknown,
+    canLock: boolean,
+  ):
+    | { ok: true; room: VoiceRoomPublic }
+    | { ok: false; reason: string } {
+    const mem = this.getMembership(actorSocketId);
+    if (!mem) return { ok: false, reason: "Bạn chưa ngồi ghế" };
+    if (!canLock) {
+      return {
+        ok: false,
+        reason: "Cần được admin cấp đúng Room# này để đặt mật khẩu",
+      };
+    }
+    const room = this.rooms.get(mem.roomId)!;
+    const pw = String(passwordRaw ?? "").trim();
+    if (!pw) {
+      room.passwordHash = null;
+      room.passwordSalt = null;
+    } else {
+      if (pw.length < 4 || pw.length > 32) {
+        return { ok: false, reason: "Mật khẩu 4–32 ký tự" };
+      }
+      const salt = randomBytes(8).toString("hex");
+      room.passwordSalt = salt;
+      room.passwordHash = hashRoomPassword(pw, salt);
+    }
+    return { ok: true, room: toPublicRoom(mem.roomId, room) };
+  }
+
+  /** Dashboard: mở/đóng theo roomId (caller đã check grant). */
+  staffSetOpen(
+    roomIdRaw: unknown,
+    open: boolean,
+  ): { ok: true; room: VoiceRoomPublic } | { ok: false; reason: string } {
+    if (!isRoomId(roomIdRaw)) return { ok: false, reason: "Phòng không hợp lệ" };
+    const room = this.rooms.get(roomIdRaw)!;
+    room.open = !!open;
+    return { ok: true, room: toPublicRoom(roomIdRaw, room) };
+  }
+
+  staffSetPassword(
+    roomIdRaw: unknown,
+    passwordRaw: unknown,
+  ): { ok: true; room: VoiceRoomPublic } | { ok: false; reason: string } {
+    if (!isRoomId(roomIdRaw)) return { ok: false, reason: "Phòng không hợp lệ" };
+    const room = this.rooms.get(roomIdRaw)!;
+    const pw = String(passwordRaw ?? "").trim();
+    if (!pw) {
+      room.passwordHash = null;
+      room.passwordSalt = null;
+    } else {
+      if (pw.length < 4 || pw.length > 32) {
+        return { ok: false, reason: "Mật khẩu 4–32 ký tự" };
+      }
+      const salt = randomBytes(8).toString("hex");
+      room.passwordSalt = salt;
+      room.passwordHash = hashRoomPassword(pw, salt);
+    }
+    return { ok: true, room: toPublicRoom(roomIdRaw, room) };
   }
 
   /** Mod/staff từ dashboard — mute không cần ngồi cùng phòng. */
@@ -439,7 +543,12 @@ class VoiceRoomStore {
     targetSocketId: string,
     muted: boolean,
   ):
-    | { ok: true; room: VoiceRoomPublic; targetSocketId: string; roomId: VoiceRoomId }
+    | {
+        ok: true;
+        room: VoiceRoomPublic;
+        targetSocketId: string;
+        roomId: VoiceRoomId;
+      }
     | { ok: false; reason: string } {
     const tMem = this.getMembership(targetSocketId);
     if (!tMem) return { ok: false, reason: "Người đó không trong phòng" };
@@ -454,17 +563,6 @@ class VoiceRoomStore {
       targetSocketId,
       roomId: tMem.roomId,
     };
-  }
-
-  /** Mod/staff: mở/đóng phòng theo roomId. */
-  staffSetOpen(
-    roomIdRaw: unknown,
-    open: boolean,
-  ): { ok: true; room: VoiceRoomPublic } | { ok: false; reason: string } {
-    if (!isRoomId(roomIdRaw)) return { ok: false, reason: "Phòng không hợp lệ" };
-    const room = this.rooms.get(roomIdRaw)!;
-    room.open = !!open;
-    return { ok: true, room: toPublicRoom(roomIdRaw, room) };
   }
 
   /** Mod/staff: đuổi hết người trong 1 phòng. */

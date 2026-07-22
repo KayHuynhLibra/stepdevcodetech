@@ -12,8 +12,25 @@ import {
   type PickEngagement,
 } from "./tarotEngagement.js";
 import type { CardDef } from "./types.js";
+import { vaultArcana, vaultStore } from "./vaultStore.js";
 
 export type { PickEngagement } from "./tarotEngagement.js";
+
+/** Cường độ −2…+2 → weight hút / nhả theo liability. */
+function steerByIntensity(liab: number[], intensity: number): number[] {
+  const i = Math.max(-2, Math.min(2, intensity));
+  if (i === 0) return CARDS.map((c) => c.weight);
+  if (i <= -2) {
+    return liab.map((L) => 1 / Math.pow(1 + L / 55, 3.2));
+  }
+  if (i === -1) {
+    return liab.map((L) => 1 / Math.pow(1 + L / 70, 2.2));
+  }
+  if (i === 1) {
+    return liab.map((L) => Math.pow(1 + L / 70, 1.6));
+  }
+  return liab.map((L) => Math.pow(1 + L / 55, 2.4));
+}
 
 export const CARDS: CardDef[] = [
   {
@@ -150,6 +167,67 @@ export function policyWeights(
   }
   if (modeKey === "dense" || modeKey === "momentum") {
     return liab.map((L) => Math.pow(1 + L / 30, 2));
+  }
+  if (modeKey === "softuser") {
+    return liab.map((L) => Math.pow(1 + L / 60, 1.8));
+  }
+  if (modeKey === "crowdcap") {
+    const totalL = liab.reduce((a, b) => a + b, 0) || 1;
+    return liab.map((L) => {
+      const share = L / totalL;
+      const antiCrowd = Math.pow(1 - Math.min(0.85, share), 2.2);
+      return (1 / (1 + L / 45)) * antiCrowd + 0.08;
+    });
+  }
+  if (modeKey === "vaultguard") {
+    const net = vaultStore.getSnapshot().netFromPlay ?? 0;
+    if (net < -50_000) {
+      return liab.map((L) => 1 / Math.pow(1 + L / 65, 2.6));
+    }
+    if (net > 80_000) {
+      return liab.map((L) => Math.pow(1 + L / 65, 1.7));
+    }
+    return CARDS.map((c) => c.weight);
+  }
+  if (modeKey === "vaultpct") {
+    const h = vaultStore.getHealth();
+    return steerByIntensity(liab, h.steerIntensity);
+  }
+  if (modeKey === "flowguard") {
+    const h = vaultStore.getHealth();
+    // Ưu tiên dòng 1h; nếu giờ trung tính thì nhìn 24h
+    let intensity = 0;
+    if (h.flowHourEdgePct <= -8) intensity = -2;
+    else if (h.flowHourEdgePct <= -3) intensity = -1;
+    else if (h.flowHourEdgePct >= 15) intensity = 2;
+    else if (h.flowHourEdgePct >= 6) intensity = 1;
+    else if (h.flowDayEdgePct <= -10) intensity = -1;
+    else if (h.flowDayEdgePct >= 12) intensity = 1;
+    return steerByIntensity(liab, intensity);
+  }
+  if (modeKey === "moneysteer") {
+    const tarot = vaultStore.getHealth();
+    const arc = vaultArcana.getHealth();
+    const tarotFlags = vaultStore.getInterFlags();
+    const arcFlags = vaultArcana.getInterFlags();
+    let sum = 0;
+    let wSum = 0;
+    if (tarotFlags.interSignal) {
+      const w = tarotFlags.interWeightPct / 100;
+      sum += tarot.steerIntensity * w;
+      wSum += w;
+    }
+    if (arcFlags.interSignal) {
+      const w = arcFlags.interWeightPct / 100;
+      sum += arc.steerIntensity * w;
+      wSum += w;
+    }
+    if (wSum <= 0) {
+      // không flag → chỉ Tarot
+      return steerByIntensity(liab, tarot.steerIntensity);
+    }
+    const blended = Math.round(sum / wSum);
+    return steerByIntensity(liab, blended);
   }
   return liab.map((L) => Math.pow(1 + L / 50, 3.5));
 }

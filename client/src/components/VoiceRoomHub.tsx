@@ -1,7 +1,11 @@
 import type { Socket } from "socket.io-client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { normalizeAvatar, DEFAULT_AVATAR } from "../avatars";
-import { canModerateVoiceRoom, type AuthUser } from "../auth";
+import {
+  canControlVoiceRoomLock,
+  canModerateVoiceRoom,
+  type AuthUser,
+} from "../auth";
 import { useVoiceRoom } from "../voice/useVoiceRoom";
 import type { VoiceRoomId, VoiceSeatIndex } from "../voice/types";
 import { VOICE_ROOM_COUNT, VOICE_SEATS_PER_ROOM } from "../voice/types";
@@ -36,6 +40,11 @@ export function VoiceRoomHub({
   const voice = useVoiceRoom({ socket, enabled: !!socket });
   const staff = canModerateVoiceRoom(me);
   const loggedIn = !!(me && sessionAuthed);
+  const canLock = !!(
+    voice.room && canControlVoiceRoomLock(me, voice.room.roomId)
+  );
+  const [joinPassword, setJoinPassword] = useState("");
+  const [lockPassword, setLockPassword] = useState("");
 
   useEffect(() => {
     onStatus?.({
@@ -91,7 +100,8 @@ export function VoiceRoomHub({
               Room voice
             </p>
             <p className="mt-0.5 text-[11px] text-white/55">
-              5 phòng · 8 ghế — chơi Tarot song song, không ảnh hưởng bàn cược
+              Giữ ghế khi đổi Tarot ↔ Arcana · đóng / MK chỉ người được cấp đúng
+              Room#
             </p>
           </div>
           <button
@@ -136,6 +146,18 @@ export function VoiceRoomHub({
 
         {loggedIn && !inRoom && (
           <div>
+            <label className="mb-2 block">
+              <span className="text-[10px] font-semibold text-white/50">
+                Mật khẩu (nếu phòng có khóa)
+              </span>
+              <input
+                type="password"
+                value={joinPassword}
+                onChange={(e) => setJoinPassword(e.target.value)}
+                placeholder="Để trống nếu phòng mở"
+                className="mt-1 w-full rounded-lg bg-white/10 px-3 py-2 text-sm text-white outline-none ring-1 ring-white/20"
+              />
+            </label>
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-white/50">
               Chọn phòng
             </p>
@@ -147,6 +169,7 @@ export function VoiceRoomHub({
                 const occ = row?.occupied ?? 0;
                 const full = occ >= VOICE_SEATS_PER_ROOM;
                 const closed = row?.open === false;
+                const locked = !!row?.hasPassword;
                 return (
                   <button
                     key={id}
@@ -154,13 +177,18 @@ export function VoiceRoomHub({
                     disabled={full || closed || voice.status === "joining"}
                     onClick={() => {
                       voice.refreshLobby();
-                      void voice.joinRoom(id);
+                      void voice.joinRoom(
+                        id,
+                        undefined,
+                        joinPassword || undefined,
+                      );
                     }}
                     className="flex items-center justify-between rounded-xl bg-white/8 px-3 py-3 text-left ring-1 ring-white/12 transition active:scale-[0.99] disabled:opacity-45"
                   >
                     <span>
                       <span className="font-play text-base font-bold text-[var(--cream)]">
                         Room {id}
+                        {locked ? " 🔒" : ""}
                       </span>
                       <span className="mt-0.5 block text-[10px] text-white/50">
                         {closed
@@ -308,7 +336,7 @@ export function VoiceRoomHub({
                     Claim host
                   </button>
                 )}
-                {(voice.isHost || staff) && (
+                {canLock && (
                   <button
                     type="button"
                     onClick={() =>
@@ -332,6 +360,42 @@ export function VoiceRoomHub({
                 </button>
               </div>
             </div>
+
+            {canLock && (
+              <div className="mb-3 flex flex-wrap items-end gap-2 rounded-xl bg-white/8 px-2.5 py-2 ring-1 ring-white/12">
+                <label className="min-w-[8rem] flex-1">
+                  <span className="text-[9px] font-semibold text-white/45">
+                    Mật khẩu phòng (cấp Room#)
+                  </span>
+                  <input
+                    type="password"
+                    value={lockPassword}
+                    onChange={(e) => setLockPassword(e.target.value)}
+                    placeholder="4–32 ký tự · trống = xóa"
+                    className="mt-0.5 w-full rounded-lg bg-black/20 px-2 py-1.5 text-xs text-white outline-none ring-1 ring-white/20"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    voice.setRoomPassword(lockPassword);
+                    setLockPassword("");
+                  }}
+                  className="rounded-full bg-amber-500/90 px-3 py-1.5 text-[10px] font-bold text-[#1a1208]"
+                >
+                  Lưu MK
+                </button>
+                {voice.room.hasPassword && (
+                  <button
+                    type="button"
+                    onClick={() => voice.setRoomPassword("")}
+                    className="rounded-full bg-white/15 px-3 py-1.5 text-[10px] font-bold text-white"
+                  >
+                    Xóa MK
+                  </button>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-4 gap-2">
               {Array.from({ length: VOICE_SEATS_PER_ROOM }, (_, i) => {
@@ -410,8 +474,8 @@ export function VoiceRoomHub({
             </div>
 
             <p className="mt-3 text-center text-[10px] text-white/40">
-              Đóng popup vẫn giữ mic nếu đang ngồi ghế — bấm «Rời ghế» để thoát
-              voice.
+              Đóng popup vẫn giữ mic — đổi Tarot ↔ Arcana không mất ghế. Bấm
+              «Rời ghế» hoặc về Hub mới thoát voice.
             </p>
           </div>
         )}

@@ -8,14 +8,19 @@ import { Server } from "socket.io";
 import {
   authStore,
   canAccessRoomAdmin,
+  canControlVoiceRoomLock,
+  canGrantVoiceRooms,
   canManageCultivation,
   canModerateVoiceRoom,
+  canAccessStaffDashboard,
+  hasCapability,
   isBalanceOperator,
   isMainAdmin,
   isStaff,
   isUserOutcomeMode,
   userDisplayName,
   VIP_ROUNDS_REQUIRED,
+  type GrantCapability,
 } from "./auth.js";
 import { auditStore } from "./auditStore.js";
 import {
@@ -30,6 +35,7 @@ import { inviteStore } from "./inviteStore.js";
 import { cardProbabilities } from "./cards.js";
 import { CARDS, GameEngine } from "./game.js";
 import { interStore, isInterMode } from "./interStore.js";
+import { interObserveStore } from "./interObserveStore.js";
 import { guestIpStore } from "./guestIpStore.js";
 import { guestPlayStore } from "./guestPlayStore.js";
 import {
@@ -181,8 +187,23 @@ function requireAdmin(
 ): ReturnType<typeof authStore.resolveToken> {
   const user = requireAuth(req, res);
   if (!user) return null;
-  if (!isStaff(user)) {
-    res.status(403).json({ ok: false, reason: "Chỉ admin" });
+  if (!canAccessStaffDashboard(user)) {
+    res.status(403).json({ ok: false, reason: "Chỉ staff dashboard" });
+    return null;
+  }
+  return user;
+}
+
+function requireCapability(
+  req: express.Request,
+  res: express.Response,
+  cap: GrantCapability,
+  reason = "Không đủ quyền",
+): ReturnType<typeof authStore.resolveToken> {
+  const user = requireAuth(req, res);
+  if (!user) return null;
+  if (!hasCapability(user, cap)) {
+    res.status(403).json({ ok: false, reason });
     return null;
   }
   return user;
@@ -291,6 +312,60 @@ app.get("/api/leaderboard", (_req, res) => {
   res.json(engine.getLeaderboard());
 });
 
+app.get("/api/leaderboard/balance", (req, res) => {
+  const viewer = authStore.resolveToken(bearer(req));
+  res.json({
+    ok: true,
+    rows: authStore.listBalanceLeaders(20, viewer?.id),
+  });
+});
+
+app.post("/api/auth/gift-xu", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  const ip = clientIp(req);
+  if (
+    !rateLimit(`gift:${me.id}`, 20, 60_000) ||
+    !rateLimit(`giftip:${ip}`, 40, 60_000)
+  ) {
+    return res.status(429).json({ ok: false, reason: "Tặng quá nhanh — thử lại sau" });
+  }
+  const toUserId = String(req.body?.toUserId ?? "").trim();
+  const toCode = String(req.body?.toCode ?? "").trim();
+  if (!toUserId && !toCode) {
+    return res.status(400).json({ ok: false, reason: "Thiếu người nhận" });
+  }
+  const result = authStore.giftXu(
+    me.id,
+    { userId: toUserId || undefined, code: toCode || undefined },
+    req.body?.amount,
+  );
+  if (!result.ok) return res.status(400).json(result);
+
+  const fromLive = engine.applyAuthBalance(result.from.id, result.from.balance);
+  const toLive = engine.applyAuthBalance(result.to.id, result.to.balance);
+  for (const sid of fromLive.socketIds) {
+    io.to(sid).emit("balanceUpdate", { balance: fromLive.balance });
+  }
+  for (const sid of toLive.socketIds) {
+    io.to(sid).emit("balanceUpdate", { balance: toLive.balance });
+  }
+
+  const note = String(req.body?.note ?? "").trim().slice(0, 80);
+  audit(me, "gift_xu", {
+    targetId: result.to.id,
+    targetName: result.to.username,
+    detail: `amount=${result.amount}${note ? ` note=${note}` : ""}`,
+  });
+
+  res.json({
+    ok: true,
+    amount: result.amount,
+    from: result.from,
+    to: result.to,
+  });
+});
+
 app.post("/api/auth/register", (req, res) => {
   const ip = clientIp(req);
   const deviceId = normalizeDeviceId(req.body?.deviceId);
@@ -303,21 +378,27 @@ app.post("/api/auth/register", (req, res) => {
   if (!rateLimit(`reg:${ip}`, 10, 60_000)) {
     return res.status(429).json({ ok: false, reason: "Quá nhiều lần thử" });
   }
-  const invitePreview = inviteStore.preview(String(req.body?.inviteCode ?? ""));
-  if (!invitePreview.ok) {
-    return res.status(400).json(invitePreview);
+  const inviteRequired = inviteStore.isInviteRequired();
+  let inviteCodeUsed: string | null = null;
+  if (inviteRequired) {
+    const invitePreview = inviteStore.preview(String(req.body?.inviteCode ?? ""));
+    if (!invitePreview.ok) {
+      return res.status(400).json(invitePreview);
+    }
+    inviteCodeUsed = invitePreview.code;
   }
   const result = authStore.register(
     String(req.body?.username ?? ""),
     String(req.body?.password ?? ""),
   );
   if (!result.ok) return res.status(400).json(result);
-  const consumed = inviteStore.consume(invitePreview.code);
-  if (!consumed.ok) {
-    // User đã tạo nhưng mã vừa hết lượt (race) — vẫn giữ account, log cảnh báo
-    console.warn(
-      `[invite] consume failed after register user=${result.user.username}: ${consumed.reason}`,
-    );
+  if (inviteCodeUsed) {
+    const consumed = inviteStore.consume(inviteCodeUsed);
+    if (!consumed.ok) {
+      console.warn(
+        `[invite] consume failed after register user=${result.user.username}: ${consumed.reason}`,
+      );
+    }
   }
   authStore.recordIp(result.user.id, ip);
   if (deviceId) {
@@ -442,6 +523,10 @@ app.post("/api/auth/change-password", (req, res) => {
   );
   if (!result.ok) return res.status(400).json(result);
   res.json({ ok: true });
+});
+
+app.get("/api/auth/register-config", (_req, res) => {
+  res.json({ ok: true, ...inviteStore.getPublicConfig() });
 });
 
 app.get("/api/auth/me", (req, res) => {
@@ -631,10 +716,13 @@ app.post("/api/auth/redeem-coupon", (req, res) => {
   });
 });
 
-/** Admin: tạo / cập nhật coupon. */
+/** Admin/eco: tạo / cập nhật coupon (audit không đụng). */
 app.post("/api/admin/coupons", (req, res) => {
   const me = requireAdmin(req, res);
   if (!me) return;
+  if (me.role === "audit") {
+    return res.status(403).json({ ok: false, reason: "Audit không quản lý coupon" });
+  }
   const result = couponStore.upsert({
     code: String(req.body?.code ?? ""),
     amount: Number(req.body?.amount),
@@ -652,10 +740,13 @@ app.post("/api/admin/coupons", (req, res) => {
   });
 });
 
-/** Admin: bật/tắt coupon. */
+/** Admin/eco: bật/tắt coupon. */
 app.post("/api/admin/coupons/toggle", (req, res) => {
   const me = requireAdmin(req, res);
   if (!me) return;
+  if (me.role === "audit") {
+    return res.status(403).json({ ok: false, reason: "Audit không quản lý coupon" });
+  }
   const code = String(req.body?.code ?? "");
   const enabled = !!req.body?.enabled;
   const result = couponStore.setEnabled(code, enabled);
@@ -699,61 +790,109 @@ app.get("/api/admin/overview", (req, res) => {
       loseCount: recentBets.length - winCount,
     },
   };
-  // Coupon ẩn: chỉ staff (admin/mainadmin) thấy mã + lịch sử đổi
-  payload.coupons = couponStore.listForAdmin();
-  payload.couponRedemptions = couponStore.recentRedemptions(40);
+  // Coupon ẩn: staff dashboard (trừ audit — tránh lộ mã nạp)
+  if (me.role !== "audit") {
+    payload.coupons = couponStore.listForAdmin();
+    payload.couponRedemptions = couponStore.recentRedemptions(40);
+  }
   payload.audit = auditStore.list(80);
   payload.reports = reportStore.list(60);
   payload.liveGuests = engine.listLiveGuestsForAdmin();
 
-  if (isMainAdmin(me)) {
+  const canVault = hasCapability(me, "vault_ops");
+  const canTraffic = hasCapability(me, "traffic_view");
+  const canInter = hasCapability(me, "inter_control");
+  const canChat = hasCapability(me, "chat_config");
+  const canInvites = hasCapability(me, "invite_ops");
+  const canArcana = hasCapability(me, "arcana_config");
+  const canCult = canManageCultivation(me);
+
+  if (canVault || canTraffic || canInter || canChat || canInvites || canArcana) {
     const vault = vaultStore.getSnapshot();
     const vaultArcanaSnap = vaultArcana.getSnapshot();
     const bets = betStore.getTrafficStats();
     const accounts = authStore.getAccountStats();
     const live = engine.getLiveTraffic();
-    const arcanaStats = arcanaWheelStore.getStats();
-    payload.vault = vault;
-    payload.vaultArcana = vaultArcanaSnap;
-    payload.arcanaStats = arcanaStats;
-    payload.arcanaConfig = arcanaWheelStore.getConfig();
-    payload.arcanaRtpPreview = arcanaWheelStore.getRtpPreview();
-    payload.inter = buildInterPayload();
-    payload.chatConfig = chatConfigStore.getSnapshot();
-    payload.invites = inviteStore.list();
-    payload.cultivation = cultivationStore.getPublic();
-    payload.traffic = {
-      ...live,
-      ...accounts,
-      ...bets,
-      vaultBalance: vault.balance,
-      vaultStakeIn: vault.totalStakeIn,
-      vaultPayoutOut: vault.totalPayoutOut,
-      vaultNetHouse: vault.netHouse,
-      houseEdgeXu: vault.totalStakeIn - vault.totalPayoutOut,
-      vaultArcanaBalance: vaultArcanaSnap.balance,
-      vaultArcanaStakeIn: vaultArcanaSnap.totalStakeIn,
-      vaultArcanaPayoutOut: vaultArcanaSnap.totalPayoutOut,
-      vaultArcanaNetHouse: vaultArcanaSnap.netHouse,
-      arcanaHouseEdgeXu:
-        vaultArcanaSnap.totalStakeIn - vaultArcanaSnap.totalPayoutOut,
-      interMode: interStore.getMode(),
-      interEffectiveMode: interStore.getEffectiveMode(),
-    };
+    if (canVault) {
+      payload.vault = vault;
+      payload.vaultArcana = vaultArcanaSnap;
+    }
+    if (canArcana) {
+      payload.arcanaStats = arcanaWheelStore.getStats();
+      payload.arcanaConfig = arcanaWheelStore.getConfig();
+      payload.arcanaRtpPreview = arcanaWheelStore.getRtpPreview();
+    }
+    if (canInter) {
+      payload.inter = buildInterPayload();
+    }
+    if (canChat) {
+      payload.chatConfig = chatConfigStore.getSnapshot();
+    }
+    if (canInvites) {
+      payload.invites = inviteStore.list();
+      payload.requireInvite = inviteStore.isInviteRequired();
+    }
+    if (canCult || isMainAdmin(me)) {
+      payload.cultivation = cultivationStore.getPublic();
+    }
+    if (canTraffic || canVault) {
+      payload.traffic = {
+        ...live,
+        ...accounts,
+        ...bets,
+        vaultBalance: vault.balance,
+        vaultStakeIn: vault.totalStakeIn,
+        vaultPayoutOut: vault.totalPayoutOut,
+        vaultNetHouse: vault.netHouse,
+        houseEdgeXu: vault.totalStakeIn - vault.totalPayoutOut,
+        vaultFlows: vault.flows,
+        vaultArcanaBalance: vaultArcanaSnap.balance,
+        vaultArcanaStakeIn: vaultArcanaSnap.totalStakeIn,
+        vaultArcanaPayoutOut: vaultArcanaSnap.totalPayoutOut,
+        vaultArcanaNetHouse: vaultArcanaSnap.netHouse,
+        arcanaHouseEdgeXu:
+          vaultArcanaSnap.totalStakeIn - vaultArcanaSnap.totalPayoutOut,
+        vaultArcanaFlows: vaultArcanaSnap.flows,
+        interMode: interStore.getMode(),
+        interEffectiveMode: interStore.getEffectiveMode(),
+      };
+    }
   }
   res.json(payload);
 });
 
 app.get("/api/mainadmin/inter", (req, res) => {
-  if (!requireMainAdmin(req, res)) return;
+  if (!requireCapability(req, res, "inter_control", "Chỉ Inter")) return;
   res.json({
     ok: true,
     inter: buildInterPayload(),
   });
 });
 
+app.get("/api/mainadmin/inter/live", (req, res) => {
+  if (!requireCapability(req, res, "inter_control", "Chỉ Inter")) return;
+  const authBets = engine.getAuthBets();
+  const realBets = engine.getRealBets();
+  const stats = engine.getOnlineStats();
+  const botTotal = engine
+    .getBotPanel()
+    .botBetsTotal.reduce((a, b) => a + b, 0);
+  const displayStake = realBets.reduce((a, b) => a + b, 0) + botTotal;
+  res.json({
+    ok: true,
+    live: interObserveStore.buildLive({
+      phase: String(stats.phase),
+      roundNumber: Number(stats.roundNumber) || 0,
+      authBets,
+      realBets,
+      displayStake,
+      recentWins: engine.getHistory(3).map((h) => h.win),
+    }),
+  });
+});
+
 app.post("/api/mainadmin/inter", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "inter_control", "Chỉ Inter");
   if (!me) return;
   const mode = req.body?.mode;
   if (mode !== undefined && mode !== null && mode !== "") {
@@ -806,12 +945,12 @@ app.post("/api/mainadmin/inter", (req, res) => {
 });
 
 app.get("/api/mainadmin/vault", (req, res) => {
-  if (!requireMainAdmin(req, res)) return;
+  if (!requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)")) return;
   res.json({ ok: true, vault: vaultStore.getSnapshot() });
 });
 
 app.post("/api/mainadmin/vault/adjust", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)");
   if (!me) return;
   const result = vaultStore.adjust(
     Number(req.body?.delta),
@@ -824,7 +963,7 @@ app.post("/api/mainadmin/vault/adjust", (req, res) => {
 });
 
 app.post("/api/mainadmin/vault/set", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)");
   if (!me) return;
   const result = vaultStore.setBalance(
     Number(req.body?.balance),
@@ -837,7 +976,7 @@ app.post("/api/mainadmin/vault/set", (req, res) => {
 });
 
 app.post("/api/mainadmin/vault/grant", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)");
   if (!me) return;
   const userId = String(req.body?.userId ?? "");
   const amount = Number(req.body?.amount);
@@ -866,7 +1005,7 @@ app.post("/api/mainadmin/vault/grant", (req, res) => {
 });
 
 app.post("/api/mainadmin/vault/seize", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)");
   if (!me) return;
   const userId = String(req.body?.userId ?? "");
   const amount = Math.floor(Number(req.body?.amount));
@@ -895,14 +1034,39 @@ app.post("/api/mainadmin/vault/seize", (req, res) => {
   res.json({ ok: true, user: adj.user, vault: vaultStore.getSnapshot() });
 });
 
+/** Flag Inter trên từng kho (Tarot | Arcana). */
+app.post("/api/mainadmin/vault-flags", (req, res) => {
+  const me = requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)");
+  if (!me) return;
+  const key = String(req.body?.vaultKey ?? "tarot").trim();
+  if (key !== "tarot" && key !== "arcana") {
+    return res.status(400).json({ ok: false, reason: "vaultKey tarot|arcana" });
+  }
+  const store = key === "arcana" ? vaultArcana : vaultStore;
+  const flagsBody =
+    req.body?.flags && typeof req.body.flags === "object"
+      ? req.body.flags
+      : req.body;
+  const result = store.setInterFlags(flagsBody);
+  audit(me, "vault_inter_flags", {
+    detail: `${key} ${JSON.stringify(result.interFlags)}`,
+  });
+  res.json({
+    ok: true,
+    vaultKey: key,
+    vault: store.getSnapshot(),
+    interFlags: result.interFlags,
+  });
+});
+
 /** Kho Arcana — chỉ adjust/set (ops ví dùng Kho Tarot) */
 app.get("/api/mainadmin/vault-arcana", (req, res) => {
-  if (!requireMainAdmin(req, res)) return;
+  if (!requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)")) return;
   res.json({ ok: true, vault: vaultArcana.getSnapshot() });
 });
 
 app.post("/api/mainadmin/vault-arcana/adjust", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)");
   if (!me) return;
   const result = vaultArcana.adjust(
     Number(req.body?.delta),
@@ -917,7 +1081,7 @@ app.post("/api/mainadmin/vault-arcana/adjust", (req, res) => {
 });
 
 app.post("/api/mainadmin/vault-arcana/set", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)");
   if (!me) return;
   const result = vaultArcana.setBalance(
     Number(req.body?.balance),
@@ -930,7 +1094,7 @@ app.post("/api/mainadmin/vault-arcana/set", (req, res) => {
 });
 
 app.get("/api/mainadmin/games", (req, res) => {
-  if (!requireMainAdmin(req, res)) return;
+  if (!requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)")) return;
   const cfg = arcanaWheelStore.getConfig();
   res.json({
     ok: true,
@@ -952,7 +1116,7 @@ app.get("/api/mainadmin/games", (req, res) => {
 });
 
 app.get("/api/mainadmin/arcana/config", (req, res) => {
-  if (!requireMainAdmin(req, res)) return;
+  if (!requireCapability(req, res, "arcana_config", "Cần quyền Arcana (eco)")) return;
   res.json({
     ok: true,
     config: arcanaWheelStore.getConfig(),
@@ -962,7 +1126,7 @@ app.get("/api/mainadmin/arcana/config", (req, res) => {
 });
 
 app.patch("/api/mainadmin/arcana/config", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "arcana_config", "Cần quyền Arcana (eco)");
   if (!me) return;
   const result = arcanaWheelStore.updateConfig(
     {
@@ -994,7 +1158,7 @@ app.patch("/api/mainadmin/arcana/config", (req, res) => {
 });
 
 app.get("/api/mainadmin/arcana/spins", (req, res) => {
-  if (!requireMainAdmin(req, res)) return;
+  if (!requireCapability(req, res, "arcana_config", "Cần quyền Arcana (eco)")) return;
   const limit = Number(req.query.limit ?? 100);
   const userId = req.query.userId ? String(req.query.userId) : undefined;
   res.json({
@@ -1309,7 +1473,7 @@ app.post("/api/admin/user-reset-password", (req, res) => {
 
 /** Mainadmin: chỉnh giá chat No / VIP / Saint. */
 app.post("/api/mainadmin/chat-config", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "chat_config", "Cần quyền chat (audit)");
   if (!me) return;
   const { noCost, vipCost, saintCost } = req.body ?? {};
   if (noCost == null && vipCost == null && saintCost == null) {
@@ -1407,13 +1571,13 @@ async function enrichIpRows() {
 }
 
 app.get("/api/mainadmin/ips", async (req, res) => {
-  if (!requireMainAdmin(req, res)) return;
+  if (!requireCapability(req, res, "ip_audit", "Cần quyền IP (audit)")) return;
   res.json({ ok: true, rows: await enrichIpRows() });
 });
 
 /** Lịch sử user (IP + cược) — chỉ mainadmin; không lộ ra client player. */
 app.get("/api/mainadmin/users/:userId/history", (req, res) => {
-  if (!requireMainAdmin(req, res)) return;
+  if (!requireCapability(req, res, "ip_audit", "Cần quyền IP (audit)")) return;
   const userId = String(req.params.userId ?? "").trim();
   const rec = authStore.getById(userId);
   if (!rec) {
@@ -1448,7 +1612,7 @@ app.get("/api/mainadmin/users/:userId/history", (req, res) => {
 
 /** Tra cứu nhanh: user / ID / IP / guest code. */
 app.get("/api/mainadmin/lookup", async (req, res) => {
-  if (!requireMainAdmin(req, res)) return;
+  if (!requireCapability(req, res, "tools_lookup", "Cần quyền tra cứu (audit)")) return;
   const q = String(req.query.q ?? "").trim();
   if (q.length < 1) {
     return res.status(400).json({ ok: false, reason: "Nhập từ khóa" });
@@ -1518,7 +1682,7 @@ function formatGeoBlob(geo: unknown): string {
 }
 
 app.post("/api/mainadmin/ips/clear-guest", async (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "ip_audit", "Cần quyền IP (audit)");
   if (!me) return;
   const ip = String(req.body?.ip ?? "").trim();
   const result = guestIpStore.clearGuestBind(ip);
@@ -1528,12 +1692,16 @@ app.post("/api/mainadmin/ips/clear-guest", async (req, res) => {
 });
 
 app.get("/api/mainadmin/invites", (req, res) => {
-  if (!requireMainAdmin(req, res)) return;
-  res.json({ ok: true, invites: inviteStore.list() });
+  if (!requireCapability(req, res, "invite_ops", "Cần quyền mã TV (eco)")) return;
+  res.json({
+    ok: true,
+    invites: inviteStore.list(),
+    requireInvite: inviteStore.isInviteRequired(),
+  });
 });
 
 app.post("/api/mainadmin/invites", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "invite_ops", "Cần quyền mã TV (eco)");
   if (!me) return;
   const result = inviteStore.create({
     code: req.body?.code != null ? String(req.body.code) : undefined,
@@ -1545,11 +1713,16 @@ app.post("/api/mainadmin/invites", (req, res) => {
   audit(me, "invite_create", {
     detail: `${result.invite.code} · max ${result.invite.maxUses}`,
   });
-  res.json({ ok: true, invite: result.invite, invites: inviteStore.list() });
+  res.json({
+    ok: true,
+    invite: result.invite,
+    invites: inviteStore.list(),
+    requireInvite: inviteStore.isInviteRequired(),
+  });
 });
 
 app.post("/api/mainadmin/invites/toggle", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "invite_ops", "Cần quyền mã TV (eco)");
   if (!me) return;
   const code = String(req.body?.code ?? "");
   const enabled = !!req.body?.enabled;
@@ -1558,7 +1731,28 @@ app.post("/api/mainadmin/invites/toggle", (req, res) => {
   audit(me, "invite_toggle", {
     detail: `${result.invite.code} → ${enabled ? "on" : "off"}`,
   });
-  res.json({ ok: true, invite: result.invite, invites: inviteStore.list() });
+  res.json({
+    ok: true,
+    invite: result.invite,
+    invites: inviteStore.list(),
+    requireInvite: inviteStore.isInviteRequired(),
+  });
+});
+
+/** Eco/main: bật/tắt bắt buộc mã thành viên khi đăng ký. */
+app.post("/api/mainadmin/invites/require", (req, res) => {
+  const me = requireCapability(req, res, "invite_ops", "Cần quyền mã TV (eco)");
+  if (!me) return;
+  const enabled = !!req.body?.enabled;
+  const result = inviteStore.setRequireInvite(enabled);
+  audit(me, "invite_require", {
+    detail: enabled ? "require=on" : "require=off",
+  });
+  res.json({
+    ok: true,
+    requireInvite: result.requireInvite,
+    invites: inviteStore.list(),
+  });
 });
 
 app.post("/api/mainadmin/user-role", (req, res) => {
@@ -1573,11 +1767,14 @@ app.post("/api/mainadmin/user-role", (req, res) => {
       role !== "admin" &&
       role !== "onl" &&
       role !== "tutien" &&
-      role !== "mod")
+      role !== "mod" &&
+      role !== "eco" &&
+      role !== "audit")
   ) {
     return res.status(400).json({
       ok: false,
-      reason: "Thiếu userId hoặc role (user|deal|admin|onl|tutien|mod)",
+      reason:
+        "Thiếu userId hoặc role (user|deal|admin|onl|tutien|mod|eco|audit)",
     });
   }
   const result = authStore.setUserRole(userId, role);
@@ -1603,10 +1800,16 @@ app.get("/api/room/overview", (req, res) => {
 });
 
 app.post("/api/room/set-open", (req, res) => {
-  const me = requireRoomModerator(req, res);
+  const me = requireAuth(req, res);
   if (!me) return;
   const roomId = Number(req.body?.roomId);
   const open = !!req.body?.open;
+  if (!canControlVoiceRoomLock(me, roomId)) {
+    return res.status(403).json({
+      ok: false,
+      reason: "Cần được admin cấp đúng Room# này (hoặc mainadmin)",
+    });
+  }
   const result = voiceRoomStore.staffSetOpen(roomId, open);
   if (!result.ok) return res.status(400).json(result);
   if (isRoomId(roomId)) broadcastVoiceRoom(io, roomId);
@@ -1614,6 +1817,71 @@ app.post("/api/room/set-open", (req, res) => {
     detail: `room=${roomId} → ${open ? "open" : "closed"}`,
   });
   res.json({ ok: true, room: result.room });
+});
+
+app.post("/api/room/set-password", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  const roomId = Number(req.body?.roomId);
+  if (!canControlVoiceRoomLock(me, roomId)) {
+    return res.status(403).json({
+      ok: false,
+      reason: "Cần được admin cấp đúng Room# này (hoặc mainadmin)",
+    });
+  }
+  const result = voiceRoomStore.staffSetPassword(roomId, req.body?.password);
+  if (!result.ok) return res.status(400).json(result);
+  if (isRoomId(roomId)) broadcastVoiceRoom(io, roomId);
+  audit(me, "room_set_password", {
+    detail: `room=${roomId} hasPassword=${result.room.hasPassword}`,
+  });
+  res.json({ ok: true, room: result.room });
+});
+
+app.post("/api/admin/voice-room-grants", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  if (!canGrantVoiceRooms(me)) {
+    return res.status(403).json({
+      ok: false,
+      reason: "Chỉ mainadmin / admin cấp Room#",
+    });
+  }
+  const userId = String(req.body?.userId ?? "").trim();
+  if (!userId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId" });
+  }
+  const result = authStore.setVoiceRoomGrants(userId, req.body?.rooms);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "voice_room_grants", {
+    targetId: userId,
+    targetName: result.user.username,
+    detail: `rooms=${(result.user.voiceRoomGrants ?? []).join(",") || "none"}`,
+  });
+  res.json({ ok: true, user: result.user });
+});
+
+app.post("/api/mainadmin/staff-grant-level", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const userId = String(req.body?.userId ?? "").trim();
+  if (!userId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId" });
+  }
+  const raw = req.body?.level;
+  const level =
+    raw === null || raw === undefined || raw === "" ? null : raw;
+  const result = authStore.setStaffGrantLevel(userId, level);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "staff_grant_level", {
+    targetId: userId,
+    targetName: result.user.username,
+    detail:
+      result.user.staffGrantLevel != null
+        ? `level=${result.user.staffGrantLevel}`
+        : "level=role-default",
+  });
+  res.json({ ok: true, user: result.user });
 });
 
 app.post("/api/room/force-mute", (req, res) => {
@@ -1768,7 +2036,7 @@ app.post("/api/admin/cultivation/rank", (req, res) => {
 
 /** Mainadmin: ẩn/hiện user trên bảng xếp hạng Tarot */
 app.post("/api/mainadmin/user-leaderboard-hide", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "tools_lookup", "Cần quyền tra cứu (audit)");
   if (!me) return;
   const userId = String(req.body?.userId ?? "").trim();
   const hidden = !!req.body?.hidden;
@@ -1788,7 +2056,7 @@ app.post("/api/mainadmin/user-leaderboard-hide", (req, res) => {
 
 /** Mainadmin: ẩn nick công khai (displayName → Ẩn danh) */
 app.post("/api/mainadmin/user-hide-nickname", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "tools_lookup", "Cần quyền tra cứu (audit)");
   if (!me) return;
   const userId = String(req.body?.userId ?? "").trim();
   const hidden = !!req.body?.hidden;
@@ -1807,7 +2075,7 @@ app.post("/api/mainadmin/user-hide-nickname", (req, res) => {
 });
 
 app.post("/api/mainadmin/ips/kick", async (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "ip_audit", "Cần quyền IP (audit)");
   if (!me) return;
   const ip = String(req.body?.ip ?? "").trim();
   if (!ip) return res.status(400).json({ ok: false, reason: "Thiếu IP" });
@@ -1822,7 +2090,7 @@ app.post("/api/mainadmin/ips/kick", async (req, res) => {
 });
 
 app.post("/api/mainadmin/ips/block", async (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "ip_audit", "Cần quyền IP (audit)");
   if (!me) return;
   const ip = String(req.body?.ip ?? "").trim();
   const hours = Number(req.body?.hours ?? 0);
@@ -1845,13 +2113,13 @@ app.post("/api/mainadmin/ips/block", async (req, res) => {
 });
 
 app.get("/api/mainadmin/devices", async (req, res) => {
-  if (!requireMainAdmin(req, res)) return;
+  if (!requireCapability(req, res, "ip_audit", "Cần quyền IP (audit)")) return;
   const limit = Number(req.query.limit ?? 200);
   res.json({ ok: true, devices: deviceStore.listForAdmin(limit) });
 });
 
 app.post("/api/mainadmin/devices/block", async (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "ip_audit", "Cần quyền IP (audit)");
   if (!me) return;
   const deviceId = String(req.body?.deviceId ?? "");
   const hours = Number(req.body?.hours ?? 0);
@@ -1877,7 +2145,7 @@ app.post("/api/mainadmin/devices/block", async (req, res) => {
 });
 
 app.post("/api/mainadmin/devices/kick", async (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "ip_audit", "Cần quyền IP (audit)");
   if (!me) return;
   const deviceId = normalizeDeviceId(req.body?.deviceId);
   if (!deviceId) {
@@ -2086,7 +2354,7 @@ io.on("connection", (socket) => {
     ) => {
       const ip = socketIp(socket);
       if (!rateLimit(`bet:${socket.id}`, 40, 10_000) || !rateLimit(`betip:${ip}`, 80, 10_000)) {
-        const result = { ok: false as const, reason: "Đặt cược quá nhanh" };
+        const result = { ok: false as const, reason: "Đặt xu quá nhanh" };
         socket.emit("betRejected", { reason: result.reason });
         ack?.(result);
         return;
@@ -2152,6 +2420,14 @@ io.on("connection", (socket) => {
 
   socket.on("getLeaderboard", () => {
     socket.emit("leaderboardData", engine.getLeaderboard(socket.id));
+  });
+
+  socket.on("getBalanceLeaderboard", () => {
+    const viewerUserId = engine.getUserIdForSocket(socket.id);
+    socket.emit(
+      "balanceLeaderboardData",
+      authStore.listBalanceLeaders(20, viewerUserId),
+    );
   });
 
   socket.on("getTarotStars", () => {
@@ -2222,10 +2498,50 @@ setInterval(() => {
     console.warn("[cultivation] fee tick failed:", err);
   }
   try {
-    const snap = vaultStore.getSnapshot();
-    const r = interStore.applyVaultNet(snap.netFromPlay ?? snap.netHouse);
+    const tarot = vaultStore.getSnapshot();
+    const arcana = vaultArcana.getSnapshot();
+    const r = interStore.applyVaultSignals([
+      {
+        key: "tarot",
+        netFromPlay: tarot.netFromPlay ?? tarot.netHouse,
+        edgePct: tarot.health?.edgePct,
+        blendEdgePct: tarot.health?.blendEdgePct,
+        flags: tarot.interFlags ?? {
+          interSignal: true,
+          interWeightPct: 100,
+          interPriority: 10,
+          lossThresholdXu: 0,
+          profitThresholdXu: 0,
+          onLossMode: "",
+          onProfitMode: "",
+          usePercent: true,
+          lossPct: 8,
+          profitPct: 12,
+        },
+      },
+      {
+        key: "arcana",
+        netFromPlay: arcana.netFromPlay ?? arcana.netHouse,
+        edgePct: arcana.health?.edgePct,
+        blendEdgePct: arcana.health?.blendEdgePct,
+        flags: arcana.interFlags ?? {
+          interSignal: false,
+          interWeightPct: 50,
+          interPriority: 5,
+          lossThresholdXu: 0,
+          profitThresholdXu: 0,
+          onLossMode: "",
+          onProfitMode: "",
+          usePercent: true,
+          lossPct: 10,
+          profitPct: 15,
+        },
+      },
+    ]);
     if (r.applied) {
-      console.log(`[inter] vault-auto → ${r.mode} (${r.reason})`);
+      console.log(
+        `[inter] vault-auto → ${r.mode} (${r.reason}${r.source ? ` · ${r.source}` : ""})`,
+      );
     }
   } catch (err) {
     console.warn("[inter] vault link tick failed:", err);

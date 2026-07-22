@@ -38,6 +38,7 @@ import {
   pocketHex,
   type OuterEvenMoneyBet,
 } from "../lib/europeanRoulette";
+import { usePlaySocket } from "../socket/PlaySocketContext";
 
 interface ArcanaSlotPublic {
   id: number;
@@ -306,6 +307,7 @@ function DoubleArcanaRoulette({
 }
 
 export default function ArcanaWheelPage() {
+  const playSock = usePlaySocket();
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
   const [balance, setBalance] = useState(user?.balance ?? 0);
   const [enabled, setEnabled] = useState(true);
@@ -733,6 +735,16 @@ export default function ArcanaWheelPage() {
         <div className="min-w-0 flex-1">
           <p className="play-heading truncate text-sm">Arcana</p>
         </div>
+        <button
+          type="button"
+          onClick={() => playSock.openVoiceRoom()}
+          className="rounded-lg bg-[var(--wood-deep)]/80 px-2 py-1 text-[10px] font-bold text-amber-100 ring-1 ring-[var(--gold)]/35"
+          title="Phòng voice — giữ ghế khi đổi bàn"
+        >
+          {playSock.voiceStatus.inRoom && playSock.voiceStatus.roomId
+            ? `Room ${playSock.voiceStatus.roomId}`
+            : "Room"}
+        </button>
         <button
           type="button"
           onClick={() => setDetailSheet("streak")}

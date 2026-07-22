@@ -22,6 +22,7 @@ export interface VoiceRoomPublic {
   seats: (VoiceSeatPublic | null)[];
   occupied: number;
   open?: boolean;
+  hasPassword?: boolean;
 }
 
 export type VoiceSignalData =

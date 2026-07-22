@@ -4,11 +4,15 @@ import {
   api,
   arcanaPath,
   canAccessRoomAdmin,
+  canAccessStaffDashboard,
   canManageCultivation,
   clearSession,
   getStoredUser,
   getToken,
+  hasCapability,
   homePath,
+  isAudit,
+  isEco,
   isMainAdmin,
   isMod,
   isStaff,
@@ -16,6 +20,8 @@ import {
   playPath,
   saveSession,
   VIP_ROUNDS_REQUIRED,
+  effectiveStaffGrantLevel,
+  GRANT_LEVEL_LABELS,
   type AuthUser,
 } from "../auth";
 import { AVATARS, isCustomAvatar, normalizeAvatar } from "../avatars";
@@ -33,6 +39,7 @@ import {
   type CultivationRank,
 } from "../cultivation";
 import { CultivationChip } from "../components/CultivationChip";
+import { TrafficPanel, type TrafficPayload } from "../components/TrafficPanel";
 import { onArcanaImgError } from "../lib/arcanaImages";
 
 type CultBenefitDraft = Record<
@@ -109,6 +116,7 @@ interface VoiceRoomAdmin {
   seats: (VoiceRoomSeatAdmin | null)[];
   occupied: number;
   open: boolean;
+  hasPassword?: boolean;
 }
 
 interface InviteRow {
@@ -284,11 +292,17 @@ type RotateStep =
   | "softfed"
   | "fed"
   | "user"
+  | "softuser"
   | "contrarian"
   | "momentum"
   | "sparse"
   | "dense"
-  | "wild";
+  | "wild"
+  | "vaultguard"
+  | "vaultpct"
+  | "flowguard"
+  | "moneysteer"
+  | "crowdcap";
 
 type InterMode = "all" | PackMode | RotateStep | ForceCardMode;
 
@@ -309,12 +323,18 @@ const FALLBACK_ROTATE_CATALOG: { id: RotateStep; label: string }[] = [
   { id: "hedge", label: "Hedge — lệch profit² nhà" },
   { id: "softfed", label: "SoftFed — giữ xu vừa phải" },
   { id: "fed", label: "Fed — lá nhà lời tối đa" },
-  { id: "user", label: "User — nhả xu (cược cao)" },
-  { id: "contrarian", label: "Contrarian — ưu tiên lá ít cược" },
-  { id: "momentum", label: "Momentum — theo lá nhiều cược" },
+  { id: "user", label: "User — nhả xu (đặt cao)" },
+  { id: "softuser", label: "SoftUser — nhả xu nhẹ" },
+  { id: "contrarian", label: "Contrarian — ưu tiên lá ít người đặt" },
+  { id: "momentum", label: "Momentum — theo lá nhiều người đặt" },
   { id: "sparse", label: "Sparse — boost lá chưa ai đánh" },
-  { id: "dense", label: "Dense — boost lá đông cược" },
+  { id: "dense", label: "Dense — boost lá đông người đặt" },
   { id: "wild", label: "Wild — ngẫu nhiên 2 lá trọng số cao" },
+  { id: "vaultguard", label: "VaultGuard — kho lỗ→hút, lãi→nhả nhẹ (xu)" },
+  { id: "vaultpct", label: "VaultPct — theo % edge kho Tarot" },
+  { id: "flowguard", label: "FlowGuard — theo % dòng tiền 1h/24h" },
+  { id: "moneysteer", label: "MoneySteer — gộp % cả 2 kho + flow" },
+  { id: "crowdcap", label: "CrowdCap — giảm lá bị đám đông pile" },
 ];
 
 const DEFAULT_ALL_ROTATION: RotateStep[] = [
@@ -324,9 +344,13 @@ const DEFAULT_ALL_ROTATION: RotateStep[] = [
   "flat",
   "app",
   "hedge",
+  "vaultguard",
+  "vaultpct",
+  "moneysteer",
   "fed",
   "cool",
   "user",
+  "crowdcap",
 ];
 
 function isInterRotating(mode: string): mode is "all" | PackMode {
@@ -367,6 +391,8 @@ interface InterSnapshot {
     profitThresholdXu: number;
     onLossMode: string;
     onProfitMode: string;
+    combine?: "any" | "weighted" | "priority";
+    idleMode?: string | null;
   };
   rotateCatalog?: { id: RotateStep; label: string }[];
   modePacks?: { id: PackMode; label: string; rotation: string[] }[];
@@ -397,6 +423,30 @@ interface BetRow {
   winningCardId: number;
 }
 
+interface VaultInterFlags {
+  interSignal: boolean;
+  interWeightPct: number;
+  interPriority: number;
+  lossThresholdXu: number;
+  profitThresholdXu: number;
+  onLossMode: string;
+  onProfitMode: string;
+  usePercent?: boolean;
+  lossPct?: number;
+  profitPct?: number;
+}
+
+interface VaultHealth {
+  edgePct: number;
+  netVsBalancePct: number;
+  flowHourEdgePct: number;
+  flowDayEdgePct: number;
+  blendEdgePct: number;
+  band: string;
+  steerIntensity: number;
+  netFromPlay?: number;
+}
+
 interface VaultSnapshot {
   label?: string;
   balance: number;
@@ -406,6 +456,8 @@ interface VaultSnapshot {
   totalBurned: number;
   netHouse: number;
   netFromPlay?: number;
+  interFlags?: VaultInterFlags;
+  health?: VaultHealth;
   breakdown?: Record<string, { count: number; sum: number }>;
   ledger: {
     id: string;
@@ -539,6 +591,8 @@ interface Overview {
     redeemCount: number;
   }[];
   invites?: InviteRow[];
+  /** Eco/main: bắt buộc mã TV khi đăng ký */
+  requireInvite?: boolean;
   couponRedemptions?: {
     id: string;
     at: number;
@@ -554,45 +608,7 @@ interface Overview {
     updatedBy?: string;
   };
   /** Chỉ mainadmin */
-  traffic?: {
-    realStakeRound: number;
-    botStakeRound: number;
-    displayStakeRound: number;
-    realBettorsRound: number;
-    botBettorsRound: number;
-    loggedInOnline: number;
-    guestOnline: number;
-    historyRounds: number;
-    nextRound: number;
-    totalAccounts: number;
-    playerAccounts: number;
-    adminAccounts: number;
-    mainadminAccounts: number;
-    balanceTotal: number;
-    betRows: number;
-    uniqueUsers: number;
-    uniqueRounds: number;
-    stakeTotal: number;
-    payoutTotal: number;
-    profitTotal: number;
-    winCount: number;
-    loseCount: number;
-    stakeToday: number;
-    betsToday: number;
-    stakeHour: number;
-    betsHour: number;
-    vaultBalance: number;
-    vaultStakeIn: number;
-    vaultPayoutOut: number;
-    vaultNetHouse: number;
-    houseEdgeXu: number;
-    vaultArcanaBalance?: number;
-    vaultArcanaStakeIn?: number;
-    vaultArcanaPayoutOut?: number;
-    vaultArcanaNetHouse?: number;
-    arcanaHouseEdgeXu?: number;
-    interMode?: InterMode;
-  };
+  traffic?: TrafficPayload;
   audit?: {
     id: string;
     at: number;
@@ -623,8 +639,8 @@ function cardName(id: number) {
 }
 
 const LEDGER_LABEL: Record<string, string> = {
-  stake_in: "Cược vào",
-  stake_refund: "Hoàn cược",
+  stake_in: "Xu vào",
+  stake_refund: "Hoàn xu",
   payout_out: "Trả thưởng",
   mint: "Bơm kho",
   burn: "Rút kho",
@@ -670,7 +686,22 @@ export default function AdminDashboard() {
     profitThresholdXu: "50000",
     onLossMode: "small",
     onProfitMode: "big",
+    combine: "any" as "any" | "weighted" | "priority",
+    idleMode: "" as string,
   });
+  const [vaultFlagsDraft, setVaultFlagsDraft] = useState<VaultInterFlags>({
+    interSignal: true,
+    interWeightPct: 100,
+    interPriority: 10,
+    lossThresholdXu: 0,
+    profitThresholdXu: 0,
+    onLossMode: "",
+    onProfitMode: "",
+    usePercent: true,
+    lossPct: 8,
+    profitPct: 12,
+  });
+  const [vaultFlagsBusy, setVaultFlagsBusy] = useState(false);
   const [cultivationBusy, setCultivationBusy] = useState(false);
   const [rankDraftUserId, setRankDraftUserId] = useState("");
   const [rankDraftValue, setRankDraftValue] = useState<string>("");
@@ -690,7 +721,59 @@ export default function AdminDashboard() {
     amount: "1000",
   });
   const [interBusy, setInterBusy] = useState(false);
-  const [interSubTab, setInterSubTab] = useState<"room" | "userWin">("room");
+  const [interSubTab, setInterSubTab] = useState<"live" | "room" | "userWin">(
+    "live",
+  );
+  const [interLive, setInterLive] = useState<{
+    at: number;
+    phase: string;
+    roundNumber: number;
+    storedMode: string;
+    effectiveMode: string;
+    winBiasPct: number;
+    vaultNet: number;
+    authStake: number;
+    displayStake: number;
+    alerts: { level: string; code: string; message: string }[];
+    cards: {
+      cardId: number;
+      nameVi: string;
+      authBet: number;
+      liability: number;
+      houseProfit: number;
+      percent: number;
+    }[];
+    hint: {
+      bestHouseCard: number;
+      bestHouseProfit: number;
+      worstHouseCard: number;
+      worstHouseProfit: number;
+    };
+    rolling: {
+      rounds: number;
+      authStakeSum: number;
+      houseProfitSum: number;
+      playerPayoutApprox: number;
+      rtpPct: number | null;
+      byMode: {
+        mode: string;
+        rounds: number;
+        authStake: number;
+        houseProfit: number;
+        rtpPct: number | null;
+      }[];
+    };
+    recent: {
+      at: number;
+      round: number;
+      effectiveMode: string;
+      winCard: number;
+      authStake: number;
+      houseProfit: number;
+      vaultNet: number;
+    }[];
+  } | null>(null);
+  const [interLiveBusy, setInterLiveBusy] = useState(false);
   const [winPctDrafts, setWinPctDrafts] = useState<Record<string, string>>({});
   const [winPctFilter, setWinPctFilter] = useState("");
   const [allSlotMinutes, setAllSlotMinutes] = useState("5");
@@ -875,14 +958,52 @@ export default function AdminDashboard() {
         profitThresholdXu: String(v.profitThresholdXu),
         onLossMode: v.onLossMode || "small",
         onProfitMode: v.onProfitMode || "big",
+        combine: v.combine === "weighted" || v.combine === "priority" ? v.combine : "any",
+        idleMode: v.idleMode ?? "",
       });
     }
     const activeVault =
       managedGame === "arcana" ? overview.vaultArcana : overview.vault;
     if (activeVault) {
       setVaultSet(String(activeVault.balance));
+      if (activeVault.interFlags) {
+        setVaultFlagsDraft({
+          usePercent: true,
+          lossPct: 8,
+          profitPct: 12,
+          ...activeVault.interFlags,
+        });
+      } else {
+        setVaultFlagsDraft(
+          managedGame === "arcana"
+            ? {
+                interSignal: false,
+                interWeightPct: 50,
+                interPriority: 5,
+                lossThresholdXu: 0,
+                profitThresholdXu: 0,
+                onLossMode: "",
+                onProfitMode: "",
+                usePercent: true,
+                lossPct: 10,
+                profitPct: 15,
+              }
+            : {
+                interSignal: true,
+                interWeightPct: 100,
+                interPriority: 10,
+                lossThresholdXu: 0,
+                profitThresholdXu: 0,
+                onLossMode: "",
+                onProfitMode: "",
+                usePercent: true,
+                lossPct: 8,
+                profitPct: 12,
+              },
+        );
+      }
     }
-    if (overview.me.role === "mainadmin") {
+    if (overview.me.role === "mainadmin" || overview.me.role === "audit") {
       try {
         const ips = await api<{ ok: true; rows: IpRow[] }>(
           "/api/mainadmin/ips",
@@ -901,7 +1022,11 @@ export default function AdminDashboard() {
     }
     api<{ ok: true; user: AuthUser }>("/api/auth/me")
       .then((r) => {
-        if (!isStaff(r.user) && !isTutien(r.user) && !isMod(r.user)) {
+        if (
+          !canAccessStaffDashboard(r.user) &&
+          !isTutien(r.user) &&
+          !isMod(r.user)
+        ) {
           nav(homePath(r.user), { replace: true });
           return;
         }
@@ -916,6 +1041,8 @@ export default function AdminDashboard() {
         setMe(r.user);
         if (r.user.role === "tutien") setTab("tutien");
         if (r.user.role === "mod") setTab("room");
+        if (r.user.role === "eco") setTab("vault");
+        if (r.user.role === "audit") setTab("tools");
         const token = getToken();
         if (token) saveSession(token, r.user);
         return load();
@@ -980,6 +1107,31 @@ export default function AdminDashboard() {
     }, 15_000);
     return () => window.clearInterval(id);
   }, [tab, data?.inter?.mode, load]);
+
+  const loadInterLive = useCallback(async () => {
+    if (!hasCapability(me, "inter_control")) return;
+    setInterLiveBusy(true);
+    try {
+      const r = await api<{ ok: true; live: NonNullable<typeof interLive> }>(
+        "/api/mainadmin/inter/live",
+      );
+      setInterLive(r.live);
+    } catch {
+      /* ignore poll errors */
+    } finally {
+      setInterLiveBusy(false);
+    }
+  }, [me]);
+
+  // Inter live observe — poll ~2.5s
+  useEffect(() => {
+    if (tab !== "inter" || interSubTab !== "live" || !hasCapability(me, "inter_control")) return;
+    void loadInterLive();
+    const id = window.setInterval(() => {
+      void loadInterLive();
+    }, 2500);
+    return () => window.clearInterval(id);
+  }, [tab, interSubTab, me, loadInterLive]);
 
   const logout = () => {
     clearSession();
@@ -1150,7 +1302,7 @@ export default function AdminDashboard() {
 
   const setUserRole = async (
     userId: string,
-    role: "user" | "deal" | "admin" | "onl" | "tutien" | "mod",
+    role: "user" | "deal" | "admin" | "onl" | "tutien" | "mod" | "eco" | "audit",
   ) => {
     try {
       await api("/api/mainadmin/user-role", {
@@ -1168,11 +1320,52 @@ export default function AdminDashboard() {
                 ? "Đã cấp role Tu Tiên"
                 : role === "mod"
                   ? "Đã cấp role Mod (Room)"
-                  : "Đã chuyển về user",
+                  : role === "eco"
+                    ? "Đã cấp role Eco (kho / lưu lượng)"
+                    : role === "audit"
+                      ? "Đã cấp role Audit (IP / tra cứu)"
+                      : "Đã chuyển về user",
       );
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi đổi role");
+    }
+  };
+
+  const setVoiceRoomGrants = async (userId: string, rooms: number[]) => {
+    try {
+      await api("/api/admin/voice-room-grants", {
+        method: "POST",
+        body: JSON.stringify({ userId, rooms }),
+      });
+      setMsg(
+        rooms.length
+          ? `Đã cấp Room# ${rooms.join(", ")}`
+          : "Đã thu hết Room#",
+      );
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi cấp Room#");
+    }
+  };
+
+  const setStaffGrantLevel = async (
+    userId: string,
+    level: number | null,
+  ) => {
+    try {
+      await api("/api/mainadmin/staff-grant-level", {
+        method: "POST",
+        body: JSON.stringify({ userId, level }),
+      });
+      setMsg(
+        level == null
+          ? "Đã xóa override bậc (theo role)"
+          : `Đã gán bậc L${level}`,
+      );
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi gán bậc staff");
     }
   };
 
@@ -1270,6 +1463,8 @@ export default function AdminDashboard() {
             profitThresholdXu: Number(vaultLinkDraft.profitThresholdXu),
             onLossMode: vaultLinkDraft.onLossMode,
             onProfitMode: vaultLinkDraft.onProfitMode,
+            combine: vaultLinkDraft.combine,
+            idleMode: vaultLinkDraft.idleMode || null,
           },
         }),
       });
@@ -1279,6 +1474,27 @@ export default function AdminDashboard() {
       setMsg(err instanceof Error ? err.message : "Lỗi lưu Inter bias");
     } finally {
       setInterBusy(false);
+    }
+  };
+
+  const saveVaultInterFlags = async () => {
+    setVaultFlagsBusy(true);
+    try {
+      await api("/api/mainadmin/vault-flags", {
+        method: "POST",
+        body: JSON.stringify({
+          vaultKey: managedGame === "arcana" ? "arcana" : "tarot",
+          flags: vaultFlagsDraft,
+        }),
+      });
+      setMsg(
+        `Đã lưu flag Inter · ${managedGame === "arcana" ? "Kho Arcana" : "Kho Tarot"}`,
+      );
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi lưu flag kho");
+    } finally {
+      setVaultFlagsBusy(false);
     }
   };
 
@@ -1477,7 +1693,11 @@ export default function AdminDashboard() {
   };
 
   const openUserHis = async (userId: string) => {
-    if (!userId || !main) return;
+    if (
+      !userId ||
+      (!hasCapability(me, "ip_audit") && !hasCapability(me, "tools_lookup"))
+    )
+      return;
     setHisBusy(true);
     setHisData(null);
     try {
@@ -1601,6 +1821,26 @@ export default function AdminDashboard() {
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi toggle mã");
+    } finally {
+      setInviteBusy(false);
+    }
+  };
+
+  const setRequireInviteMode = async (enabled: boolean) => {
+    setInviteBusy(true);
+    try {
+      await api("/api/mainadmin/invites/require", {
+        method: "POST",
+        body: JSON.stringify({ enabled }),
+      });
+      setMsg(
+        enabled
+          ? "Đã BẬT bắt buộc mã thành viên khi đăng ký"
+          : "Đã TẮT — đăng ký không cần mã mời",
+      );
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi chế độ mã mời");
     } finally {
       setInviteBusy(false);
     }
@@ -1959,7 +2199,7 @@ export default function AdminDashboard() {
         method: "PATCH",
         body: JSON.stringify({ tutienMaxByRank }),
       });
-      setMsg("Đã lưu max cược Tu Tiên (9 bậc)");
+      setMsg("Đã lưu max xu Tu Tiên (9 bậc)");
       await load();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Lỗi");
@@ -2021,28 +2261,63 @@ export default function AdminDashboard() {
   const main = isMainAdmin(me);
   const tutienOnly = isTutien(me);
   const modOnly = isMod(me);
+  const ecoOnly = isEco(me);
+  const auditOnly = isAudit(me);
+  const canVault = hasCapability(me, "vault_ops");
+  const canTraffic = hasCapability(me, "traffic_view");
+  const canInter = hasCapability(me, "inter_control");
+  const canIp = hasCapability(me, "ip_audit");
+  const canTools = hasCapability(me, "tools_lookup");
+  const canChat = hasCapability(me, "chat_config");
+  const canInvites = hasCapability(me, "invite_ops");
+  const canArcanaCfg = hasCapability(me, "arcana_config");
+  const canGameSwitch = canVault || canArcanaCfg || canInter;
   const canCultivation = canManageCultivation(me);
   const canRoom = canAccessRoomAdmin(me);
   const activeVault =
     managedGame === "arcana" ? data.vaultArcana : data.vault;
   const tabs: { id: TabId; label: string; show: boolean }[] = [
     { id: "overview", label: "Tổng quan", show: !tutienOnly && !modOnly },
-    { id: "tools", label: "Tra cứu", show: main },
-    { id: "traffic", label: "Lưu lượng", show: main && managedGame === "tarot" },
-    { id: "inter", label: "Inter", show: main && managedGame === "tarot" },
-    { id: "arcana", label: "Bánh xe", show: main && managedGame === "arcana" },
-    { id: "ips", label: "IP", show: main },
-    { id: "chat", label: "Chat", show: main },
-    { id: "users", label: "User & Bot", show: !tutienOnly && !modOnly },
+    { id: "tools", label: "Tra cứu", show: canTools },
+    {
+      id: "traffic",
+      label: "Lưu lượng",
+      show: canTraffic && managedGame === "tarot",
+    },
+    {
+      id: "inter",
+      label: "Inter",
+      show: canInter && managedGame === "tarot",
+    },
+    {
+      id: "arcana",
+      label: "Bánh xe",
+      show: canArcanaCfg && managedGame === "arcana",
+    },
+    { id: "ips", label: "IP", show: canIp },
+    { id: "chat", label: "Chat", show: canChat },
+    {
+      id: "users",
+      label: "User & Bot",
+      show: !tutienOnly && !modOnly && !ecoOnly && !auditOnly,
+    },
     { id: "rolead", label: "RoleAD", show: main },
     { id: "room", label: "Room", show: canRoom },
-    { id: "mod", label: "Mod", show: !tutienOnly && !modOnly },
-    { id: "coupons", label: "Coupon ẩn", show: !tutienOnly && !modOnly },
-    { id: "invites", label: "Mã TV", show: main },
+    {
+      id: "mod",
+      label: "Mod",
+      show: !tutienOnly && !modOnly && !ecoOnly && !auditOnly,
+    },
+    {
+      id: "coupons",
+      label: "Coupon ẩn",
+      show: !tutienOnly && !modOnly && !auditOnly,
+    },
+    { id: "invites", label: "Mã TV", show: canInvites },
     {
       id: "vault",
       label: managedGame === "arcana" ? "Kho Arcana" : "Kho Tarot",
-      show: main,
+      show: canVault,
     },
     { id: "tutien", label: "Tu Tiên", show: canCultivation },
   ];
@@ -2106,7 +2381,7 @@ export default function AdminDashboard() {
         </button>
       </header>
 
-      {main && (
+      {canGameSwitch && (
         <div className="mt-3 rounded-xl bg-[var(--wood-deep)]/90 p-1.5 ring-1 ring-[var(--gold)]/30">
           <p className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--gold-soft)]/80">
             Chọn game quản lý
@@ -2213,12 +2488,12 @@ export default function AdminDashboard() {
         </p>
       )}
 
-      {tab === "tools" && main && (
+      {tab === "tools" && canTools && (
         <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
           <div>
             <p className="play-heading text-sm">Tra cứu nhanh</p>
             <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-              Username · ID · IP · guest code — kèm cược 24h & IP liên quan
+              Username · ID · IP · guest code — kèm xu đặt 24h & IP liên quan
             </p>
           </div>
           <form
@@ -2418,7 +2693,7 @@ export default function AdminDashboard() {
               {toolsResult.recentBets.length > 0 && (
                 <div>
                   <p className="mb-1 text-xs font-bold text-[var(--play-ink)]">
-                    Cược gần của user đầu tiên
+                    Xu đặt gần của user đầu tiên
                   </p>
                   <ul className="max-h-40 space-y-1 overflow-y-auto text-[10px]">
                     {toolsResult.recentBets.map((b) => (
@@ -2441,14 +2716,14 @@ export default function AdminDashboard() {
 
       {tab === "overview" && (
         <>
-          {main && data.traffic && (
+          {canTraffic && data.traffic && (
             <section className="app-frame mt-4 px-3 py-3">
               <p className="play-heading text-sm">Lưu lượng tổng (mainadmin)</p>
               <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {[
                   ["Online login", String(data.traffic.loggedInOnline)],
                   ["Online khách", String(data.traffic.guestOnline)],
-                  ["Cược hôm nay", formatXu(data.traffic.stakeToday)],
+                  ["Xu hôm nay", formatXu(data.traffic.stakeToday)],
                   ["Edge nhà cái", formatXu(data.traffic.houseEdgeXu)],
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-lg bg-white/80 px-2 py-2">
@@ -2491,7 +2766,7 @@ export default function AdminDashboard() {
 
           <section className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
             {[
-              ["Cược gần đây", String(data.betStats?.rows ?? 0)],
+              ["Xu đặt gần đây", String(data.betStats?.rows ?? 0)],
               ["Tổng stake", formatXu(data.betStats?.stakeTotal ?? 0)],
               ["Tổng trả", formatXu(data.betStats?.payoutTotal ?? 0)],
               [
@@ -2533,12 +2808,12 @@ export default function AdminDashboard() {
 
           <section className="app-panel mt-4 p-3">
             <p className="play-heading mb-2 text-sm">
-              Cược user gần đây ({data.recentBets?.length ?? 0})
+              Xu user gần đây ({data.recentBets?.length ?? 0})
             </p>
             <ul className="max-h-44 space-y-1.5 overflow-y-auto">
               {(data.recentBets?.length ?? 0) === 0 ? (
                 <li className="text-xs text-[var(--play-muted)]">
-                  Chưa ghi nhận cược.
+                  Chưa ghi nhận ván.
                 </li>
               ) : (
                 data.recentBets!.map((b) => (
@@ -2565,102 +2840,11 @@ export default function AdminDashboard() {
         </>
       )}
 
-      {tab === "traffic" && main && data.traffic && (
-        <>
-          <section className="mt-4">
-            <p className="play-heading text-sm">Online & bàn hiện tại</p>
-            <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-              {[
-                ["Login online", String(data.traffic.loggedInOnline)],
-                ["Khách online", String(data.traffic.guestOnline)],
-                ["Hiển thị CCU", String(s.displayOnline)],
-                ["Stake thật (ván)", formatXu(data.traffic.realStakeRound)],
-                ["Stake bot (ván)", formatXu(data.traffic.botStakeRound)],
-                ["Stake hiển thị", formatXu(data.traffic.displayStakeRound)],
-                ["Người đặt (thật)", String(data.traffic.realBettorsRound)],
-                ["Bot đặt", String(data.traffic.botBettorsRound)],
-                ["Ván tiếp theo", `#${data.traffic.nextRound}`],
-              ].map(([label, value]) => (
-                <div key={label} className="app-panel p-3">
-                  <p className="play-section-title !normal-case !tracking-wide">
-                    {label}
-                  </p>
-                  <p className="font-play mt-1 text-sm font-bold text-[var(--play-ink)] tabular-nums">
-                    {value}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="mt-4">
-            <p className="play-heading text-sm">Lưu lượng cược (đã ghi)</p>
-            <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-              {[
-                ["Tổng stake", formatXu(data.traffic.stakeTotal)],
-                ["Tổng trả thưởng", formatXu(data.traffic.payoutTotal)],
-                ["Profit user", formatXu(data.traffic.profitTotal)],
-                ["Stake 1 giờ", formatXu(data.traffic.stakeHour)],
-                ["Cược 1 giờ", String(data.traffic.betsHour)],
-                ["Stake hôm nay", formatXu(data.traffic.stakeToday)],
-                ["Cược hôm nay", String(data.traffic.betsToday)],
-                ["User có cược", String(data.traffic.uniqueUsers)],
-                ["Ván có cược", String(data.traffic.uniqueRounds)],
-                ["Dòng cược", String(data.traffic.betRows)],
-                ["Win / Lose", `${data.traffic.winCount}/${data.traffic.loseCount}`],
-                ["Lịch sử ván", String(data.traffic.historyRounds)],
-              ].map(([label, value]) => (
-                <div key={label} className="app-panel p-3">
-                  <p className="play-section-title !normal-case !tracking-wide">
-                    {label}
-                  </p>
-                  <p className="font-play mt-1 text-sm font-bold text-[var(--play-ink)] tabular-nums">
-                    {value}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="mt-4">
-            <p className="play-heading text-sm">Tài khoản & kho</p>
-            <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-              {[
-                ["Tổng tài khoản", String(data.traffic.totalAccounts)],
-                ["Player", String(data.traffic.playerAccounts)],
-                ["Admin", String(data.traffic.adminAccounts)],
-                ["Xu đang cầm (user)", formatXu(data.traffic.balanceTotal)],
-                ["Kho xu", formatXu(data.traffic.vaultBalance)],
-                ["Cược vào kho", formatXu(data.traffic.vaultStakeIn)],
-                ["Trả từ kho", formatXu(data.traffic.vaultPayoutOut)],
-                ["Edge nhà cái", formatXu(data.traffic.houseEdgeXu)],
-                ["Net kho", formatXu(data.traffic.vaultNetHouse)],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className={`app-panel p-3 ${
-                    label === "Edge nhà cái" || label === "Kho xu"
-                      ? "ring-2 ring-amber-300/50"
-                      : ""
-                  }`}
-                >
-                  <p className="play-section-title !normal-case !tracking-wide">
-                    {label}
-                  </p>
-                  <p
-                    className={`font-play mt-1 text-sm font-bold tabular-nums ${
-                      label === "Edge nhà cái" || label === "Kho xu"
-                        ? "text-amber-800"
-                        : "text-[var(--play-ink)]"
-                    }`}
-                  >
-                    {value}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </section>
-        </>
+      {tab === "traffic" && canTraffic && data.traffic && (
+        <TrafficPanel
+          traffic={data.traffic}
+          displayOnline={s.displayOnline}
+        />
       )}
 
       {tab === "users" && (
@@ -2832,7 +3016,7 @@ export default function AdminDashboard() {
             </div>
             <p className="mb-2 text-[11px] text-[var(--play-muted)]">
               Mỗi user: ô ID + nút <strong>Lưu ID</strong> (3–8 chữ/số, không
-              trùng). Mode Lose/Normal/Win khi user có cược. VIP hiện ID nền
+              trùng). Mode Lose/Normal/Win khi user có đặt xu. VIP hiện ID nền
               vàng nổi.
             </p>
             <ul className="max-h-80 space-y-2 overflow-y-auto">
@@ -3125,6 +3309,8 @@ export default function AdminDashboard() {
               <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
                 Mainadmin tự bật quyền phụ (áp dụng cả chính mình). Role{" "}
                 <strong>mainadmin</strong> không đổi được — bảo vệ tài khoản gốc.
+                Bậc staff L0–L6 (override) nâng capability; URL home vẫn theo{" "}
+                <strong>role</strong>.
               </p>
             </div>
             {(() => {
@@ -3148,6 +3334,9 @@ export default function AdminDashboard() {
                   <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
                     ID {self.code} · Hiện công khai:{" "}
                     <strong>{self.displayName ?? self.username}</strong>
+                    {" · "}
+                    {GRANT_LEVEL_LABELS[effectiveStaffGrantLevel(self)] ??
+                      `L${effectiveStaffGrantLevel(self)}`}
                   </p>
 
                   <div className="mt-3 rounded-lg bg-[var(--cream)]/80 px-2.5 py-2 ring-1 ring-[var(--wood-deep)]/10">
@@ -3231,8 +3420,9 @@ export default function AdminDashboard() {
           <section className="app-panel mt-3 space-y-2 p-3">
             <p className="play-heading text-sm">Cấp / thu role</p>
             <p className="text-[11px] text-[var(--play-muted)]">
-              user · deal · admin · onl · tutien · mod. Không đụng tài khoản
-              mainadmin khác.
+              user · deal · admin · onl · tutien · mod · eco · audit. Không đụng
+              tài khoản mainadmin khác. Eco = kho/lưu lượng; Audit = IP/tra cứu.
+              Bậc L = override capability; Room# = đóng phòng / đặt MK.
             </p>
             <input
               value={userFilter}
@@ -3264,6 +3454,10 @@ export default function AdminDashboard() {
                           {u.code} · {u.displayName ?? u.username}
                           {u.hideNickname ? " · nick ẩn" : ""}
                           {u.hideFromLeaderboard ? " · BXH ẩn" : ""}
+                          {" · "}
+                          {GRANT_LEVEL_LABELS[effectiveStaffGrantLevel(u)] ??
+                            `L${effectiveStaffGrantLevel(u)}`}
+                          {u.staffGrantLevel != null ? " (override)" : ""}
                         </p>
                       </div>
                     </div>
@@ -3274,6 +3468,8 @@ export default function AdminDashboard() {
                             ["user", "User"],
                             ["deal", "Deal"],
                             ["admin", "Admin"],
+                            ["eco", "Eco"],
+                            ["audit", "Audit"],
                             ["onl", "Onl"],
                             ["tutien", "Tu Tiên"],
                             ["mod", "Mod"],
@@ -3293,6 +3489,81 @@ export default function AdminDashboard() {
                             {label}
                           </button>
                         ))}
+                        <div className="mt-1.5 flex w-full flex-wrap items-center gap-1">
+                          <span className="text-[9px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
+                            Bậc L
+                          </span>
+                          {([0, 1, 2, 3, 4, 5, 6] as const).map((lv) => {
+                            const active =
+                              u.staffGrantLevel != null &&
+                              u.staffGrantLevel === lv;
+                            return (
+                              <button
+                                key={lv}
+                                type="button"
+                                title={GRANT_LEVEL_LABELS[lv] ?? `L${lv}`}
+                                onClick={() =>
+                                  void setStaffGrantLevel(
+                                    u.id,
+                                    active ? null : lv,
+                                  )
+                                }
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                  active
+                                    ? "bg-teal-800 text-teal-50"
+                                    : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
+                                }`}
+                              >
+                                L{lv}
+                              </button>
+                            );
+                          })}
+                          {u.staffGrantLevel != null && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void setStaffGrantLevel(u.id, null)
+                              }
+                              className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
+                            >
+                              Theo role
+                            </button>
+                          )}
+                        </div>
+                        <div className="mt-1.5 flex w-full flex-wrap items-center gap-1">
+                          <span className="text-[9px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
+                            Room#
+                          </span>
+                          {([1, 2, 3, 4, 5] as const).map((rid) => {
+                            const granted = (u.voiceRoomGrants ?? []).includes(
+                              rid,
+                            );
+                            return (
+                              <button
+                                key={rid}
+                                type="button"
+                                title={
+                                  granted
+                                    ? `Thu Room ${rid}`
+                                    : `Cấp Room ${rid} (đóng/MK)`
+                                }
+                                onClick={() => {
+                                  const cur = new Set(u.voiceRoomGrants ?? []);
+                                  if (cur.has(rid)) cur.delete(rid);
+                                  else cur.add(rid);
+                                  void setVoiceRoomGrants(u.id, [...cur].sort());
+                                }}
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                  granted
+                                    ? "bg-amber-700 text-amber-50"
+                                    : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
+                                }`}
+                              >
+                                R{rid}
+                              </button>
+                            );
+                          })}
+                        </div>
                         <button
                           type="button"
                           onClick={() =>
@@ -3640,8 +3911,9 @@ export default function AdminDashboard() {
             <div>
               <p className="play-heading text-sm">Room — điều hành voice</p>
               <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-                Quyền <strong>mainadmin</strong> / <strong>mod</strong>: mở–đóng
-                phòng, mute mic, kick, dọn phòng. Tự refresh ~4s.
+                Đóng phòng / đặt MK: chỉ <strong>mainadmin</strong> hoặc user
+                được cấp đúng <strong>Room#</strong> (RoleAD). Mute/kick: mod /
+                staff. Tự refresh ~4s.
               </p>
             </div>
             <button
@@ -3663,6 +3935,7 @@ export default function AdminDashboard() {
                   seats: Array.from({ length: 8 }, () => null),
                   occupied: 0,
                   open: true,
+                  hasPassword: false,
                 }))
             ).map((room) => (
               <div
@@ -3679,6 +3952,7 @@ export default function AdminDashboard() {
                     <span className="text-[10px] font-semibold text-[var(--play-muted)]">
                       {room.occupied}/8 ·{" "}
                       {room.open === false ? "ĐÓNG" : "Mở"}
+                      {room.hasPassword ? " · 🔒" : ""}
                     </span>
                   </p>
                   <div className="flex flex-wrap gap-1">
@@ -3871,7 +4145,7 @@ export default function AdminDashboard() {
         </>
       )}
 
-      {tab === "chat" && main && (
+      {tab === "chat" && canChat && (
         <section className="app-panel mt-4 p-3 sm:p-4">
           <p className="play-heading text-sm">Giá chat phòng Tarot</p>
           <p className="mt-1 text-[11px] text-[var(--play-muted)]">
@@ -3997,7 +4271,7 @@ export default function AdminDashboard() {
         </section>
       )}
 
-      {tab === "ips" && main && (
+      {tab === "ips" && canIp && (
         <section className="app-panel mt-4 p-3 sm:p-4">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
@@ -4316,13 +4590,53 @@ export default function AdminDashboard() {
         </section>
       )}
 
-      {tab === "invites" && main && (
+      {tab === "invites" && canInvites && (
         <>
+          <section className="app-panel mt-4 p-3">
+            <p className="play-heading text-sm">Chế độ mã khách mời</p>
+            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+              Bật = đăng ký bắt buộc nhập mã 8 ký tự. Tắt = ai cũng tạo tài khoản
+              được (vẫn tạo mã để phát tay nếu muốn).
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={inviteBusy || data.requireInvite === true}
+                onClick={() => void setRequireInviteMode(true)}
+                className={`rounded-full px-3 py-1.5 text-xs font-bold disabled:opacity-40 ${
+                  data.requireInvite
+                    ? "bg-[var(--wood-deep)] text-[var(--gold-soft)]"
+                    : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                }`}
+              >
+                Bắt buộc mã
+              </button>
+              <button
+                type="button"
+                disabled={inviteBusy || data.requireInvite === false}
+                onClick={() => void setRequireInviteMode(false)}
+                className={`rounded-full px-3 py-1.5 text-xs font-bold disabled:opacity-40 ${
+                  data.requireInvite === false
+                    ? "bg-emerald-700 text-white"
+                    : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                }`}
+              >
+                Không cần mã
+              </button>
+            </div>
+            <p className="mt-2 text-[10px] font-semibold text-[var(--wood-deep)]">
+              Hiện tại:{" "}
+              {data.requireInvite !== false
+                ? "ĐANG bắt buộc mã mời"
+                : "Đăng ký mở (không bắt mã)"}
+            </p>
+          </section>
+
           <section className="app-panel mt-4 p-3">
             <p className="play-heading text-sm">Tạo mã thành viên</p>
             <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
               Đúng 8 ký tự (A–Z / 0–9). Để trống mã → hệ thống random. Mỗi mã
-              dùng được nhiều lần tới max. Đăng ký bắt buộc nhập mã.
+              dùng được nhiều lần tới max.
             </p>
             <form onSubmit={createInvite} className="mt-3 space-y-2">
               <div className="flex flex-wrap gap-2">
@@ -4622,11 +4936,12 @@ export default function AdminDashboard() {
         </>
       )}
 
-      {tab === "inter" && main && data.inter && (
+      {tab === "inter" && canInter && data.inter && (
         <>
           <div className="mt-4 flex flex-wrap gap-1.5">
             {(
               [
+                ["live", "Quan sát live"],
                 ["room", "Phòng Inter"],
                 ["userWin", "User Win %"],
               ] as const
@@ -4646,13 +4961,202 @@ export default function AdminDashboard() {
             ))}
           </div>
 
+          {interSubTab === "live" && (
+            <section className="app-panel mt-3 space-y-3 p-3 sm:p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="play-heading text-sm">Inter — quan sát realtime</p>
+                  <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+                    Liability / house profit theo lá · RTP ~50 ván · cảnh báo
+                    hút/nhả. Tự refresh ~2.5s.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={interLiveBusy}
+                  onClick={() => void loadInterLive()}
+                  className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-50"
+                >
+                  Làm mới
+                </button>
+              </div>
+              {!interLive ? (
+                <p className="text-xs text-[var(--play-muted)]">Đang tải…</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {(
+                      [
+                        ["Phase", interLive.phase],
+                        ["Ván", `#${interLive.roundNumber}`],
+                        [
+                          "Mode",
+                          `${interLive.storedMode}→${interLive.effectiveMode}`,
+                        ],
+                        ["Kho net", formatXu(interLive.vaultNet)],
+                        ["Auth stake", formatXu(interLive.authStake)],
+                        ["Display stake", formatXu(interLive.displayStake)],
+                        ["Bias %", String(interLive.winBiasPct)],
+                        [
+                          "RTP~50",
+                          interLive.rolling.rtpPct != null
+                            ? `${interLive.rolling.rtpPct}%`
+                            : "—",
+                        ],
+                      ] as const
+                    ).map(([k, v]) => (
+                      <div
+                        key={k}
+                        className="rounded-lg bg-white/75 px-2.5 py-2 ring-1 ring-[var(--wood-deep)]/10"
+                      >
+                        <p className="text-[9px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
+                          {k}
+                        </p>
+                        <p className="mt-0.5 truncate font-play text-xs font-bold text-[var(--play-ink)]">
+                          {v}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  {interLive.alerts.length > 0 && (
+                    <ul className="space-y-1">
+                      {interLive.alerts.map((a) => (
+                        <li
+                          key={a.code + a.message}
+                          className={`rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ${
+                            a.level === "critical"
+                              ? "bg-rose-50 text-rose-900 ring-rose-300"
+                              : a.level === "warn"
+                                ? "bg-amber-50 text-amber-950 ring-amber-300"
+                                : "bg-sky-50 text-sky-950 ring-sky-300"
+                          }`}
+                        >
+                          {a.message}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="text-[10px] text-[var(--play-muted)]">
+                    Lá nhà lời max #{interLive.hint.bestHouseCard} (~
+                    {formatXu(interLive.hint.bestHouseProfit)}) · rủi ro #
+                    {interLive.hint.worstHouseCard} (~
+                    {formatXu(interLive.hint.worstHouseProfit)})
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[32rem] text-left text-[11px]">
+                      <thead>
+                        <tr className="text-[9px] uppercase tracking-wide text-[var(--play-muted)]">
+                          <th className="py-1 pr-2">Lá</th>
+                          <th className="py-1 pr-2">Xu auth</th>
+                          <th className="py-1 pr-2">Liability</th>
+                          <th className="py-1 pr-2">House nếu thắng</th>
+                          <th className="py-1">P(mode)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {interLive.cards.map((c) => (
+                          <tr
+                            key={c.cardId}
+                            className="border-t border-[var(--wood-deep)]/10"
+                          >
+                            <td className="py-1.5 pr-2 font-semibold">
+                              #{c.cardId} {c.nameVi}
+                            </td>
+                            <td className="py-1.5 pr-2 tabular-nums">
+                              {formatXu(c.authBet)}
+                            </td>
+                            <td className="py-1.5 pr-2 tabular-nums">
+                              {formatXu(c.liability)}
+                            </td>
+                            <td
+                              className={`py-1.5 pr-2 font-play tabular-nums ${
+                                c.houseProfit >= 0
+                                  ? "text-emerald-700"
+                                  : "text-rose-700"
+                              }`}
+                            >
+                              {formatXu(Math.round(c.houseProfit))}
+                            </td>
+                            <td className="py-1.5 font-play tabular-nums">
+                              {c.percent}%
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase text-[var(--play-muted)]">
+                        RTP theo mode (~50 ván)
+                      </p>
+                      <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-[11px]">
+                        {interLive.rolling.byMode.length === 0 ? (
+                          <li className="text-[var(--play-muted)]">
+                            Chưa có ván ghi nhận sau deploy
+                          </li>
+                        ) : (
+                          interLive.rolling.byMode.map((m) => (
+                            <li
+                              key={m.mode}
+                              className="flex justify-between gap-2 rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/10"
+                            >
+                              <span className="font-semibold">{m.mode}</span>
+                              <span className="tabular-nums text-[var(--play-muted)]">
+                                {m.rounds}v · RTP{" "}
+                                {m.rtpPct != null ? `${m.rtpPct}%` : "—"} · nhà{" "}
+                                {formatXu(m.houseProfit)}
+                              </span>
+                            </li>
+                          ))
+                        )}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase text-[var(--play-muted)]">
+                        Ván gần đây
+                      </p>
+                      <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-[11px]">
+                        {interLive.recent.length === 0 ? (
+                          <li className="text-[var(--play-muted)]">
+                            Chờ khóa ván đầu
+                          </li>
+                        ) : (
+                          interLive.recent.map((r) => (
+                            <li
+                              key={`${r.round}-${r.at}`}
+                              className="flex justify-between gap-2 rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/10"
+                            >
+                              <span>
+                                #{r.round} · {r.effectiveMode} → lá {r.winCard}
+                              </span>
+                              <span
+                                className={`tabular-nums ${
+                                  r.houseProfit >= 0
+                                    ? "text-emerald-700"
+                                    : "text-rose-700"
+                                }`}
+                              >
+                                {formatXu(Math.round(r.houseProfit))}
+                              </span>
+                            </li>
+                          ))
+                        )}
+                      </ul>
+                    </div>
+                  </div>
+                </>
+              )}
+            </section>
+          )}
+
           {interSubTab === "userWin" && (
             <section className="app-panel mt-3 space-y-3 p-3 sm:p-4">
               <div>
                 <p className="play-heading text-sm">User Win % — ép thắng theo xác suất</p>
                 <p className="mt-1 text-[11px] text-[var(--play-muted)]">
                   Mode Win không còn luôn 100%. Chỉnh <strong>80–100%</strong>:
-                  mỗi ván user có cược sẽ được ép thắng với xác suất đó; phần còn
+                  mỗi ván user có đặt xu sẽ được ép thắng với xác suất đó; phần còn
                   lại theo Inter phòng. 100% = như cũ.
                 </p>
               </div>
@@ -4819,8 +5323,9 @@ export default function AdminDashboard() {
                 Win bias + Vault→Inter
               </p>
               <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
-                Bias + nghiêng Big (5–8), − nghiêng Small (1–4). Link: Kho lỗ →
-                mode mất, Kho lãi → mode thắng.
+                Bias + nghiêng Big (5–8), − nghiêng Small (1–4). Link gộp flag
+                từng kho (tab Kho · interSignal). Combine: any / weighted /
+                priority.
               </p>
               <div className="mt-2 flex flex-wrap items-end gap-2">
                 <label className="text-[10px] font-semibold text-[var(--play-muted)]">
@@ -4846,6 +5351,26 @@ export default function AdminDashboard() {
                     }
                   />
                   Bật vault link
+                </label>
+                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                  Combine
+                  <select
+                    value={vaultLinkDraft.combine}
+                    onChange={(e) =>
+                      setVaultLinkDraft((d) => ({
+                        ...d,
+                        combine: e.target.value as
+                          | "any"
+                          | "weighted"
+                          | "priority",
+                      }))
+                    }
+                    className="app-input mt-0.5 !py-1"
+                  >
+                    <option value="any">any (lỗ ưu tiên)</option>
+                    <option value="weighted">weighted (gộp net)</option>
+                    <option value="priority">priority (kho ưu tiên)</option>
+                  </select>
                 </label>
                 <label className="text-[10px] font-semibold text-[var(--play-muted)]">
                   Ngưỡng lỗ
@@ -4889,6 +5414,11 @@ export default function AdminDashboard() {
                     <option value="app">app</option>
                     <option value="fed">fed</option>
                     <option value="cool">cool</option>
+                    <option value="vaultguard">vaultguard</option>
+                    <option value="vaultpct">vaultpct</option>
+                    <option value="flowguard">flowguard</option>
+                    <option value="moneysteer">moneysteer</option>
+                    <option value="crowdcap">crowdcap</option>
                   </select>
                 </label>
                 <label className="text-[10px] font-semibold text-[var(--play-muted)]">
@@ -4905,8 +5435,28 @@ export default function AdminDashboard() {
                   >
                     <option value="big">big</option>
                     <option value="user">user</option>
+                    <option value="softuser">softuser</option>
                     <option value="hot">hot</option>
                     <option value="auto">auto</option>
+                    <option value="moneysteer">moneysteer</option>
+                  </select>
+                </label>
+                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                  Idle (trung tính)
+                  <select
+                    value={vaultLinkDraft.idleMode}
+                    onChange={(e) =>
+                      setVaultLinkDraft((d) => ({
+                        ...d,
+                        idleMode: e.target.value,
+                      }))
+                    }
+                    className="app-input mt-0.5 !py-1"
+                  >
+                    <option value="">Giữ mode hiện tại</option>
+                    <option value="auto">auto</option>
+                    <option value="all">all</option>
+                    <option value="flat">flat</option>
                   </select>
                 </label>
                 <button
@@ -4918,6 +5468,26 @@ export default function AdminDashboard() {
                   Lưu bias / link
                 </button>
               </div>
+              {(data.vault?.interFlags || data.vaultArcana?.interFlags) && (
+                <p className="mt-2 text-[10px] text-[var(--play-muted)]">
+                  Tín hiệu: Tarot{" "}
+                  <strong>
+                    {data.vault?.interFlags?.interSignal ? "ON" : "OFF"}
+                  </strong>
+                  {data.vault?.interFlags
+                    ? ` w${data.vault.interFlags.interWeightPct} p${data.vault.interFlags.interPriority}`
+                    : ""}
+                  {" · "}
+                  Arcana{" "}
+                  <strong>
+                    {data.vaultArcana?.interFlags?.interSignal ? "ON" : "OFF"}
+                  </strong>
+                  {data.vaultArcana?.interFlags
+                    ? ` w${data.vaultArcana.interFlags.interWeightPct} p${data.vaultArcana.interFlags.interPriority}`
+                    : ""}
+                  {" — chỉnh chi tiết ở tab Kho."}
+                </p>
+              )}
             </div>
 
             {isInterRotating(data.inter.mode) && data.inter.all && (
@@ -5318,6 +5888,7 @@ export default function AdminDashboard() {
             {(data.inter.mode === "app" ||
               data.inter.mode === "softapp" ||
               data.inter.mode === "user" ||
+              data.inter.mode === "softuser" ||
               data.inter.mode === "fed" ||
               data.inter.mode === "softfed" ||
               data.inter.mode === "hedge" ||
@@ -5325,6 +5896,11 @@ export default function AdminDashboard() {
               data.inter.mode === "momentum" ||
               data.inter.mode === "sparse" ||
               data.inter.mode === "dense" ||
+              data.inter.mode === "vaultguard" ||
+              data.inter.mode === "vaultpct" ||
+              data.inter.mode === "flowguard" ||
+              data.inter.mode === "moneysteer" ||
+              data.inter.mode === "crowdcap" ||
               data.inter.effectiveMode === "app" ||
               data.inter.effectiveMode === "softapp" ||
               data.inter.effectiveMode === "user" ||
@@ -5334,10 +5910,13 @@ export default function AdminDashboard() {
               data.inter.effectiveMode === "contrarian" ||
               data.inter.effectiveMode === "momentum" ||
               data.inter.effectiveMode === "sparse" ||
-              data.inter.effectiveMode === "dense") && (
+              data.inter.effectiveMode === "dense" ||
+              data.inter.effectiveMode === "vaultpct" ||
+              data.inter.effectiveMode === "flowguard" ||
+              data.inter.effectiveMode === "moneysteer") && (
               <p className="text-[10px] text-[var(--play-muted)]">
-                Theo stake user đăng nhập · Trả = cược×hệ số · Lời app = tổng
-                stake − trả
+                Theo stake user đăng nhập · Trả = xu×hệ số · Lời app = tổng
+                stake − trả · Mode % kho: vaultpct / flowguard / moneysteer
               </p>
             )}
             {(() => {
@@ -5484,7 +6063,7 @@ export default function AdminDashboard() {
                   l.message.includes("Inter:"),
               ).length === 0 && (
                 <li className="py-3 text-center text-[var(--play-muted)]">
-                  Chưa có log Inter — đợi khóa cược ván sau
+                  Chưa có log Inter — đợi khóa ván sau
                 </li>
               )}
             </ul>
@@ -5494,7 +6073,7 @@ export default function AdminDashboard() {
         </>
       )}
 
-      {tab === "vault" && main && activeVault && (
+      {tab === "vault" && canVault && activeVault && (
         <>
           <section className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
             {[
@@ -5503,7 +6082,7 @@ export default function AdminDashboard() {
                 formatXu(activeVault.balance),
                 true,
               ],
-              ["Tổng cược vào", formatXu(activeVault.totalStakeIn), false],
+              ["Tổng xu vào", formatXu(activeVault.totalStakeIn), false],
               ["Tổng trả thưởng", formatXu(activeVault.totalPayoutOut), false],
               ["Đã bơm (mint)", formatXu(activeVault.totalMinted), false],
               ["Đã rút (burn)", formatXu(activeVault.totalBurned), false],
@@ -5525,6 +6104,238 @@ export default function AdminDashboard() {
                 </p>
               </div>
             ))}
+          </section>
+
+          {activeVault.health && (
+            <section className="app-panel mt-3 space-y-2 p-3">
+              <p className="play-heading text-sm">% lỗ / lãi kho</p>
+              <p className="text-[11px] text-[var(--play-muted)]">
+                Edge = (xu vào − trả) / xu vào. Band + intensity (−2
+                hút … +2 nhả) dùng cho mode{" "}
+                <strong>vaultpct / flowguard / moneysteer</strong>.
+              </p>
+              <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {(
+                  [
+                    ["Edge all-time", `${activeVault.health.edgePct}%`],
+                    ["Blend (ưu tiên)", `${activeVault.health.blendEdgePct}%`],
+                    ["Flow 1 giờ", `${activeVault.health.flowHourEdgePct}%`],
+                    ["Flow 24 giờ", `${activeVault.health.flowDayEdgePct}%`],
+                    [
+                      "Net / balance",
+                      `${activeVault.health.netVsBalancePct}%`,
+                    ],
+                    [
+                      "Band",
+                      `${activeVault.health.band} · i${activeVault.health.steerIntensity}`,
+                    ],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div
+                    key={label}
+                    className={`rounded-lg bg-white/70 px-2.5 py-2 ring-1 ${
+                      activeVault.health!.band.includes("loss")
+                        ? "ring-rose-300/50"
+                        : activeVault.health!.band.includes("profit")
+                          ? "ring-emerald-300/50"
+                          : "ring-[var(--wood-deep)]/10"
+                    }`}
+                  >
+                    <p className="text-[9px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
+                      {label}
+                    </p>
+                    <p className="font-play mt-0.5 text-sm font-bold tabular-nums text-[var(--play-ink)]">
+                      {value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section className="app-panel mt-3 space-y-2 p-3">
+            <p className="play-heading text-sm">Flag → Inter auto</p>
+            <p className="text-[11px] text-[var(--play-muted)]">
+              Bật <strong>interSignal</strong> để kho này tham gia vault-link.
+              Ưu tiên <strong>usePercent</strong> (edge %) — ngưỡng xu chỉ khi
+              tắt %. Weight / priority cho combine weighted / priority.
+            </p>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="flex items-center gap-1 text-[11px] font-semibold">
+                <input
+                  type="checkbox"
+                  checked={vaultFlagsDraft.interSignal}
+                  onChange={(e) =>
+                    setVaultFlagsDraft((d) => ({
+                      ...d,
+                      interSignal: e.target.checked,
+                    }))
+                  }
+                />
+                interSignal
+              </label>
+              <label className="flex items-center gap-1 text-[11px] font-semibold">
+                <input
+                  type="checkbox"
+                  checked={!!vaultFlagsDraft.usePercent}
+                  onChange={(e) =>
+                    setVaultFlagsDraft((d) => ({
+                      ...d,
+                      usePercent: e.target.checked,
+                    }))
+                  }
+                />
+                usePercent
+              </label>
+              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                Loss %
+                <input
+                  type="number"
+                  min={0.5}
+                  max={80}
+                  step={0.5}
+                  value={vaultFlagsDraft.lossPct ?? 8}
+                  onChange={(e) =>
+                    setVaultFlagsDraft((d) => ({
+                      ...d,
+                      lossPct: Number(e.target.value) || 8,
+                    }))
+                  }
+                  className="app-input mt-0.5 !w-20 !py-1"
+                />
+              </label>
+              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                Profit %
+                <input
+                  type="number"
+                  min={0.5}
+                  max={80}
+                  step={0.5}
+                  value={vaultFlagsDraft.profitPct ?? 12}
+                  onChange={(e) =>
+                    setVaultFlagsDraft((d) => ({
+                      ...d,
+                      profitPct: Number(e.target.value) || 12,
+                    }))
+                  }
+                  className="app-input mt-0.5 !w-20 !py-1"
+                />
+              </label>
+              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                Weight %
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={vaultFlagsDraft.interWeightPct}
+                  onChange={(e) =>
+                    setVaultFlagsDraft((d) => ({
+                      ...d,
+                      interWeightPct: Number(e.target.value) || 0,
+                    }))
+                  }
+                  className="app-input mt-0.5 !w-20 !py-1"
+                />
+              </label>
+              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                Priority
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={vaultFlagsDraft.interPriority}
+                  onChange={(e) =>
+                    setVaultFlagsDraft((d) => ({
+                      ...d,
+                      interPriority: Number(e.target.value) || 0,
+                    }))
+                  }
+                  className="app-input mt-0.5 !w-20 !py-1"
+                />
+              </label>
+              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                Ngưỡng lỗ xu (0=global)
+                <input
+                  type="number"
+                  min={0}
+                  value={vaultFlagsDraft.lossThresholdXu}
+                  onChange={(e) =>
+                    setVaultFlagsDraft((d) => ({
+                      ...d,
+                      lossThresholdXu: Number(e.target.value) || 0,
+                    }))
+                  }
+                  className="app-input mt-0.5 !w-28 !py-1"
+                />
+              </label>
+              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                Ngưỡng lãi xu (0=global)
+                <input
+                  type="number"
+                  min={0}
+                  value={vaultFlagsDraft.profitThresholdXu}
+                  onChange={(e) =>
+                    setVaultFlagsDraft((d) => ({
+                      ...d,
+                      profitThresholdXu: Number(e.target.value) || 0,
+                    }))
+                  }
+                  className="app-input mt-0.5 !w-28 !py-1"
+                />
+              </label>
+              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                Mode khi lỗ
+                <select
+                  value={vaultFlagsDraft.onLossMode}
+                  onChange={(e) =>
+                    setVaultFlagsDraft((d) => ({
+                      ...d,
+                      onLossMode: e.target.value,
+                    }))
+                  }
+                  className="app-input mt-0.5 !py-1"
+                >
+                  <option value="">(global)</option>
+                  <option value="small">small</option>
+                  <option value="app">app</option>
+                  <option value="fed">fed</option>
+                  <option value="cool">cool</option>
+                  <option value="vaultguard">vaultguard</option>
+                  <option value="vaultpct">vaultpct</option>
+                  <option value="flowguard">flowguard</option>
+                  <option value="moneysteer">moneysteer</option>
+                </select>
+              </label>
+              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                Mode khi lãi
+                <select
+                  value={vaultFlagsDraft.onProfitMode}
+                  onChange={(e) =>
+                    setVaultFlagsDraft((d) => ({
+                      ...d,
+                      onProfitMode: e.target.value,
+                    }))
+                  }
+                  className="app-input mt-0.5 !py-1"
+                >
+                  <option value="">(global)</option>
+                  <option value="big">big</option>
+                  <option value="user">user</option>
+                  <option value="softuser">softuser</option>
+                  <option value="hot">hot</option>
+                  <option value="auto">auto</option>
+                  <option value="moneysteer">moneysteer</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                disabled={vaultFlagsBusy}
+                onClick={() => void saveVaultInterFlags()}
+                className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-50"
+              >
+                {vaultFlagsBusy ? "…" : "Lưu flag kho"}
+              </button>
+            </div>
           </section>
 
           <section className="app-panel mt-3 p-3">
@@ -5699,7 +6510,7 @@ export default function AdminDashboard() {
         </>
       )}
 
-      {tab === "arcana" && main && data.arcanaConfig && (
+      {tab === "arcana" && canArcanaCfg && data.arcanaConfig && (
         <>
           <section className="app-panel mt-4 space-y-3 p-3">
             <div className="flex items-center justify-between gap-2">
@@ -6081,7 +6892,7 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {(hisBusy || hisData) && main && (
+      {(hisBusy || hisData) && (canIp || canTools) && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-3 sm:items-center"
           role="dialog"

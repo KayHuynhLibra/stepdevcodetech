@@ -21,12 +21,12 @@ export interface PlayerSession {
   balance: number;
   /** cardId -> amount for current round */
   bets: Map<number, number>;
-  /** Số lần đặt cược trong ngày (mỗi lần confirm = 1) */
+  /** Số lần đặt xu trong ngày (mỗi lần confirm = 1) */
   guessesToday: number;
   /** Tổng xu thắng trong ngày (chỉ phần lời) */
   winToday: number;
   dayKey: string;
-  /** Tổng xu đã đặt cược trong tuần (Sao bài Tarot) */
+  /** Tổng xu đã đặt xu trong tuần (Sao bài Tarot) */
   stakeWeek: number;
   weekKey: string;
   /** Chuỗi thua/thắng Tarot (có cược khi settle) */
@@ -45,6 +45,17 @@ export interface LeaderboardEntry {
   avatar: string;
   winToday: number;
   isYou?: boolean;
+}
+
+/** Xếp hạng theo xu đang cầm */
+export interface BalanceLeaderboardEntry {
+  rank: number;
+  name: string;
+  avatar: string;
+  balance: number;
+  isYou?: boolean;
+  userId?: string;
+  code?: string;
 }
 
 /** Xếp hạng Sao bài — xu dùng dự đoán trong tuần */
@@ -183,7 +194,7 @@ export const STARTING_BALANCE = 20_000;
 export const MIN_BET = 10;
 /** Trần xu trên 1 lá trong 1 ván. */
 export const MAX_BET = 1_000_000;
-/** Bước tăng xu khi đặt cược */
+/** Bước tăng xu khi đặt xu */
 export const BET_STEP = 10;
 /** Tối đa số lá khác nhau mỗi người được đặt trong 1 ván */
 export const MAX_CARDS_PER_ROUND = 5;

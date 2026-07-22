@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { randomBytes } from "crypto";
+import { todayKey, weekKey } from "./types.js";
+import { trafficRollupStore } from "./trafficRollupStore.js";
 
 export interface BetEntry {
   id: string;
@@ -32,11 +34,48 @@ const GLOBAL_CAP = 2000;
 export const PER_USER_BET_CAP = 80;
 const PER_USER_CAP = PER_USER_BET_CAP;
 
+function periodFromEntries(
+  entries: BetEntry[],
+  predicate: (e: BetEntry) => boolean,
+) {
+  let stake = 0;
+  let payout = 0;
+  let profit = 0;
+  let bets = 0;
+  let wins = 0;
+  let loses = 0;
+  const users = new Set<string>();
+  const rounds = new Set<number>();
+  for (const e of entries) {
+    if (!predicate(e)) continue;
+    stake += e.amount;
+    payout += e.payout;
+    profit += e.profit;
+    bets += 1;
+    if (e.result === "win") wins += 1;
+    else loses += 1;
+    users.add(e.userId);
+    rounds.add(e.round);
+  }
+  return {
+    stake,
+    payout,
+    profit,
+    bets,
+    wins,
+    loses,
+    uniqueUsers: users.size,
+    uniqueRounds: rounds.size,
+    houseEdge: stake - payout,
+  };
+}
+
 export class BetStore {
   private entries: BetEntry[] = [];
 
   constructor() {
     this.load();
+    trafficRollupStore.seedFromBets(this.entries);
   }
 
   private load() {
@@ -73,9 +112,7 @@ export class BetStore {
   }
 
   /** Ghi toàn bộ cược của user trong 1 ván (sau khi biết lá thắng). */
-  recordRoundBets(
-    rows: Omit<BetEntry, "id" | "at">[],
-  ) {
+  recordRoundBets(rows: Omit<BetEntry, "id" | "at">[]) {
     const at = Date.now();
     for (const row of rows) {
       this.entries.unshift({
@@ -88,6 +125,7 @@ export class BetStore {
       this.entries.length = GLOBAL_CAP;
     }
     this.save();
+    trafficRollupStore.recordBets(rows, at);
   }
 
   getByUser(userId: string, limit = 30): BetEntry[] {
@@ -124,7 +162,10 @@ export class BetStore {
     return { stake24h, bets24h, profit24h };
   }
 
-  /** Tổng lưu lượng cược đã ghi (toàn bộ bản ghi trong store). */
+  /**
+   * Tổng lưu lượng cược đã ghi + cửa sổ rolling + lịch UTC.
+   * `periods` ưu tiên rollup (bền); live window từ bản ghi còn trong store.
+   */
   getTrafficStats() {
     let stakeTotal = 0;
     let payoutTotal = 0;
@@ -158,6 +199,30 @@ export class BetStore {
       }
     }
 
+    const nowDate = new Date();
+    const calDay = todayKey(nowDate);
+    const calWeek = weekKey(nowDate);
+    const calMonth = nowDate.toISOString().slice(0, 7);
+
+    const rolling = {
+      hour: periodFromEntries(this.entries, (e) => now - e.at < 60 * 60 * 1000),
+      rolling24h: periodFromEntries(this.entries, (e) => now - e.at < dayMs),
+      calendarDay: periodFromEntries(
+        this.entries,
+        (e) => todayKey(new Date(e.at)) === calDay,
+      ),
+      calendarWeek: periodFromEntries(
+        this.entries,
+        (e) => weekKey(new Date(e.at)) === calWeek,
+      ),
+      calendarMonth: periodFromEntries(
+        this.entries,
+        (e) => new Date(e.at).toISOString().slice(0, 7) === calMonth,
+      ),
+    };
+
+    const rollup = trafficRollupStore.getPeriods(nowDate);
+
     return {
       betRows: this.entries.length,
       uniqueUsers: users.size,
@@ -167,10 +232,13 @@ export class BetStore {
       profitTotal,
       winCount,
       loseCount,
+      /** rolling 24h — giữ tương thích UI cũ */
       stakeToday,
       betsToday,
       stakeHour,
       betsHour,
+      rolling,
+      periods: rollup,
     };
   }
 }

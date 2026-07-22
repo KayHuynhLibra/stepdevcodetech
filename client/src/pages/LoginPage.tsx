@@ -24,6 +24,7 @@ import {
 } from "../guest";
 import { getDevicePayload } from "../device";
 import { AppShell } from "../components/AppShell";
+import { setPlayComplianceAck } from "../compliance";
 
 export type AuthPage = "login" | "register" | "recover" | "changePw";
 
@@ -41,6 +42,9 @@ export default function LoginPage({ page }: { page: AuthPage }) {
   const [nextPassword, setNextPassword] = useState("");
   const [recoveryCode, setRecoveryCode] = useState("");
   const [inviteCode, setInviteCode] = useState("");
+  const [ageOk, setAgeOk] = useState(false);
+  const [termsOk, setTermsOk] = useState(false);
+  const [requireInvite, setRequireInvite] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(
     () => (location.state as { info?: string } | null)?.info ?? null,
@@ -73,6 +77,21 @@ export default function LoginPage({ page }: { page: AuthPage }) {
     }
   }, [page, nav]);
 
+  useEffect(() => {
+    if (page !== "register") return;
+    let cancelled = false;
+    api<{ ok: true; requireInvite: boolean }>("/api/auth/register-config")
+      .then((r) => {
+        if (!cancelled) setRequireInvite(r.requireInvite !== false);
+      })
+      .catch(() => {
+        if (!cancelled) setRequireInvite(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [page]);
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -100,6 +119,14 @@ export default function LoginPage({ page }: { page: AuthPage }) {
       }
       const path =
         page === "login" ? "/api/auth/login" : "/api/auth/register";
+      if (page === "register") {
+        if (!ageOk || !termsOk) {
+          setError(
+            "Cần xác nhận đủ 18 tuổi và đồng ý Điều khoản / Bảo mật.",
+          );
+          return;
+        }
+      }
       const merge = getGuestMergePayload();
       const dev = getDevicePayload();
       const data = await api<{
@@ -112,7 +139,7 @@ export default function LoginPage({ page }: { page: AuthPage }) {
         body: JSON.stringify({
           username,
           password,
-          ...(page === "register"
+          ...(page === "register" && requireInvite
             ? { inviteCode: inviteCode.trim().toUpperCase() }
             : {}),
           ...merge,
@@ -121,6 +148,7 @@ export default function LoginPage({ page }: { page: AuthPage }) {
       });
       saveSession(data.token, data.user);
       clearGuestMergePending();
+      if (page === "register") setPlayComplianceAck();
       if (data.user.recoveryCode && page === "register") {
         setInfo(
           `Lưu mã khôi phục: ${data.user.recoveryCode} (cần khi quên mật khẩu)`,
@@ -228,7 +256,7 @@ export default function LoginPage({ page }: { page: AuthPage }) {
                 />
               </label>
             )}
-            {page === "register" && (
+            {page === "register" && requireInvite && (
               <label className="block text-xs font-semibold text-[var(--play-muted)]">
                 Mã thành viên (8 ký tự)
                 <input
@@ -252,6 +280,11 @@ export default function LoginPage({ page }: { page: AuthPage }) {
                   Bắt buộc — lấy mã từ admin
                 </span>
               </label>
+            )}
+            {page === "register" && !requireInvite && (
+              <p className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[10px] text-emerald-900 ring-1 ring-emerald-200/80">
+                Đăng ký mở — không cần mã mời.
+              </p>
             )}
             {page === "recover" && (
               <label className="block text-xs font-semibold text-[var(--play-muted)]">
@@ -304,6 +337,48 @@ export default function LoginPage({ page }: { page: AuthPage }) {
                   required
                 />
               </label>
+            )}
+
+            {page === "register" && (
+              <div className="space-y-2 rounded-lg bg-[var(--cream)]/80 px-2.5 py-2 ring-1 ring-[var(--wood-deep)]/10">
+                <p className="text-[10px] leading-relaxed text-[var(--play-muted)]">
+                  Xu là điểm ảo giải trí — không nạp/rút tiền thật.
+                </p>
+                <label className="flex cursor-pointer items-start gap-2 text-[11px] text-[var(--play-ink)]">
+                  <input
+                    type="checkbox"
+                    checked={ageOk}
+                    onChange={(e) => setAgeOk(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>Tôi đủ 18 tuổi (hoặc tuổi trưởng thành nơi tôi sống).</span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2 text-[11px] text-[var(--play-ink)]">
+                  <input
+                    type="checkbox"
+                    checked={termsOk}
+                    onChange={(e) => setTermsOk(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Đồng ý{" "}
+                    <Link
+                      to="/terms"
+                      className="font-bold text-[var(--wood-deep)] underline"
+                    >
+                      Điều khoản
+                    </Link>{" "}
+                    &{" "}
+                    <Link
+                      to="/privacy"
+                      className="font-bold text-[var(--wood-deep)] underline"
+                    >
+                      Bảo mật
+                    </Link>
+                    .
+                  </span>
+                </label>
+              </div>
             )}
 
             {error && (
@@ -387,6 +462,17 @@ export default function LoginPage({ page }: { page: AuthPage }) {
               Vào chơi nhanh (khách, tối đa 20 phút) ›
             </Link>
           </div>
+
+          <p className="mt-3 text-center text-[10px] leading-relaxed text-[var(--play-muted)]">
+            18+ · xu ảo ·{" "}
+            <Link to="/terms" className="underline-offset-2 hover:underline">
+              Điều khoản
+            </Link>
+            {" · "}
+            <Link to="/privacy" className="underline-offset-2 hover:underline">
+              Bảo mật
+            </Link>
+          </p>
         </div>
 
         <aside className="login-dedication mx-auto mt-4 max-w-[16rem]">

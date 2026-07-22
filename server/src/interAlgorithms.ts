@@ -1,4 +1,4 @@
-/** ~20 thuật toán xoay / chọn lá (không gồm ép lá 1–8). */
+/** ~26 thuật toán xoay / chọn lá (không gồm ép lá 1–8). */
 export const ROTATE_MODE_IDS = [
   "auto",
   "small",
@@ -15,11 +15,17 @@ export const ROTATE_MODE_IDS = [
   "softfed",
   "fed",
   "user",
+  "softuser",
   "contrarian",
   "momentum",
   "sparse",
   "dense",
   "wild",
+  "vaultguard",
+  "vaultpct",
+  "flowguard",
+  "moneysteer",
+  "crowdcap",
 ] as const;
 
 export type RotateMode = (typeof ROTATE_MODE_IDS)[number];
@@ -43,23 +49,51 @@ export const ROTATE_LABELS: Record<RotateMode, string> = {
   hedge: "Hedge — lệch profit² nhà",
   softfed: "SoftFed — giữ xu vừa phải",
   fed: "Fed — lá nhà lời tối đa",
-  user: "User — nhả xu (cược cao)",
-  contrarian: "Contrarian — ưu tiên lá ít cược",
-  momentum: "Momentum — theo lá nhiều cược",
+  user: "User — nhả xu (đặt cao)",
+  softuser: "SoftUser — nhả xu nhẹ",
+  contrarian: "Contrarian — ưu tiên lá ít người đặt",
+  momentum: "Momentum — theo lá nhiều người đặt",
   sparse: "Sparse — boost lá chưa ai đánh",
-  dense: "Dense — boost lá đông cược",
+  dense: "Dense — boost lá đông người đặt",
   wild: "Wild — ngẫu nhiên 2 lá trọng số cao",
+  vaultguard: "VaultGuard — kho lỗ→hút, lãi→nhả nhẹ (xu)",
+  vaultpct: "VaultPct — theo % edge kho Tarot",
+  flowguard: "FlowGuard — theo % dòng tiền 1h/24h",
+  moneysteer: "MoneySteer — gộp % cả 2 kho + flow (điều khiển)",
+  crowdcap: "CrowdCap — giảm lá bị đám đông pile",
 };
 
 /** Bộ mode 1–4 — chuỗi xoay cố định. */
 export const MODE_PACK_ROTATIONS: Record<PackMode, RotateMode[]> = {
   pack1: ["auto", "flat", "small", "big", "cool", "mid"],
-  pack2: ["app", "softapp", "hedge", "softfed", "fed", "contrarian"],
-  pack3: ["user", "momentum", "hot", "dense", "sparse", "highmult"],
+  pack2: [
+    "app",
+    "softapp",
+    "hedge",
+    "softfed",
+    "fed",
+    "vaultguard",
+    "vaultpct",
+    "flowguard",
+    "moneysteer",
+    "contrarian",
+  ],
+  pack3: [
+    "user",
+    "softuser",
+    "momentum",
+    "hot",
+    "dense",
+    "sparse",
+    "highmult",
+  ],
   pack4: [
     "wild",
-    "lowmult",
-    "highmult",
+    "crowdcap",
+    "vaultguard",
+    "vaultpct",
+    "moneysteer",
+    "softuser",
     "cool",
     "hot",
     "fed",
@@ -70,9 +104,9 @@ export const MODE_PACK_ROTATIONS: Record<PackMode, RotateMode[]> = {
 
 export const MODE_PACK_LABELS: Record<PackMode, string> = {
   pack1: "Bộ 1 — Cân bằng / bias nhóm",
-  pack2: "Bộ 2 — Giữ xu / nhà",
+  pack2: "Bộ 2 — Giữ xu / nhà / kho",
   pack3: "Bộ 3 — Trả thưởng / cầu",
-  pack4: "Bộ 4 — Hỗn hợp 20 thuật",
+  pack4: "Bộ 4 — Hỗn hợp + guard",
 };
 
 export function isRotateMode(v: unknown): v is RotateMode {
@@ -98,7 +132,11 @@ export const ALL_ROTATION_DEFAULT: RotateMode[] = [
   "flat",
   "app",
   "hedge",
+  "vaultguard",
+  "vaultpct",
+  "moneysteer",
   "fed",
   "cool",
   "user",
+  "crowdcap",
 ];

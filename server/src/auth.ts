@@ -7,7 +7,10 @@ import {
   isAllowedAvatar,
   normalizeAvatar,
 } from "./avatars.js";
-import { STARTING_BALANCE, weekKey } from "./types.js";
+import { STARTING_BALANCE, weekKey, MIN_BET } from "./types.js";
+
+/** Trần tặng xu mỗi lần (P2P) */
+export const GIFT_XU_MAX = 100_000;
 import {
   demoteRank,
   isCultivationRank,
@@ -16,6 +19,24 @@ import {
 } from "./cultivationRanks.js";
 import { cultivationStore } from "./cultivationStore.js";
 import { vaultStore } from "./vaultStore.js";
+import {
+  canControlVoiceRoomLock as grantsCanControlVoiceRoomLock,
+  clampStaffGrantLevel,
+  hasCapability,
+  normalizeVoiceRoomGrants,
+  STAFF_GRANT_LEVEL_MAX,
+  STAFF_GRANT_LEVEL_MIN,
+} from "./grants.js";
+
+export {
+  effectiveStaffGrantLevel,
+  GRANT_LEVEL_LABELS,
+  hasCapability,
+  ROLE_DEFAULT_LEVEL,
+  STAFF_GRANT_LEVEL_MAX,
+  STAFF_GRANT_LEVEL_MIN,
+  type GrantCapability,
+} from "./grants.js";
 
 export type { CultivationRank } from "./cultivationRanks.js";
 export {
@@ -24,7 +45,16 @@ export {
   isCultivationRank,
 } from "./cultivationRanks.js";
 
-export type UserRole = "user" | "admin" | "mainadmin" | "deal" | "onl" | "tutien" | "mod";
+export type UserRole =
+  | "user"
+  | "admin"
+  | "mainadmin"
+  | "deal"
+  | "onl"
+  | "tutien"
+  | "mod"
+  | "eco"
+  | "audit";
 
 /** Đủ số ván lifetime → VIP tự động */
 export const VIP_ROUNDS_REQUIRED = 10_000;
@@ -61,7 +91,7 @@ export interface UserRecord {
    * Khi mode=win: xác suất ép thắng mỗi ván (80–100). 100 = luôn thắng như cũ.
    */
   outcomeWinPct?: number;
-  /** Số ván đã chơi (lifetime — có đặt cược khi settle) */
+  /** Số ván đã chơi (lifetime — có đặt xu khi settle) */
   roundsPlayed?: number;
   /** Admin cấp VIP thủ công */
   vipGranted?: boolean;
@@ -93,6 +123,15 @@ export interface UserRecord {
   /** Hết hạn kỳ phí duy trì đã trả */
   cultivationPaidUntil?: number;
   cultivationLastChargeAt?: number;
+  /**
+   * Room voice được mainadmin/admin cấp — số phòng 1…5.
+   * Chỉ người có đúng Room# mới đóng phòng / đặt mật khẩu.
+   */
+  voiceRoomGrants?: number[];
+  /**
+   * Override bậc staff L0–L6 (grants.ts). Thiếu → suy từ role.
+   */
+  staffGrantLevel?: number;
 }
 
 /** Lịch sử IP theo user — không lộ ra PublicUser / client player */
@@ -154,6 +193,10 @@ export interface PublicUser {
   usernameRenamesLeft: number;
   cultivationRank?: CultivationRank;
   cultivationPaidUntil?: number;
+  /** Room# được cấp để đóng phòng / đặt MK (1…5) */
+  voiceRoomGrants?: number[];
+  /** Override bậc staff 0–6; thiếu → theo role */
+  staffGrantLevel?: number;
 }
 
 /** Trần xu mang từ guest → account */
@@ -335,10 +378,39 @@ function toPublic(u: UserRecord, opts?: { includeRecovery?: boolean }): PublicUs
   if (u.cultivationPaidUntil && u.cultivationPaidUntil > 0) {
     pub.cultivationPaidUntil = u.cultivationPaidUntil;
   }
+  const grants = normalizeVoiceRoomGrants(u.voiceRoomGrants);
+  if (grants.length) pub.voiceRoomGrants = grants;
+  if (u.staffGrantLevel != null) {
+    pub.staffGrantLevel = clampStaffGrantLevel(u.staffGrantLevel);
+  }
   if (opts?.includeRecovery && u.recoveryCode) {
     pub.recoveryCode = u.recoveryCode;
   }
   return pub;
+}
+
+export { normalizeVoiceRoomGrants };
+
+/** Đóng phòng / đặt MK — mainadmin/L6 hoặc đúng Room# đã cấp. */
+export function canControlVoiceRoomLock(
+  user:
+    | {
+        role: UserRole;
+        voiceRoomGrants?: number[];
+        staffGrantLevel?: number;
+      }
+    | null
+    | undefined,
+  roomId: number,
+): boolean {
+  return grantsCanControlVoiceRoomLock(user, roomId);
+}
+
+/** Mainadmin hoặc admin (hoặc L5+ override) cấp Room#. */
+export function canGrantVoiceRooms(
+  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+): boolean {
+  return hasCapability(user, "grant_rooms");
 }
 
 export function isUserOutcomeMode(v: unknown): v is UserOutcomeMode {
@@ -359,6 +431,19 @@ function isStaffRole(role: UserRole): boolean {
   return role === "admin" || role === "mainadmin";
 }
 
+function isAssignableStaffRole(role: string): role is UserRole {
+  return (
+    role === "user" ||
+    role === "deal" ||
+    role === "admin" ||
+    role === "onl" ||
+    role === "tutien" ||
+    role === "mod" ||
+    role === "eco" ||
+    role === "audit"
+  );
+}
+
 function isUserRecord(u: unknown): u is UserRecord {
   if (!u || typeof u !== "object") return false;
   const r = u as UserRecord;
@@ -369,7 +454,9 @@ function isUserRecord(u: unknown): u is UserRecord {
     r.role === "deal" ||
     r.role === "onl" ||
     r.role === "tutien" ||
-    r.role === "mod";
+    r.role === "mod" ||
+    r.role === "eco" ||
+    r.role === "audit";
   return (
     typeof r.id === "string" &&
     typeof r.username === "string" &&
@@ -808,23 +895,63 @@ export class AuthStore {
     return { ok: true, user: toPublic(user) };
   }
 
-  /** Mainadmin: đổi role user / deal / admin / onl / tutien / mod (không đụng mainadmin). */
+  /** Mainadmin: đổi role (không đụng mainadmin). */
   setUserRole(
     userId: string,
-    role: "user" | "deal" | "admin" | "onl" | "tutien" | "mod",
+    role: "user" | "deal" | "admin" | "onl" | "tutien" | "mod" | "eco" | "audit",
   ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
     const user = this.byId.get(userId);
     if (!user) return { ok: false, reason: "Không tìm thấy user" };
     if (user.role === "mainadmin") {
       return { ok: false, reason: "Không đổi role mainadmin" };
     }
+    if (!isAssignableStaffRole(role)) {
+      return { ok: false, reason: "Role không hợp lệ" };
+    }
     user.role = role;
-    if (role === "admin") {
+    if (role === "admin" || role === "eco" || role === "audit") {
       user.mustChangePassword = user.mustChangePassword ?? true;
     }
     this.revokeAllTokens(userId);
     this.scheduleSave();
     this.scheduleTokenSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  /** Mainadmin/admin: cấp Room# (1…5) để đóng phòng / đặt mật khẩu. */
+  setVoiceRoomGrants(
+    userId: string,
+    rooms: unknown,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    const grants = normalizeVoiceRoomGrants(rooms);
+    if (grants.length) user.voiceRoomGrants = grants;
+    else delete user.voiceRoomGrants;
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  /** Mainadmin: gán / xóa override bậc staff L0–L6. null = theo role. */
+  setStaffGrantLevel(
+    userId: string,
+    level: unknown,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    if (user.role === "mainadmin") {
+      return { ok: false, reason: "Không override bậc mainadmin" };
+    }
+    if (level === null || level === undefined || level === "") {
+      delete user.staffGrantLevel;
+    } else {
+      const n = clampStaffGrantLevel(level);
+      if (n < STAFF_GRANT_LEVEL_MIN || n > STAFF_GRANT_LEVEL_MAX) {
+        return { ok: false, reason: "Bậc phải 0…6" };
+      }
+      user.staffGrantLevel = n;
+    }
+    this.scheduleSave();
     return { ok: true, user: toPublic(user) };
   }
 
@@ -1167,7 +1294,7 @@ export class AuthStore {
     return computeIsVip(user);
   }
 
-  /** +1 ván lifetime khi user có đặt cược và round settle. */
+  /** +1 ván lifetime khi user có đặt xu và round settle. */
   recordRoundPlayed(userId: string): PublicUser | null {
     const user = this.byId.get(userId);
     if (!user) return null;
@@ -1355,11 +1482,15 @@ export class AuthStore {
     let deals = 0;
     let admins = 0;
     let mainadmins = 0;
+    let ecos = 0;
+    let audits = 0;
     let balanceTotal = 0;
     for (const u of this.byId.values()) {
       balanceTotal += u.balance;
       if (u.role === "mainadmin") mainadmins += 1;
       else if (u.role === "admin") admins += 1;
+      else if (u.role === "eco") ecos += 1;
+      else if (u.role === "audit") audits += 1;
       else if (u.role === "deal") deals += 1;
       else users += 1;
     }
@@ -1369,6 +1500,8 @@ export class AuthStore {
       dealAccounts: deals,
       adminAccounts: admins,
       mainadminAccounts: mainadmins,
+      ecoAccounts: ecos,
+      auditAccounts: audits,
       balanceTotal,
     };
   }
@@ -1451,6 +1584,108 @@ export class AuthStore {
     return { ok: true, user: toPublic(user) };
   }
 
+  /**
+   * Tặng xu P2P — zero-sum, không đụng vault.
+   * amount ≥ MIN_BET, ≤ GIFT_XU_MAX.
+   */
+  giftXu(
+    fromId: string,
+    toRef: { userId?: string; code?: string },
+    amountRaw: unknown,
+  ):
+    | {
+        ok: true;
+        from: PublicUser;
+        to: PublicUser;
+        amount: number;
+      }
+    | { ok: false; reason: string } {
+    const amount = Math.floor(Number(amountRaw));
+    if (!Number.isFinite(amount) || amount < MIN_BET) {
+      return { ok: false, reason: `Tối thiểu ${MIN_BET} xu` };
+    }
+    if (amount > GIFT_XU_MAX) {
+      return {
+        ok: false,
+        reason: `Tối đa ${GIFT_XU_MAX.toLocaleString("vi-VN")} xu / lần`,
+      };
+    }
+    const from = this.byId.get(fromId);
+    if (!from) return { ok: false, reason: "Không tìm thấy người gửi" };
+    if (from.banned) return { ok: false, reason: "Tài khoản bị khóa" };
+
+    let to: UserRecord | undefined;
+    const tid = String(toRef.userId ?? "").trim();
+    const code = String(toRef.code ?? "").trim();
+    if (tid) to = this.byId.get(tid);
+    else if (code) to = this.getByCode(code);
+    if (!to) return { ok: false, reason: "Không tìm thấy người nhận" };
+    if (to.banned) return { ok: false, reason: "Người nhận bị khóa" };
+    if (to.id === from.id) {
+      return { ok: false, reason: "Không thể tự tặng xu" };
+    }
+    if (from.balance < amount) {
+      return { ok: false, reason: "Số dư không đủ" };
+    }
+
+    from.balance -= amount;
+    to.balance += amount;
+    this.scheduleSave();
+    return {
+      ok: true,
+      from: toPublic(from),
+      to: toPublic(to),
+      amount,
+    };
+  }
+
+  /**
+   * BXH xu đang cầm — top balance, tôn trọng hideFromLeaderboard.
+   */
+  listBalanceLeaders(
+    limit = 20,
+    viewerUserId?: string,
+  ): {
+    rank: number;
+    name: string;
+    avatar: string;
+    balance: number;
+    isYou?: boolean;
+    userId?: string;
+    code?: string;
+  }[] {
+    const cap = Math.max(1, Math.min(50, Math.floor(limit) || 20));
+    const rows: {
+      id: string;
+      name: string;
+      avatar: string;
+      balance: number;
+      code: string;
+    }[] = [];
+    for (const u of this.byId.values()) {
+      if (u.hideFromLeaderboard) continue;
+      if (u.banned) continue;
+      if (u.balance <= 0) continue;
+      rows.push({
+        id: u.id,
+        name: userDisplayName(u),
+        avatar: normalizeAvatar(u.avatar),
+        balance: u.balance,
+        code: u.code,
+      });
+    }
+    rows.sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name));
+    return rows.slice(0, cap).map((r, i) => ({
+      rank: i + 1,
+      name: r.name,
+      avatar: r.avatar,
+      balance: r.balance,
+      userId: r.id,
+      code: r.code,
+      isYou: !!viewerUserId && r.id === viewerUserId,
+    }));
+  }
+
   setBalance(userId: string, balance: number) {
     const user = this.byId.get(userId);
     if (!user) return;
@@ -1521,24 +1756,23 @@ export function isMod(user: { role: UserRole } | null | undefined): boolean {
  * (Host phòng vẫn có quyền riêng khi đang ngồi ghế.)
  */
 export function canModerateVoiceRoom(
-  user: { role: UserRole } | null | undefined,
+  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
 ): boolean {
-  if (!user) return false;
-  return isStaff(user) || user.role === "mod";
+  return hasCapability(user, "voice_mod");
 }
 
-/** Tab Room trên dashboard — mainadmin hoặc mod. */
+/** Tab Room trên dashboard — mainadmin hoặc mod (hoặc L3+ override). */
 export function canAccessRoomAdmin(
-  user: { role: UserRole } | null | undefined,
+  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
 ): boolean {
-  if (!user) return false;
-  return user.role === "mainadmin" || user.role === "mod";
+  return hasCapability(user, "room_admin_tab");
 }
 
 /** Xem số online + danh sách người chơi (không gồm công cụ admin). */
-export function canSeeOnline(user: { role: UserRole } | null | undefined): boolean {
-  if (!user) return false;
-  return isStaff(user) || user.role === "onl";
+export function canSeeOnline(
+  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+): boolean {
+  return hasCapability(user, "see_online");
 }
 
 export function isOnlineViewer(user: { role: UserRole } | null | undefined): boolean {
@@ -1551,20 +1785,32 @@ export function isTutien(user: { role: UserRole } | null | undefined): boolean {
 
 /** Gán cảnh giới / sửa bảng màu — Tu Tiên hoặc mainadmin. */
 export function canManageCultivation(
-  user: { role: UserRole } | null | undefined,
+  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
 ): boolean {
-  if (!user) return false;
-  return user.role === "tutien" || user.role === "mainadmin";
+  return hasCapability(user, "cultivation_manage");
 }
 
 export function isMainAdmin(user: { role: UserRole }): boolean {
   return user.role === "mainadmin";
 }
 
-export function isBalanceOperator(user: { role: UserRole }): boolean {
-  return (
-    user.role === "admin" ||
-    user.role === "mainadmin" ||
-    user.role === "deal"
-  );
+export function isEco(user: { role: UserRole } | null | undefined): boolean {
+  return user?.role === "eco";
+}
+
+export function isAudit(user: { role: UserRole } | null | undefined): boolean {
+  return user?.role === "audit";
+}
+
+/** Dashboard staff (admin/main/eco/audit) — không gồm deal/mod/tutien. */
+export function canAccessStaffDashboard(
+  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+): boolean {
+  return hasCapability(user, "staff_dashboard");
+}
+
+export function isBalanceOperator(
+  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+): boolean {
+  return hasCapability(user, "balance_ops");
 }

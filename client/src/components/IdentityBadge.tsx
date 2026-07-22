@@ -14,6 +14,8 @@ import { CultivationChip } from "./CultivationChip";
 function roleLabel(role?: UserRole | "guest"): string {
   if (role === "mainadmin") return "Mainadmin";
   if (role === "admin") return "Admin";
+  if (role === "eco") return "Eco";
+  if (role === "audit") return "Audit";
   if (role === "deal") return "Deal";
   if (role === "onl") return "Onl";
   if (role === "tutien") return "Tu Tiên";

@@ -28,10 +28,14 @@ export interface PlayerInfoView {
 interface PlayerInfoSheetProps {
   open: boolean;
   player: PlayerInfoView | null;
+  /** User đang đăng nhập (để tặng xu) */
+  meId?: string | null;
+  canGift?: boolean;
   staff?: boolean;
   /** Deal / admin / mainadmin — chỉ cộng trừ xu (không outcome/VIP) */
   balanceOperator?: boolean;
   busy?: boolean;
+  giftBusy?: boolean;
   onClose: () => void;
   onSetOutcome?: (userId: string, mode: "normal" | "win" | "lose") => void;
   onSetVip?: (userId: string, isVip: boolean) => void;
@@ -41,21 +45,31 @@ interface PlayerInfoSheetProps {
     guestCode?: string;
     delta: number;
   }) => void;
+  onGiftXu?: (opts: {
+    toUserId?: string;
+    toCode?: string;
+    amount: number;
+  }) => void;
 }
 
 export function PlayerInfoSheet({
   open,
   player,
+  meId,
+  canGift,
   staff,
   balanceOperator,
   busy,
+  giftBusy,
   onClose,
   onSetOutcome,
   onSetVip,
   onAdjustBalance,
   onAdjustGuestBalance,
+  onGiftXu,
 }: PlayerInfoSheetProps) {
   const [delta, setDelta] = useState("");
+  const [giftAmount, setGiftAmount] = useState("");
   const [localMode, setLocalMode] = useState<"normal" | "win" | "lose">(
     "normal",
   );
@@ -68,6 +82,7 @@ export function PlayerInfoSheet({
     setLocalBalance(player.balance);
     setLocalGranted(!!player.vipGranted);
     setDelta("");
+    setGiftAmount("");
   }, [player]);
 
   if (!open || !player) return null;
@@ -102,6 +117,16 @@ export function PlayerInfoSheet({
   );
   const canManage = canManageUser || canBalanceUser || canManageGuest;
 
+  const showGift = !!(
+    canGift &&
+    onGiftXu &&
+    !player.isBot &&
+    !player.isGuest &&
+    (player.userId || player.code) &&
+    meId &&
+    player.userId !== meId
+  );
+
   const submitDelta = (e: FormEvent) => {
     e.preventDefault();
     const n = Number(delta);
@@ -122,6 +147,18 @@ export function PlayerInfoSheet({
         delta: d,
       });
     }
+  };
+
+  const submitGift = (e: FormEvent) => {
+    e.preventDefault();
+    if (!onGiftXu || giftBusy) return;
+    const n = Math.floor(Number(giftAmount));
+    if (!Number.isFinite(n) || n <= 0) return;
+    onGiftXu({
+      toUserId: player.userId,
+      toCode: player.code,
+      amount: n,
+    });
   };
 
   return (
@@ -220,6 +257,47 @@ export function PlayerInfoSheet({
                 {player.guessesToday ?? 0}
               </p>
             </div>
+          </div>
+        )}
+
+        {showGift && (
+          <div className="mt-4 space-y-2 rounded-xl bg-white/5 px-3 py-3 ring-1 ring-[var(--jade)]/35">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--jade-soft)]">
+              Tặng xu
+            </p>
+            <p className="text-[10px] text-white/45">
+              Chuyển xu trực tiếp · tối thiểu 10 · tối đa 100.000 / lần
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {[100, 500, 1000, 5000].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  disabled={giftBusy}
+                  onClick={() => setGiftAmount(String(n))}
+                  className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-bold text-white/85 ring-1 ring-white/15 disabled:opacity-45"
+                >
+                  {formatXu(n)}
+                </button>
+              ))}
+            </div>
+            <form onSubmit={submitGift} className="flex gap-1.5">
+              <input
+                value={giftAmount}
+                onChange={(e) => setGiftAmount(e.target.value)}
+                placeholder="Số xu…"
+                inputMode="numeric"
+                disabled={giftBusy}
+                className="min-w-0 flex-1 rounded-lg border-0 bg-white/10 px-2 py-1.5 text-xs text-white outline-none ring-1 ring-white/15 placeholder:text-white/35"
+              />
+              <button
+                type="submit"
+                disabled={giftBusy || !giftAmount.trim()}
+                className="shrink-0 rounded-lg bg-[var(--jade)] px-3 text-xs font-bold text-white disabled:opacity-45"
+              >
+                {giftBusy ? "…" : "Tặng"}
+              </button>
+            </form>
           </div>
         )}
 

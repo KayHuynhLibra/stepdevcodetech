@@ -29,6 +29,168 @@ export interface VaultLedgerEntry {
   username?: string;
 }
 
+/**
+ * Flag từng kho → tín hiệu Inter auto.
+ * Ngưỡng/mode = 0 / "" → dùng VaultInterLink global.
+ * Có thể dùng % (edge) thay vì xu tuyệt đối.
+ */
+export interface VaultInterFlags {
+  /** Kho này tham gia vault→Inter */
+  interSignal: boolean;
+  /** Trọng số gộp net (0–100) khi combine = weighted */
+  interWeightPct: number;
+  /** Ưu tiên khi conflict (cao hơn thắng) */
+  interPriority: number;
+  /** Ngưỡng lỗ xu; 0 = global (khi không dùng %) */
+  lossThresholdXu: number;
+  /** Ngưỡng lãi xu; 0 = global */
+  profitThresholdXu: number;
+  /** Mode khi lỗ; "" = global onLossMode */
+  onLossMode: string;
+  /** Mode khi lãi; "" = global onProfitMode */
+  onProfitMode: string;
+  /** true = nhận diện theo % edge thay vì xu */
+  usePercent: boolean;
+  /** |edgePct| lỗ ≥ lossPct → band loss (vd 8 = −8%) */
+  lossPct: number;
+  /** edgePct ≥ profitPct → band profit */
+  profitPct: number;
+}
+
+export type VaultHealthBand =
+  | "deep_loss"
+  | "soft_loss"
+  | "neutral"
+  | "soft_profit"
+  | "deep_profit";
+
+/** Chỉ số % lỗ/lãi + gợi ý cường độ hút/nhả (−2…+2). */
+export interface VaultHealth {
+  label: string;
+  netFromPlay: number;
+  balance: number;
+  totalStakeIn: number;
+  totalPayoutOut: number;
+  /** (stake−payout)/stake × 100 — edge nhà cái all-time chơi */
+  edgePct: number;
+  /** netFromPlay / balance × 100 */
+  netVsBalancePct: number;
+  /** Edge ledger 1h (stakeIn vs payoutOut) */
+  flowHourEdgePct: number;
+  /** Edge ledger 24h */
+  flowDayEdgePct: number;
+  /** Blend edge all-time + flow giờ */
+  blendEdgePct: number;
+  band: VaultHealthBand;
+  /** −2 hút mạnh … 0 trung tính … +2 nhả mạnh */
+  steerIntensity: number;
+}
+
+export const DEFAULT_TAROT_INTER_FLAGS: VaultInterFlags = {
+  interSignal: true,
+  interWeightPct: 100,
+  interPriority: 10,
+  lossThresholdXu: 0,
+  profitThresholdXu: 0,
+  onLossMode: "",
+  onProfitMode: "",
+  usePercent: true,
+  lossPct: 8,
+  profitPct: 12,
+};
+
+export const DEFAULT_ARCANA_INTER_FLAGS: VaultInterFlags = {
+  interSignal: false,
+  interWeightPct: 50,
+  interPriority: 5,
+  lossThresholdXu: 0,
+  profitThresholdXu: 0,
+  onLossMode: "",
+  onProfitMode: "",
+  usePercent: true,
+  lossPct: 10,
+  profitPct: 15,
+};
+
+function edgePctFrom(stake: number, payout: number): number {
+  const s = Math.max(0, stake);
+  if (s <= 0) return 0;
+  return ((s - Math.max(0, payout)) / s) * 100;
+}
+
+function bandFromEdge(
+  edgePct: number,
+  softLoss = -5,
+  deepLoss = -12,
+  softProfit = 8,
+  deepProfit = 18,
+): VaultHealthBand {
+  if (edgePct <= deepLoss) return "deep_loss";
+  if (edgePct <= softLoss) return "soft_loss";
+  if (edgePct >= deepProfit) return "deep_profit";
+  if (edgePct >= softProfit) return "soft_profit";
+  return "neutral";
+}
+
+function intensityFromBand(band: VaultHealthBand): number {
+  switch (band) {
+    case "deep_loss":
+      return -2;
+    case "soft_loss":
+      return -1;
+    case "soft_profit":
+      return 1;
+    case "deep_profit":
+      return 2;
+    default:
+      return 0;
+  }
+}
+
+export function mergeVaultInterFlags(
+  raw: Partial<VaultInterFlags> | null | undefined,
+  defaults: VaultInterFlags,
+): VaultInterFlags {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const w = Math.floor(Number(r.interWeightPct ?? defaults.interWeightPct));
+  const prio = Math.floor(Number(r.interPriority ?? defaults.interPriority));
+  const lossPct = Number(r.lossPct ?? defaults.lossPct);
+  const profitPct = Number(r.profitPct ?? defaults.profitPct);
+  return {
+    interSignal:
+      r.interSignal !== undefined ? !!r.interSignal : defaults.interSignal,
+    interWeightPct: Math.max(0, Math.min(100, Number.isFinite(w) ? w : 0)),
+    interPriority: Math.max(
+      0,
+      Math.min(100, Number.isFinite(prio) ? prio : defaults.interPriority),
+    ),
+    lossThresholdXu: Math.max(
+      0,
+      Math.floor(
+        Number(r.lossThresholdXu ?? defaults.lossThresholdXu) || 0,
+      ),
+    ),
+    profitThresholdXu: Math.max(
+      0,
+      Math.floor(
+        Number(r.profitThresholdXu ?? defaults.profitThresholdXu) || 0,
+      ),
+    ),
+    onLossMode: String(r.onLossMode ?? defaults.onLossMode ?? "").trim(),
+    onProfitMode: String(r.onProfitMode ?? defaults.onProfitMode ?? "").trim(),
+    usePercent:
+      r.usePercent !== undefined ? !!r.usePercent : defaults.usePercent,
+    lossPct: Math.max(
+      0.5,
+      Math.min(80, Number.isFinite(lossPct) ? lossPct : defaults.lossPct),
+    ),
+    profitPct: Math.max(
+      0.5,
+      Math.min(80, Number.isFinite(profitPct) ? profitPct : defaults.profitPct),
+    ),
+  };
+}
+
 interface VaultFile {
   version: 1;
   balance: number;
@@ -37,6 +199,7 @@ interface VaultFile {
   totalMinted: number;
   totalBurned: number;
   ledger: VaultLedgerEntry[];
+  interFlags?: Partial<VaultInterFlags>;
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -51,14 +214,22 @@ export class VaultStore {
   private totalMinted = 0;
   private totalBurned = 0;
   private ledger: VaultLedgerEntry[] = [];
+  private interFlags: VaultInterFlags;
+  private readonly defaultFlags: VaultInterFlags;
   private readonly filePath: string;
   private readonly tmpPath: string;
   private readonly label: string;
 
-  constructor(fileName = "vault.json", label = "Kho Tarot") {
+  constructor(
+    fileName = "vault.json",
+    label = "Kho Tarot",
+    defaultFlags: VaultInterFlags = DEFAULT_TAROT_INTER_FLAGS,
+  ) {
     this.filePath = join(DATA_DIR, fileName);
     this.tmpPath = join(DATA_DIR, `${fileName}.tmp`);
     this.label = label;
+    this.defaultFlags = defaultFlags;
+    this.interFlags = { ...defaultFlags };
     this.load();
   }
 
@@ -82,8 +253,14 @@ export class VaultStore {
       if (Array.isArray(parsed.ledger)) {
         this.ledger = parsed.ledger.slice(0, LEDGER_CAP);
       }
+      if (parsed.interFlags && typeof parsed.interFlags === "object") {
+        this.interFlags = mergeVaultInterFlags(
+          parsed.interFlags,
+          this.defaultFlags,
+        );
+      }
       console.log(
-        `[vault:${this.label}] Loaded · balance ${Math.round(this.balance)}`,
+        `[vault:${this.label}] Loaded · balance ${Math.round(this.balance)} · interSignal=${this.interFlags.interSignal}`,
       );
     } catch (err) {
       console.warn(`[vault:${this.label}] Failed to load:`, err);
@@ -101,6 +278,7 @@ export class VaultStore {
         totalMinted: this.totalMinted,
         totalBurned: this.totalBurned,
         ledger: this.ledger.slice(0, LEDGER_CAP),
+        interFlags: { ...this.interFlags },
       };
       writeFileSync(this.tmpPath, JSON.stringify(payload, null, 2), "utf8");
       renameSync(this.tmpPath, this.filePath);
@@ -131,6 +309,107 @@ export class VaultStore {
     this.save();
   }
 
+  /**
+   * Dòng tiền kho theo cửa sổ thời gian (từ ledger gần đây, cap 200).
+   * Không phải all-time — chỉ phản ánh sổ cái còn giữ.
+   */
+  getFlowWindows(now = Date.now()) {
+    const windows = {
+      hour: 60 * 60 * 1000,
+      day: 24 * 60 * 60 * 1000,
+      week: 7 * 24 * 60 * 60 * 1000,
+      month: 30 * 24 * 60 * 60 * 1000,
+    } as const;
+    type Flow = {
+      stakeIn: number;
+      stakeRefund: number;
+      payoutOut: number;
+      couponOut: number;
+      grantOut: number;
+      seizeIn: number;
+      feesIn: number;
+      mint: number;
+      burn: number;
+      adminAdjust: number;
+      net: number;
+      rows: number;
+    };
+    const empty = (): Flow => ({
+      stakeIn: 0,
+      stakeRefund: 0,
+      payoutOut: 0,
+      couponOut: 0,
+      grantOut: 0,
+      seizeIn: 0,
+      feesIn: 0,
+      mint: 0,
+      burn: 0,
+      adminAdjust: 0,
+      net: 0,
+      rows: 0,
+    });
+    const out: Record<keyof typeof windows, Flow> = {
+      hour: empty(),
+      day: empty(),
+      week: empty(),
+      month: empty(),
+    };
+    const apply = (flow: Flow, e: VaultLedgerEntry) => {
+      flow.rows += 1;
+      flow.net += e.amount;
+      switch (e.type) {
+        case "stake_in":
+          flow.stakeIn += e.amount;
+          break;
+        case "stake_refund":
+          flow.stakeRefund += Math.abs(e.amount);
+          break;
+        case "payout_out":
+          flow.payoutOut += Math.abs(e.amount);
+          break;
+        case "coupon_mint":
+          flow.couponOut += Math.abs(e.amount);
+          break;
+        case "grant_user":
+          flow.grantOut += Math.abs(e.amount);
+          break;
+        case "seize_user":
+          flow.seizeIn += e.amount;
+          break;
+        case "chat_fee":
+        case "cultivation_fee":
+          flow.feesIn += e.amount;
+          break;
+        case "mint":
+          flow.mint += e.amount;
+          break;
+        case "burn":
+          flow.burn += Math.abs(e.amount);
+          break;
+        case "admin_adjust":
+        case "set_balance":
+          flow.adminAdjust += e.amount;
+          break;
+        default:
+          break;
+      }
+    };
+    for (const e of this.ledger) {
+      const age = now - e.at;
+      for (const [key, ms] of Object.entries(windows) as [
+        keyof typeof windows,
+        number,
+      ][]) {
+        if (age < ms) apply(out[key], e);
+      }
+    }
+    return {
+      note: "Từ ledger gần đây (tối đa 200 dòng) — không phải all-time",
+      ledgerRows: this.ledger.length,
+      windows: out,
+    };
+  }
+
   getSnapshot() {
     const breakdown: Record<string, { count: number; sum: number }> = {};
     for (const e of this.ledger) {
@@ -155,10 +434,70 @@ export class VaultStore {
       netFromPlay: this.totalStakeIn - this.totalPayoutOut,
       breakdown,
       ledger: this.ledger.slice(0, 50),
+      flows: this.getFlowWindows(),
+      interFlags: this.getInterFlags(),
+      health: this.getHealth(),
     };
   }
 
-  /** User thật đặt cược → xu vào kho */
+  /**
+   * % lỗ/lãi kho — all-time edge + flow giờ/ngày + band + steerIntensity.
+   */
+  getHealth(): VaultHealth {
+    const netFromPlay = this.totalStakeIn - this.totalPayoutOut;
+    const edgePct = edgePctFrom(this.totalStakeIn, this.totalPayoutOut);
+    const bal = Math.max(1, this.balance);
+    const netVsBalancePct = (netFromPlay / bal) * 100;
+    const flows = this.getFlowWindows();
+    const h = flows.windows.hour;
+    const d = flows.windows.day;
+    const flowHourEdgePct = edgePctFrom(h.stakeIn, h.payoutOut);
+    const flowDayEdgePct = edgePctFrom(d.stakeIn, d.payoutOut);
+    const blendEdgePct = edgePct * 0.55 + flowHourEdgePct * 0.3 + flowDayEdgePct * 0.15;
+    const flags = this.interFlags;
+    const softLoss = flags.usePercent ? -flags.lossPct * 0.55 : -5;
+    const deepLoss = flags.usePercent ? -flags.lossPct : -12;
+    const softProfit = flags.usePercent ? flags.profitPct * 0.55 : 8;
+    const deepProfit = flags.usePercent ? flags.profitPct : 18;
+    const band = bandFromEdge(
+      blendEdgePct,
+      softLoss,
+      deepLoss,
+      softProfit,
+      deepProfit,
+    );
+    return {
+      label: this.label,
+      netFromPlay,
+      balance: this.balance,
+      totalStakeIn: this.totalStakeIn,
+      totalPayoutOut: this.totalPayoutOut,
+      edgePct: Math.round(edgePct * 100) / 100,
+      netVsBalancePct: Math.round(netVsBalancePct * 100) / 100,
+      flowHourEdgePct: Math.round(flowHourEdgePct * 100) / 100,
+      flowDayEdgePct: Math.round(flowDayEdgePct * 100) / 100,
+      blendEdgePct: Math.round(blendEdgePct * 100) / 100,
+      band,
+      steerIntensity: intensityFromBand(band),
+    };
+  }
+
+  getInterFlags(): VaultInterFlags {
+    return { ...this.interFlags };
+  }
+
+  setInterFlags(
+    partial: Partial<VaultInterFlags>,
+  ): { ok: true; interFlags: VaultInterFlags } {
+    this.interFlags = mergeVaultInterFlags(
+      { ...this.interFlags, ...partial },
+      this.defaultFlags,
+    );
+    this.save();
+    return { ok: true, interFlags: this.getInterFlags() };
+  }
+
+  /** User thật đặt xu → xu vào kho */
   recordStakeIn(amount: number, username: string, userId: string) {
     const amt = Math.floor(amount);
     if (amt <= 0) return;
@@ -364,8 +703,16 @@ export class VaultStore {
 }
 
 /** Kho bàn Tarot + vận hành ví (coupon/grant/seize) */
-export const vaultTarot = new VaultStore("vault.json", "Kho Tarot");
+export const vaultTarot = new VaultStore(
+  "vault.json",
+  "Kho Tarot",
+  DEFAULT_TAROT_INTER_FLAGS,
+);
 /** Alias cũ — game.ts / coupon vẫn import vaultStore */
 export const vaultStore = vaultTarot;
 /** Kho bàn Bánh xe Arcana — độc lập */
-export const vaultArcana = new VaultStore("vault-arcana.json", "Kho Arcana");
+export const vaultArcana = new VaultStore(
+  "vault-arcana.json",
+  "Kho Arcana",
+  DEFAULT_ARCANA_INTER_FLAGS,
+);

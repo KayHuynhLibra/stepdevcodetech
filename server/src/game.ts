@@ -6,12 +6,14 @@ import { DEFAULT_AVATAR, normalizeAvatar } from "./avatars.js";
 import { betStore } from "./betStore.js";
 import {
   CARDS,
+  cardLiabilities,
   getCard,
   houseProfitByCard,
   pickWinningCardWithUserBias,
   type UserRoundBias,
 } from "./cards.js";
 import { interStore, isPackMode, isPolicyMode } from "./interStore.js";
+import { interObserveStore } from "./interObserveStore.js";
 import {
   computeCardHeat,
   engagementAllowedForMode,
@@ -762,6 +764,11 @@ export class GameEngine {
     };
   }
 
+  /** userId auth đang gắn với socket session (nếu có). */
+  getUserIdForSocket(socketId: string): string | undefined {
+    return this.players.get(socketId)?.userId;
+  }
+
   /** Admin chỉnh xu auth → đồng bộ session đang online (trả socket ids đã cập nhật). */
   applyAuthBalance(
     userId: string,
@@ -990,7 +997,7 @@ export class GameEngine {
     roundId?: number,
   ): { ok: true; balance: number } | { ok: false; reason: string } {
     if (this.phase !== "betting") {
-      return { ok: false, reason: "Đã hết giờ đặt cược" };
+      return { ok: false, reason: "Đã hết giờ đặt xu" };
     }
     if (
       roundId != null &&
@@ -1807,6 +1814,27 @@ export class GameEngine {
             : "") +
           `${biasNote})`,
       });
+      {
+        const vaultNet =
+          vaultStore.getSnapshot().netFromPlay ??
+          vaultStore.getSnapshot().netHouse ??
+          0;
+        const winLiab = cardLiabilities(authBets)[winIdx] ?? 0;
+        interObserveStore.record({
+          at: Date.now(),
+          round: this.roundNumber,
+          storedMode: String(storedMode),
+          effectiveMode: String(interMode),
+          winCard: this.winningCard ?? 0,
+          authStake,
+          displayStake,
+          houseProfit: expectedHouse,
+          liabilityOnWin: winLiab,
+          userBiasCount: userBiases.length,
+          winBiasPct: interStore.getWinBiasPct(),
+          vaultNet,
+        });
+      }
       if (
         isPolicyMode(interMode) ||
         storedMode === "all" ||

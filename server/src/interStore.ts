@@ -30,13 +30,19 @@ export type PolicyMode =
   | "app"
   | "softapp"
   | "user"
+  | "softuser"
   | "momentum"
   | "fed"
   | "softfed"
   | "hedge"
   | "contrarian"
   | "sparse"
-  | "dense";
+  | "dense"
+  | "vaultguard"
+  | "vaultpct"
+  | "flowguard"
+  | "moneysteer"
+  | "crowdcap";
 /** Legacy bias subset */
 export type BiasMode = "auto" | "small" | "big" | "flat" | "cool";
 
@@ -60,10 +66,16 @@ export const POLICY_MODES: PolicyMode[] = [
   "softfed",
   "fed",
   "user",
+  "softuser",
   "momentum",
   "contrarian",
   "sparse",
   "dense",
+  "vaultguard",
+  "vaultpct",
+  "flowguard",
+  "moneysteer",
+  "crowdcap",
 ];
 
 /** Thứ tự xoay mặc định khi mode = ALL (tùy chỉnh được). */
@@ -72,7 +84,7 @@ export const ALL_ROTATION: RotateMode[] = [...ALL_ROTATION_DEFAULT];
 export const ROTATE_MODES: RotateMode[] = [...ROTATE_MODE_IDS];
 
 export const MIN_ALL_ROTATION_LEN = 2;
-export const MAX_ALL_ROTATION_LEN = 20;
+export const MAX_ALL_ROTATION_LEN = 24;
 
 export function validateAllRotation(raw: unknown):
   | { ok: true; steps: RotateMode[] }
@@ -142,13 +154,16 @@ export function isPolicyMode(v: unknown): v is PolicyMode {
     v === "app" ||
     v === "softapp" ||
     v === "user" ||
+    v === "softuser" ||
     v === "momentum" ||
     v === "fed" ||
     v === "softfed" ||
     v === "hedge" ||
     v === "contrarian" ||
     v === "sparse" ||
-    v === "dense"
+    v === "dense" ||
+    v === "vaultguard" ||
+    v === "crowdcap"
   );
 }
 
@@ -179,12 +194,23 @@ export function forcedCardId(mode: InterMode): number | null {
   return isForceCardMode(mode) ? Number(mode) : null;
 }
 
+export type VaultLinkCombine = "any" | "weighted" | "priority";
+
 export interface VaultInterLink {
   enabled: boolean;
   lossThresholdXu: number;
   profitThresholdXu: number;
   onLossMode: InterMode;
   onProfitMode: InterMode;
+  /**
+   * Cách gộp tín hiệu các kho có interSignal:
+   * - any: có lỗ → absorb; không lỗ mà có lãi → release
+   * - weighted: net gộp theo weight → so ngưỡng global
+   * - priority: kho priority cao nhất không trung tính thắng
+   */
+  combine: VaultLinkCombine;
+  /** Khi về trung tính: null = giữ mode; còn lại set mode này */
+  idleMode: InterMode | null;
 }
 
 export const DEFAULT_VAULT_INTER_LINK: VaultInterLink = {
@@ -193,10 +219,35 @@ export const DEFAULT_VAULT_INTER_LINK: VaultInterLink = {
   profitThresholdXu: 50_000,
   onLossMode: "small",
   onProfitMode: "big",
+  combine: "any",
+  idleMode: null,
 };
 
+export type VaultSignalBand = "loss" | "profit" | "neutral";
+
+export interface VaultSignalInput {
+  key: "tarot" | "arcana";
+  netFromPlay: number;
+  /** Edge % all-time (stake−payout)/stake */
+  edgePct?: number;
+  /** Blend edge (all-time + flow) */
+  blendEdgePct?: number;
+  flags: {
+    interSignal: boolean;
+    interWeightPct: number;
+    interPriority: number;
+    lossThresholdXu: number;
+    profitThresholdXu: number;
+    onLossMode: string;
+    onProfitMode: string;
+    usePercent?: boolean;
+    lossPct?: number;
+    profitPct?: number;
+  };
+}
+
 interface InterFile {
-  version: 1 | 2 | 3 | 4;
+  version: 1 | 2 | 3 | 4 | 5;
   mode: InterMode;
   updatedAt: number;
   updatedBy: string;
@@ -245,6 +296,19 @@ function mergeVaultLink(raw: Partial<VaultInterLink>): VaultInterLink {
     raw.onProfitMode && isInterMode(raw.onProfitMode)
       ? raw.onProfitMode
       : d.onProfitMode;
+  const combineRaw = String(raw.combine ?? d.combine);
+  const combine: VaultLinkCombine =
+    combineRaw === "weighted" ||
+    combineRaw === "priority" ||
+    combineRaw === "any"
+      ? combineRaw
+      : d.combine;
+  let idleMode: InterMode | null = d.idleMode;
+  if (raw.idleMode == null || String(raw.idleMode) === "") {
+    idleMode = null;
+  } else if (isInterMode(raw.idleMode)) {
+    idleMode = raw.idleMode;
+  }
   return {
     enabled: !!raw.enabled,
     lossThresholdXu: Math.max(
@@ -257,7 +321,41 @@ function mergeVaultLink(raw: Partial<VaultInterLink>): VaultInterLink {
     ),
     onLossMode: onLoss,
     onProfitMode: onProfit,
+    combine,
+    idleMode,
   };
+}
+
+function resolveVaultMode(
+  preferred: string,
+  fallback: InterMode,
+): InterMode {
+  return preferred && isInterMode(preferred) ? preferred : fallback;
+}
+
+function bandForVault(
+  input: VaultSignalInput,
+  link: VaultInterLink,
+): VaultSignalBand {
+  const flags = input.flags;
+  if (flags.usePercent) {
+    const edge = input.blendEdgePct ?? input.edgePct ?? 0;
+    const lossPct = Math.max(0.5, Number(flags.lossPct) || 8);
+    const profitPct = Math.max(0.5, Number(flags.profitPct) || 12);
+    if (edge <= -lossPct) return "loss";
+    if (edge >= profitPct) return "profit";
+    return "neutral";
+  }
+  const lossTh =
+    flags.lossThresholdXu > 0 ? flags.lossThresholdXu : link.lossThresholdXu;
+  const profitTh =
+    flags.profitThresholdXu > 0
+      ? flags.profitThresholdXu
+      : link.profitThresholdXu;
+  const net = input.netFromPlay;
+  if (net <= -lossTh) return "loss";
+  if (net >= profitTh) return "profit";
+  return "neutral";
 }
 
 /**
@@ -338,7 +436,13 @@ export class InterStore {
         return;
       }
       const parsed = JSON.parse(readFileSync(PATH, "utf8")) as InterFile;
-      if (parsed?.version !== 1 && parsed?.version !== 2 && parsed?.version !== 3 && parsed?.version !== 4) {
+      if (
+        parsed?.version !== 1 &&
+        parsed?.version !== 2 &&
+        parsed?.version !== 3 &&
+        parsed?.version !== 4 &&
+        parsed?.version !== 5
+      ) {
         return;
       }
       if (isInterMode(parsed.mode)) this.mode = parsed.mode;
@@ -369,7 +473,7 @@ export class InterStore {
   private save() {
     if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
     const body: InterFile = {
-      version: 4,
+      version: 5,
       mode: this.mode,
       updatedAt: this.updatedAt,
       updatedBy: this.updatedBy,
@@ -531,34 +635,223 @@ export class InterStore {
   }
 
   /**
-   * Theo netFromPlay Kho Tarot: lỗ nặng → onLossMode, lãi nhiều → onProfitMode.
-   * Gọi định kỳ; không đụng mode nếu link tắt hoặc trong khoảng ngưỡng.
+   * Gộp tín hiệu nhiều kho (flag interSignal) → set mode Inter.
+   * Thay cho applyVaultNet đơn kho.
+   */
+  applyVaultSignals(inputs: VaultSignalInput[]): {
+    applied: boolean;
+    mode?: InterMode;
+    reason: string;
+    band?: VaultSignalBand;
+    source?: string;
+  } {
+    const link = this.vaultInterLink;
+    if (!link.enabled) {
+      return { applied: false, reason: "vault link tắt" };
+    }
+    const active = inputs.filter((v) => v.flags.interSignal);
+    if (!active.length) {
+      return { applied: false, reason: "không kho nào bật interSignal" };
+    }
+
+    type Pick = {
+      band: VaultSignalBand;
+      mode: InterMode;
+      source: string;
+      priority: number;
+    };
+    let pick: Pick | null = null;
+
+    if (link.combine === "weighted") {
+      const usePct = active.some((v) => v.flags.usePercent);
+      let weighted = 0;
+      let weightSum = 0;
+      for (const v of active) {
+        const w = v.flags.interWeightPct / 100;
+        const val = usePct
+          ? (v.blendEdgePct ?? v.edgePct ?? 0)
+          : v.netFromPlay;
+        weighted += val * w;
+        weightSum += w;
+      }
+      const agg =
+        weightSum > 0 ? weighted / Math.max(weightSum, 0.01) : weighted;
+      let band: VaultSignalBand = "neutral";
+      if (usePct) {
+        const lossPct = Math.max(
+          ...active.map((v) => Number(v.flags.lossPct) || 8),
+        );
+        const profitPct = Math.min(
+          ...active.map((v) => Number(v.flags.profitPct) || 12),
+        );
+        if (agg <= -lossPct) band = "loss";
+        else if (agg >= profitPct) band = "profit";
+      } else {
+        if (agg <= -link.lossThresholdXu) band = "loss";
+        else if (agg >= link.profitThresholdXu) band = "profit";
+      }
+      const src = usePct
+        ? `weighted edge%=${agg.toFixed(1)}`
+        : `weighted net=${Math.round(agg)}`;
+      if (band === "loss") {
+        pick = {
+          band,
+          mode: link.onLossMode,
+          source: src,
+          priority: 0,
+        };
+      } else if (band === "profit") {
+        pick = {
+          band,
+          mode: link.onProfitMode,
+          source: src,
+          priority: 0,
+        };
+      } else {
+        pick = {
+          band: "neutral",
+          mode: link.idleMode ?? this.mode,
+          source: src,
+          priority: 0,
+        };
+      }
+    } else if (link.combine === "priority") {
+      const ranked = [...active].sort(
+        (a, b) => b.flags.interPriority - a.flags.interPriority,
+      );
+      for (const v of ranked) {
+        const band = bandForVault(v, link);
+        if (band === "neutral") continue;
+        pick = {
+          band,
+          mode:
+            band === "loss"
+              ? resolveVaultMode(v.flags.onLossMode, link.onLossMode)
+              : resolveVaultMode(v.flags.onProfitMode, link.onProfitMode),
+          source: v.key,
+          priority: v.flags.interPriority,
+        };
+        break;
+      }
+      if (!pick) {
+        pick = {
+          band: "neutral",
+          mode: link.idleMode ?? this.mode,
+          source: "none",
+          priority: 0,
+        };
+      }
+    } else {
+      // any: loss thắng profit; trong cùng band → priority cao hơn
+      const scored: Pick[] = [];
+      for (const v of active) {
+        const band = bandForVault(v, link);
+        if (band === "neutral") continue;
+        scored.push({
+          band,
+          mode:
+            band === "loss"
+              ? resolveVaultMode(v.flags.onLossMode, link.onLossMode)
+              : resolveVaultMode(v.flags.onProfitMode, link.onProfitMode),
+          source: v.key,
+          priority: v.flags.interPriority,
+        });
+      }
+      const losses = scored.filter((s) => s.band === "loss");
+      const profits = scored.filter((s) => s.band === "profit");
+      if (losses.length) {
+        pick = losses.sort((a, b) => b.priority - a.priority)[0]!;
+      } else if (profits.length) {
+        pick = profits.sort((a, b) => b.priority - a.priority)[0]!;
+      } else {
+        pick = {
+          band: "neutral",
+          mode: link.idleMode ?? this.mode,
+          source: "none",
+          priority: 0,
+        };
+      }
+    }
+
+    if (!pick) {
+      return { applied: false, reason: "không chọn được band" };
+    }
+
+    if (pick.band === "neutral") {
+      if (!link.idleMode) {
+        return {
+          applied: false,
+          reason: "trung tính — giữ mode",
+          band: "neutral",
+        };
+      }
+      const target = link.idleMode;
+      const key = `idle:${target}`;
+      if (this.lastVaultLinkApplied === key && this.mode === target) {
+        return {
+          applied: false,
+          reason: "đã idle",
+          mode: target,
+          band: "neutral",
+        };
+      }
+      this.setMode(target, "vault-auto");
+      this.lastVaultLinkApplied = key;
+      return {
+        applied: true,
+        mode: target,
+        reason: `idle · ${pick.source}`,
+        band: "neutral",
+        source: pick.source,
+      };
+    }
+
+    const target = pick.mode;
+    const key = `${target}:${pick.band}:${pick.source}`;
+    if (this.lastVaultLinkApplied === key && this.mode === target) {
+      return {
+        applied: false,
+        reason: "đã áp cùng mode",
+        mode: target,
+        band: pick.band,
+        source: pick.source,
+      };
+    }
+    this.setMode(target, "vault-auto");
+    this.lastVaultLinkApplied = key;
+    return {
+      applied: true,
+      mode: target,
+      reason: `${pick.band} · ${pick.source}`,
+      band: pick.band,
+      source: pick.source,
+    };
+  }
+
+  /**
+   * Theo netFromPlay Kho Tarot (tương thích cũ).
+   * Ưu tiên dùng applyVaultSignals khi có đủ flag cả hai kho.
    */
   applyVaultNet(netFromPlay: number): {
     applied: boolean;
     mode?: InterMode;
     reason: string;
   } {
-    const link = this.vaultInterLink;
-    if (!link.enabled) {
-      return { applied: false, reason: "vault link tắt" };
-    }
-    let target: InterMode | null = null;
-    if (netFromPlay <= -link.lossThresholdXu) {
-      target = link.onLossMode;
-    } else if (netFromPlay >= link.profitThresholdXu) {
-      target = link.onProfitMode;
-    }
-    if (!target) {
-      return { applied: false, reason: "trong ngưỡng trung tính" };
-    }
-    const key = `${target}:${Math.sign(netFromPlay)}`;
-    if (this.lastVaultLinkApplied === key && this.mode === target) {
-      return { applied: false, reason: "đã áp cùng mode", mode: target };
-    }
-    this.setMode(target, "vault-auto");
-    this.lastVaultLinkApplied = key;
-    return { applied: true, mode: target, reason: `netFromPlay=${netFromPlay}` };
+    return this.applyVaultSignals([
+      {
+        key: "tarot",
+        netFromPlay,
+        flags: {
+          interSignal: true,
+          interWeightPct: 100,
+          interPriority: 10,
+          lossThresholdXu: 0,
+          profitThresholdXu: 0,
+          onLossMode: "",
+          onProfitMode: "",
+        },
+      },
+    ]);
   }
 
   getSnapshot() {

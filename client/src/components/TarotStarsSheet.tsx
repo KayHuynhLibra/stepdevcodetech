@@ -15,7 +15,7 @@ export function TarotStarsSheet({ open, rows, onClose }: TarotStarsSheetProps) {
       </p>
       {rows.length === 0 && (
         <p className="py-10 text-center text-sm text-white/40">
-          Chưa có ai đặt cược tuần này — hãy là người đầu tiên!
+          Chưa có ai đặt xu tuần này — hãy là người đầu tiên!
         </p>
       )}
       <ul className="space-y-2">
