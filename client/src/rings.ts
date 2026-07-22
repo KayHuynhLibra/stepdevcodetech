@@ -1,5 +1,26 @@
 /** Catalog nhẫn — đồng bộ server ringStore (xu ảo, không tiền thật). */
 
+/** Trần giá vật phẩm / nhẫn — 10 chữ số (khớp server ITEM_XU_MAX). */
+export const ITEM_XU_MAX = 9_999_999_999;
+
+export type RingEffect = "none" | "glow" | "pulse" | "sparkle" | "orbit";
+
+export const RING_EFFECTS: RingEffect[] = [
+  "none",
+  "glow",
+  "pulse",
+  "sparkle",
+  "orbit",
+];
+
+export const RING_EFFECT_LABELS: Record<RingEffect, string> = {
+  none: "Không",
+  glow: "Phát sáng",
+  pulse: "Nhịp đập",
+  sparkle: "Lấp lánh",
+  orbit: "Quay quanh",
+};
+
 export interface RingItem {
   key: string;
   nameVi: string;
@@ -9,6 +30,8 @@ export interface RingItem {
   blurb?: string;
   enabled: boolean;
   sort: number;
+  effect?: RingEffect;
+  imageSharpness?: number;
 }
 
 export type BondStatus = "pending" | "active";
@@ -21,6 +44,8 @@ export interface UserBondSnippet {
   ringKey: string;
   ringNameVi: string;
   ringImage: string;
+  ringEffect?: RingEffect | string;
+  ringSharpness?: number;
   since: number;
   status: BondStatus;
 }
@@ -34,6 +59,8 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Khởi đầu nhẹ nhàng",
     enabled: true,
     sort: 10,
+    effect: "glow",
+    imageSharpness: 75,
   },
   {
     key: "gold",
@@ -43,6 +70,8 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Ánh vàng ấm",
     enabled: true,
     sort: 20,
+    effect: "pulse",
+    imageSharpness: 80,
   },
   {
     key: "rose",
@@ -52,6 +81,8 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Hồng lãng mạn",
     enabled: true,
     sort: 30,
+    effect: "sparkle",
+    imageSharpness: 85,
   },
   {
     key: "diamond",
@@ -61,6 +92,8 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Đỉnh cao",
     enabled: true,
     sort: 40,
+    effect: "orbit",
+    imageSharpness: 95,
   },
 ];
 
@@ -75,5 +108,12 @@ export function findRingInList(
 export function isRingEmoji(image: string | undefined | null): boolean {
   const s = String(image ?? "").trim();
   if (!s) return true;
-  return !s.startsWith("/") && !s.startsWith("http://") && !s.startsWith("https://");
+  return (
+    !s.startsWith("/") && !s.startsWith("http://") && !s.startsWith("https://")
+  );
+}
+
+export function normalizeRingEffect(raw: unknown): RingEffect {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return RING_EFFECTS.includes(s as RingEffect) ? (s as RingEffect) : "glow";
 }

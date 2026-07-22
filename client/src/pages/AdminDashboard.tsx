@@ -46,7 +46,14 @@ import {
   type GiftFlyTier,
   type GiftItem,
 } from "../gifts";
-import { isRingEmoji, type RingItem } from "../rings";
+import {
+  isRingEmoji,
+  RING_EFFECT_LABELS,
+  RING_EFFECTS,
+  ITEM_XU_MAX,
+  type RingEffect,
+  type RingItem,
+} from "../rings";
 
 type CultBenefitDraft = Record<
   CultivationRank,
@@ -838,6 +845,8 @@ export default function AdminDashboard() {
     blurb: "",
     sort: "10",
     enabled: true,
+    effect: "glow" as RingEffect,
+    imageSharpness: "70",
   });
   const [extraStakeDraft, setExtraStakeDraft] = useState("");
   const [extraStakeBusy, setExtraStakeBusy] = useState(false);
@@ -2538,6 +2547,8 @@ export default function AdminDashboard() {
           blurb: ringDraft.blurb.trim() || undefined,
           sort: Math.floor(Number(ringDraft.sort)) || 100,
           enabled: ringDraft.enabled,
+          effect: ringDraft.effect,
+          imageSharpness: Math.floor(Number(ringDraft.imageSharpness)) || 70,
         }),
       });
       setMsg(`Đã lưu nhẫn ${key}`);
@@ -2549,6 +2560,8 @@ export default function AdminDashboard() {
         blurb: "",
         sort: "10",
         enabled: true,
+        effect: "glow",
+        imageSharpness: "70",
       });
       await loadRingConfig();
     } catch (e) {
@@ -4593,7 +4606,8 @@ export default function AdminDashboard() {
           <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
             <p className="play-heading text-sm">Catalog quà</p>
             <p className="text-[11px] text-[var(--play-muted)]">
-              Giá clamp {10}–100.000 xu. Category: warm / prestige / legend / fun.
+              Giá clamp 10–{ITEM_XU_MAX.toLocaleString("vi-VN")} xu (tối đa 10
+              chữ số). Category: warm / prestige / legend / fun.
             </p>
             <ul className="max-h-80 space-y-2 overflow-y-auto">
               {giftRows.map((g) => (
@@ -4686,9 +4700,11 @@ export default function AdminDashboard() {
                 />
               </label>
               <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                Giá
+                Giá (tối đa 10 chữ số)
                 <input
                   type="number"
+                  min={10}
+                  max={ITEM_XU_MAX}
                   value={giftDraft.price}
                   onChange={(e) =>
                     setGiftDraft((d) => ({ ...d, price: e.target.value }))
@@ -4904,7 +4920,8 @@ export default function AdminDashboard() {
         <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
           <p className="play-heading text-sm">Catalog nhẫn</p>
           <p className="text-[11px] text-[var(--play-muted)]">
-            Giá clamp 10–100.000 xu. Image: path `/assets/...` hoặc emoji.
+            Giá tới {ITEM_XU_MAX.toLocaleString("vi-VN")} xu (10 chữ số). Effect
+            + độ nét ảnh chỉnh được theo từng loại nhẫn.
           </p>
           <ul className="max-h-80 space-y-2 overflow-y-auto">
             {ringRows
@@ -4934,7 +4951,11 @@ export default function AdminDashboard() {
                           </span>
                         </p>
                         <p className="text-[10px] text-[var(--play-muted)]">
-                          sort {g.sort} · {formatXu(g.price)} xu
+                          sort {g.sort} · {formatXu(g.price)} xu ·{" "}
+                          {RING_EFFECT_LABELS[
+                            (g.effect as RingEffect) ?? "glow"
+                          ] ?? g.effect}{" "}
+                          · nét {g.imageSharpness ?? 70}
                           {g.enabled ? "" : " · tắt"}
                         </p>
                       </div>
@@ -4952,6 +4973,8 @@ export default function AdminDashboard() {
                             blurb: g.blurb ?? "",
                             sort: String(g.sort),
                             enabled: g.enabled,
+                            effect: (g.effect as RingEffect) ?? "glow",
+                            imageSharpness: String(g.imageSharpness ?? 70),
                           })
                         }
                         className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15"
@@ -5001,12 +5024,49 @@ export default function AdminDashboard() {
               />
             </label>
             <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-              Giá
+              Giá (tối đa 10 chữ số)
               <input
                 type="number"
+                min={10}
+                max={ITEM_XU_MAX}
                 value={ringDraft.price}
                 onChange={(e) =>
                   setRingDraft((d) => ({ ...d, price: e.target.value }))
+                }
+                className="app-input mt-0.5 w-full"
+              />
+            </label>
+            <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+              Hiệu ứng
+              <select
+                value={ringDraft.effect}
+                onChange={(e) =>
+                  setRingDraft((d) => ({
+                    ...d,
+                    effect: e.target.value as RingEffect,
+                  }))
+                }
+                className="app-input mt-0.5 w-full"
+              >
+                {RING_EFFECTS.map((fx) => (
+                  <option key={fx} value={fx}>
+                    {RING_EFFECT_LABELS[fx]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+              Độ nét ảnh (0–100)
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={ringDraft.imageSharpness}
+                onChange={(e) =>
+                  setRingDraft((d) => ({
+                    ...d,
+                    imageSharpness: e.target.value,
+                  }))
                 }
                 className="app-input mt-0.5 w-full"
               />

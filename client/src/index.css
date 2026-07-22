@@ -2195,3 +2195,51 @@ input {
   }
 }
 
+
+/* Couple ring FX — d? nét ch?nh qua inline style; hi?u ?ng theo class */
+.ring-fx {
+  transform-origin: center center;
+}
+.ring-fx--glow {
+  filter: drop-shadow(0 0 6px rgba(255, 200, 80, 0.85));
+}
+.ring-fx--pulse {
+  animation: ring-fx-pulse 1.6s ease-in-out infinite;
+}
+.ring-fx--sparkle {
+  animation: ring-fx-sparkle 2.2s ease-in-out infinite;
+}
+.ring-fx--orbit {
+  animation: ring-fx-orbit 3.2s linear infinite;
+}
+@keyframes ring-fx-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 2px rgba(255, 176, 64, 0.4));
+  }
+  50% {
+    transform: scale(1.12);
+    filter: drop-shadow(0 0 10px rgba(255, 176, 64, 0.95));
+  }
+}
+@keyframes ring-fx-sparkle {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(255, 120, 180, 0.45)) brightness(1);
+  }
+  40% {
+    filter: drop-shadow(0 0 12px rgba(255, 220, 255, 0.95)) brightness(1.25);
+  }
+  70% {
+    filter: drop-shadow(0 0 6px rgba(255, 160, 200, 0.7)) brightness(1.1);
+  }
+}
+@keyframes ring-fx-orbit {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

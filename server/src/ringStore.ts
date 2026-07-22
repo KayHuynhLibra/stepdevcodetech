@@ -2,10 +2,20 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { randomBytes } from "crypto";
-import { MIN_STAKE } from "./types.js";
+import { ITEM_XU_MAX, MIN_STAKE } from "./types.js";
 
-/** Trần giá nhẫn — đồng bộ gift xu max. */
-export const RING_XU_MAX = 100_000;
+/** Trần giá nhẫn — tối đa 10 chữ số. */
+export const RING_XU_MAX = ITEM_XU_MAX;
+
+export type RingEffect = "none" | "glow" | "pulse" | "sparkle" | "orbit";
+
+export const RING_EFFECTS: RingEffect[] = [
+  "none",
+  "glow",
+  "pulse",
+  "sparkle",
+  "orbit",
+];
 
 export interface RingItem {
   key: string;
@@ -16,6 +26,10 @@ export interface RingItem {
   blurb?: string;
   enabled: boolean;
   sort: number;
+  /** Hiệu ứng hiển thị trên avatar cặp */
+  effect: RingEffect;
+  /** Độ nét / phóng ảnh nhẫn 0–100 (mặc định 70) */
+  imageSharpness: number;
 }
 
 export type BondStatus = "pending" | "active";
@@ -49,7 +63,13 @@ export interface BondPartnerPublic {
 
 export interface ActiveBondPublic {
   partner: BondPartnerPublic;
-  ring: { key: string; nameVi: string; image: string };
+  ring: {
+    key: string;
+    nameVi: string;
+    image: string;
+    effect: RingEffect;
+    imageSharpness: number;
+  };
   since: number;
 }
 
@@ -61,6 +81,8 @@ export interface UserBondSnippet {
   ringKey: string;
   ringNameVi: string;
   ringImage: string;
+  ringEffect: RingEffect;
+  ringSharpness: number;
   since: number;
   status: BondStatus;
 }
@@ -79,6 +101,8 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Khởi đầu nhẹ nhàng",
     enabled: true,
     sort: 10,
+    effect: "glow",
+    imageSharpness: 75,
   },
   {
     key: "gold",
@@ -88,6 +112,8 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Ánh vàng ấm",
     enabled: true,
     sort: 20,
+    effect: "pulse",
+    imageSharpness: 80,
   },
   {
     key: "rose",
@@ -97,6 +123,8 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Hồng lãng mạn",
     enabled: true,
     sort: 30,
+    effect: "sparkle",
+    imageSharpness: 85,
   },
   {
     key: "diamond",
@@ -106,6 +134,8 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Đỉnh cao",
     enabled: true,
     sort: 40,
+    effect: "orbit",
+    imageSharpness: 95,
   },
 ];
 
@@ -113,6 +143,17 @@ function clampRingPrice(n: unknown): number {
   const v = Math.floor(Number(n));
   if (!Number.isFinite(v)) return MIN_STAKE;
   return Math.max(MIN_STAKE, Math.min(RING_XU_MAX, v));
+}
+
+function clampSharpness(n: unknown): number {
+  const v = Math.floor(Number(n));
+  if (!Number.isFinite(v)) return 70;
+  return Math.max(0, Math.min(100, v));
+}
+
+function normalizeEffect(raw: unknown): RingEffect {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return RING_EFFECTS.includes(s as RingEffect) ? (s as RingEffect) : "glow";
 }
 
 function normalizeKey(raw: unknown): string {
@@ -146,6 +187,8 @@ function normalizeRing(raw: unknown): RingItem | null {
     blurb: blurb || undefined,
     enabled: g.enabled !== false,
     sort: Number.isFinite(sort) ? sort : 100,
+    effect: normalizeEffect(g.effect),
+    imageSharpness: clampSharpness(g.imageSharpness),
   };
 }
 
@@ -334,10 +377,18 @@ class RingStore {
         price: 0,
         enabled: true,
         sort: 0,
+        effect: "glow" as const,
+        imageSharpness: 70,
       } satisfies RingItem);
     return {
       partner: { ...partner },
-      ring: { key: ring.key, nameVi: ring.nameVi, image: ring.image },
+      ring: {
+        key: ring.key,
+        nameVi: ring.nameVi,
+        image: ring.image,
+        effect: ring.effect,
+        imageSharpness: ring.imageSharpness,
+      },
       since: bond.acceptedAt ?? bond.proposedAt,
     };
   }
@@ -363,6 +414,8 @@ class RingStore {
         ringKey: active.ring.key,
         ringNameVi: active.ring.nameVi,
         ringImage: active.ring.image,
+        ringEffect: active.ring.effect,
+        ringSharpness: active.ring.imageSharpness,
         since: active.since,
         status: "active",
       };
@@ -385,6 +438,8 @@ class RingStore {
         price: 0,
         enabled: true,
         sort: 0,
+        effect: "glow" as const,
+        imageSharpness: 70,
       } satisfies RingItem);
     return {
       partnerId: partner.id,
@@ -394,6 +449,8 @@ class RingStore {
       ringKey: ring.key,
       ringNameVi: ring.nameVi,
       ringImage: ring.image,
+      ringEffect: ring.effect,
+      ringSharpness: ring.imageSharpness,
       since: pending.proposedAt,
       status: "pending",
     };

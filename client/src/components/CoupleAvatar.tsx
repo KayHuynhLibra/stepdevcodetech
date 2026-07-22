@@ -1,12 +1,19 @@
-import type { SyntheticEvent } from "react";
+import type { CSSProperties, SyntheticEvent } from "react";
 import { DEFAULT_AVATAR, normalizeAvatar } from "../avatars";
-import { isRingEmoji } from "../rings";
+import {
+  isRingEmoji,
+  normalizeRingEffect,
+  type RingEffect,
+} from "../rings";
 
 interface CoupleAvatarProps {
   avatarA: string;
   avatarB: string;
   ringImage: string;
   ringAlt?: string;
+  ringEffect?: RingEffect | string;
+  /** 0–100 */
+  ringSharpness?: number;
   compact?: boolean;
   /** Click avatar A (thường là mình) */
   onAvatarAClick?: () => void;
@@ -38,35 +45,69 @@ function AvatarImg({
   );
 }
 
+function ringVisualStyle(sharpness: number): CSSProperties {
+  const s = Math.max(0, Math.min(100, Math.floor(sharpness)));
+  /** 0 → mờ/nhỏ; 100 → nét + phóng nhẹ */
+  const scale = 0.72 + (s / 100) * 0.55;
+  const contrast = 0.85 + (s / 100) * 0.45;
+  const saturate = 0.9 + (s / 100) * 0.35;
+  return {
+    transform: `scale(${scale.toFixed(3)})`,
+    filter: `contrast(${contrast.toFixed(2)}) saturate(${saturate.toFixed(2)})`,
+    imageRendering: s >= 80 ? "auto" : "auto",
+  };
+}
+
 /** [avatarA] — [ring] — [avatarB] */
 export function CoupleAvatar({
   avatarA,
   avatarB,
   ringImage,
   ringAlt = "Nhẫn",
+  ringEffect,
+  ringSharpness = 70,
   compact = false,
   onAvatarAClick,
   className = "",
 }: CoupleAvatarProps) {
   const sizeClass = compact ? "h-9 w-9" : "h-14 w-14";
-  const ringSize = compact ? "h-6 w-6 text-base" : "h-8 w-8 text-xl";
+  const ringSize = compact ? "h-7 w-7 text-lg" : "h-10 w-10 text-2xl";
   const ringClass = "ring-2 ring-[var(--gold)]/55 shadow";
+  const effect = normalizeRingEffect(ringEffect);
+  const fxClass =
+    effect === "glow"
+      ? "ring-fx ring-fx--glow"
+      : effect === "pulse"
+        ? "ring-fx ring-fx--pulse"
+        : effect === "sparkle"
+          ? "ring-fx ring-fx--sparkle"
+          : effect === "orbit"
+            ? "ring-fx ring-fx--orbit"
+            : "ring-fx";
 
-  const ringNode = isRingEmoji(ringImage) ? (
+  const ringNode = (
     <span
-      className={`flex shrink-0 items-center justify-center ${ringSize}`}
+      className={`relative flex shrink-0 items-center justify-center ${fxClass} ${ringSize}`}
       title={ringAlt}
       aria-label={ringAlt}
     >
-      {ringImage || "💍"}
+      <span
+        className="flex h-full w-full items-center justify-center"
+        style={ringVisualStyle(ringSharpness)}
+      >
+        {isRingEmoji(ringImage) ? (
+          <span className="leading-none">{ringImage || "💍"}</span>
+        ) : (
+          <img
+            src={ringImage}
+            alt={ringAlt}
+            decoding="async"
+            className="h-full w-full object-contain"
+            draggable={false}
+          />
+        )}
+      </span>
     </span>
-  ) : (
-    <img
-      src={ringImage}
-      alt={ringAlt}
-      decoding="async"
-      className={`shrink-0 object-contain ${ringSize}`}
-    />
   );
 
   const aNode = (

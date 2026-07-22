@@ -9,8 +9,9 @@ import {
 } from "./avatars.js";
 import { STARTING_BALANCE, weekKey, MIN_STAKE } from "./types.js";
 
-/** Trần tặng xu mỗi lần (P2P) */
-export const GIFT_XU_MAX = 100_000;
+import { ITEM_XU_MAX } from "./types.js";
+/** Trần tặng xu / vật phẩm mỗi lần — 10 chữ số */
+export const GIFT_XU_MAX = ITEM_XU_MAX;
 import {
   demoteRank,
   isCultivationRank,
@@ -221,6 +222,8 @@ export interface PublicUser {
     ringKey: string;
     ringNameVi: string;
     ringImage: string;
+    ringEffect?: string;
+    ringSharpness?: number;
     since: number;
     status: "pending" | "active";
   };

@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { MIN_STAKE } from "./types.js";
+import { ITEM_XU_MAX, MIN_STAKE } from "./types.js";
 
-/** Local copy — do not import from auth (circular risk). */
-export const GIFT_XU_MAX = 100_000;
+/** Trần giá quà catalog — 10 chữ số */
+export const GIFT_XU_MAX = ITEM_XU_MAX;
 
 export type GiftCategory = "warm" | "prestige" | "legend" | "fun";
 

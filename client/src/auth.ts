@@ -71,6 +71,8 @@ export interface AuthUser {
     ringKey: string;
     ringNameVi: string;
     ringImage: string;
+    ringEffect?: string;
+    ringSharpness?: number;
     since: number;
     status: "pending" | "active";
   };
