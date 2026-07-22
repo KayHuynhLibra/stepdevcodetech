@@ -1917,13 +1917,48 @@ app.post("/api/admin/catalog-upload", (req, res) => {
   res.json({ ok: true, url: saved.url });
 });
 
+/** Hoàn xu lời cầu hôn pending về người đề xuất; phát balanceUpdate. */
+function refundPendingRingPropose(bond: {
+  status: string;
+  ringKey: string;
+  proposedBy: string;
+}): number {
+  if (bond.status !== "pending") return 0;
+  const ring = ringStore.getByKey(bond.ringKey);
+  const price = ring?.price ?? 0;
+  if (price <= 0) return 0;
+  const adj = authStore.adjustBalance(bond.proposedBy, price);
+  if (!adj.ok) return 0;
+  const live = engine.applyAuthBalance(adj.user.id, adj.user.balance);
+  for (const sid of live.socketIds) {
+    io.to(sid).emit("balanceUpdate", { balance: live.balance });
+  }
+  return price;
+}
+
 app.get("/api/rings", (_req, res) => {
   res.json({ ok: true, rings: ringStore.publicCatalog() });
 });
 
 app.get("/api/ring/config", (req, res) => {
   if (!requireCapability(req, res, "ring_manage", "Cần quyền Ring")) return;
-  res.json({ ok: true, ...ringStore.snapshot() });
+  const resolvePartner = (id: string) => {
+    const u = authStore.getById(id);
+    if (!u) return null;
+    return {
+      id: u.id,
+      code: u.code,
+      username: u.username,
+      displayName: userDisplayName(u),
+      avatar: normalizeAvatar(u.avatar),
+    };
+  };
+  const snap = ringStore.snapshot();
+  res.json({
+    ok: true,
+    ...snap,
+    bondRows: ringStore.listBondsAdmin(resolvePartner),
+  });
 });
 
 app.post("/api/ring/items", (req, res) => {
@@ -1958,6 +1993,60 @@ app.post("/api/ring/items/remove", (req, res) => {
   if (!result.ok) return res.status(400).json(result);
   audit(me, "ring_remove", { detail: result.key });
   res.json({ ok: true, key: result.key, ...ringStore.snapshot() });
+});
+
+/** Staff: buộc hủy lời cầu hôn (hoàn xu) hoặc tách cặp đang active. */
+app.post("/api/ring/bonds/break", (req, res) => {
+  const me = requireCapability(req, res, "ring_manage", "Cần quyền Ring");
+  if (!me) return;
+  const bondId = String(req.body?.bondId ?? "").trim();
+  if (!bondId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu bondId" });
+  }
+  const result = ringStore.adminBreakById(bondId);
+  if (!result.ok) return res.status(400).json(result);
+
+  let refunded = 0;
+  if (result.bond.status === "pending") {
+    refunded = refundPendingRingPropose(result.bond);
+  }
+
+  const notifyIds = [result.bond.aUserId, result.bond.bUserId];
+  for (const uid of notifyIds) {
+    const u = authStore.getById(uid);
+    if (!u) continue;
+    const live = engine.applyAuthBalance(u.id, u.balance);
+    for (const sid of live.socketIds) {
+      io.to(sid).emit("ringBroken", {
+        reason: "admin",
+        refunded: uid === result.bond.proposedBy ? refunded : 0,
+      });
+    }
+  }
+
+  audit(me, "ring_admin_break", {
+    targetId: result.bond.aUserId,
+    detail: `bond=${result.bond.id} status=${result.bond.status} refund=${refunded}`,
+  });
+
+  const resolvePartner = (id: string) => {
+    const u = authStore.getById(id);
+    if (!u) return null;
+    return {
+      id: u.id,
+      code: u.code,
+      username: u.username,
+      displayName: userDisplayName(u),
+      avatar: normalizeAvatar(u.avatar),
+    };
+  };
+  res.json({
+    ok: true,
+    bond: result.bond,
+    refunded,
+    ...ringStore.snapshot(),
+    bondRows: ringStore.listBondsAdmin(resolvePartner),
+  });
 });
 
 app.get("/api/auth/ring-status", (req, res) => {
@@ -2187,30 +2276,43 @@ app.post("/api/auth/ring-reject", (req, res) => {
   const result = ringStore.reject(bondId, me.id);
   if (!result.ok) return res.status(400).json(result);
 
+  const refunded = refundPendingRingPropose(result.bond);
+
   const otherId =
     result.bond.aUserId === me.id ? result.bond.bUserId : result.bond.aUserId;
   const other = authStore.getById(otherId);
   if (other) {
     const oLive = engine.applyAuthBalance(other.id, other.balance);
     for (const sid of oLive.socketIds) {
-      io.to(sid).emit("ringBroken", { reason: "rejected" });
+      io.to(sid).emit("ringBroken", {
+        reason: "rejected",
+        refunded: other.id === result.bond.proposedBy ? refunded : 0,
+      });
     }
   }
   const meLive = engine.applyAuthBalance(me.id, me.balance);
   for (const sid of meLive.socketIds) {
-    io.to(sid).emit("ringBroken", { reason: "rejected" });
+    io.to(sid).emit("ringBroken", {
+      reason: "rejected",
+      refunded: me.id === result.bond.proposedBy ? refunded : 0,
+    });
   }
 
   audit(me, "ring_reject", {
     targetId: otherId,
-    detail: `bond=${result.bond.id}`,
+    detail: `bond=${result.bond.id} refund=${refunded}`,
   });
 
   const refreshed = authStore.resolveToken(
     String(req.headers.authorization ?? "").replace(/^Bearer\s+/i, "") ||
       undefined,
   );
-  res.json({ ok: true, bond: result.bond, user: refreshed ?? me });
+  res.json({
+    ok: true,
+    bond: result.bond,
+    refunded,
+    user: refreshed ?? me,
+  });
 });
 
 app.post("/api/auth/ring-break", (req, res) => {
@@ -2219,30 +2321,46 @@ app.post("/api/auth/ring-break", (req, res) => {
   const result = ringStore.breakBond(me.id);
   if (!result.ok) return res.status(400).json(result);
 
+  const refunded =
+    result.bond.status === "pending"
+      ? refundPendingRingPropose(result.bond)
+      : 0;
+
   const otherId =
     result.bond.aUserId === me.id ? result.bond.bUserId : result.bond.aUserId;
   const other = authStore.getById(otherId);
   const meLive = engine.applyAuthBalance(me.id, me.balance);
   for (const sid of meLive.socketIds) {
-    io.to(sid).emit("ringBroken", { reason: "broken" });
+    io.to(sid).emit("ringBroken", {
+      reason: "broken",
+      refunded: me.id === result.bond.proposedBy ? refunded : 0,
+    });
   }
   if (other) {
     const oLive = engine.applyAuthBalance(other.id, other.balance);
     for (const sid of oLive.socketIds) {
-      io.to(sid).emit("ringBroken", { reason: "broken" });
+      io.to(sid).emit("ringBroken", {
+        reason: "broken",
+        refunded: other.id === result.bond.proposedBy ? refunded : 0,
+      });
     }
   }
 
   audit(me, "ring_break", {
     targetId: otherId,
-    detail: `bond=${result.bond.id} status=${result.bond.status}`,
+    detail: `bond=${result.bond.id} status=${result.bond.status} refund=${refunded}`,
   });
 
   const refreshed = authStore.resolveToken(
     String(req.headers.authorization ?? "").replace(/^Bearer\s+/i, "") ||
       undefined,
   );
-  res.json({ ok: true, bond: result.bond, user: refreshed ?? me });
+  res.json({
+    ok: true,
+    bond: result.bond,
+    refunded,
+    user: refreshed ?? me,
+  });
 });
 
 app.get("/api/mainadmin/invites", (req, res) => {

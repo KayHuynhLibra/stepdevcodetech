@@ -54,6 +54,7 @@ import {
   RING_EFFECT_LABELS,
   RING_EFFECTS,
   ITEM_XU_MAX,
+  type BondAdminRow,
   type RingCategory,
   type RingEffect,
   type RingItem,
@@ -843,6 +844,7 @@ export default function AdminDashboard() {
     enabled: true,
   });
   const [ringRows, setRingRows] = useState<RingItem[]>([]);
+  const [bondRows, setBondRows] = useState<BondAdminRow[]>([]);
   const [ringBusy, setRingBusy] = useState(false);
   const [ringDraft, setRingDraft] = useState({
     key: "",
@@ -972,8 +974,10 @@ export default function AdminDashboard() {
     const r = await api<{
       ok: true;
       rings: RingItem[];
+      bondRows?: BondAdminRow[];
     }>("/api/ring/config");
     setRingRows(r.rings ?? []);
+    setBondRows(r.bondRows ?? []);
   }, []);
 
   const load = useCallback(async () => {
@@ -2615,6 +2619,39 @@ export default function AdminDashboard() {
       await loadRingConfig();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Lỗi xóa nhẫn");
+    } finally {
+      setRingBusy(false);
+    }
+  };
+
+  const adminBreakBond = async (row: BondAdminRow) => {
+    const label =
+      row.status === "pending"
+        ? `Hủy lời cầu hôn ${row.a.displayName || row.a.username} → ${row.b.displayName || row.b.username}? (hoàn ${row.ringPrice.toLocaleString("vi-VN")} xu)`
+        : `Tách cặp ${row.a.displayName || row.a.username} × ${row.b.displayName || row.b.username}? (không hoàn xu)`;
+    if (!window.confirm(label)) return;
+    setRingBusy(true);
+    try {
+      const r = await api<{
+        ok: true;
+        refunded?: number;
+        bondRows?: BondAdminRow[];
+        rings?: RingItem[];
+      }>("/api/ring/bonds/break", {
+        method: "POST",
+        body: JSON.stringify({ bondId: row.id }),
+      });
+      if (r.bondRows) setBondRows(r.bondRows);
+      if (r.rings) setRingRows(r.rings);
+      else await loadRingConfig();
+      const refunded = Math.floor(Number(r.refunded) || 0);
+      setMsg(
+        refunded > 0
+          ? `Đã hủy · hoàn ${refunded.toLocaleString("vi-VN")} xu`
+          : "Đã tách / hủy bond",
+      );
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi hủy bond");
     } finally {
       setRingBusy(false);
     }
@@ -4967,6 +5004,73 @@ export default function AdminDashboard() {
             </button>
           </section>
         </>
+      )}
+
+      {tab === "rings" && (main || canRingManage) && (
+        <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+          <p className="play-heading text-sm">Cặp đôi & lời cầu hôn</p>
+          <p className="text-[11px] text-[var(--play-muted)]">
+            Player: nút <strong>Nhẫn</strong> trên bàn chơi → chọn nhẫn → cầu hôn.
+            Pending bị hủy/từ chối → hoàn xu cho người cầu hôn. Cặp active tách →
+            không hoàn xu.
+          </p>
+          {bondRows.length === 0 ? (
+            <p className="text-[11px] text-[var(--play-muted)]">
+              Chưa có pending / cặp active.
+            </p>
+          ) : (
+            <ul className="max-h-72 space-y-2 overflow-y-auto">
+              {bondRows.map((row) => {
+                const aName = row.a.displayName || row.a.username;
+                const bName = row.b.displayName || row.b.username;
+                const when = new Date(
+                  row.acceptedAt ?? row.proposedAt,
+                ).toLocaleString("vi-VN");
+                return (
+                  <li
+                    key={row.id}
+                    className="rounded-lg bg-white/70 px-2 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-[var(--play-ink)]">
+                          {aName}{" "}
+                          <span className="text-[var(--play-muted)]">×</span>{" "}
+                          {bName}
+                        </p>
+                        <p className="text-[10px] text-[var(--play-muted)]">
+                          {row.status === "pending" ? "Chờ chấp nhận" : "Đã lên nhẫn"}{" "}
+                          · {row.ringNameVi} ·{" "}
+                          {row.ringPrice.toLocaleString("vi-VN")} xu · {when}
+                          {row.note ? ` · “${row.note}”` : ""}
+                        </p>
+                        <p className="font-mono text-[9px] text-[var(--play-muted)]">
+                          {row.a.code} · {row.b.code} · {row.id}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={ringBusy}
+                        onClick={() => void adminBreakBond(row)}
+                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-red-800 ring-1 ring-red-300/60 disabled:opacity-45"
+                      >
+                        {row.status === "pending" ? "Hủy + hoàn xu" : "Tách cặp"}
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <button
+            type="button"
+            disabled={ringBusy}
+            onClick={() => void loadRingConfig()}
+            className="rounded-full bg-white px-3 py-1.5 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15 disabled:opacity-45"
+          >
+            Làm mới danh sách
+          </button>
+        </section>
       )}
 
       {tab === "rings" && (main || canRingManage) && (

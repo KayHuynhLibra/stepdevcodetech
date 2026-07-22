@@ -46,6 +46,29 @@ export interface RingItem {
 
 export type BondStatus = "pending" | "active";
 
+export interface BondPartnerPublic {
+  id: string;
+  code: string;
+  username: string;
+  displayName: string;
+  avatar: string;
+}
+
+export interface BondAdminRow {
+  id: string;
+  status: BondStatus;
+  ringKey: string;
+  ringNameVi: string;
+  ringPrice: number;
+  ringImage: string;
+  proposedBy: string;
+  proposedAt: number;
+  acceptedAt?: number;
+  note?: string;
+  a: BondPartnerPublic;
+  b: BondPartnerPublic;
+}
+
 export interface UserBondSnippet {
   partnerId: string;
   partnerCode: string;

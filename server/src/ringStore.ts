@@ -104,6 +104,22 @@ export interface UserBondSnippet {
   status: BondStatus;
 }
 
+/** Hàng quản trị cặp / lời cầu hôn. */
+export interface BondAdminRow {
+  id: string;
+  status: BondStatus;
+  ringKey: string;
+  ringNameVi: string;
+  ringPrice: number;
+  ringImage: string;
+  proposedBy: string;
+  proposedAt: number;
+  acceptedAt?: number;
+  note?: string;
+  a: BondPartnerPublic;
+  b: BondPartnerPublic;
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, "..", "data");
 const PATH = join(DATA_DIR, "rings.json");
@@ -647,6 +663,60 @@ class RingStore {
     this.bonds.splice(idx, 1);
     this.save();
     return { ok: true, bond: removed };
+  }
+
+  /** Staff: buộc hủy pending hoặc tách cặp active theo bondId. */
+  adminBreakById(
+    bondId: string,
+  ): { ok: true; bond: Bond } | { ok: false; reason: string } {
+    const id = String(bondId ?? "").trim();
+    if (!id) return { ok: false, reason: "Thiếu bondId" };
+    const idx = this.bonds.findIndex((b) => b.id === id);
+    if (idx < 0) return { ok: false, reason: "Không tìm thấy cặp / lời cầu hôn" };
+    const removed = { ...this.bonds[idx]! };
+    this.bonds.splice(idx, 1);
+    this.save();
+    return { ok: true, bond: removed };
+  }
+
+  listBonds(): Bond[] {
+    return this.bonds
+      .map((b) => ({ ...b }))
+      .sort((a, b) => {
+        if (a.status !== b.status) {
+          return a.status === "pending" ? -1 : 1;
+        }
+        const at = a.acceptedAt ?? a.proposedAt;
+        const bt = b.acceptedAt ?? b.proposedAt;
+        return bt - at;
+      });
+  }
+
+  /**
+   * Snapshot quản trị: bonds kèm tên/avatar + giá nhẫn (để hoàn xu pending).
+   */
+  listBondsAdmin(
+    resolveUser: (id: string) => BondPartnerPublic | null,
+  ): BondAdminRow[] {
+    return this.listBonds().map((bond) => {
+      const ring = this.getByKey(bond.ringKey);
+      const a = resolveUser(bond.aUserId);
+      const b = resolveUser(bond.bUserId);
+      return {
+        id: bond.id,
+        status: bond.status,
+        ringKey: bond.ringKey,
+        ringNameVi: ring?.nameVi ?? bond.ringKey,
+        ringPrice: ring?.price ?? 0,
+        ringImage: ring?.image ?? "💍",
+        proposedBy: bond.proposedBy,
+        proposedAt: bond.proposedAt,
+        acceptedAt: bond.acceptedAt,
+        note: bond.note,
+        a: a ?? { id: bond.aUserId, code: "—", username: "?", displayName: "?", avatar: "" },
+        b: b ?? { id: bond.bUserId, code: "—", username: "?", displayName: "?", avatar: "" },
+      };
+    });
   }
 }
 

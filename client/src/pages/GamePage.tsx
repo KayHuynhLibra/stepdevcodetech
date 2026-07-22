@@ -495,10 +495,20 @@ export default function GamePage() {
         .catch(() => {});
     };
 
-    const onRingBroken = () => {
+    const onRingBroken = (payload?: {
+      reason?: string;
+      refunded?: number;
+    }) => {
       setPendingBondId(null);
       setPendingIsProposee(false);
-      showToast("Nhẫn / lời cầu hôn đã kết thúc");
+      const refunded = Math.floor(Number(payload?.refunded) || 0);
+      if (refunded > 0) {
+        showToast(`Đã hoàn ${formatXu(refunded)} xu lời cầu hôn`);
+      } else if (payload?.reason === "admin") {
+        showToast("Staff đã hủy nhẫn / lời cầu hôn");
+      } else {
+        showToast("Nhẫn / lời cầu hôn đã kết thúc");
+      }
       void api<{ ok: true; user: AuthUser }>("/api/auth/me")
         .then((r) => {
           const token = getToken();
