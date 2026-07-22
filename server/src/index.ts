@@ -299,11 +299,6 @@ function buildInterPayload() {
 }
 
 app.get("/health", (_req, res) => {
-  const started = (globalThis as { __sofiaoreBootAt?: number }).__sofiaoreBootAt;
-  const bootAt = started ?? Date.now();
-  if (!(globalThis as { __sofiaoreBootAt?: number }).__sofiaoreBootAt) {
-    (globalThis as { __sofiaoreBootAt?: number }).__sofiaoreBootAt = bootAt;
-  }
   const stats = engine.getOnlineStats();
   const dataDir = join(__dirname, "..", "data");
   const checks = {
@@ -312,9 +307,12 @@ app.get("/health", (_req, res) => {
     dataDir: existsSync(dataDir),
     engine: typeof stats?.phase === "string",
   };
-  const ok = Object.values(checks).every(Boolean);
-  res.status(ok ? 200 : 503).json({
-    ok,
+  // Liveness luôn 200 khi process sống — tránh Railway fail deploy vì check phụ.
+  // `ready` = đủ điều kiện phục vụ (dist + data + cards).
+  const ready = Object.values(checks).every(Boolean);
+  res.status(200).json({
+    ok: true,
+    ready,
     service: "sofiaore-tarot",
     version: process.env.npm_package_version ?? "1.0.0",
     node: process.version,

@@ -1,0 +1,16 @@
+node_modules
+dist
+*.tsbuildinfo
+.DS_Store
+*.log
+.env
+.env.local
+server/data/
+.tmp-img/
+.tmp-*
+studying/
+cybersecurity/
+version 1/
+.asset-backup/
+.git
+client/dist
