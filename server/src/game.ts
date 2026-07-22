@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import { authStore, canSeeOnline, isStaff, userDisplayName } from "./auth.js";
 import { DEFAULT_AVATAR, normalizeAvatar } from "./avatars.js";
 import { stakeStore } from "./stakeStore.js";
+import { leaderboardConfigStore } from "./leaderboardConfigStore.js";
 import {
   CARDS,
   cardLiabilities,
@@ -1518,6 +1519,7 @@ export class GameEngine {
       topAces: this.getTopAces(playerId),
       roundTopWinners: this.getRoundTopWinners(playerId),
       tarotStars: this.getTarotStars(playerId),
+      leaderboardFlags: leaderboardConfigStore.publicFlags(),
       vipPool: Math.round(this.vipPool),
       jackpotPool: Math.round(this.jackpotPool),
       lastJackpotWin: this.lastJackpotWin,

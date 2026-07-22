@@ -69,6 +69,19 @@ function viewerAuthSame(prev: GameState | null, next: GameState): boolean {
   );
 }
 
+function leaderboardFlagsSame(prev: GameState | null, next: GameState): boolean {
+  const a = prev?.leaderboardFlags;
+  const b = next.leaderboardFlags;
+  if (a === b) return true;
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return (
+    a.winToday === b.winToday &&
+    a.balance === b.balance &&
+    a.tarotStars === b.tarotStars
+  );
+}
+
 /** Gộp state socket — tránh re-render khi chỉ serverTime/vipPool jitter. */
 export function mergeGameState(
   prev: GameState | null,
@@ -91,6 +104,7 @@ export function mergeGameState(
     historyHeadSame(prev, next) &&
     chatSame(prev, next) &&
     viewerAuthSame(prev, next) &&
+    leaderboardFlagsSame(prev, next) &&
     prev.onlineDisplay === next.onlineDisplay &&
     (!trackOnline || onlinePlayersSame(prev, next));
 

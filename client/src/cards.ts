@@ -156,6 +156,12 @@ export interface GameState {
   topAces?: TopAcePreview[];
   roundTopWinners?: RoundTopWinner[];
   tarotStars?: TarotStarEntry[];
+  /** Mainadmin: ẩn/hiện BXH toàn site (thiếu → hiện) */
+  leaderboardFlags?: {
+    winToday: boolean;
+    balance: boolean;
+    tarotStars: boolean;
+  };
   vipPool?: number;
   jackpotPool?: number;
   lastJackpotWin?: { name: string; amount: number; round: number } | null;

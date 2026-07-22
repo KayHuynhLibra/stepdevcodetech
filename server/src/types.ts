@@ -152,6 +152,12 @@ export interface PublicState {
   roundTopWinners: RoundTopWinner[];
   /** Top xu dùng dự đoán tuần này */
   tarotStars: TarotStarEntry[];
+  /** Mainadmin: ẩn/hiện BXH toàn site (thiếu → coi như hiện) */
+  leaderboardFlags?: {
+    winToday: boolean;
+    balance: boolean;
+    tarotStars: boolean;
+  };
   /** Quỹ VIP hiển thị (cosmetic, dao động) */
   vipPool: number;
   /** Quỹ hũ Tarot thật (cộng dồn từ xu đặt, trả bonus ngẫu nhiên) */

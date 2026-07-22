@@ -33,6 +33,12 @@ import {
 } from "../components/AutoStakeSheet";
 import { GiftHubSheet, type GiftHubTarget } from "../components/GiftHubSheet";
 import {
+  RingHubSheet,
+  RingProposeSheet,
+  type RingHubTarget,
+} from "../components/RingHubSheet";
+import type { UserBondSnippet } from "../rings";
+import {
   GiftFlyOverlay,
   type GiftFlyQueueItem,
 } from "../components/GiftFlyOverlay";
@@ -99,6 +105,8 @@ type Sheet =
   | "autoStake"
   | "rules"
   | "giftHub"
+  | "ringHub"
+  | "ringPropose"
   | null;
 
 export default function GamePage() {
@@ -143,6 +151,10 @@ export default function GamePage() {
   const [giftBusy, setGiftBusy] = useState(false);
   const [giftPreset, setGiftPreset] = useState<GiftHubTarget | null>(null);
   const [giftFlyQueue, setGiftFlyQueue] = useState<GiftFlyQueueItem[]>([]);
+  const [ringBusy, setRingBusy] = useState(false);
+  const [ringPreset, setRingPreset] = useState<RingHubTarget | null>(null);
+  const [pendingBondId, setPendingBondId] = useState<string | null>(null);
+  const [pendingIsProposee, setPendingIsProposee] = useState(false);
   const [tarotStarRows, setTarotStarRows] = useState<TarotStarEntry[]>([]);
   const [shouts, setShouts] = useState<(ShoutEvent & { key: string })[]>([]);
   const [saintItem, setSaintItem] = useState<
@@ -184,6 +196,12 @@ export default function GamePage() {
   const onlineViewerRef = useRef(onlineViewer);
   staffViewerRef.current = staffViewer;
   onlineViewerRef.current = onlineViewer;
+
+  const lbFlags = state?.leaderboardFlags ?? {
+    winToday: true,
+    balance: true,
+    tarotStars: true,
+  };
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -436,6 +454,62 @@ export default function GamePage() {
       );
     };
 
+    const onRingProposed = (payload: {
+      fromName?: string;
+      ringNameVi?: string;
+      bondId?: string;
+    }) => {
+      if (payload.bondId) setPendingBondId(payload.bondId);
+      setPendingIsProposee(true);
+      const from = payload.fromName?.trim() || "Ai đó";
+      const ring = payload.ringNameVi?.trim() || "nhẫn";
+      showToast(`${from} cầu hôn bạn với ${ring}`);
+      void api<{ ok: true; user: AuthUser }>("/api/auth/me")
+        .then((r) => {
+          const token = getToken();
+          if (token && r.user) {
+            saveSession(token, r.user);
+            setMe(r.user);
+          }
+        })
+        .catch(() => {});
+    };
+
+    const onRingAccepted = (payload: {
+      partnerName?: string;
+      ringNameVi?: string;
+    }) => {
+      setPendingBondId(null);
+      setPendingIsProposee(false);
+      const partner = payload.partnerName?.trim() || "Đối phương";
+      const ring = payload.ringNameVi?.trim() || "nhẫn";
+      showToast(`Đã lên nhẫn với ${partner} · ${ring}`);
+      void api<{ ok: true; user: AuthUser }>("/api/auth/me")
+        .then((r) => {
+          const token = getToken();
+          if (token && r.user) {
+            saveSession(token, r.user);
+            setMe(r.user);
+          }
+        })
+        .catch(() => {});
+    };
+
+    const onRingBroken = () => {
+      setPendingBondId(null);
+      setPendingIsProposee(false);
+      showToast("Nhẫn / lời cầu hôn đã kết thúc");
+      void api<{ ok: true; user: AuthUser }>("/api/auth/me")
+        .then((r) => {
+          const token = getToken();
+          if (token && r.user) {
+            saveSession(token, r.user);
+            setMe(r.user);
+          }
+        })
+        .catch(() => {});
+    };
+
     s.on("connect", onConnect);
     s.on("disconnect", onDisconnect);
     s.on("joined", onJoined);
@@ -451,6 +525,9 @@ export default function GamePage() {
     s.on("shout", onShout);
     s.on("giftReceived", onGiftReceived);
     s.on("giftFly", onGiftFly);
+    s.on("ringProposed", onRingProposed);
+    s.on("ringAccepted", onRingAccepted);
+    s.on("ringBroken", onRingBroken);
 
     if (s.connected) onConnect();
 
@@ -474,6 +551,9 @@ export default function GamePage() {
       s.off("shout", onShout);
       s.off("giftReceived", onGiftReceived);
       s.off("giftFly", onGiftFly);
+      s.off("ringProposed", onRingProposed);
+      s.off("ringAccepted", onRingAccepted);
+      s.off("ringBroken", onRingBroken);
     };
   }, [socket, showToast, setMe, setSessionAuthed]);
 
@@ -819,6 +899,7 @@ export default function GamePage() {
           vipGranted: boolean;
           roundsPlayed: number;
           cultivationRank?: string;
+          bond?: UserBondSnippet | null;
         };
       }>(`/api/players/card?${q}`);
       return r.card;
@@ -853,6 +934,7 @@ export default function GamePage() {
             vipGranted: card.vipGranted,
             roundsPlayed: card.roundsPlayed,
             cultivationRank: card.cultivationRank ?? prev.cultivationRank,
+            bond: card.bond ?? prev.bond ?? null,
             isGuest: false,
           };
         });
@@ -1103,16 +1185,19 @@ export default function GamePage() {
   };
 
   const openLeaderboard = () => {
+    if (!lbFlags.winToday) return;
     socket?.emit("getLeaderboard");
     setSheet("leaderboard");
   };
 
   const openBalanceBoard = () => {
+    if (!lbFlags.balance) return;
     socket?.emit("getBalanceLeaderboard");
     setSheet("balanceBoard");
   };
 
   const openTarotStars = () => {
+    if (!lbFlags.tarotStars) return;
     socket?.emit("getTarotStars");
     setSheet("tarotStars");
   };
@@ -1177,6 +1262,48 @@ export default function GamePage() {
     setSheet("giftHub");
   };
 
+  const openRingHub = () => {
+    if (!getToken() || !me) {
+      showToast("Đăng nhập để lên nhẫn");
+      return;
+    }
+    void (async () => {
+      try {
+        const r = await api<{
+          ok: true;
+          bond?: { id: string; status: string; proposedBy: string } | null;
+          user: AuthUser;
+        }>("/api/auth/ring-status");
+        if (r.user) {
+          const token = getToken();
+          if (token) {
+            saveSession(token, r.user);
+            setMe(r.user);
+          }
+        }
+        if (r.bond?.status === "pending") {
+          setPendingBondId(r.bond.id);
+          setPendingIsProposee(r.bond.proposedBy !== r.user.id);
+        } else {
+          setPendingBondId(null);
+          setPendingIsProposee(false);
+        }
+      } catch {
+        /* ignore */
+      }
+      setSheet("ringHub");
+    })();
+  };
+
+  const openRingPropose = (preset?: RingHubTarget | null) => {
+    if (!getToken() || !me) {
+      showToast("Đăng nhập để cầu hôn");
+      return;
+    }
+    setRingPreset(preset ?? null);
+    setSheet("ringPropose");
+  };
+
   const sendDemoGift = async (opts: {
     gift: { key: string; nameVi: string; emoji: string; price: number };
     toUserId?: string;
@@ -1197,6 +1324,143 @@ export default function GamePage() {
     if (ok) {
       setSheet(null);
       setGiftPreset(null);
+    }
+  };
+
+  const proposeRing = async (opts: {
+    ring: { key: string; nameVi: string; price: number };
+    toUserId?: string;
+    toCode?: string;
+    toUsername?: string;
+    note?: string;
+  }) => {
+    if (ringBusy) return;
+    setRingBusy(true);
+    try {
+      const r = await api<{
+        ok: true;
+        from: AuthUser;
+        bond: { id: string };
+        ring: { nameVi: string };
+      }>("/api/auth/ring-propose", {
+        method: "POST",
+        body: JSON.stringify({
+          ringKey: opts.ring.key,
+          toUserId: opts.toUserId,
+          toCode: opts.toCode,
+          toUsername: opts.toUsername,
+          note: opts.note,
+        }),
+      });
+      const token = getToken();
+      if (token && r.from) {
+        saveSession(token, r.from);
+        setMe(r.from);
+      }
+      setPendingBondId(r.bond.id);
+      showToast(`Đã gửi lời cầu hôn · ${r.ring.nameVi}`);
+      setPendingIsProposee(false);
+      setSheet(null);
+      setRingPreset(null);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Không cầu hôn được");
+    } finally {
+      setRingBusy(false);
+    }
+  };
+
+  const acceptRing = async () => {
+    if (ringBusy || !pendingBondId) return;
+    setRingBusy(true);
+    try {
+      const r = await api<{ ok: true; user: AuthUser }>(
+        "/api/auth/ring-accept",
+        {
+          method: "POST",
+          body: JSON.stringify({ bondId: pendingBondId }),
+        },
+      );
+      const token = getToken();
+      if (token && r.user) {
+        saveSession(token, r.user);
+        setMe(r.user);
+      }
+      setPendingBondId(null);
+      setPendingIsProposee(false);
+      showToast("Đã chấp nhận lời cầu hôn");
+      setSheet(null);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Không chấp nhận được");
+    } finally {
+      setRingBusy(false);
+    }
+  };
+
+  const rejectRing = async () => {
+    if (ringBusy) return;
+    let bondId = pendingBondId;
+    if (!bondId && me?.bond?.status === "pending") {
+      try {
+        const st = await api<{
+          ok: true;
+          bond?: { id: string } | null;
+        }>("/api/auth/ring-status");
+        bondId = st.bond?.id ?? null;
+      } catch {
+        /* ignore */
+      }
+    }
+    if (!bondId) {
+      showToast("Không có lời cầu hôn");
+      return;
+    }
+    setRingBusy(true);
+    try {
+      const r = await api<{ ok: true; user: AuthUser }>(
+        "/api/auth/ring-reject",
+        {
+          method: "POST",
+          body: JSON.stringify({ bondId }),
+        },
+      );
+      const token = getToken();
+      if (token && r.user) {
+        saveSession(token, r.user);
+        setMe(r.user);
+      }
+      setPendingBondId(null);
+      setPendingIsProposee(false);
+      showToast("Đã từ chối / hủy lời cầu hôn");
+      setSheet(null);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Không hủy được");
+    } finally {
+      setRingBusy(false);
+    }
+  };
+
+  const breakRing = async () => {
+    if (ringBusy) return;
+    if (!window.confirm("Tháo nhẫn / chia tay?")) return;
+    setRingBusy(true);
+    try {
+      const r = await api<{ ok: true; user: AuthUser }>(
+        "/api/auth/ring-break",
+        { method: "POST", body: JSON.stringify({}) },
+      );
+      const token = getToken();
+      if (token && r.user) {
+        saveSession(token, r.user);
+        setMe(r.user);
+      }
+      setPendingBondId(null);
+      setPendingIsProposee(false);
+      showToast("Đã tháo nhẫn");
+      setSheet(null);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Không tháo được");
+    } finally {
+      setRingBusy(false);
     }
   };
 
@@ -1407,12 +1671,22 @@ export default function GamePage() {
             </button>
             <button
               type="button"
-              onClick={openBalanceBoard}
-              className="app-btn-ghost shrink-0 px-2 py-1 text-[10px] !text-[var(--gold-soft)]"
-              title="Top xu đang cầm"
+              onClick={() => openRingHub()}
+              className="app-btn-ghost shrink-0 px-2 py-1 text-[10px] !text-rose-200"
+              title="Nhẫn / cầu hôn"
             >
-              Đại gia
+              Nhẫn
             </button>
+            {lbFlags.balance && (
+              <button
+                type="button"
+                onClick={openBalanceBoard}
+                className="app-btn-ghost shrink-0 px-2 py-1 text-[10px] !text-[var(--gold-soft)]"
+                title="Top xu đang cầm"
+              >
+                Đại gia
+              </button>
+            )}
             <button
               type="button"
               onClick={toggleMute}
@@ -1879,6 +2153,7 @@ export default function GamePage() {
         />
 
         {/* ===== ZONE 7: Cao thủ — gọn, đủ thông tin ===== */}
+        {lbFlags.winToday && (
         <section className="game-task game-task-aces mt-3">
           <button
             type="button"
@@ -1980,8 +2255,10 @@ export default function GamePage() {
             ))}
           </ul>
         </section>
+        )}
 
         {/* ===== ZONE 8: Sao bài Tarot — xu dùng dự đoán tuần ===== */}
+        {lbFlags.tarotStars && (
         <section className="game-task game-task-stars mt-4">
           <button
             type="button"
@@ -2053,6 +2330,7 @@ export default function GamePage() {
             ))}
           </ul>
         </section>
+        )}
       </div>
 
       <RevealPopup
@@ -2181,6 +2459,19 @@ export default function GamePage() {
               }
             : undefined
         }
+        onOpenRingPropose={
+          me && getToken()
+            ? () => {
+                if (!profile) return;
+                openRingPropose({
+                  userId: profile.userId,
+                  code: profile.code,
+                  name: profile.name,
+                });
+              }
+            : undefined
+        }
+        viewerBonded={!!me?.bond}
       />
 
       <GiftHubSheet
@@ -2208,6 +2499,45 @@ export default function GamePage() {
         onSend={sendDemoGift}
       />
 
+      <RingHubSheet
+        open={sheet === "ringHub"}
+        balance={me?.balance ?? state?.yourBalance}
+        busy={ringBusy}
+        myBond={me?.bond ?? null}
+        pendingBondId={pendingBondId}
+        canAcceptPending={pendingIsProposee && !!pendingBondId}
+        onClose={() => setSheet(null)}
+        onOpenPropose={() => openRingPropose()}
+        onAccept={acceptRing}
+        onReject={rejectRing}
+        onBreak={breakRing}
+      />
+
+      <RingProposeSheet
+        open={sheet === "ringPropose"}
+        balance={me?.balance ?? state?.yourBalance}
+        busy={ringBusy}
+        preset={ringPreset}
+        onlineHints={(state?.onlinePlayers ?? [])
+          .filter(
+            (p) =>
+              !p.isBot &&
+              !!p.userId &&
+              p.userId !== me?.id &&
+              !!(p.code || p.userId),
+          )
+          .map((p) => ({
+            userId: p.userId,
+            code: p.code,
+            name: p.name,
+          }))}
+        onClose={() => {
+          setSheet(null);
+          setRingPreset(null);
+        }}
+        onPropose={proposeRing}
+      />
+
       <GiftFlyOverlay
         queue={giftFlyQueue}
         onDone={(key) =>
@@ -2229,12 +2559,12 @@ export default function GamePage() {
         onClose={() => setSheet(null)}
       />
       <LeaderboardSheet
-        open={sheet === "leaderboard"}
+        open={sheet === "leaderboard" && lbFlags.winToday}
         rows={leaderboardRows}
         onClose={() => setSheet(null)}
       />
       <BalanceLeaderboardSheet
-        open={sheet === "balanceBoard"}
+        open={sheet === "balanceBoard" && lbFlags.balance}
         rows={balanceBoardRows}
         onClose={() => setSheet(null)}
         onOpenPlayer={(row) => {
@@ -2248,7 +2578,7 @@ export default function GamePage() {
         }}
       />
       <TarotStarsSheet
-        open={sheet === "tarotStars"}
+        open={sheet === "tarotStars" && lbFlags.tarotStars}
         rows={
           tarotStarRows.length > 0
             ? tarotStarRows

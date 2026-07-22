@@ -3,6 +3,8 @@ import { VIP_ROUNDS_REQUIRED, userShowsVip } from "../auth";
 import { formatXu } from "../cards";
 import { VipFantasyAvatar } from "./VipFantasyAvatar";
 import { CultivationChip } from "./CultivationChip";
+import { CoupleAvatar } from "./CoupleAvatar";
+import { isRingEmoji, type UserBondSnippet } from "../rings";
 
 export interface PlayerInfoView {
   name: string;
@@ -23,6 +25,8 @@ export interface PlayerInfoView {
   roundsPlayed?: number;
   vipGranted?: boolean;
   cultivationRank?: string | null;
+  /** Bond active của người được xem */
+  bond?: UserBondSnippet | null;
 }
 
 interface PlayerInfoSheetProps {
@@ -52,6 +56,10 @@ interface PlayerInfoSheetProps {
   }) => void;
   /** Mở hub catalog quà demo với người này */
   onOpenGiftHub?: () => void;
+  /** Mở cầu hôn với người này (cả hai chưa bonded) */
+  onOpenRingPropose?: () => void;
+  /** Viewer đang có bond (active|pending) — ẩn nút cầu hôn */
+  viewerBonded?: boolean;
 }
 
 export function PlayerInfoSheet({
@@ -70,6 +78,8 @@ export function PlayerInfoSheet({
   onAdjustGuestBalance,
   onGiftXu,
   onOpenGiftHub,
+  onOpenRingPropose,
+  viewerBonded,
 }: PlayerInfoSheetProps) {
   const [delta, setDelta] = useState("");
   const [giftAmount, setGiftAmount] = useState("");
@@ -128,6 +138,18 @@ export function PlayerInfoSheet({
     (player.userId || player.code) &&
     meId &&
     player.userId !== meId
+  );
+
+  const targetBonded = player.bond?.status === "active";
+  const showRingPropose = !!(
+    onOpenRingPropose &&
+    !player.isBot &&
+    !player.isGuest &&
+    (player.userId || player.code) &&
+    meId &&
+    player.userId !== meId &&
+    !viewerBonded &&
+    !targetBonded
   );
 
   const submitDelta = (e: FormEvent) => {
@@ -190,7 +212,14 @@ export function PlayerInfoSheet({
           className={`player-info-hero${showVip ? " player-info-hero--vip" : ""}`}
         >
           <div className="mx-auto flex justify-center">
-            {showVip ? (
+            {targetBonded && player.bond ? (
+              <CoupleAvatar
+                avatarA={player.avatar || "/assets/ui/avatar-default.png"}
+                avatarB={player.bond.partnerAvatar}
+                ringImage={player.bond.ringImage}
+                ringAlt={player.bond.ringNameVi}
+              />
+            ) : showVip ? (
               <VipFantasyAvatar
                 size="lg"
                 src={player.avatar || "/assets/ui/avatar-default.png"}
@@ -208,6 +237,22 @@ export function PlayerInfoSheet({
             <p className="font-play text-lg font-bold text-[var(--cream)] drop-shadow-sm">
               {player.name}
             </p>
+            {targetBonded && player.bond && (
+              <p className="mt-1 flex items-center justify-center gap-1 text-[11px] text-rose-200/90">
+                {isRingEmoji(player.bond.ringImage) ? (
+                  <span>{player.bond.ringImage}</span>
+                ) : (
+                  <img
+                    src={player.bond.ringImage}
+                    alt=""
+                    className="h-4 w-4 object-contain"
+                  />
+                )}
+                <span>
+                  {player.bond.ringNameVi} · với {player.bond.partnerName}
+                </span>
+              </p>
+            )}
             <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1">
               <span className="identity-chip identity-chip--role !text-[9px]">
                 {kind}
@@ -260,6 +305,24 @@ export function PlayerInfoSheet({
                 {player.guessesToday ?? 0}
               </p>
             </div>
+          </div>
+        )}
+
+        {showRingPropose && (
+          <div className="mt-4 rounded-xl bg-white/5 px-3 py-3 ring-1 ring-rose-400/35">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-rose-200/90">
+              Lên nhẫn
+            </p>
+            <p className="mt-1 text-[10px] text-white/45">
+              Cầu hôn — trừ xu theo giá nhẫn (xu ảo)
+            </p>
+            <button
+              type="button"
+              onClick={onOpenRingPropose}
+              className="mt-2 w-full rounded-lg bg-rose-500/90 px-3 py-2 text-xs font-bold text-white"
+            >
+              Cầu hôn / Lên nhẫn
+            </button>
           </div>
         )}
 

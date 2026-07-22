@@ -19,6 +19,7 @@ import {
 } from "./cultivationRanks.js";
 import { cultivationStore } from "./cultivationStore.js";
 import { vaultStore } from "./vaultStore.js";
+import { ringStore } from "./ringStore.js";
 import {
   canControlVoiceRoomLock as grantsCanControlVoiceRoomLock,
   clampStaffGrantLevel,
@@ -26,15 +27,20 @@ import {
   normalizeVoiceRoomGrants,
   STAFF_GRANT_LEVEL_MAX,
   STAFF_GRANT_LEVEL_MIN,
+  userHasAnyRole,
+  userHasRole,
 } from "./grants.js";
 
 export {
+  effectiveRoles,
   effectiveStaffGrantLevel,
   GRANT_LEVEL_LABELS,
   hasCapability,
   ROLE_DEFAULT_LEVEL,
   STAFF_GRANT_LEVEL_MAX,
   STAFF_GRANT_LEVEL_MIN,
+  userHasAnyRole,
+  userHasRole,
   type GrantCapability,
 } from "./grants.js";
 
@@ -55,7 +61,8 @@ export type UserRole =
   | "mod"
   | "eco"
   | "audit"
-  | "sgift";
+  | "sgift"
+  | "ring";
 
 /** Đủ số ván lifetime → VIP tự động */
 export const VIP_ROUNDS_REQUIRED = 10_000;
@@ -73,6 +80,11 @@ export interface UserRecord {
   passwordHash: string;
   salt: string;
   role: UserRole;
+  /**
+   * Roles phụ — cộng dồn capability (không gồm mainadmin; không trùng primary).
+   * Thiếu khi load → migrate `[]`.
+   */
+  extraRoles?: UserRole[];
   avatar: string;
   balance: number;
   winToday: number;
@@ -165,6 +177,8 @@ export interface PublicUser {
   /** Tên chính trên bàn / BXH — nickname hợp lệ hoặc username */
   displayName: string;
   role: UserRole;
+  /** Roles phụ cộng dồn capability */
+  extraRoles?: UserRole[];
   avatar: string;
   balance: number;
   winToday: number;
@@ -198,6 +212,18 @@ export interface PublicUser {
   voiceRoomGrants?: number[];
   /** Override bậc staff 0–6; thiếu → theo role */
   staffGrantLevel?: number;
+  /** Cặp đôi / nhẫn — active công khai; pending chỉ self */
+  bond?: {
+    partnerId: string;
+    partnerCode: string;
+    partnerName: string;
+    partnerAvatar: string;
+    ringKey: string;
+    ringNameVi: string;
+    ringImage: string;
+    since: number;
+    status: "pending" | "active";
+  };
 }
 
 /** Trần xu mang từ guest → account */
@@ -333,7 +359,10 @@ function makeRecoveryCode(): string {
   return out;
 }
 
-function toPublic(u: UserRecord, opts?: { includeRecovery?: boolean }): PublicUser {
+function toPublic(
+  u: UserRecord,
+  opts?: { includeRecovery?: boolean; includePendingBond?: boolean },
+): PublicUser {
   ensureDay(u);
   u.avatar = normalizeAvatar(u.avatar);
   const roundsPlayed = Math.max(0, Math.floor(u.roundsPlayed ?? 0));
@@ -352,6 +381,7 @@ function toPublic(u: UserRecord, opts?: { includeRecovery?: boolean }): PublicUs
       u.nickname?.trim() ? u.nickname.trim() : undefined,
     displayName: userDisplayName(u),
     role: u.role,
+    extraRoles: normalizeExtraRoles(u.extraRoles, u.role),
     avatar: u.avatar,
     balance: u.balance,
     winToday: u.winToday,
@@ -373,6 +403,8 @@ function toPublic(u: UserRecord, opts?: { includeRecovery?: boolean }): PublicUs
     usernameRenamesUsed: renamesUsed,
     usernameRenamesLeft: Math.max(0, USERNAME_RENAME_MAX - renamesUsed),
   };
+  // Persist normalized extras on record (migrate missing → [])
+  u.extraRoles = pub.extraRoles;
   if (u.cultivationRank && isCultivationRank(u.cultivationRank)) {
     pub.cultivationRank = u.cultivationRank;
   }
@@ -387,7 +419,23 @@ function toPublic(u: UserRecord, opts?: { includeRecovery?: boolean }): PublicUs
   if (opts?.includeRecovery && u.recoveryCode) {
     pub.recoveryCode = u.recoveryCode;
   }
+  // Bond snippet — lazy resolver set sau khi authStore khởi tạo
+  if (bondPartnerResolver) {
+    const snippet = bondPartnerResolver(u.id, !!opts?.includePendingBond);
+    if (snippet) pub.bond = snippet;
+  }
   return pub;
+}
+
+/** Gắn bởi authStore sau init — tránh circular import ringStore ↔ auth. */
+type BondSnippetFn = (
+  userId: string,
+  includePending: boolean,
+) => PublicUser["bond"] | undefined;
+let bondPartnerResolver: BondSnippetFn | null = null;
+
+export function setBondPartnerResolver(fn: BondSnippetFn | null) {
+  bondPartnerResolver = fn;
 }
 
 export { normalizeVoiceRoomGrants };
@@ -442,8 +490,42 @@ function isAssignableStaffRole(role: string): role is UserRole {
     role === "mod" ||
     role === "eco" ||
     role === "audit" ||
-    role === "sgift"
+    role === "sgift" ||
+    role === "ring"
   );
+}
+
+/** Roles được phép gắn làm extra (không mainadmin). */
+export const EXTRA_ROLE_ALLOWED: UserRole[] = [
+  "user",
+  "deal",
+  "admin",
+  "onl",
+  "tutien",
+  "mod",
+  "eco",
+  "audit",
+  "sgift",
+  "ring",
+];
+
+/** Chuẩn hóa extraRoles: bỏ mainadmin, bỏ trùng primary, unique. */
+export function normalizeExtraRoles(
+  raw: unknown,
+  primary: UserRole,
+): UserRole[] {
+  if (!Array.isArray(raw)) return [];
+  const out: UserRole[] = [];
+  const seen = new Set<string>();
+  for (const x of raw) {
+    const r = String(x ?? "").trim();
+    if (!r || r === "mainadmin" || r === primary) continue;
+    if (!isAssignableStaffRole(r)) continue;
+    if (seen.has(r)) continue;
+    seen.add(r);
+    out.push(r);
+  }
+  return out;
 }
 
 function isUserRecord(u: unknown): u is UserRecord {
@@ -459,7 +541,8 @@ function isUserRecord(u: unknown): u is UserRecord {
     r.role === "mod" ||
     r.role === "eco" ||
     r.role === "audit" ||
-    r.role === "sgift";
+    r.role === "sgift" ||
+    r.role === "ring";
   return (
     typeof r.id === "string" &&
     typeof r.username === "string" &&
@@ -602,6 +685,7 @@ export class AuthStore {
         if (rec.cultivationRank && !isCultivationRank(rec.cultivationRank)) {
           delete rec.cultivationRank;
         }
+        rec.extraRoles = normalizeExtraRoles(rec.extraRoles, rec.role);
         this.indexUser(u);
       }
       console.log(`[auth] Loaded ${this.byId.size} users from disk`);
@@ -787,7 +871,7 @@ export class AuthStore {
     this.indexUser(user);
     this.scheduleSave();
     const token = this.issueToken(user.id);
-    return { ok: true, user: toPublic(user, { includeRecovery: true }), token };
+    return { ok: true, user: toPublic(user, { includeRecovery: true, includePendingBond: true }), token };
   }
 
   login(
@@ -815,7 +899,11 @@ export class AuthStore {
       this.scheduleSave();
     }
     ensureDay(user);
-    return { ok: true, user: toPublic(user), token: this.issueToken(user.id) };
+    return {
+      ok: true,
+      user: toPublic(user, { includePendingBond: true }),
+      token: this.issueToken(user.id),
+    };
   }
 
   private issueToken(userId: string): string {
@@ -844,7 +932,7 @@ export class AuthStore {
       this.scheduleTokenSave();
       return null;
     }
-    return toPublic(user);
+    return toPublic(user, { includePendingBond: true });
   }
 
   /** Xem userId của token (kể cả khi banned) — không thu hồi. */
@@ -928,7 +1016,7 @@ export class AuthStore {
     return { ok: true, username: user.username, code: user.code };
   }
 
-  /** Mainadmin: đổi role (không đụng mainadmin). */
+  /** Mainadmin: đổi role primary (không đụng mainadmin). Xóa role đó khỏi extras nếu có. */
   setUserRole(
     userId: string,
     role:
@@ -940,7 +1028,8 @@ export class AuthStore {
       | "mod"
       | "eco"
       | "audit"
-      | "sgift",
+      | "sgift"
+      | "ring",
   ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
     const user = this.byId.get(userId);
     if (!user) return { ok: false, reason: "Không tìm thấy user" };
@@ -951,17 +1040,59 @@ export class AuthStore {
       return { ok: false, reason: "Role không hợp lệ" };
     }
     user.role = role;
+    user.extraRoles = normalizeExtraRoles(user.extraRoles, role);
     if (
       role === "admin" ||
       role === "eco" ||
       role === "audit" ||
-      role === "sgift"
+      role === "sgift" ||
+      role === "ring"
     ) {
       user.mustChangePassword = user.mustChangePassword ?? true;
     }
     this.revokeAllTokens(userId);
     this.scheduleSave();
     this.scheduleTokenSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  /**
+   * Mainadmin: thay danh sách roles phụ (cộng dồn).
+   * Không gắn mainadmin; không trùng primary; mainadmin account → chỉ `[]`.
+   */
+  setUserExtraRoles(
+    userId: string,
+    roles: unknown,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    if (user.role === "mainadmin") {
+      const list = Array.isArray(roles) ? roles : [];
+      if (list.length > 0) {
+        return {
+          ok: false,
+          reason: "Mainadmin không gắn roles phụ",
+        };
+      }
+      user.extraRoles = [];
+      this.scheduleSave();
+      return { ok: true, user: toPublic(user) };
+    }
+    if (!Array.isArray(roles)) {
+      return { ok: false, reason: "extraRoles phải là mảng" };
+    }
+    for (const x of roles) {
+      const r = String(x ?? "").trim();
+      if (!r) continue;
+      if (r === "mainadmin") {
+        return { ok: false, reason: "Không gắn mainadmin làm role phụ" };
+      }
+      if (!isAssignableStaffRole(r)) {
+        return { ok: false, reason: `Role phụ không hợp lệ: ${r}` };
+      }
+    }
+    user.extraRoles = normalizeExtraRoles(roles, user.role);
+    this.scheduleSave();
     return { ok: true, user: toPublic(user) };
   }
 
@@ -1632,6 +1763,51 @@ export class AuthStore {
   }
 
   /**
+   * Trừ xu giải trí (nhẫn…) — không chuyển cho ai.
+   */
+  spendXu(
+    userId: string,
+    amountRaw: unknown,
+  ):
+    | { ok: true; user: PublicUser; amount: number }
+    | { ok: false; reason: string } {
+    const amount = Math.floor(Number(amountRaw));
+    if (!Number.isFinite(amount) || amount < MIN_STAKE) {
+      return { ok: false, reason: `Tối thiểu ${MIN_STAKE} xu` };
+    }
+    if (amount > GIFT_XU_MAX) {
+      return {
+        ok: false,
+        reason: `Tối đa ${GIFT_XU_MAX.toLocaleString("vi-VN")} xu / lần`,
+      };
+    }
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    if (user.banned) return { ok: false, reason: "Tài khoản bị khóa" };
+    if (user.balance < amount) {
+      return { ok: false, reason: "Số dư không đủ" };
+    }
+    user.balance -= amount;
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user, { includePendingBond: true }), amount };
+  }
+
+  /** Resolve user by id / code / username. */
+  resolveUserRef(ref: {
+    userId?: string;
+    code?: string;
+    username?: string;
+  }): UserRecord | undefined {
+    const tid = String(ref.userId ?? "").trim();
+    const code = String(ref.code ?? "").trim();
+    const username = String(ref.username ?? "").trim().toLowerCase();
+    if (tid) return this.byId.get(tid);
+    if (code) return this.getByCode(code);
+    if (username) return this.users.get(username);
+    return undefined;
+  }
+
+  /**
    * Tặng xu P2P — zero-sum, không đụng vault.
    * amount ≥ MIN_STAKE, ≤ GIFT_XU_MAX.
    */
@@ -1792,12 +1968,36 @@ export class AuthStore {
 
 export const authStore = new AuthStore();
 
-export function isStaff(user: { role: UserRole }): boolean {
-  return user.role === "admin" || user.role === "mainadmin";
+setBondPartnerResolver((userId, includePending) => {
+  return ringStore.bondSnippetFor(
+    userId,
+    (partnerId) => {
+      const u = authStore.getById(partnerId);
+      if (!u) return null;
+      return {
+        id: u.id,
+        code: u.code,
+        username: u.username,
+        displayName: userDisplayName(u),
+        avatar: normalizeAvatar(u.avatar),
+      };
+    },
+    { includePending },
+  );
+});
+
+/** admin|mainadmin primary hoặc extra admin. */
+export function isStaff(
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
+): boolean {
+  if (!user) return false;
+  return userHasAnyRole(user, ["admin", "mainadmin"]);
 }
 
-export function isMod(user: { role: UserRole } | null | undefined): boolean {
-  return user?.role === "mod";
+export function isMod(
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
+): boolean {
+  return userHasRole(user, "mod");
 }
 
 /**
@@ -1805,65 +2005,96 @@ export function isMod(user: { role: UserRole } | null | undefined): boolean {
  * (Host phòng vẫn có quyền riêng khi đang ngồi ghế.)
  */
 export function canModerateVoiceRoom(
-  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+  user:
+    | { role: UserRole; extraRoles?: UserRole[]; staffGrantLevel?: number }
+    | null
+    | undefined,
 ): boolean {
   return hasCapability(user, "voice_mod");
 }
 
 /** Tab Room trên dashboard — mainadmin hoặc mod (hoặc L3+ override). */
 export function canAccessRoomAdmin(
-  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+  user:
+    | { role: UserRole; extraRoles?: UserRole[]; staffGrantLevel?: number }
+    | null
+    | undefined,
 ): boolean {
   return hasCapability(user, "room_admin_tab");
 }
 
 /** Xem số online + danh sách người chơi (không gồm công cụ admin). */
 export function canSeeOnline(
-  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+  user:
+    | { role: UserRole; extraRoles?: UserRole[]; staffGrantLevel?: number }
+    | null
+    | undefined,
 ): boolean {
   return hasCapability(user, "see_online");
 }
 
-export function isOnlineViewer(user: { role: UserRole } | null | undefined): boolean {
-  return user?.role === "onl";
+export function isOnlineViewer(
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
+): boolean {
+  return userHasRole(user, "onl");
 }
 
-export function isTutien(user: { role: UserRole } | null | undefined): boolean {
-  return user?.role === "tutien";
+export function isTutien(
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
+): boolean {
+  return userHasRole(user, "tutien");
 }
 
 /** Gán cảnh giới / sửa bảng màu — Tu Tiên hoặc mainadmin. */
 export function canManageCultivation(
-  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+  user:
+    | { role: UserRole; extraRoles?: UserRole[]; staffGrantLevel?: number }
+    | null
+    | undefined,
 ): boolean {
   return hasCapability(user, "cultivation_manage");
 }
 
-export function isMainAdmin(user: { role: UserRole }): boolean {
-  return user.role === "mainadmin";
+/** Chỉ primary mainadmin. */
+export function isMainAdmin(
+  user: { role: UserRole } | null | undefined,
+): boolean {
+  return user?.role === "mainadmin";
 }
 
-export function isEco(user: { role: UserRole } | null | undefined): boolean {
-  return user?.role === "eco";
+export function isEco(
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
+): boolean {
+  return userHasRole(user, "eco");
 }
 
-export function isAudit(user: { role: UserRole } | null | undefined): boolean {
-  return user?.role === "audit";
+export function isAudit(
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
+): boolean {
+  return userHasRole(user, "audit");
 }
 
-export function isSGift(user: { role: UserRole } | null | undefined): boolean {
-  return user?.role === "sgift";
+export function isSGift(
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
+): boolean {
+  return userHasRole(user, "sgift");
 }
 
 /** Dashboard staff (admin/main/eco/audit/sgift) — không gồm deal/mod/tutien. */
 export function canAccessStaffDashboard(
-  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+  user:
+    | { role: UserRole; extraRoles?: UserRole[]; staffGrantLevel?: number }
+    | null
+    | undefined,
 ): boolean {
   return hasCapability(user, "staff_dashboard");
 }
 
 export function isBalanceOperator(
-  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+  user:
+    | { role: UserRole; extraRoles?: UserRole[]; staffGrantLevel?: number }
+    | null
+    | undefined,
 ): boolean {
   return hasCapability(user, "balance_ops");
 }

@@ -11,11 +11,8 @@ import {
   getToken,
   hasCapability,
   homePath,
-  isAudit,
-  isEco,
   isMainAdmin,
   isMod,
-  isSGift,
   isStaff,
   isTutien,
   playPath,
@@ -49,6 +46,7 @@ import {
   type GiftFlyTier,
   type GiftItem,
 } from "../gifts";
+import { isRingEmoji, type RingItem } from "../rings";
 
 type CultBenefitDraft = Record<
   CultivationRank,
@@ -105,6 +103,7 @@ type TabId =
   | "rolead"
   | "tutien"
   | "gifts"
+  | "rings"
   | "room"
   | "deleteAcc";
 
@@ -674,6 +673,7 @@ export default function AdminDashboard() {
     const u = getStoredUser();
     if (u?.role === "tutien") return "tutien";
     if (u?.role === "sgift") return "gifts";
+    if (u?.role === "ring") return "rings";
     return "overview";
   });
   const [managedGame, setManagedGame] = useState<ManagedGame>(() => {
@@ -717,6 +717,12 @@ export default function AdminDashboard() {
     profitPct: 12,
   });
   const [vaultFlagsBusy, setVaultFlagsBusy] = useState(false);
+  const [lbFlagsDraft, setLbFlagsDraft] = useState({
+    winToday: true,
+    balance: true,
+    tarotStars: true,
+  });
+  const [lbFlagsBusy, setLbFlagsBusy] = useState(false);
   const [cultivationBusy, setCultivationBusy] = useState(false);
   const [rankDraftUserId, setRankDraftUserId] = useState("");
   const [rankDraftValue, setRankDraftValue] = useState<string>("");
@@ -820,6 +826,17 @@ export default function AdminDashboard() {
     price: "100",
     category: "warm" as GiftCategory,
     blurb: "",
+    enabled: true,
+  });
+  const [ringRows, setRingRows] = useState<RingItem[]>([]);
+  const [ringBusy, setRingBusy] = useState(false);
+  const [ringDraft, setRingDraft] = useState({
+    key: "",
+    nameVi: "",
+    image: "/assets/rings/ring-silver.svg",
+    price: "1000",
+    blurb: "",
+    sort: "10",
     enabled: true,
   });
   const [extraStakeDraft, setExtraStakeDraft] = useState("");
@@ -928,6 +945,14 @@ export default function AdminDashboard() {
     }>("/api/sgift/config");
     setGiftRows(r.gifts ?? []);
     setFlyTierRows(r.flyTiers ?? []);
+  }, []);
+
+  const loadRingConfig = useCallback(async () => {
+    const r = await api<{
+      ok: true;
+      rings: RingItem[];
+    }>("/api/ring/config");
+    setRingRows(r.rings ?? []);
   }, []);
 
   const load = useCallback(async () => {
@@ -1058,6 +1083,25 @@ export default function AdminDashboard() {
         /* ignore */
       }
     }
+    if (overview.me.role === "mainadmin") {
+      try {
+        const lb = await api<{
+          ok: true;
+          config: {
+            winToday: boolean;
+            balance: boolean;
+            tarotStars: boolean;
+          };
+        }>("/api/mainadmin/leaderboard-config");
+        setLbFlagsDraft({
+          winToday: lb.config.winToday,
+          balance: lb.config.balance,
+          tarotStars: lb.config.tarotStars,
+        });
+      } catch {
+        /* ignore */
+      }
+    }
   }, [managedGame]);
 
   useEffect(() => {
@@ -1089,6 +1133,7 @@ export default function AdminDashboard() {
         if (r.user.role === "eco") setTab("vault");
         if (r.user.role === "audit") setTab("tools");
         if (r.user.role === "sgift") setTab("gifts");
+        if (r.user.role === "ring") setTab("rings");
         const token = getToken();
         if (token) saveSession(token, r.user);
         return load();
@@ -1115,6 +1160,14 @@ export default function AdminDashboard() {
       setMsg(e instanceof Error ? e.message : "Lỗi tải catalog quà"),
     );
   }, [tab, me, loadGiftConfig]);
+
+  useEffect(() => {
+    if (tab !== "rings" || !me) return;
+    if (!isMainAdmin(me) && !hasCapability(me, "ring_manage")) return;
+    void loadRingConfig().catch((e) =>
+      setMsg(e instanceof Error ? e.message : "Lỗi tải catalog nhẫn"),
+    );
+  }, [tab, me, loadRingConfig]);
 
   useEffect(() => {
     if (data?.inter?.allSlotMinutes != null) {
@@ -1365,7 +1418,8 @@ export default function AdminDashboard() {
       | "mod"
       | "eco"
       | "audit"
-      | "sgift",
+      | "sgift"
+      | "ring",
   ) => {
     try {
       await api("/api/mainadmin/user-role", {
@@ -1389,11 +1443,81 @@ export default function AdminDashboard() {
                       ? "Đã cấp role Audit (IP / tra cứu)"
                       : role === "sgift"
                         ? "Đã cấp role SGift (quà)"
-                        : "Đã chuyển về user",
+                        : role === "ring"
+                          ? "Đã cấp role Ring (nhẫn)"
+                          : "Đã chuyển về user",
       );
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi đổi role");
+    }
+  };
+
+  const setUserExtraRoles = async (
+    userId: string,
+    extraRoles: AuthUser["role"][],
+  ) => {
+    try {
+      await api("/api/mainadmin/user-extra-roles", {
+        method: "POST",
+        body: JSON.stringify({ userId, extraRoles }),
+      });
+      setMsg(
+        extraRoles.length
+          ? `Đã lưu roles phụ: ${extraRoles.join(", ")}`
+          : "Đã xóa hết roles phụ",
+      );
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi roles phụ");
+    }
+  };
+
+  const toggleExtraRole = (
+    user: AuthUser,
+    role:
+      | "user"
+      | "deal"
+      | "admin"
+      | "onl"
+      | "tutien"
+      | "mod"
+      | "eco"
+      | "audit"
+      | "sgift"
+      | "ring",
+  ) => {
+    if (user.role === role || user.role === "mainadmin") return;
+    const cur = new Set(user.extraRoles ?? []);
+    if (cur.has(role)) cur.delete(role);
+    else cur.add(role);
+    void setUserExtraRoles(user.id, [...cur] as AuthUser["role"][]);
+  };
+
+  const saveLeaderboardFlags = async () => {
+    setLbFlagsBusy(true);
+    try {
+      const r = await api<{
+        ok: true;
+        config: {
+          winToday: boolean;
+          balance: boolean;
+          tarotStars: boolean;
+        };
+      }>("/api/mainadmin/leaderboard-config", {
+        method: "POST",
+        body: JSON.stringify(lbFlagsDraft),
+      });
+      setLbFlagsDraft({
+        winToday: r.config.winToday,
+        balance: r.config.balance,
+        tarotStars: r.config.tarotStars,
+      });
+      setMsg("Đã lưu ẩn/hiện BXH toàn site");
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi lưu BXH");
+    } finally {
+      setLbFlagsBusy(false);
     }
   };
 
@@ -2396,6 +2520,76 @@ export default function AdminDashboard() {
     }
   };
 
+  const saveRingUpsert = async () => {
+    const key = ringDraft.key.trim().toLowerCase();
+    if (!key) {
+      setMsg("Thiếu key nhẫn");
+      return;
+    }
+    setRingBusy(true);
+    try {
+      await api("/api/ring/items", {
+        method: "POST",
+        body: JSON.stringify({
+          key,
+          nameVi: ringDraft.nameVi.trim() || key,
+          image: ringDraft.image.trim() || "💍",
+          price: Math.floor(Number(ringDraft.price)),
+          blurb: ringDraft.blurb.trim() || undefined,
+          sort: Math.floor(Number(ringDraft.sort)) || 100,
+          enabled: ringDraft.enabled,
+        }),
+      });
+      setMsg(`Đã lưu nhẫn ${key}`);
+      setRingDraft({
+        key: "",
+        nameVi: "",
+        image: "/assets/rings/ring-silver.svg",
+        price: "1000",
+        blurb: "",
+        sort: "10",
+        enabled: true,
+      });
+      await loadRingConfig();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi lưu nhẫn");
+    } finally {
+      setRingBusy(false);
+    }
+  };
+
+  const toggleRingRow = async (key: string, enabled: boolean) => {
+    setRingBusy(true);
+    try {
+      await api("/api/ring/items/toggle", {
+        method: "POST",
+        body: JSON.stringify({ key, enabled }),
+      });
+      await loadRingConfig();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi bật/tắt nhẫn");
+    } finally {
+      setRingBusy(false);
+    }
+  };
+
+  const removeRingRow = async (key: string) => {
+    if (!window.confirm(`Xóa nhẫn ${key}?`)) return;
+    setRingBusy(true);
+    try {
+      await api("/api/ring/items/remove", {
+        method: "POST",
+        body: JSON.stringify({ key }),
+      });
+      setMsg(`Đã xóa ${key}`);
+      await loadRingConfig();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi xóa nhẫn");
+    } finally {
+      setRingBusy(false);
+    }
+  };
+
   const saveExtraStakeTiers = async () => {
     const parts = extraStakeDraft
       .split(/[,;\s]+/)
@@ -2471,11 +2665,13 @@ export default function AdminDashboard() {
 
   const s = data.stats;
   const main = isMainAdmin(me);
-  const tutienOnly = isTutien(me);
-  const modOnly = isMod(me);
-  const ecoOnly = isEco(me);
-  const auditOnly = isAudit(me);
-  const sgiftOnly = isSGift(me);
+  /** Tab filter theo primary role — extras không thu hẹp dashboard admin. */
+  const tutienOnly = me?.role === "tutien";
+  const modOnly = me?.role === "mod";
+  const ecoOnly = me?.role === "eco";
+  const auditOnly = me?.role === "audit";
+  const sgiftOnly = me?.role === "sgift";
+  const ringOnly = me?.role === "ring";
   const canVault = hasCapability(me, "vault_ops");
   const canTraffic = hasCapability(me, "traffic_view");
   const canInter = hasCapability(me, "inter_control");
@@ -2485,6 +2681,7 @@ export default function AdminDashboard() {
   const canInvites = hasCapability(me, "invite_ops");
   const canArcanaCfg = hasCapability(me, "arcana_config");
   const canGiftManage = hasCapability(me, "gift_manage");
+  const canRingManage = hasCapability(me, "ring_manage");
   const canGameSwitch = canVault || canArcanaCfg || canInter;
   const canCultivation = canManageCultivation(me);
   const canRoom = canAccessRoomAdmin(me);
@@ -2494,7 +2691,7 @@ export default function AdminDashboard() {
     {
       id: "overview",
       label: "Tổng quan",
-      show: !tutienOnly && !modOnly && !sgiftOnly,
+      show: !tutienOnly && !modOnly && !sgiftOnly && !ringOnly,
     },
     { id: "tools", label: "Tra cứu", show: canTools },
     {
@@ -2517,7 +2714,13 @@ export default function AdminDashboard() {
     {
       id: "users",
       label: "User & Bot",
-      show: !tutienOnly && !modOnly && !ecoOnly && !auditOnly && !sgiftOnly,
+      show:
+        !tutienOnly &&
+        !modOnly &&
+        !ecoOnly &&
+        !auditOnly &&
+        !sgiftOnly &&
+        !ringOnly,
     },
     { id: "rolead", label: "RoleAD", show: main },
     {
@@ -2529,12 +2732,18 @@ export default function AdminDashboard() {
     {
       id: "mod",
       label: "Mod",
-      show: !tutienOnly && !modOnly && !ecoOnly && !auditOnly && !sgiftOnly,
+      show:
+        !tutienOnly &&
+        !modOnly &&
+        !ecoOnly &&
+        !auditOnly &&
+        !sgiftOnly &&
+        !ringOnly,
     },
     {
       id: "coupons",
       label: "Coupon ẩn",
-      show: !tutienOnly && !modOnly && !auditOnly && !sgiftOnly,
+      show: !tutienOnly && !modOnly && !auditOnly && !sgiftOnly && !ringOnly,
     },
     { id: "invites", label: "Đăng ký", show: canInvites },
     {
@@ -2547,6 +2756,11 @@ export default function AdminDashboard() {
       id: "gifts",
       label: "Quà",
       show: main || canGiftManage,
+    },
+    {
+      id: "rings",
+      label: "Nhẫn",
+      show: main || canRingManage,
     },
   ];
 
@@ -3639,7 +3853,8 @@ export default function AdminDashboard() {
                 Mainadmin tự bật quyền phụ (áp dụng cả chính mình). Role{" "}
                 <strong>mainadmin</strong> không đổi được — bảo vệ tài khoản gốc.
                 Bậc staff L0–L6 (override) nâng capability; URL home vẫn theo{" "}
-                <strong>role</strong>.
+                <strong>role</strong> primary. Roles phụ cộng dồn quyền (mod +
+                tutien…).
               </p>
             </div>
             {(() => {
@@ -3658,6 +3873,9 @@ export default function AdminDashboard() {
                     {self.username}{" "}
                     <span className="text-[10px] font-semibold text-[var(--wood-deep)]">
                       {self.role}
+                      {(self.extraRoles?.length ?? 0) > 0
+                        ? ` + ${self.extraRoles!.join(", ")}`
+                        : ""}
                     </span>
                   </p>
                   <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
@@ -3747,12 +3965,58 @@ export default function AdminDashboard() {
           </section>
 
           <section className="app-panel mt-3 space-y-2 p-3">
+            <p className="play-heading text-sm">Ẩn / hiện BXH toàn site</p>
+            <p className="text-[11px] text-[var(--play-muted)]">
+              Tắt để ẩn khu vực bảng xếp hạng trên bàn chơi cho mọi người chơi.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  ["winToday", "Cao thủ"],
+                  ["balance", "Đại gia"],
+                  ["tarotStars", "Sao bài"],
+                ] as const
+              ).map(([key, label]) => {
+                const on = lbFlagsDraft[key];
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() =>
+                      setLbFlagsDraft((prev) => ({
+                        ...prev,
+                        [key]: !prev[key],
+                      }))
+                    }
+                    className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                      on
+                        ? "bg-emerald-800 text-emerald-50"
+                        : "bg-slate-600 text-white"
+                    }`}
+                  >
+                    {label}: {on ? "hiện" : "ẩn"}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                disabled={lbFlagsBusy}
+                onClick={() => void saveLeaderboardFlags()}
+                className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+              >
+                {lbFlagsBusy ? "…" : "Lưu BXH"}
+              </button>
+            </div>
+          </section>
+
+          <section className="app-panel mt-3 space-y-2 p-3">
             <p className="play-heading text-sm">Cấp / thu role</p>
             <p className="text-[11px] text-[var(--play-muted)]">
-              user · deal · admin · onl · tutien · mod · eco · audit · sgift. Không đụng
-              tài khoản mainadmin khác. Eco = kho/lưu lượng; Audit = IP/tra cứu;
-              SGift = catalog quà / fly.
-              Bậc L = override capability; Room# = đóng phòng / đặt MK.
+              Primary: user · deal · admin · onl · tutien · mod · eco · audit ·
+              sgift / ring. Roles phụ cộng dồn quyền (không gồm mainadmin). Eco =
+              kho/lưu lượng; Audit = IP/tra cứu; SGift = catalog quà / fly; Ring =
+              catalog nhẫn. Bậc
+              L = override capability; Room# = đóng phòng / đặt MK.
             </p>
             <input
               value={userFilter}
@@ -3775,6 +4039,9 @@ export default function AdminDashboard() {
                           {u.username}{" "}
                           <span className="text-[var(--wood-deep)]">
                             {u.role}
+                            {(u.extraRoles?.length ?? 0) > 0
+                              ? ` + ${u.extraRoles!.join(", ")}`
+                              : ""}
                           </span>
                           {u.id === data.me.id && (
                             <span className="ml-1 text-amber-700">(bạn)</span>
@@ -3793,6 +4060,9 @@ export default function AdminDashboard() {
                     </div>
                     {u.role !== "mainadmin" && (
                       <div className="mt-2 flex flex-wrap gap-1">
+                        <span className="w-full text-[9px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
+                          Role chính
+                        </span>
                         {(
                           [
                             ["user", "User"],
@@ -3801,6 +4071,7 @@ export default function AdminDashboard() {
                             ["eco", "Eco"],
                             ["audit", "Audit"],
                             ["sgift", "SGift"],
+                            ["ring", "Ring"],
                             ["onl", "Onl"],
                             ["tutien", "Tu Tiên"],
                             ["mod", "Mod"],
@@ -3820,6 +4091,50 @@ export default function AdminDashboard() {
                             {label}
                           </button>
                         ))}
+                        <div className="mt-1.5 flex w-full flex-wrap items-center gap-1">
+                          <span className="w-full text-[9px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
+                            Roles phụ (cộng dồn)
+                          </span>
+                          {(
+                            [
+                              ["user", "User"],
+                              ["deal", "Deal"],
+                              ["admin", "Admin"],
+                              ["eco", "Eco"],
+                              ["audit", "Audit"],
+                              ["sgift", "SGift"],
+                              ["ring", "Ring"],
+                              ["onl", "Onl"],
+                              ["tutien", "Tu Tiên"],
+                              ["mod", "Mod"],
+                            ] as const
+                          ).map(([role, label]) => {
+                            const isPrimary = u.role === role;
+                            const active = (u.extraRoles ?? []).includes(role);
+                            return (
+                              <button
+                                key={`extra-${role}`}
+                                type="button"
+                                disabled={isPrimary}
+                                title={
+                                  isPrimary
+                                    ? "Đang là role chính"
+                                    : active
+                                      ? "Bỏ role phụ"
+                                      : "Thêm role phụ"
+                                }
+                                onClick={() => toggleExtraRole(u, role)}
+                                className={`rounded-full px-2.5 py-1 text-[10px] font-bold disabled:opacity-35 ${
+                                  active
+                                    ? "bg-violet-800 text-violet-50"
+                                    : "bg-white text-[var(--play-ink)] ring-1 ring-dashed ring-[var(--wood-deep)]/25"
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
                         <div className="mt-1.5 flex w-full flex-wrap items-center gap-1">
                           <span className="text-[9px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
                             Bậc L
@@ -4583,6 +4898,171 @@ export default function AdminDashboard() {
             </button>
           </section>
         </>
+      )}
+
+      {tab === "rings" && (main || canRingManage) && (
+        <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+          <p className="play-heading text-sm">Catalog nhẫn</p>
+          <p className="text-[11px] text-[var(--play-muted)]">
+            Giá clamp 10–100.000 xu. Image: path `/assets/...` hoặc emoji.
+          </p>
+          <ul className="max-h-80 space-y-2 overflow-y-auto">
+            {ringRows
+              .slice()
+              .sort((a, b) => a.sort - b.sort || a.key.localeCompare(b.key))
+              .map((g) => (
+                <li
+                  key={g.key}
+                  className="rounded-lg bg-white/70 px-2 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      {isRingEmoji(g.image) ? (
+                        <span className="text-xl">{g.image}</span>
+                      ) : (
+                        <img
+                          src={g.image}
+                          alt=""
+                          className="h-8 w-8 object-contain"
+                        />
+                      )}
+                      <div className="min-w-0">
+                        <p className="font-semibold text-[var(--play-ink)]">
+                          {g.nameVi}{" "}
+                          <span className="font-mono text-[10px] text-[var(--play-muted)]">
+                            {g.key}
+                          </span>
+                        </p>
+                        <p className="text-[10px] text-[var(--play-muted)]">
+                          sort {g.sort} · {formatXu(g.price)} xu
+                          {g.enabled ? "" : " · tắt"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        disabled={ringBusy}
+                        onClick={() =>
+                          setRingDraft({
+                            key: g.key,
+                            nameVi: g.nameVi,
+                            image: g.image,
+                            price: String(g.price),
+                            blurb: g.blurb ?? "",
+                            sort: String(g.sort),
+                            enabled: g.enabled,
+                          })
+                        }
+                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15"
+                      >
+                        Sửa
+                      </button>
+                      <button
+                        type="button"
+                        disabled={ringBusy}
+                        onClick={() => void toggleRingRow(g.key, !g.enabled)}
+                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15"
+                      >
+                        {g.enabled ? "Tắt" : "Bật"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={ringBusy}
+                        onClick={() => void removeRingRow(g.key)}
+                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-red-800 ring-1 ring-red-300/60"
+                      >
+                        Xóa
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+          </ul>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+              Key
+              <input
+                value={ringDraft.key}
+                onChange={(e) =>
+                  setRingDraft((d) => ({ ...d, key: e.target.value }))
+                }
+                className="app-input mt-0.5 w-full font-mono"
+              />
+            </label>
+            <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+              Tên
+              <input
+                value={ringDraft.nameVi}
+                onChange={(e) =>
+                  setRingDraft((d) => ({ ...d, nameVi: e.target.value }))
+                }
+                className="app-input mt-0.5 w-full"
+              />
+            </label>
+            <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+              Giá
+              <input
+                type="number"
+                value={ringDraft.price}
+                onChange={(e) =>
+                  setRingDraft((d) => ({ ...d, price: e.target.value }))
+                }
+                className="app-input mt-0.5 w-full"
+              />
+            </label>
+            <label className="col-span-2 text-[10px] font-semibold text-[var(--play-muted)] sm:col-span-2">
+              Image (URL / emoji)
+              <input
+                value={ringDraft.image}
+                onChange={(e) =>
+                  setRingDraft((d) => ({ ...d, image: e.target.value }))
+                }
+                className="app-input mt-0.5 w-full font-mono"
+              />
+            </label>
+            <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+              Sort
+              <input
+                type="number"
+                value={ringDraft.sort}
+                onChange={(e) =>
+                  setRingDraft((d) => ({ ...d, sort: e.target.value }))
+                }
+                className="app-input mt-0.5 w-full"
+              />
+            </label>
+            <label className="flex items-end gap-2 text-[10px] font-semibold text-[var(--play-muted)]">
+              <input
+                type="checkbox"
+                checked={ringDraft.enabled}
+                onChange={(e) =>
+                  setRingDraft((d) => ({ ...d, enabled: e.target.checked }))
+                }
+                className="h-4 w-4 accent-[var(--jade-deep)]"
+              />
+              Enabled
+            </label>
+          </div>
+          <label className="block text-[10px] font-semibold text-[var(--play-muted)]">
+            Blurb
+            <input
+              value={ringDraft.blurb}
+              onChange={(e) =>
+                setRingDraft((d) => ({ ...d, blurb: e.target.value }))
+              }
+              className="app-input mt-0.5 w-full"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={ringBusy}
+            onClick={() => void saveRingUpsert()}
+            className="rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
+          >
+            Lưu / thêm nhẫn
+          </button>
+        </section>
       )}
 
       {tab === "room" && canRoom && (

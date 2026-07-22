@@ -1,6 +1,8 @@
 import {
   canControlVoiceRoomLock as grantsCanControlVoiceRoomLock,
   hasCapability,
+  userHasAnyRole,
+  userHasRole,
 } from "./grants";
 
 export type UserRole =
@@ -13,7 +15,8 @@ export type UserRole =
   | "mod"
   | "eco"
   | "audit"
-  | "sgift";
+  | "sgift"
+  | "ring";
 
 export interface AuthUser {
   id: string;
@@ -24,6 +27,8 @@ export interface AuthUser {
   /** Tên hiển thị chính trong game */
   displayName?: string;
   role: UserRole;
+  /** Roles phụ — cộng dồn capability */
+  extraRoles?: UserRole[];
   avatar: string;
   balance: number;
   winToday: number;
@@ -57,15 +62,30 @@ export interface AuthUser {
   voiceRoomGrants?: number[];
   /** Override bậc staff 0–6; thiếu → theo role */
   staffGrantLevel?: number;
+  /** Cặp đôi / nhẫn */
+  bond?: {
+    partnerId: string;
+    partnerCode: string;
+    partnerName: string;
+    partnerAvatar: string;
+    ringKey: string;
+    ringNameVi: string;
+    ringImage: string;
+    since: number;
+    status: "pending" | "active";
+  };
 }
 
 export {
+  effectiveRoles,
   effectiveStaffGrantLevel,
   GRANT_LEVEL_LABELS,
   hasCapability,
   ROLE_DEFAULT_LEVEL,
   STAFF_GRANT_LEVEL_MAX,
   STAFF_GRANT_LEVEL_MIN,
+  userHasAnyRole,
+  userHasRole,
   type GrantCapability,
 } from "./grants";
 
@@ -118,43 +138,69 @@ export function userDisplayName(
   return user.username;
 }
 
-export function isStaff(user: { role: UserRole } | null | undefined): boolean {
-  return user?.role === "admin" || user?.role === "mainadmin";
+export function isStaff(
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
+): boolean {
+  if (!user) return false;
+  return userHasAnyRole(user, ["admin", "mainadmin"]);
 }
 
-export function isEco(user: { role: UserRole } | null | undefined): boolean {
-  return user?.role === "eco";
+export function isEco(
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
+): boolean {
+  return userHasRole(user, "eco");
 }
 
-export function isAudit(user: { role: UserRole } | null | undefined): boolean {
-  return user?.role === "audit";
+export function isAudit(
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
+): boolean {
+  return userHasRole(user, "audit");
 }
 
-export function isSGift(user: { role: UserRole } | null | undefined): boolean {
-  return user?.role === "sgift";
+export function isSGift(
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
+): boolean {
+  return userHasRole(user, "sgift");
 }
 
-/** Dashboard admin/main/eco/audit/sgift — không gồm deal/mod/tutien. */
+export function isRing(
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
+): boolean {
+  return userHasRole(user, "ring");
+}
+
+/** Dashboard admin/main/eco/audit/sgift/ring — không gồm deal/mod/tutien. */
 export function canAccessStaffDashboard(
-  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+  user:
+    | { role: UserRole; extraRoles?: UserRole[]; staffGrantLevel?: number }
+    | null
+    | undefined,
 ): boolean {
   return hasCapability(user, "staff_dashboard");
 }
 
-export function isMod(user: { role: UserRole } | null | undefined): boolean {
-  return user?.role === "mod";
+export function isMod(
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
+): boolean {
+  return userHasRole(user, "mod");
 }
 
 /** Điều hành Room voice (trong hub / API). */
 export function canModerateVoiceRoom(
-  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+  user:
+    | { role: UserRole; extraRoles?: UserRole[]; staffGrantLevel?: number }
+    | null
+    | undefined,
 ): boolean {
   return hasCapability(user, "voice_mod");
 }
 
 /** Tab Room trên dashboard — mainadmin hoặc mod. */
 export function canAccessRoomAdmin(
-  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+  user:
+    | { role: UserRole; extraRoles?: UserRole[]; staffGrantLevel?: number }
+    | null
+    | undefined,
 ): boolean {
   return hasCapability(user, "room_admin_tab");
 }
@@ -164,6 +210,7 @@ export function canControlVoiceRoomLock(
   user:
     | {
         role: UserRole;
+        extraRoles?: UserRole[];
         voiceRoomGrants?: number[];
         staffGrantLevel?: number;
       }
@@ -175,42 +222,55 @@ export function canControlVoiceRoomLock(
 }
 
 export function canGrantVoiceRooms(
-  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+  user:
+    | { role: UserRole; extraRoles?: UserRole[]; staffGrantLevel?: number }
+    | null
+    | undefined,
 ): boolean {
   return hasCapability(user, "grant_rooms");
 }
 
 /** Staff hoặc role Onl — thấy số người online trên bàn. */
 export function canSeeOnline(
-  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+  user:
+    | { role: UserRole; extraRoles?: UserRole[]; staffGrantLevel?: number }
+    | null
+    | undefined,
 ): boolean {
   return hasCapability(user, "see_online");
 }
 
 export function isOnlineViewer(
-  user: { role: UserRole } | null | undefined,
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
 ): boolean {
-  return user?.role === "onl";
+  return userHasRole(user, "onl");
 }
 
 export function isTutien(
-  user: { role: UserRole } | null | undefined,
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
 ): boolean {
-  return user?.role === "tutien";
+  return userHasRole(user, "tutien");
 }
 
 export function canManageCultivation(
-  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+  user:
+    | { role: UserRole; extraRoles?: UserRole[]; staffGrantLevel?: number }
+    | null
+    | undefined,
 ): boolean {
   return hasCapability(user, "cultivation_manage");
 }
 
 export function isBalanceOperator(
-  user: { role: UserRole; staffGrantLevel?: number } | null | undefined,
+  user:
+    | { role: UserRole; extraRoles?: UserRole[]; staffGrantLevel?: number }
+    | null
+    | undefined,
 ): boolean {
   return hasCapability(user, "balance_ops");
 }
 
+/** Chỉ primary mainadmin. */
 export function isMainAdmin(user: { role: UserRole } | null | undefined): boolean {
   return user?.role === "mainadmin";
 }
@@ -230,6 +290,7 @@ export function homePath(
   if (user.role === "eco") return `/eco/${code}`;
   if (user.role === "audit") return `/audit/${code}`;
   if (user.role === "sgift") return `/sgift/${code}`;
+  if (user.role === "ring") return `/ring/${code}`;
   if (user.role === "deal") return `/deal/${code}`;
   if (user.role === "tutien") return `/tutien/${code}`;
   if (user.role === "mod") return `/mod/${code}`;

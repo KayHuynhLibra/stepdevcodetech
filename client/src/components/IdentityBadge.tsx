@@ -10,6 +10,7 @@ import {
 import { normalizeAvatar, DEFAULT_AVATAR } from "../avatars";
 import { VipFantasyAvatar } from "./VipFantasyAvatar";
 import { CultivationChip } from "./CultivationChip";
+import { CoupleAvatar } from "./CoupleAvatar";
 
 function roleLabel(role?: UserRole | "guest"): string {
   if (role === "mainadmin") return "Mainadmin";
@@ -17,6 +18,7 @@ function roleLabel(role?: UserRole | "guest"): string {
   if (role === "eco") return "Eco";
   if (role === "audit") return "Audit";
   if (role === "sgift") return "SGift";
+  if (role === "ring") return "Ring";
   if (role === "deal") return "Deal";
   if (role === "onl") return "Onl";
   if (role === "tutien") return "Tu Tiên";
@@ -97,6 +99,8 @@ export function IdentityBadge({
     el.src = DEFAULT_AVATAR;
   };
 
+  const bondActive = user?.bond?.status === "active";
+
   const avatarNode = isVip ? (
     <VipFantasyAvatar
       src={avatar}
@@ -118,9 +122,23 @@ export function IdentityBadge({
     />
   );
 
+  const coupleNode =
+    bondActive && user?.bond ? (
+      <CoupleAvatar
+        avatarA={avatar}
+        avatarB={user.bond.partnerAvatar}
+        ringImage={user.bond.ringImage}
+        ringAlt={user.bond.ringNameVi}
+        compact={compact}
+        onAvatarAClick={onAvatarClick}
+      />
+    ) : null;
+
   return (
     <div className={className}>
-      {onAvatarClick ? (
+      {coupleNode ? (
+        coupleNode
+      ) : onAvatarClick ? (
         <button
           type="button"
           onClick={onAvatarClick}

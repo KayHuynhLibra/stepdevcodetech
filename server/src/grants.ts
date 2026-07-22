@@ -2,7 +2,8 @@
  * Staff grant ladder + capabilities — lớp trên UserRole (additive).
  * Khi không có staffGrantLevel → hành vi trùng role cũ.
  *
- * eco / audit / sgift: quyền theo role (không qua L5) để tránh gắn nhầm bằng override bậc.
+ * eco / audit / sgift / ring: quyền theo role (không qua L5) để tránh gắn nhầm bằng override bậc.
+ * Multi-role: `extraRoles` cộng dồn capability; `role` primary vẫn quyết định homePath.
  */
 
 export type UserRoleForGrant =
@@ -15,7 +16,8 @@ export type UserRoleForGrant =
   | "mod"
   | "eco"
   | "audit"
-  | "sgift";
+  | "sgift"
+  | "ring";
 
 export type GrantCapability =
   | "play"
@@ -37,7 +39,8 @@ export type GrantCapability =
   | "tools_lookup"
   | "chat_config"
   | "inter_control"
-  | "gift_manage";
+  | "gift_manage"
+  | "ring_manage";
 
 export const STAFF_GRANT_LEVEL_MIN = 0;
 export const STAFF_GRANT_LEVEL_MAX = 6;
@@ -52,6 +55,7 @@ export const ROLE_DEFAULT_LEVEL: Record<UserRoleForGrant, number> = {
   eco: 5,
   audit: 5,
   sgift: 5,
+  ring: 5,
   mainadmin: 6,
 };
 
@@ -83,32 +87,72 @@ export function roleDefaultLevel(role: UserRoleForGrant | string): number {
 
 export type GrantUser = {
   role: UserRoleForGrant | string;
+  /** Roles phụ — cộng dồn capability; không gồm mainadmin */
+  extraRoles?: (UserRoleForGrant | string)[];
   staffGrantLevel?: number | null;
   voiceRoomGrants?: number[];
 };
 
-/** Level hiệu lực: override nếu có, không thì theo role. */
+/** Primary + extras (unique). mainadmin chỉ từ primary. */
+export function effectiveRoles(
+  user: GrantUser | null | undefined,
+): string[] {
+  if (!user?.role) return [];
+  const primary = String(user.role);
+  const out: string[] = [primary];
+  const seen = new Set([primary]);
+  for (const r of user.extraRoles ?? []) {
+    const s = String(r ?? "").trim();
+    if (!s || s === "mainadmin" || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
+export function userHasRole(
+  user: GrantUser | null | undefined,
+  role: string,
+): boolean {
+  return effectiveRoles(user).includes(role);
+}
+
+export function userHasAnyRole(
+  user: GrantUser | null | undefined,
+  roles: string[],
+): boolean {
+  const set = new Set(effectiveRoles(user));
+  return roles.some((r) => set.has(r));
+}
+
+/** Level hiệu lực: override nếu có, không thì max theo effective roles. */
 export function effectiveStaffGrantLevel(user: GrantUser | null | undefined): number {
   if (!user) return 0;
   if (user.staffGrantLevel != null && user.staffGrantLevel !== undefined) {
     return clampStaffGrantLevel(user.staffGrantLevel);
   }
-  return roleDefaultLevel(user.role);
+  let max = 0;
+  for (const r of effectiveRoles(user)) {
+    max = Math.max(max, roleDefaultLevel(r));
+  }
+  return max;
 }
 
 /**
  * Capability check. Không có override → trùng luật role hiện tại.
- * Có staffGrantLevel → có thể nâng capability theo bậc (trừ eco/audit/sgift caps — chỉ role hoặc L6).
+ * Có staffGrantLevel → có thể nâng capability theo bậc (trừ eco/audit/sgift/ring caps — chỉ role hoặc L6).
+ * Role checks dùng effective roles (primary + extraRoles).
  */
 export function hasCapability(
   user: GrantUser | null | undefined,
   cap: GrantCapability,
 ): boolean {
   if (!user) return false;
-  const role = user.role;
+  const role = String(user.role);
   const L = effectiveStaffGrantLevel(user);
   const overridden =
     user.staffGrantLevel != null && user.staffGrantLevel !== undefined;
+  /** mainadmin chỉ primary (hoặc L6 override) — không qua extraRoles */
   const isMainish = role === "mainadmin" || (overridden && L >= 6);
 
   switch (cap) {
@@ -116,66 +160,65 @@ export function hasCapability(
       return true;
     case "see_online":
       return (
-        role === "onl" ||
-        role === "admin" ||
-        role === "mainadmin" ||
-        role === "eco" ||
-        role === "audit" ||
-        role === "sgift" ||
+        userHasAnyRole(user, [
+          "onl",
+          "admin",
+          "mainadmin",
+          "eco",
+          "audit",
+          "sgift",
+          "ring",
+        ]) ||
         (overridden && L >= 1)
       );
     case "balance_ops":
       return (
-        role === "deal" ||
-        role === "admin" ||
-        role === "mainadmin" ||
+        userHasAnyRole(user, ["deal", "admin", "mainadmin"]) ||
         (overridden && L >= 2)
       );
     case "voice_mod":
       return (
-        role === "mod" ||
-        role === "admin" ||
-        role === "mainadmin" ||
+        userHasAnyRole(user, ["mod", "admin", "mainadmin"]) ||
         (overridden && L >= 3)
       );
     case "room_admin_tab":
       return (
-        role === "mod" ||
-        role === "mainadmin" ||
-        (overridden && L >= 3)
+        userHasAnyRole(user, ["mod", "mainadmin"]) || (overridden && L >= 3)
       );
     case "cultivation_manage":
       return (
-        role === "tutien" ||
-        role === "mainadmin" ||
+        userHasAnyRole(user, ["tutien", "mainadmin"]) ||
         (overridden && L >= 4)
       );
     case "staff_dashboard":
       return (
-        role === "admin" ||
-        role === "mainadmin" ||
-        role === "eco" ||
-        role === "audit" ||
-        role === "sgift" ||
+        userHasAnyRole(user, [
+          "admin",
+          "mainadmin",
+          "eco",
+          "audit",
+          "sgift",
+          "ring",
+        ]) ||
         (overridden && L >= 5)
       );
     case "grant_rooms":
       return (
-        role === "admin" ||
-        role === "mainadmin" ||
-        (overridden && L >= 5)
+        userHasAnyRole(user, ["admin", "mainadmin"]) || (overridden && L >= 5)
       );
     case "vault_ops":
     case "traffic_view":
     case "invite_ops":
     case "arcana_config":
-      return role === "eco" || isMainish;
+      return userHasRole(user, "eco") || isMainish;
     case "ip_audit":
     case "tools_lookup":
     case "chat_config":
-      return role === "audit" || isMainish;
+      return userHasRole(user, "audit") || isMainish;
     case "gift_manage":
-      return role === "sgift" || isMainish;
+      return userHasRole(user, "sgift") || isMainish;
+    case "ring_manage":
+      return userHasRole(user, "ring") || isMainish;
     case "inter_control":
       return isMainish;
     case "inter_vault_ip":

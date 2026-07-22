@@ -50,7 +50,9 @@ import { arcanaWheelStore } from "./arcanaWheelStore.js";
 import { arcanaMissionStore } from "./arcanaMissionStore.js";
 import { tutienStakeLimitsStore } from "./tutienStakeLimitsStore.js";
 import { giftStore } from "./giftStore.js";
+import { ringStore } from "./ringStore.js";
 import { chatConfigStore } from "./chatConfigStore.js";
+import { leaderboardConfigStore } from "./leaderboardConfigStore.js";
 import { vaultArcana, vaultStore } from "./vaultStore.js";
 import {
   cultivationStore,
@@ -336,6 +338,10 @@ app.get("/api/history", (req, res) => {
 });
 app.get("/api/leaderboard", (_req, res) => {
   res.json(engine.getLeaderboard());
+});
+
+app.get("/api/leaderboard/config", (_req, res) => {
+  res.json({ ok: true, flags: leaderboardConfigStore.publicFlags() });
 });
 
 app.get("/api/leaderboard/balance", (req, res) => {
@@ -638,7 +644,18 @@ app.get("/api/players/card", (req, res) => {
   if (!card) {
     return res.status(404).json({ ok: false, reason: "Không tìm thấy" });
   }
-  res.json({ ok: true, card });
+  const bond = ringStore.bondSnippetFor(card.userId, (id) => {
+    const u = authStore.getById(id);
+    if (!u) return null;
+    return {
+      id: u.id,
+      code: u.code,
+      username: u.username,
+      displayName: userDisplayName(u),
+      avatar: normalizeAvatar(u.avatar),
+    };
+  });
+  res.json({ ok: true, card: { ...card, bond: bond ?? null } });
 });
 
 app.get("/api/auth/stakes", (req, res) => {
@@ -1852,6 +1869,334 @@ app.post("/api/sgift/fly-tiers", (req, res) => {
   res.json({ ok: true, ...giftStore.snapshot() });
 });
 
+app.get("/api/rings", (_req, res) => {
+  res.json({ ok: true, rings: ringStore.publicCatalog() });
+});
+
+app.get("/api/ring/config", (req, res) => {
+  if (!requireCapability(req, res, "ring_manage", "Cần quyền Ring")) return;
+  res.json({ ok: true, ...ringStore.snapshot() });
+});
+
+app.post("/api/ring/items", (req, res) => {
+  const me = requireCapability(req, res, "ring_manage", "Cần quyền Ring");
+  if (!me) return;
+  const result = ringStore.upsertRing(req.body?.ring ?? req.body);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "ring_upsert", {
+    detail: `${result.ring.key} · ${result.ring.price}`,
+  });
+  res.json({ ok: true, ring: result.ring, ...ringStore.snapshot() });
+});
+
+app.post("/api/ring/items/toggle", (req, res) => {
+  const me = requireCapability(req, res, "ring_manage", "Cần quyền Ring");
+  if (!me) return;
+  const key = String(req.body?.key ?? "");
+  const enabled = !!req.body?.enabled;
+  const result = ringStore.setEnabled(key, enabled);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "ring_toggle", {
+    detail: `${result.ring.key} → ${enabled ? "on" : "off"}`,
+  });
+  res.json({ ok: true, ring: result.ring, ...ringStore.snapshot() });
+});
+
+app.post("/api/ring/items/remove", (req, res) => {
+  const me = requireCapability(req, res, "ring_manage", "Cần quyền Ring");
+  if (!me) return;
+  const key = String(req.body?.key ?? "");
+  const result = ringStore.removeRing(key);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "ring_remove", { detail: result.key });
+  res.json({ ok: true, key: result.key, ...ringStore.snapshot() });
+});
+
+app.get("/api/auth/ring-status", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  const bond = ringStore.getBondByUser(me.id);
+  const active = ringStore.getActiveBondPublic(me.id, (id) => {
+    const u = authStore.getById(id);
+    if (!u) return null;
+    return {
+      id: u.id,
+      code: u.code,
+      username: u.username,
+      displayName: userDisplayName(u),
+      avatar: normalizeAvatar(u.avatar),
+    };
+  });
+  res.json({
+    ok: true,
+    bond,
+    active,
+    snippet: me.bond ?? null,
+    user: me,
+  });
+});
+
+app.get("/api/users/:userId/bond", (req, res) => {
+  const userId = String(req.params.userId ?? "").trim();
+  if (!userId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId" });
+  }
+  const active = ringStore.getActiveBondPublic(userId, (id) => {
+    const u = authStore.getById(id);
+    if (!u) return null;
+    return {
+      id: u.id,
+      code: u.code,
+      username: u.username,
+      displayName: userDisplayName(u),
+      avatar: normalizeAvatar(u.avatar),
+    };
+  });
+  res.json({ ok: true, bond: active });
+});
+
+app.post("/api/auth/ring-propose", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  const ip = clientIp(req);
+  if (
+    !rateLimit(`ring:${me.id}`, 10, 60_000) ||
+    !rateLimit(`ringip:${ip}`, 20, 60_000)
+  ) {
+    return res
+      .status(429)
+      .json({ ok: false, reason: "Cầu hôn quá nhanh — thử lại sau" });
+  }
+  const toUserId = String(req.body?.toUserId ?? "").trim();
+  const toCode = String(req.body?.toCode ?? "").trim();
+  const toUsername = String(req.body?.toUsername ?? "").trim();
+  const ringKey = String(req.body?.ringKey ?? "").trim();
+  const note = String(req.body?.note ?? "").trim().slice(0, 80);
+  if (!toUserId && !toCode && !toUsername) {
+    return res.status(400).json({ ok: false, reason: "Thiếu đối phương" });
+  }
+  if (!ringKey) {
+    return res.status(400).json({ ok: false, reason: "Thiếu loại nhẫn" });
+  }
+  const partner = authStore.resolveUserRef({
+    userId: toUserId || undefined,
+    code: toCode || undefined,
+    username: toUsername || undefined,
+  });
+  if (!partner) {
+    return res.status(400).json({ ok: false, reason: "Không tìm thấy đối phương" });
+  }
+  if (partner.banned) {
+    return res.status(400).json({ ok: false, reason: "Đối phương bị khóa" });
+  }
+  const ring = ringStore.getByKey(ringKey);
+  if (!ring || !ring.enabled) {
+    return res.status(400).json({ ok: false, reason: "Nhẫn không tồn tại" });
+  }
+
+  const spend = authStore.spendXu(me.id, ring.price);
+  if (!spend.ok) return res.status(400).json(spend);
+
+  const proposed = ringStore.propose({
+    fromId: me.id,
+    toUserId: partner.id,
+    ringKey: ring.key,
+    note: note || undefined,
+  });
+  if (!proposed.ok) {
+    authStore.adjustBalance(me.id, ring.price);
+    return res.status(400).json(proposed);
+  }
+
+  const fresh = authStore.resolveToken(
+    String(req.headers.authorization ?? "").replace(/^Bearer\s+/i, "") ||
+      undefined,
+  );
+  const fromUser = fresh ?? spend.user;
+  const fromLive = engine.applyAuthBalance(fromUser.id, fromUser.balance);
+  for (const sid of fromLive.socketIds) {
+    io.to(sid).emit("balanceUpdate", { balance: fromLive.balance });
+  }
+
+  const fromLabel = fromUser.displayName?.trim() || fromUser.username;
+  const partnerLive = engine.applyAuthBalance(partner.id, partner.balance);
+  for (const sid of partnerLive.socketIds) {
+    io.to(sid).emit("ringProposed", {
+      fromName: fromLabel,
+      ringNameVi: proposed.ring.nameVi,
+      bondId: proposed.bond.id,
+      fromId: me.id,
+    });
+  }
+
+  audit(me, "ring_propose", {
+    targetId: partner.id,
+    targetName: partner.username,
+    detail: `ring=${proposed.ring.key} price=${proposed.price}${note ? ` note=${note}` : ""}`,
+  });
+
+  res.json({
+    ok: true,
+    bond: proposed.bond,
+    ring: proposed.ring,
+    price: proposed.price,
+    from: fromUser,
+    to: {
+      id: partner.id,
+      code: partner.code,
+      username: partner.username,
+      displayName: userDisplayName(partner),
+    },
+  });
+});
+
+app.post("/api/auth/ring-accept", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  const bondId = String(req.body?.bondId ?? "").trim();
+  if (!bondId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu bondId" });
+  }
+  const result = ringStore.accept(bondId, me.id);
+  if (!result.ok) return res.status(400).json(result);
+
+  const partnerId =
+    result.bond.aUserId === me.id ? result.bond.bUserId : result.bond.aUserId;
+  const partner = authStore.getById(partnerId);
+  const ring =
+    ringStore.getByKey(result.bond.ringKey) ??
+    ({
+      key: result.bond.ringKey,
+      nameVi: result.bond.ringKey,
+      image: "💍",
+      price: 0,
+      enabled: true,
+      sort: 0,
+    } as const);
+  const meLabel = me.displayName?.trim() || me.username;
+  const partnerLabel = partner
+    ? userDisplayName(partner)
+    : "Đối phương";
+
+  const resolvePartner = (id: string) => {
+    const u = authStore.getById(id);
+    if (!u) return null;
+    return {
+      id: u.id,
+      code: u.code,
+      username: u.username,
+      displayName: userDisplayName(u),
+      avatar: normalizeAvatar(u.avatar),
+    };
+  };
+  const meBond = ringStore.getActiveBondPublic(me.id, resolvePartner);
+  const partnerBond = ringStore.getActiveBondPublic(partnerId, resolvePartner);
+
+  const meLive = engine.applyAuthBalance(me.id, me.balance);
+  for (const sid of meLive.socketIds) {
+    io.to(sid).emit("ringAccepted", {
+      partnerName: partnerLabel,
+      ringNameVi: ring.nameVi,
+      bond: meBond,
+    });
+  }
+  if (partner) {
+    const pLive = engine.applyAuthBalance(partner.id, partner.balance);
+    for (const sid of pLive.socketIds) {
+      io.to(sid).emit("ringAccepted", {
+        partnerName: meLabel,
+        ringNameVi: ring.nameVi,
+        bond: partnerBond,
+      });
+    }
+  }
+
+  audit(me, "ring_accept", {
+    targetId: partnerId,
+    targetName: partner?.username,
+    detail: `bond=${result.bond.id} ring=${result.bond.ringKey}`,
+  });
+
+  const refreshed = authStore.resolveToken(
+    String(req.headers.authorization ?? "").replace(/^Bearer\s+/i, "") ||
+      undefined,
+  );
+  res.json({
+    ok: true,
+    bond: result.bond,
+    user: refreshed ?? me,
+    active: meBond,
+  });
+});
+
+app.post("/api/auth/ring-reject", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  const bondId = String(req.body?.bondId ?? "").trim();
+  if (!bondId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu bondId" });
+  }
+  const result = ringStore.reject(bondId, me.id);
+  if (!result.ok) return res.status(400).json(result);
+
+  const otherId =
+    result.bond.aUserId === me.id ? result.bond.bUserId : result.bond.aUserId;
+  const other = authStore.getById(otherId);
+  if (other) {
+    const oLive = engine.applyAuthBalance(other.id, other.balance);
+    for (const sid of oLive.socketIds) {
+      io.to(sid).emit("ringBroken", { reason: "rejected" });
+    }
+  }
+  const meLive = engine.applyAuthBalance(me.id, me.balance);
+  for (const sid of meLive.socketIds) {
+    io.to(sid).emit("ringBroken", { reason: "rejected" });
+  }
+
+  audit(me, "ring_reject", {
+    targetId: otherId,
+    detail: `bond=${result.bond.id}`,
+  });
+
+  const refreshed = authStore.resolveToken(
+    String(req.headers.authorization ?? "").replace(/^Bearer\s+/i, "") ||
+      undefined,
+  );
+  res.json({ ok: true, bond: result.bond, user: refreshed ?? me });
+});
+
+app.post("/api/auth/ring-break", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  const result = ringStore.breakBond(me.id);
+  if (!result.ok) return res.status(400).json(result);
+
+  const otherId =
+    result.bond.aUserId === me.id ? result.bond.bUserId : result.bond.aUserId;
+  const other = authStore.getById(otherId);
+  const meLive = engine.applyAuthBalance(me.id, me.balance);
+  for (const sid of meLive.socketIds) {
+    io.to(sid).emit("ringBroken", { reason: "broken" });
+  }
+  if (other) {
+    const oLive = engine.applyAuthBalance(other.id, other.balance);
+    for (const sid of oLive.socketIds) {
+      io.to(sid).emit("ringBroken", { reason: "broken" });
+    }
+  }
+
+  audit(me, "ring_break", {
+    targetId: otherId,
+    detail: `bond=${result.bond.id} status=${result.bond.status}`,
+  });
+
+  const refreshed = authStore.resolveToken(
+    String(req.headers.authorization ?? "").replace(/^Bearer\s+/i, "") ||
+      undefined,
+  );
+  res.json({ ok: true, bond: result.bond, user: refreshed ?? me });
+});
+
 app.get("/api/mainadmin/invites", (req, res) => {
   if (!requireCapability(req, res, "invite_ops", "Cần quyền mã TV (eco)")) return;
   res.json({
@@ -1931,12 +2276,13 @@ app.post("/api/mainadmin/user-role", (req, res) => {
       role !== "mod" &&
       role !== "eco" &&
       role !== "audit" &&
-      role !== "sgift")
+      role !== "sgift" &&
+      role !== "ring")
   ) {
     return res.status(400).json({
       ok: false,
       reason:
-        "Thiếu userId hoặc role (user|deal|admin|onl|tutien|mod|eco|audit|sgift)",
+        "Thiếu userId hoặc role (user|deal|admin|onl|tutien|mod|eco|audit|sgift|ring)",
     });
   }
   const result = authStore.setUserRole(userId, role);
@@ -1947,6 +2293,48 @@ app.post("/api/mainadmin/user-role", (req, res) => {
     detail: String(role),
   });
   res.json({ ok: true, user: result.user });
+});
+
+/** Mainadmin: thay danh sách roles phụ (cộng dồn capability). */
+app.post("/api/mainadmin/user-extra-roles", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const userId = String(req.body?.userId ?? "").trim();
+  if (!userId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId" });
+  }
+  const result = authStore.setUserExtraRoles(userId, req.body?.extraRoles);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "user_extra_roles", {
+    targetId: userId,
+    targetName: result.user.username,
+    detail: (result.user.extraRoles ?? []).join(",") || "(none)",
+  });
+  res.json({ ok: true, user: result.user });
+});
+
+app.get("/api/mainadmin/leaderboard-config", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  res.json({ ok: true, config: leaderboardConfigStore.get() });
+});
+
+app.post("/api/mainadmin/leaderboard-config", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const result = leaderboardConfigStore.set(
+    {
+      winToday: req.body?.winToday,
+      balance: req.body?.balance,
+      tarotStars: req.body?.tarotStars,
+    },
+    me.username,
+  );
+  audit(me, "leaderboard_config", {
+    detail: `winToday=${result.config.winToday} balance=${result.config.balance} tarotStars=${result.config.tarotStars}`,
+  });
+  engine.refreshAllClients();
+  res.json({ ok: true, config: result.config });
 });
 
 /** Dashboard Room — danh sách 5 phòng voice + ghế. */
