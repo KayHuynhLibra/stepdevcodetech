@@ -1,7 +1,7 @@
 # Tarot Demo
 
 Realtime tarot  demo (Vite + React client, Express + Socket.io server).
-
+“This is a purely fictional educational demo project. No real-money gambling, financial transactions, or actual currency conversion are involved.”
 ## Local development
 
 ```bash
