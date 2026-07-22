@@ -4,6 +4,7 @@ import { formatXu } from "../cards";
 import { VipFantasyAvatar } from "./VipFantasyAvatar";
 import { CultivationChip } from "./CultivationChip";
 import { CoupleAvatar } from "./CoupleAvatar";
+import { ColoredName } from "./ColoredName";
 import { isRingEmoji, type UserBondSnippet } from "../rings";
 
 export interface PlayerInfoView {
@@ -23,6 +24,7 @@ export interface PlayerInfoView {
   roundsPlayed?: number;
   vipGranted?: boolean;
   cultivationRank?: string | null;
+  nameColor?: string | null;
   bond?: UserBondSnippet | null;
 }
 
@@ -178,129 +180,150 @@ export function PlayerInfoSheet({
     });
   };
 
-  const pill =
-    "rounded-full border border-[#C59B27] bg-[#1C160C] px-3 py-1 text-xs font-semibold text-[#E8DCB8]";
+  const badge =
+    "rounded-full border border-[#8C764D] bg-[#121D2D] px-3 py-1 text-xs text-[#E3D8C4]";
 
   return (
-    <div className="fixed inset-0 z-[66] flex items-end justify-center sm:items-center">
+    <div className="fixed inset-0 z-[66] flex items-end justify-center backdrop-blur-md sm:items-center">
       <button
         type="button"
-        className="absolute inset-0 bg-black/65"
+        className="absolute inset-0 bg-[#050A14]/70"
         aria-label="Đóng"
         onClick={onClose}
       />
       <div
-        className="relative z-10 max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-t-2xl border-2 border-[#D4AF37] bg-gradient-to-b from-[#0B231E] via-[#071815] to-[#040C0A] px-4 pb-6 pt-4 text-[#E8DCB8] shadow-[0_0_28px_rgba(212,175,55,0.22),inset_0_0_40px_rgba(212,175,55,0.06)] sm:rounded-2xl"
+        className="profile-celestial relative z-10 max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-[#8A9BB8]/45 bg-[#0B1528]/85 px-0 pb-5 pt-2 text-[#E3D8C4] shadow-[0_0_40px_rgba(120,150,200,0.18),inset_0_0_60px_rgba(180,200,230,0.04)] backdrop-blur-xl sm:rounded-3xl"
         role="dialog"
-        aria-label="Thông tin người chơi"
+        aria-label="Hồ Sơ Chiêm Tinh"
       >
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <p className="font-display text-base tracking-wide text-[#E5C158]">
-            Thông tin
+        <div className="profile-celestial__ornament" aria-hidden />
+
+        <div className="relative z-[1] flex items-center justify-between px-4 py-2">
+          <p className="font-display text-xl text-[#E3D8C4]">
+            Hồ Sơ Chiêm Tinh
           </p>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-[#B89748] bg-[#0F2A24] px-4 py-1 text-xs font-semibold text-[#E8DCB8]"
+            className="rounded-lg border border-[#B0C2DE] bg-[#E8EFF8] px-5 py-1.5 text-sm font-medium text-[#1E293B] shadow-sm"
           >
-            Đóng
+            Thoát
           </button>
         </div>
 
-        {/* Hero couple / avatar */}
-        <div className="relative overflow-hidden rounded-2xl border border-[#2D5A50]/60 bg-[radial-gradient(circle_at_50%_40%,rgba(120,50,200,0.35)_0%,transparent_70%)] px-2 py-5">
-          <div className="relative z-[1] mx-auto flex justify-center">
+        {/* Hero couple — PRIMARY */}
+        <div className="relative z-[1] mx-3 mt-1 overflow-hidden rounded-2xl border border-[#3A4E6C]/50 bg-[radial-gradient(ellipse_at_center,rgba(168,85,247,0.28)_0%,transparent_70%)] px-3 py-5">
+          <div className="flex items-center justify-between gap-1">
             {targetBonded && player.bond ? (
-              <CoupleAvatar
-                displaySize="hero"
-                avatarA={player.avatar || "/assets/ui/avatar-default.png"}
-                avatarB={player.bond.partnerAvatar}
-                ringImage={player.bond.ringImage}
-                ringAlt={player.bond.ringNameVi}
-                ringEffect={player.bond.ringEffect}
-                ringSharpness={player.bond.ringSharpness}
-                coupleFrame={player.bond.coupleFrame}
-                coupleBorder={player.bond.coupleBorder}
-                coupleScale={player.bond.coupleScale ?? "xl"}
-              />
-            ) : showVip ? (
-              <VipFantasyAvatar
-                size="lg"
-                src={player.avatar || "/assets/ui/avatar-default.png"}
-                alt=""
-              />
+              <div className="mx-auto w-full max-w-sm">
+                <CoupleAvatar
+                  displaySize="hero"
+                  className="!w-full !justify-between"
+                  avatarA={player.avatar || "/assets/ui/avatar-default.png"}
+                  avatarB={player.bond.partnerAvatar}
+                  ringImage={player.bond.ringImage}
+                  ringAlt={player.bond.ringNameVi}
+                  ringEffect={player.bond.ringEffect}
+                  ringSharpness={player.bond.ringSharpness}
+                  coupleFrame={player.bond.coupleFrame}
+                  coupleBorder={player.bond.coupleBorder}
+                  coupleScale={player.bond.coupleScale ?? "xl"}
+                />
+              </div>
             ) : (
-              <img
-                src={player.avatar || "/assets/ui/avatar-default.png"}
-                alt=""
-                className="h-20 w-20 rounded-full object-cover border-2 border-[#E5C158] shadow-[0_0_10px_rgba(229,193,88,0.4)]"
-              />
-            )}
-          </div>
-
-          <div className="relative z-[1] mt-4 text-center">
-            <p className="font-display text-xl font-bold text-[#E5C158] drop-shadow">
-              {player.name}
-            </p>
-            {targetBonded && player.bond && (
-              <p className="mt-1.5 flex items-center justify-center gap-1.5 text-[12px] text-[#E8DCB8]/90">
-                {isRingEmoji(player.bond.ringImage) ? (
-                  <span>{player.bond.ringImage}</span>
+              <div className="mx-auto">
+                {showVip ? (
+                  <VipFantasyAvatar
+                    size="lg"
+                    src={player.avatar || "/assets/ui/avatar-default.png"}
+                    alt=""
+                  />
                 ) : (
                   <img
-                    src={player.bond.ringImage}
+                    src={player.avatar || "/assets/ui/avatar-default.png"}
                     alt=""
-                    className="h-4 w-4 object-contain"
+                    className="h-28 w-28 rounded-full border-4 border-[#C8A968] object-cover shadow-[0_0_15px_rgba(200,169,104,0.5)] md:h-32 md:w-32"
                   />
                 )}
-                <span>
-                  {player.bond.ringNameVi} · với ♥ {player.bond.partnerName}
-                </span>
-              </p>
-            )}
-
-            {(player.code || player.guestCode) && (
-              <div className="mt-3 flex justify-center">
-                <span className="rounded-full border border-[#D4AF37] bg-gradient-to-b from-[#3A2E14] to-[#1C160C] px-4 py-1 font-mono text-[11px] font-bold tracking-wide text-[#E5C158] shadow-[inset_0_1px_0_rgba(255,236,180,0.25)]">
-                  ID {player.code || player.guestCode}
-                </span>
               </div>
             )}
-
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-              {showVip && <span className={pill}>VIP</span>}
-              <CultivationChip rank={player.cultivationRank} />
-              <span className={pill}>{kind}</span>
-            </div>
           </div>
         </div>
 
+        {/* Info condensed */}
+        <div className="relative z-[1] mt-3 flex flex-col items-center gap-2 px-4">
+          <ColoredName
+            name={player.name}
+            colorId={player.nameColor}
+            as="p"
+            className="font-display text-2xl font-bold text-[#F3EAD8]"
+          />
+
+          {targetBonded && player.bond && (
+            <p className="flex items-center gap-1.5 text-sm font-medium text-[#B0C4DE]">
+              <span>Với</span>
+              <span className="text-[#8A9EB8]">——</span>
+              <span>💖</span>
+              <span className="text-[#E3D8C4]">{player.bond.partnerName}</span>
+              {!isRingEmoji(player.bond.ringImage) ? (
+                <img
+                  src={player.bond.ringImage}
+                  alt=""
+                  className="h-4 w-4 object-contain"
+                />
+              ) : (
+                <span>💎</span>
+              )}
+            </p>
+          )}
+
+          {(player.code || player.guestCode) && (
+            <span className="rounded-full border border-[#C8A968] bg-gradient-to-r from-[#1A2638] via-[#2A3B54] to-[#1A2638] px-6 py-1 text-sm font-bold text-[#E5C158]">
+              ID {player.code || player.guestCode}
+            </span>
+          )}
+
+          <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+            {showVip && <span className={badge}>👑 VIP</span>}
+            <CultivationChip rank={player.cultivationRank} />
+            <span className={badge}>👤 {kind}</span>
+          </div>
+
+          {player.userId && !player.isBot && (
+            <p className="mt-1 text-xs text-[#7A8EA8]">
+              Đã chơi {rounds.toLocaleString("vi-VN")} /{" "}
+              {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván
+            </p>
+          )}
+        </div>
+
         {!player.isBot && (
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <div className="flex items-center gap-3 rounded-xl border border-[#2D5A50] bg-[#0B201B] p-3">
+          <div className="relative z-[1] mt-3 grid grid-cols-2 gap-3 px-4 pb-1">
+            <div className="flex items-center gap-3 rounded-2xl border border-[#2A3E5C] bg-[#0E1A2B]/90 p-3">
               <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1C160C] text-lg shadow-[0_0_8px_rgba(229,193,88,0.35)] ring-1 ring-[#C59B27]/60"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#152238] text-lg shadow-[0_0_12px_rgba(126,200,255,0.45)]"
                 aria-hidden
               >
-                🪙
+                💎
               </span>
               <div className="min-w-0">
-                <p className="text-[10px] text-[#E8DCB8]/55">Thắng hôm nay</p>
-                <p className="font-play truncate text-sm font-bold tabular-nums text-[#E5C158]">
-                  {formatXu(player.winToday ?? 0)} xu
+                <p className="text-xs text-[#8A9EB8]">Tài Lộc</p>
+                <p className="truncate text-sm font-bold text-white">
+                  {formatXu(player.winToday ?? 0)}
                 </p>
+                <p className="text-[9px] text-[#7A8EA8]">tinh thể vũ trụ</p>
               </div>
             </div>
-            <div className="flex items-center gap-3 rounded-xl border border-[#2D5A50] bg-[#0B201B] p-3">
+            <div className="flex items-center gap-3 rounded-2xl border border-[#2A3E5C] bg-[#0E1A2B]/90 p-3">
               <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#12182A] text-lg shadow-[0_0_10px_rgba(120,180,255,0.4)] ring-1 ring-cyan-400/40"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1C160C] text-lg shadow-[0_0_12px_rgba(200,169,104,0.4)]"
                 aria-hidden
               >
-                🔮
+                🪐
               </span>
               <div className="min-w-0">
-                <p className="text-[10px] text-[#E8DCB8]/55">Lần đoán hôm nay</p>
-                <p className="font-play truncate text-sm font-bold tabular-nums text-[#E8DCB8]">
+                <p className="text-xs text-[#8A9EB8]">Dự Đoán</p>
+                <p className="truncate text-sm font-bold text-white">
                   {(player.guessesToday ?? 0).toLocaleString("vi-VN")}
                 </p>
               </div>
@@ -309,17 +332,14 @@ export function PlayerInfoSheet({
         )}
 
         {showRingPropose && (
-          <div className="mt-4 rounded-xl border border-[#C59B27]/50 bg-[#0B201B] px-3 py-3">
+          <div className="relative z-[1] mx-4 mt-3 rounded-2xl border border-[#8C764D]/60 bg-[#0E1A2B]/90 px-3 py-3">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#E5C158]">
               Lên nhẫn
-            </p>
-            <p className="mt-1 text-[10px] text-[#E8DCB8]/55">
-              Cầu hôn — trừ xu theo giá nhẫn (xu ảo)
             </p>
             <button
               type="button"
               onClick={onOpenRingPropose}
-              className="mt-2 w-full rounded-full border border-[#C59B27] bg-gradient-to-b from-[#8B6914] to-[#5A420C] px-3 py-2 text-xs font-bold text-[#FFF8E0]"
+              className="mt-2 w-full rounded-lg border border-[#C8A968] bg-gradient-to-b from-[#3A2E14] to-[#1A2638] px-3 py-2 text-xs font-bold text-[#F3EAD8]"
             >
               Cầu hôn / Lên nhẫn
             </button>
@@ -327,19 +347,16 @@ export function PlayerInfoSheet({
         )}
 
         {showGift && (
-          <div className="mt-4 space-y-2 rounded-xl border border-[#2D5A50] bg-[#0B201B] px-3 py-3">
+          <div className="relative z-[1] mx-4 mt-3 space-y-2 rounded-2xl border border-[#2A3E5C] bg-[#0E1A2B]/90 px-3 py-3">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#E5C158]">
               Tặng quà / xu
-            </p>
-            <p className="text-[10px] text-[#E8DCB8]/55">
-              Chuyển xu trực tiếp · tối thiểu 10 · tối đa 100.000 / lần
             </p>
             {onOpenGiftHub && (
               <button
                 type="button"
                 disabled={giftBusy}
                 onClick={onOpenGiftHub}
-                className="w-full rounded-full border border-[#3D8A70] bg-[#0F2A24] px-3 py-2 text-xs font-bold text-[#E8DCB8] disabled:opacity-45"
+                className="w-full rounded-lg border border-[#5A7A9A] bg-[#121D2D] px-3 py-2 text-xs font-bold text-[#E3D8C4] disabled:opacity-45"
               >
                 Mở hub quà demo
               </button>
@@ -351,7 +368,7 @@ export function PlayerInfoSheet({
                   type="button"
                   disabled={giftBusy}
                   onClick={() => setGiftAmount(String(n))}
-                  className="rounded-full border border-[#C59B27]/50 bg-[#1C160C] px-2.5 py-1 text-[10px] font-bold text-[#E8DCB8] disabled:opacity-45"
+                  className="rounded-full border border-[#8C764D]/50 bg-[#121D2D] px-2.5 py-1 text-[10px] font-bold text-[#E3D8C4] disabled:opacity-45"
                 >
                   {formatXu(n)}
                 </button>
@@ -364,12 +381,12 @@ export function PlayerInfoSheet({
                 placeholder="Số xu…"
                 inputMode="numeric"
                 disabled={giftBusy}
-                className="min-w-0 flex-1 rounded-lg border border-[#2D5A50] bg-[#040C0A] px-2 py-1.5 text-xs text-[#E8DCB8] outline-none placeholder:text-[#E8DCB8]/35"
+                className="min-w-0 flex-1 rounded-lg border border-[#2A3E5C] bg-[#0B1528] px-2 py-1.5 text-xs text-[#E3D8C4] outline-none placeholder:text-[#7A8EA8]"
               />
               <button
                 type="submit"
                 disabled={giftBusy || !giftAmount.trim()}
-                className="shrink-0 rounded-lg border border-[#C59B27] bg-[#1C160C] px-3 text-xs font-bold text-[#E5C158] disabled:opacity-45"
+                className="shrink-0 rounded-lg border border-[#C8A968] bg-[#1A2638] px-3 text-xs font-bold text-[#E5C158] disabled:opacity-45"
               >
                 {giftBusy ? "…" : "Tặng"}
               </button>
@@ -378,24 +395,20 @@ export function PlayerInfoSheet({
         )}
 
         {staff && !canManage && (
-          <p className="mt-4 rounded-xl border border-[#2D5A50] bg-[#0B201B] px-3 py-2 text-center text-[11px] text-[#E8DCB8]/55">
+          <p className="relative z-[1] mx-4 mt-3 rounded-2xl border border-[#2A3E5C] bg-[#0E1A2B]/90 px-3 py-2 text-center text-[11px] text-[#7A8EA8]">
             Không quản lý được ({player.isBot ? "bot" : "khách offline"})
           </p>
         )}
 
         {canManage && (
-          <div className="mt-4 space-y-3 rounded-xl border border-[#C59B27]/45 bg-[#0B201B] px-3 py-3">
+          <div className="relative z-[1] mx-4 mt-3 space-y-3 rounded-2xl border border-[#8C764D]/50 bg-[#0E1A2B]/90 px-3 py-3">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#E5C158]">
               Xử lý (admin)
-              {canBalanceUser && !canManageUser ? " · chỉnh xu" : ""}
-              {canManageGuest && !canManageUser && !canBalanceUser
-                ? " · khách"
-                : ""}
             </p>
             {localBalance != null && (
-              <p className="text-xs text-[#E8DCB8]/75">
+              <p className="text-xs text-[#B0C4DE]">
                 Số dư:{" "}
-                <span className="font-play font-bold tabular-nums text-[#E5C158]">
+                <span className="font-bold tabular-nums text-[#E5C158]">
                   {formatXu(localBalance)} xu
                 </span>
               </p>
@@ -404,7 +417,7 @@ export function PlayerInfoSheet({
             {canManageUser && (
               <>
                 <div>
-                  <p className="mb-1.5 text-[10px] text-[#E8DCB8]/45">
+                  <p className="mb-1.5 text-[10px] text-[#7A8EA8]">
                     Mode kết quả ván
                   </p>
                   <div className="flex flex-wrap gap-1">
@@ -430,8 +443,8 @@ export function PlayerInfoSheet({
                               ? "bg-emerald-700 text-white"
                               : mode === "lose"
                                 ? "bg-rose-700 text-white"
-                                : "bg-[#3A2E14] text-[#E5C158]"
-                            : "border border-[#2D5A50] bg-[#040C0A] text-[#E8DCB8]/80"
+                                : "bg-[#2A3B54] text-[#E5C158]"
+                            : "border border-[#2A3E5C] bg-[#0B1528] text-[#B0C4DE]"
                         }`}
                       >
                         {label}
@@ -441,19 +454,17 @@ export function PlayerInfoSheet({
                 </div>
 
                 <div>
-                  <p className="mb-1.5 text-[10px] text-[#E8DCB8]/45">
-                    VIP10K (tắt không gỡ VIP đủ 10k ván)
-                  </p>
-                  <p className="mb-1.5 text-[10px] tabular-nums text-[#E8DCB8]/40">
-                    Đã chơi {rounds.toLocaleString("vi-VN")} /{" "}
+                  <p className="mb-1.5 text-[10px] text-[#7A8EA8]">VIP10K</p>
+                  <p className="mb-1.5 text-[10px] tabular-nums text-[#7A8EA8]">
+                    {rounds.toLocaleString("vi-VN")} /{" "}
                     {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván
                     {showVip
                       ? localGranted
                         ? " · VIP10K"
                         : autoVip
-                          ? " · VIP (đủ ván)"
+                          ? " · VIP"
                           : " · VIP"
-                      : " · chưa VIP"}
+                      : ""}
                   </p>
                   <button
                     type="button"
@@ -467,7 +478,7 @@ export function PlayerInfoSheet({
                     className={`rounded-full px-3 py-1 text-[10px] font-bold disabled:opacity-45 ${
                       localGranted
                         ? "bg-amber-500 text-[#1a1208]"
-                        : "border border-[#C59B27]/50 bg-[#1C160C] text-[#E8DCB8]"
+                        : "border border-[#8C764D] bg-[#121D2D] text-[#E3D8C4]"
                     }`}
                   >
                     {localGranted ? "Đang VIP10K" : "Cấp VIP10K"}
@@ -477,7 +488,7 @@ export function PlayerInfoSheet({
             )}
 
             <div>
-              <p className="mb-1.5 text-[10px] text-[#E8DCB8]/45">Cộng / trừ xu</p>
+              <p className="mb-1.5 text-[10px] text-[#7A8EA8]">Cộng / trừ xu</p>
               <div className="mb-1.5 flex flex-wrap gap-1">
                 {[100, 1000, -100, -1000].map((n) => (
                   <button
@@ -501,7 +512,7 @@ export function PlayerInfoSheet({
                         });
                       }
                     }}
-                    className="rounded-full border border-[#C59B27]/40 bg-[#1C160C] px-2 py-0.5 text-[10px] font-bold text-[#E8DCB8] disabled:opacity-45"
+                    className="rounded-full border border-[#8C764D]/40 bg-[#121D2D] px-2 py-0.5 text-[10px] font-bold text-[#E3D8C4] disabled:opacity-45"
                   >
                     {n > 0 ? `+${formatXu(n)}` : formatXu(n)}
                   </button>
@@ -513,12 +524,12 @@ export function PlayerInfoSheet({
                   onChange={(e) => setDelta(e.target.value)}
                   placeholder="Delta (+/-)"
                   disabled={busy}
-                  className="min-w-0 flex-1 rounded-lg border border-[#2D5A50] bg-[#040C0A] px-2 py-1.5 text-xs text-[#E8DCB8] outline-none placeholder:text-[#E8DCB8]/35"
+                  className="min-w-0 flex-1 rounded-lg border border-[#2A3E5C] bg-[#0B1528] px-2 py-1.5 text-xs text-[#E3D8C4] outline-none placeholder:text-[#7A8EA8]"
                 />
                 <button
                   type="submit"
                   disabled={busy || !delta.trim()}
-                  className="shrink-0 rounded-lg border border-[#C59B27] bg-[#E5C158] px-3 text-xs font-bold text-[#1a1208] disabled:opacity-45"
+                  className="shrink-0 rounded-lg border border-[#C8A968] bg-[#E5C158] px-3 text-xs font-bold text-[#1a1208] disabled:opacity-45"
                 >
                   Áp
                 </button>

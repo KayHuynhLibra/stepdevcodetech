@@ -72,6 +72,12 @@ import {
   type RingItem,
   type BondAdminRow,
 } from "../rings";
+import {
+  NAME_COLOR_PRESETS,
+  normalizeNameColor,
+  type NameColorId,
+} from "../nameColors";
+import { ColoredName } from "../components/ColoredName";
 
 type CultBenefitDraft = Record<
   CultivationRank,
@@ -1763,6 +1769,32 @@ export default function AdminDashboard() {
       }
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi ẩn nick");
+    }
+  };
+
+
+  const setUserNameColor = async (userId: string, color: NameColorId) => {
+    try {
+      await api("/api/mainadmin/user-name-color", {
+        method: "POST",
+        body: JSON.stringify({ userId, color }),
+      });
+      setMsg(`Màu nick: ${color}`);
+      await load();
+      if (userId === me?.id) {
+        const token = getToken();
+        if (token) {
+          try {
+            const r = await api<{ ok: true; user: AuthUser }>("/api/auth/me");
+            saveSession(token, r.user);
+            setMe(r.user);
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi màu nick");
     }
   };
 
@@ -4031,6 +4063,37 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
+
+                  <div className="mt-3 rounded-lg bg-[var(--cream)]/80 px-2.5 py-2 ring-1 ring-[var(--wood-deep)]/10">
+                    <p className="text-[11px] font-bold text-[var(--play-ink)]">
+                      Màu nick công khai
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
+                      RoleAD gán màu tên trên bàn / hồ sơ. Preview:{" "}
+                      <ColoredName
+                        name={self.displayName ?? self.username}
+                        colorId={self.nameColor}
+                        className="font-semibold"
+                      />
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {NAME_COLOR_PRESETS.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => void setUserNameColor(self.id, c.id)}
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${
+                            normalizeNameColor(self.nameColor) === c.id
+                              ? "bg-[var(--wood-deep)] text-white ring-[var(--wood-deep)]"
+                              : "bg-white text-[var(--play-ink)] ring-[var(--wood-deep)]/20"
+                          }`}
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -4169,6 +4232,28 @@ export default function AdminDashboard() {
                         </p>
                       </div>
                     </div>
+
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      <span className="w-full text-[9px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
+                        Màu nick
+                      </span>
+                      {NAME_COLOR_PRESETS.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => void setUserNameColor(u.id, c.id)}
+                          className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
+                            normalizeNameColor(u.nameColor) === c.id
+                              ? "bg-[var(--wood-deep)] text-white"
+                              : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
+                          }`}
+                          title={c.label}
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+
                     {u.role !== "mainadmin" && (
                       <div className="mt-2 flex flex-wrap gap-1">
                         <span className="w-full text-[9px] font-bold uppercase tracking-wide text-[var(--play-muted)]">

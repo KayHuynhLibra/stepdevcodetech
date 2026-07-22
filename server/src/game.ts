@@ -1345,6 +1345,9 @@ export class GameEngine {
       if (linked?.cultivationRank) {
         row.cultivationRank = linked.cultivationRank;
       }
+      if (linked?.nameColor) {
+        row.nameColor = linked.nameColor;
+      }
       if (forStaff && linked) {
         row.balance = linked.balance;
         row.outcomeMode = authStore.getOutcomeMode(linked.id);

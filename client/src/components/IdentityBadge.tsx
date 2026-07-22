@@ -11,6 +11,7 @@ import { normalizeAvatar, DEFAULT_AVATAR } from "../avatars";
 import { VipFantasyAvatar } from "./VipFantasyAvatar";
 import { CultivationChip } from "./CultivationChip";
 import { CoupleAvatar } from "./CoupleAvatar";
+import { ColoredName } from "./ColoredName";
 
 function roleLabel(role?: UserRole | "guest"): string {
   if (role === "mainadmin") return "Mainadmin";
@@ -83,13 +84,13 @@ export function IdentityBadge({
     ? ""
     : "ring-2 ring-[var(--gold)]/55 shadow";
 
-  const nameClass = `truncate font-play text-[var(--play-ink)] ${
+  const nameClass = `truncate font-play ${
     compact ? "text-sm" : "text-base"
   } ${
     onNameClick
       ? "max-w-full rounded px-0.5 -mx-0.5 underline decoration-dotted decoration-[var(--gold)]/70 underline-offset-2 active:opacity-80"
       : ""
-  }`;
+  } ${user?.nameColor ? "" : "text-[var(--play-ink)]"}`;
 
   const avatarSize = compact ? "sm" : "md";
 
@@ -139,6 +140,24 @@ export function IdentityBadge({
       />
     ) : null;
 
+  const nameNode = onNameClick ? (
+    <ColoredName
+      as="button"
+      name={name}
+      colorId={user?.nameColor}
+      className={`${nameClass} block w-full text-left`}
+      title="Đổi tên"
+      onClick={onNameClick}
+    />
+  ) : (
+    <ColoredName
+      as="p"
+      name={name}
+      colorId={user?.nameColor}
+      className={nameClass}
+    />
+  );
+
   return (
     <div className={className}>
       {coupleNode ? (
@@ -159,18 +178,7 @@ export function IdentityBadge({
         <span className="relative shrink-0">{avatarNode}</span>
       )}
       <div className="min-w-0 flex-1">
-        {onNameClick ? (
-          <button
-            type="button"
-            onClick={onNameClick}
-            className={`${nameClass} block w-full text-left`}
-            title="Đổi tên"
-          >
-            {name}
-          </button>
-        ) : (
-          <p className={nameClass}>{name}</p>
-        )}
+        {nameNode}
         {bondActive && (
           <p
             className={`inline-flex items-center rounded-full bg-gradient-to-r from-rose-500/20 to-amber-400/15 px-1.5 py-px text-[8px] font-bold uppercase tracking-wide text-rose-700/90 ring-1 ring-rose-400/35 ${

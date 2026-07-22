@@ -627,6 +627,7 @@ export default function GamePage() {
         balance: match.balance ?? prev.balance,
         outcomeMode: match.outcomeMode ?? prev.outcomeMode,
         cultivationRank: match.cultivationRank ?? prev.cultivationRank,
+        nameColor: match.nameColor ?? prev.nameColor,
         isBot: match.isBot,
         isGuest: !match.isBot && !match.code && !match.userId,
       };
@@ -641,6 +642,7 @@ export default function GamePage() {
         next.balance === prev.balance &&
         next.outcomeMode === prev.outcomeMode &&
         next.cultivationRank === prev.cultivationRank &&
+        next.nameColor === prev.nameColor &&
         next.isGuest === prev.isGuest
       ) {
         return prev;
@@ -909,6 +911,7 @@ export default function GamePage() {
           vipGranted: boolean;
           roundsPlayed: number;
           cultivationRank?: string;
+          nameColor?: string;
           bond?: UserBondSnippet | null;
         };
       }>(`/api/players/card?${q}`);
@@ -944,6 +947,7 @@ export default function GamePage() {
             vipGranted: card.vipGranted,
             roundsPlayed: card.roundsPlayed,
             cultivationRank: card.cultivationRank ?? prev.cultivationRank,
+            nameColor: card.nameColor ?? prev.nameColor,
             bond: card.bond ?? prev.bond ?? null,
             isGuest: false,
           };
@@ -972,6 +976,7 @@ export default function GamePage() {
         roundsPlayed: p.roundsPlayed,
         vipGranted: p.vipGranted,
         cultivationRank: p.cultivationRank,
+        nameColor: p.nameColor,
       });
     },
     [openPlayerInfo],

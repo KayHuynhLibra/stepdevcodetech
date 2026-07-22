@@ -97,13 +97,13 @@ function faceSizeClass(
   if (display === "hero") {
     switch (scale) {
       case "sm":
-        return "h-16 w-16";
+        return "h-20 w-20 md:h-24 md:w-24";
       case "md":
-        return "h-20 w-20";
+        return "h-24 w-24 md:h-28 md:w-28";
       case "lg":
-        return "h-[5.5rem] w-[5.5rem]";
+        return "h-28 w-28 md:h-32 md:w-32";
       default:
-        return "h-24 w-24";
+        return "h-28 w-28 md:h-32 md:w-32";
     }
   }
   switch (scale) {

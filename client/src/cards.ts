@@ -127,6 +127,7 @@ export interface OnlinePlayerPublic {
   outcomeMode?: "normal" | "win" | "lose";
   guestCode?: string;
   cultivationRank?: string;
+  nameColor?: string;
 }
 
 export interface GameState {

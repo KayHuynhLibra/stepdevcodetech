@@ -62,6 +62,8 @@ export interface AuthUser {
   voiceRoomGrants?: number[];
   /** Override bậc staff 0–6; thiếu → theo role */
   staffGrantLevel?: number;
+  /** Màu nick công khai (RoleAD) */
+  nameColor?: string;
   /** Cặp đôi / nhẫn */
   bond?: {
     partnerId: string;

@@ -22,6 +22,10 @@ import { cultivationStore } from "./cultivationStore.js";
 import { vaultStore } from "./vaultStore.js";
 import { ringStore } from "./ringStore.js";
 import {
+  normalizeNameColor,
+  type NameColorId,
+} from "./nameColors.js";
+import {
   canControlVoiceRoomLock as grantsCanControlVoiceRoomLock,
   clampStaffGrantLevel,
   hasCapability,
@@ -146,6 +150,8 @@ export interface UserRecord {
    * Override bậc staff L0–L6 (grants.ts). Thiếu → suy từ role.
    */
   staffGrantLevel?: number;
+  /** Màu nick công khai — RoleAD gán (nameColors.ts) */
+  nameColor?: string;
 }
 
 /** Lịch sử IP theo user — không lộ ra PublicUser / client player */
@@ -213,6 +219,8 @@ export interface PublicUser {
   voiceRoomGrants?: number[];
   /** Override bậc staff 0–6; thiếu → theo role */
   staffGrantLevel?: number;
+  /** Màu nick công khai (RoleAD) */
+  nameColor?: string;
   /** Cặp đôi / nhẫn — active công khai; pending chỉ self */
   bond?: {
     partnerId: string;
@@ -422,6 +430,8 @@ function toPublic(
   if (u.staffGrantLevel != null) {
     pub.staffGrantLevel = clampStaffGrantLevel(u.staffGrantLevel);
   }
+  const nc = normalizeNameColor(u.nameColor);
+  if (nc !== "default") pub.nameColor = nc;
   if (opts?.includeRecovery && u.recoveryCode) {
     pub.recoveryCode = u.recoveryCode;
   }
@@ -1553,6 +1563,7 @@ export class AuthStore {
         vipGranted: boolean;
         roundsPlayed: number;
         cultivationRank?: CultivationRank;
+        nameColor?: string;
       }
     | null {
     const id = String(opts.userId ?? "").trim();
@@ -1576,6 +1587,7 @@ export class AuthStore {
       vipGranted: boolean;
       roundsPlayed: number;
       cultivationRank?: CultivationRank;
+      nameColor?: string;
     } = {
       userId: user.id,
       username: user.username,
@@ -1589,6 +1601,8 @@ export class AuthStore {
     if (user.cultivationRank && isCultivationRank(user.cultivationRank)) {
       card.cultivationRank = user.cultivationRank;
     }
+    const nc = normalizeNameColor(user.nameColor);
+    if (nc !== "default") card.nameColor = nc;
     return card;
   }
 
@@ -1751,6 +1765,20 @@ export class AuthStore {
     if (!v.ok) return v;
     if (v.nickname) user.nickname = v.nickname;
     else delete user.nickname;
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  /** RoleAD: gán màu nick công khai. */
+  setNameColor(
+    userId: string,
+    colorRaw: unknown,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    const color = normalizeNameColor(colorRaw) as NameColorId;
+    if (color === "default") delete user.nameColor;
+    else user.nameColor = color;
     this.scheduleSave();
     return { ok: true, user: toPublic(user) };
   }

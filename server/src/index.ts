@@ -2827,6 +2827,25 @@ app.post("/api/mainadmin/user-hide-nickname", (req, res) => {
   res.json(result);
 });
 
+/** RoleAD / mainadmin: màu nick công khai */
+app.post("/api/mainadmin/user-name-color", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const userId = String(req.body?.userId ?? "").trim();
+  if (!userId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId" });
+  }
+  const result = authStore.setNameColor(userId, req.body?.color);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "user_name_color", {
+    targetId: result.user.id,
+    targetName: result.user.username,
+    detail: String(result.user.nameColor ?? "default"),
+  });
+  engine.refreshAllClients();
+  res.json(result);
+});
+
 app.post("/api/mainadmin/ips/kick", async (req, res) => {
   const me = requireCapability(req, res, "ip_audit", "Cần quyền IP (audit)");
   if (!me) return;

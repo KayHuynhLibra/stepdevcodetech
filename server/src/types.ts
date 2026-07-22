@@ -120,6 +120,8 @@ export interface OnlinePlayerPublic {
   guestCode?: string;
   /** Cảnh giới Tu Tiên (công khai nếu đã gán) */
   cultivationRank?: string;
+  /** Mau nick cong khai (RoleAD) */
+  nameColor?: string;
 }
 
 export interface PublicState {
