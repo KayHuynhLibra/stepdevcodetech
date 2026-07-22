@@ -2313,7 +2313,7 @@ export default function AdminDashboard() {
       label: "Coupon ẩn",
       show: !tutienOnly && !modOnly && !auditOnly,
     },
-    { id: "invites", label: "Mã TV", show: canInvites },
+    { id: "invites", label: "Đăng ký", show: canInvites },
     {
       id: "vault",
       label: managedGame === "arcana" ? "Kho Arcana" : "Kho Tarot",
@@ -2716,6 +2716,31 @@ export default function AdminDashboard() {
 
       {tab === "overview" && (
         <>
+          {canInvites && (
+            <section
+              className={`app-panel mt-3 px-3 py-2.5 ring-1 ${
+                data.requireInvite !== false
+                  ? "bg-amber-50/90 ring-amber-200"
+                  : "bg-emerald-50/90 ring-emerald-200"
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] font-bold text-[var(--play-ink)]">
+                  Đăng ký:{" "}
+                  {data.requireInvite !== false
+                    ? "bắt buộc mã thành viên 8 ký tự"
+                    : "mở — không bắt mã"}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setTab("invites")}
+                  className="rounded-full bg-white px-3 py-1 text-[10px] font-bold text-[var(--wood-deep)] ring-1 ring-[var(--wood-deep)]/20"
+                >
+                  Tab Đăng ký ›
+                </button>
+              </div>
+            </section>
+          )}
           {canTraffic && data.traffic && (
             <section className="app-frame mt-4 px-3 py-3">
               <p className="play-heading text-sm">Lưu lượng tổng (mainadmin)</p>
@@ -4592,43 +4617,54 @@ export default function AdminDashboard() {
 
       {tab === "invites" && canInvites && (
         <>
-          <section className="app-panel mt-4 p-3">
-            <p className="play-heading text-sm">Chế độ mã khách mời</p>
-            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-              Bật = đăng ký bắt buộc nhập mã 8 ký tự. Tắt = ai cũng tạo tài khoản
-              được (vẫn tạo mã để phát tay nếu muốn).
+          <section className="app-panel mt-4 border-2 border-[var(--wood-deep)]/25 p-3 sm:p-4">
+            <p className="play-heading text-sm sm:text-base">
+              Đăng ký · mã thành viên 8 ký tự
             </p>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <p className="mt-1 text-[11px] leading-relaxed text-[var(--play-muted)]">
+              Mainadmin / Eco bật–tắt tại đây.{" "}
+              <strong className="text-[var(--play-ink)]">Bắt buộc</strong> =
+              form đăng ký bắt nhập mã 8 ký tự.{" "}
+              <strong className="text-[var(--play-ink)]">Tắt</strong> = đăng ký
+              mở, không cần mã (vẫn tạo mã bên dưới để phát tay).
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                disabled={inviteBusy || data.requireInvite === true}
+                disabled={inviteBusy}
                 onClick={() => void setRequireInviteMode(true)}
-                className={`rounded-full px-3 py-1.5 text-xs font-bold disabled:opacity-40 ${
-                  data.requireInvite
-                    ? "bg-[var(--wood-deep)] text-[var(--gold-soft)]"
+                className={`min-w-[8.5rem] rounded-xl px-3 py-2.5 text-xs font-bold disabled:opacity-50 ${
+                  data.requireInvite !== false
+                    ? "bg-[var(--wood-deep)] text-[var(--gold-soft)] ring-2 ring-[var(--gold)]/50"
                     : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
                 }`}
               >
-                Bắt buộc mã
+                Bắt buộc mã 8 ký tự
               </button>
               <button
                 type="button"
-                disabled={inviteBusy || data.requireInvite === false}
+                disabled={inviteBusy}
                 onClick={() => void setRequireInviteMode(false)}
-                className={`rounded-full px-3 py-1.5 text-xs font-bold disabled:opacity-40 ${
+                className={`min-w-[8.5rem] rounded-xl px-3 py-2.5 text-xs font-bold disabled:opacity-50 ${
                   data.requireInvite === false
-                    ? "bg-emerald-700 text-white"
+                    ? "bg-emerald-700 text-white ring-2 ring-emerald-400/60"
                     : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
                 }`}
               >
-                Không cần mã
+                Tắt — đăng ký mở
               </button>
             </div>
-            <p className="mt-2 text-[10px] font-semibold text-[var(--wood-deep)]">
-              Hiện tại:{" "}
+            <p
+              className={`mt-3 rounded-lg px-2.5 py-2 text-[11px] font-bold ${
+                data.requireInvite !== false
+                  ? "bg-amber-50 text-amber-950 ring-1 ring-amber-200"
+                  : "bg-emerald-50 text-emerald-950 ring-1 ring-emerald-200"
+              }`}
+            >
+              Trạng thái live:{" "}
               {data.requireInvite !== false
-                ? "ĐANG bắt buộc mã mời"
-                : "Đăng ký mở (không bắt mã)"}
+                ? "ĐANG bắt buộc mã thành viên khi đăng ký"
+                : "Đăng ký MỞ — không bắt mã"}
             </p>
           </section>
 

@@ -299,7 +299,34 @@ function buildInterPayload() {
 }
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, cards: CARDS.length });
+  const started = (globalThis as { __sofiaoreBootAt?: number }).__sofiaoreBootAt;
+  const bootAt = started ?? Date.now();
+  if (!(globalThis as { __sofiaoreBootAt?: number }).__sofiaoreBootAt) {
+    (globalThis as { __sofiaoreBootAt?: number }).__sofiaoreBootAt = bootAt;
+  }
+  const stats = engine.getOnlineStats();
+  const dataDir = join(__dirname, "..", "data");
+  const checks = {
+    cards: CARDS.length === 8,
+    clientDist: existsSync(CLIENT_DIST),
+    dataDir: existsSync(dataDir),
+    engine: typeof stats?.phase === "string",
+  };
+  const ok = Object.values(checks).every(Boolean);
+  res.status(ok ? 200 : 503).json({
+    ok,
+    service: "sofiaore-tarot",
+    version: process.env.npm_package_version ?? "1.0.0",
+    node: process.version,
+    uptimeSec: Math.floor(process.uptime()),
+    ts: Date.now(),
+    cards: CARDS.length,
+    phase: stats.phase,
+    roundNumber: stats.roundNumber,
+    displayOnline: stats.displayOnline,
+    requireInvite: inviteStore.isInviteRequired(),
+    checks,
+  });
 });
 app.get("/api/cards", (_req, res) => {
   res.json(CARDS);
