@@ -2399,6 +2399,7 @@ app.get("/api/ring/config", (req, res) => {
   res.json({
     ok: true,
     ...snap,
+    rings: ringStore.adminCatalog(),
     bondRows: ringStore.listBondsAdmin(resolvePartner),
   });
 });
@@ -2409,9 +2410,72 @@ app.post("/api/ring/items", (req, res) => {
   const result = ringStore.upsertRing(req.body?.ring ?? req.body);
   if (!result.ok) return res.status(400).json(result);
   audit(me, "ring_upsert", {
-    detail: `${result.ring.key} · ${result.ring.price}`,
+    detail: `${result.ring.key} · ${result.ring.kind} · ${result.ring.price}`,
   });
   res.json({ ok: true, ring: result.ring, ...ringStore.snapshot() });
+});
+
+app.post("/api/ring/bond-set-ring", (req, res) => {
+  const me = requireCapability(req, res, "ring_manage", "Cần quyền Ring");
+  if (!me) return;
+  const result = ringStore.adminSetBondRing(
+    String(req.body?.bondId ?? ""),
+    req.body?.ringKey,
+  );
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "ring_bond_set", {
+    detail: `${result.bond.id} → ${result.ring.key}`,
+  });
+  const resolvePartner = (id: string) => {
+    const u = authStore.getById(id);
+    if (!u) return null;
+    return {
+      id: u.id,
+      code: u.code,
+      username: u.username,
+      displayName: userDisplayName(u),
+      avatar: normalizeAvatar(u.avatar),
+    };
+  };
+  res.json({
+    ok: true,
+    bond: result.bond,
+    ring: result.ring,
+    bondRows: ringStore.listBondsAdmin(resolvePartner),
+    ...ringStore.snapshot(),
+  });
+});
+
+app.post("/api/ring/custom-upsert", (req, res) => {
+  const me = requireCapability(req, res, "ring_manage", "Cần quyền Ring");
+  if (!me) return;
+  const result = ringStore.upsertCustomForBond(
+    String(req.body?.bondId ?? ""),
+    req.body?.ring ?? req.body,
+    { equip: req.body?.equip !== false },
+  );
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "ring_custom_upsert", {
+    detail: `${result.bond.coupleCode} · ${result.ring.key}`,
+  });
+  const resolvePartner = (id: string) => {
+    const u = authStore.getById(id);
+    if (!u) return null;
+    return {
+      id: u.id,
+      code: u.code,
+      username: u.username,
+      displayName: userDisplayName(u),
+      avatar: normalizeAvatar(u.avatar),
+    };
+  };
+  res.json({
+    ok: true,
+    ring: result.ring,
+    bond: result.bond,
+    bondRows: ringStore.listBondsAdmin(resolvePartner),
+    ...ringStore.snapshot(),
+  });
 });
 
 app.post("/api/ring/items/toggle", (req, res) => {
@@ -2552,6 +2616,21 @@ app.post("/api/auth/ring-couple-phrase", (req, res) => {
     ok: true,
     couplePhrase: result.couplePhrase ?? null,
     user,
+  });
+});
+
+/** Player không được đổi thiết kế — chỉ admin (`/api/ring/bond-set-ring`, `/api/ring/custom-upsert`). */
+app.post("/api/auth/ring-change", (_req, res) => {
+  res.status(403).json({
+    ok: false,
+    reason: "Chỉ admin đổi thiết kế nhẫn sau khi lên nhẫn",
+  });
+});
+
+app.post("/api/auth/ring-custom-upsert", (_req, res) => {
+  res.status(403).json({
+    ok: false,
+    reason: "Chỉ admin tạo / sửa nhẫn riêng của cặp",
   });
 });
 

@@ -1833,7 +1833,6 @@ export default function GamePage() {
               </h1>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
-              <StaffNotiPopup user={me ?? getStoredUser()} />
               <PlayToolsBar
                 muted={muted}
                 showBalance={showLbBalance}
@@ -2030,22 +2029,25 @@ export default function GamePage() {
                   </span>
                 </div>
               )}
-              <button
-                type="button"
-                onClick={openCoupon}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  void openVipTopups();
-                }}
-                title="Nạp xu · giữ/chuột phải xem danh sách nạp"
-                className={`px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide ${
-                  balance <= 0
-                    ? "animate-pulse rounded-full bg-rose-500 text-white ring-1 ring-rose-300"
-                    : "ui-pill ui-pill--strong"
-                }`}
-              >
-                Nạp!
-              </button>
+              <div className="flex flex-col items-end gap-0.5">
+                <StaffNotiPopup user={me ?? getStoredUser()} />
+                <button
+                  type="button"
+                  onClick={openCoupon}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    void openVipTopups();
+                  }}
+                  title="Nạp xu · giữ/chuột phải xem danh sách nạp"
+                  className={`px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide ${
+                    balance <= 0
+                      ? "animate-pulse rounded-full bg-rose-500 text-white ring-1 ring-rose-300"
+                      : "ui-pill ui-pill--strong"
+                  }`}
+                >
+                  Nạp!
+                </button>
+              </div>
             </div>
           </div>
         </header>

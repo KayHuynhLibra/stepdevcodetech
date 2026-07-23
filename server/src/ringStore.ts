@@ -164,6 +164,10 @@ export interface RingItem {
   enabled: boolean;
   sort: number;
   category: RingCategory;
+  /** catalog = mẫu shop; custom = nhẫn riêng của 1 cặp */
+  kind: "catalog" | "custom";
+  /** Bond sở hữu nhẫn custom */
+  ownerBondId?: string;
   /** Hiệu ứng hiển thị trên avatar cặp */
   effect: RingEffect;
   /** Độ nét / phóng ảnh nhẫn 0–100 (mặc định 70) */
@@ -200,6 +204,8 @@ export interface Bond {
   note?: string;
   /** Chữ giữa tên cặp (chỉ Kim Cương) */
   couplePhrase?: string;
+  /** Mã cặp đôi công khai (sau khi lên nhẫn) */
+  coupleCode?: string;
 }
 
 export interface RingStoreSnapshot {
@@ -256,6 +262,8 @@ export interface UserBondSnippet {
   ringFrame: RingFrameStyle;
   ringFrameScale: RingFrameScale;
   couplePhrase?: string;
+  /** Mã cặp đôi (active) */
+  coupleCode?: string;
   since: number;
   status: BondStatus;
 }
@@ -272,6 +280,7 @@ export interface BondAdminRow {
   proposedAt: number;
   acceptedAt?: number;
   note?: string;
+  coupleCode?: string;
   a: BondPartnerPublic;
   b: BondPartnerPublic;
 }
@@ -290,6 +299,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Khởi đầu nhẹ nhàng",
     enabled: true,
     sort: 10,
+    kind: "catalog",
     category: "classic",
     effect: "glow",
     imageSharpness: 75,
@@ -310,6 +320,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Ánh vàng ấm",
     enabled: true,
     sort: 20,
+    kind: "catalog",
     category: "luxury",
     effect: "pulse",
     imageSharpness: 80,
@@ -330,6 +341,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Hồng lãng mạn",
     enabled: true,
     sort: 30,
+    kind: "catalog",
     category: "romance",
     effect: "sparkle",
     imageSharpness: 85,
@@ -350,6 +362,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Đỉnh cao · chữ tuỳ chỉnh A — … — B",
     enabled: true,
     sort: 40,
+    kind: "catalog",
     category: "legend",
     effect: "orbit",
     imageSharpness: 95,
@@ -492,6 +505,7 @@ function fallbackRing(key: string): RingItem {
     price: 0,
     enabled: true,
     sort: 0,
+    kind: key.startsWith("c_") || key.startsWith("custom_") ? "custom" : "catalog",
     category,
     effect: "glow",
     imageSharpness: 70,
@@ -506,9 +520,17 @@ function fallbackRing(key: string): RingItem {
   };
 }
 
+function normalizeRingKind(raw: unknown, key: string): "catalog" | "custom" {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (s === "custom") return "custom";
+  if (s === "catalog") return "catalog";
+  if (key.startsWith("c_") || key.startsWith("custom_")) return "custom";
+  return "catalog";
+}
+
 function normalizeRing(raw: unknown): RingItem | null {
   if (!raw || typeof raw !== "object") return null;
-  const g = raw as Partial<RingItem>;
+  const g = raw as Partial<RingItem> & { kind?: string; ownerBondId?: string };
   const key = normalizeKey(g.key);
   if (!key) return null;
   const nameVi = String(g.nameVi ?? "").trim().slice(0, 40) || key;
@@ -516,6 +538,11 @@ function normalizeRing(raw: unknown): RingItem | null {
     typeof g.blurb === "string" ? g.blurb.trim().slice(0, 80) : undefined;
   const sort = Math.floor(Number(g.sort));
   const category = normalizeCategory(g.category, key);
+  const kind = normalizeRingKind(g.kind, key);
+  const ownerBondId =
+    kind === "custom"
+      ? String(g.ownerBondId ?? "").trim() || undefined
+      : undefined;
   return {
     key,
     nameVi,
@@ -524,6 +551,8 @@ function normalizeRing(raw: unknown): RingItem | null {
     blurb: blurb || undefined,
     enabled: g.enabled !== false,
     sort: Number.isFinite(sort) ? sort : 100,
+    kind,
+    ownerBondId,
     category,
     effect: normalizeEffect(g.effect),
     imageSharpness: clampSharpness(g.imageSharpness),
@@ -536,6 +565,23 @@ function normalizeRing(raw: unknown): RingItem | null {
     ringFrame: normalizeRingFrame(g.ringFrame),
     ringFrameScale: normalizeRingFrameScale(g.ringFrameScale),
   };
+}
+
+function normalizeCoupleCode(raw: unknown): string | undefined {
+  const s = String(raw ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 10);
+  return s || undefined;
+}
+
+function newCoupleCode(used: Set<string>): string {
+  for (let i = 0; i < 24; i++) {
+    const code = `CP${randomBytes(3).toString("hex").toUpperCase()}`;
+    if (!used.has(code)) return code;
+  }
+  return `CP${Date.now().toString(36).toUpperCase().slice(-6)}`;
 }
 
 function normalizeBond(raw: unknown): Bond | null {
@@ -554,6 +600,7 @@ function normalizeBond(raw: unknown): Bond | null {
   const note =
     typeof b.note === "string" ? b.note.trim().slice(0, 80) : undefined;
   const couplePhrase = normalizeCouplePhrase(b.couplePhrase);
+  const coupleCode = normalizeCoupleCode(b.coupleCode);
   return {
     id,
     aUserId,
@@ -565,6 +612,7 @@ function normalizeBond(raw: unknown): Bond | null {
     acceptedAt: acceptedAt && acceptedAt > 0 ? acceptedAt : undefined,
     note: note || undefined,
     couplePhrase: couplePhrase || undefined,
+    coupleCode: status === "active" ? coupleCode : undefined,
   };
 }
 
@@ -629,6 +677,24 @@ class RingStore {
         : [];
       if (rings.length) this.rings = rings;
       this.bonds = bonds;
+      let dirty = false;
+      const usedCodes = new Set(
+        this.bonds.map((b) => b.coupleCode).filter(Boolean) as string[],
+      );
+      for (const b of this.bonds) {
+        if (b.status === "active" && !b.coupleCode) {
+          b.coupleCode = newCoupleCode(usedCodes);
+          usedCodes.add(b.coupleCode);
+          dirty = true;
+        }
+      }
+      for (const r of this.rings) {
+        if (!r.kind) {
+          (r as RingItem).kind = normalizeRingKind(undefined, r.key);
+          dirty = true;
+        }
+      }
+      if (dirty) this.save();
       console.log(
         `[rings] Loaded ${this.rings.length} rings · ${this.bonds.length} bonds`,
       );
@@ -647,11 +713,19 @@ class RingStore {
     }
   }
 
+  /** Catalog shop — chỉ mẫu mặc định (không gồm nhẫn riêng cặp). */
   publicCatalog(): RingItem[] {
     return this.rings
-      .filter((r) => r.enabled)
+      .filter((r) => r.enabled && (r.kind ?? "catalog") === "catalog")
       .map((r) => ({ ...r }))
       .sort((a, b) => a.sort - b.sort || a.price - b.price || a.key.localeCompare(b.key));
+  }
+
+  /** Toàn bộ nhẫn (catalog + custom) — admin. */
+  adminCatalog(): RingItem[] {
+    return this.rings
+      .map((r) => ({ ...r }))
+      .sort((a, b) => a.sort - b.sort || a.key.localeCompare(b.key));
   }
 
   getByKey(key: string): RingItem | undefined {
@@ -797,6 +871,7 @@ class RingStore {
         ringFrame: active.ring.ringFrame,
         ringFrameScale: active.ring.ringFrameScale,
         couplePhrase: phrase || undefined,
+        coupleCode: raw?.coupleCode,
         since: active.since,
         status: "active",
       };
@@ -866,6 +941,9 @@ class RingStore {
     if (!ring || !ring.enabled) {
       return { ok: false, reason: "Nhẫn không tồn tại hoặc đã tắt" };
     }
+    if ((ring.kind ?? "catalog") !== "catalog") {
+      return { ok: false, reason: "Chỉ cầu hôn bằng nhẫn catalog" };
+    }
     if (this.hasBlockingBond(fromId)) {
       return { ok: false, reason: "Bạn đang có nhẫn / lời cầu hôn" };
     }
@@ -924,6 +1002,12 @@ class RingStore {
 
     bond.status = "active";
     bond.acceptedAt = Date.now();
+    if (!bond.coupleCode) {
+      const used = new Set(
+        this.bonds.map((b) => b.coupleCode).filter(Boolean) as string[],
+      );
+      bond.coupleCode = newCoupleCode(used);
+    }
 
     const clearedPendingIds: string[] = [];
     this.bonds = this.bonds.filter((b) => {
@@ -1020,6 +1104,110 @@ class RingStore {
     return { ok: true, bond: removed };
   }
 
+  /**
+   * Đổi nhẫn đang đeo (cặp active).
+   * Cho phép: catalog enabled, hoặc custom thuộc đúng bond.
+   */
+  setBondRing(
+    userId: string,
+    ringKeyRaw: unknown,
+  ):
+    | { ok: true; bond: Bond; ring: RingItem }
+    | { ok: false; reason: string } {
+    const uid = String(userId ?? "").trim();
+    if (!uid) return { ok: false, reason: "Thiếu user" };
+    const bond = this.bonds.find(
+      (b) => b.status === "active" && bondInvolves(b, uid),
+    );
+    if (!bond) return { ok: false, reason: "Bạn chưa kết đôi" };
+    const ring = this.getByKey(String(ringKeyRaw ?? ""));
+    if (!ring || !ring.enabled) {
+      return { ok: false, reason: "Nhẫn không tồn tại hoặc đã tắt" };
+    }
+    const kind = ring.kind ?? "catalog";
+    if (kind === "custom" && ring.ownerBondId !== bond.id) {
+      return { ok: false, reason: "Nhẫn riêng không thuộc cặp này" };
+    }
+    bond.ringKey = ring.key;
+    this.save();
+    return { ok: true, bond: { ...bond }, ring: { ...ring } };
+  }
+
+  /** Staff: gắn nhẫn (catalog/custom) cho bond theo id. */
+  adminSetBondRing(
+    bondId: string,
+    ringKeyRaw: unknown,
+  ):
+    | { ok: true; bond: Bond; ring: RingItem }
+    | { ok: false; reason: string } {
+    const id = String(bondId ?? "").trim();
+    const bond = this.bonds.find((b) => b.id === id);
+    if (!bond) return { ok: false, reason: "Không tìm thấy cặp" };
+    if (bond.status !== "active") {
+      return { ok: false, reason: "Chỉ đổi nhẫn khi đã lên nhẫn" };
+    }
+    const ring = this.getByKey(String(ringKeyRaw ?? ""));
+    if (!ring) return { ok: false, reason: "Không tìm thấy nhẫn" };
+    const kind = ring.kind ?? "catalog";
+    if (kind === "custom" && ring.ownerBondId && ring.ownerBondId !== bond.id) {
+      return { ok: false, reason: "Nhẫn riêng thuộc cặp khác" };
+    }
+    bond.ringKey = ring.key;
+    this.save();
+    return { ok: true, bond: { ...bond }, ring: { ...ring } };
+  }
+
+  /**
+   * Tạo / cập nhật nhẫn riêng cho cặp (key = c_<coupleCode>).
+   * Mặc định gắn làm nhẫn đang đeo.
+   */
+  upsertCustomForBond(
+    bondId: string,
+    patch: unknown,
+    opts?: { equip?: boolean },
+  ):
+    | { ok: true; ring: RingItem; bond: Bond }
+    | { ok: false; reason: string } {
+    const id = String(bondId ?? "").trim();
+    const bond = this.bonds.find((b) => b.id === id);
+    if (!bond) return { ok: false, reason: "Không tìm thấy cặp" };
+    if (bond.status !== "active" || !bond.coupleCode) {
+      return { ok: false, reason: "Cặp chưa có mã cặp đôi" };
+    }
+    const baseKey = `c_${bond.coupleCode.toLowerCase()}`;
+    const existing = this.getByKey(baseKey);
+    const raw =
+      patch && typeof patch === "object"
+        ? { ...(patch as object), key: baseKey }
+        : { key: baseKey };
+    const merged = normalizeRing({
+      ...(existing ?? fallbackRing(baseKey)),
+      ...(raw as object),
+      key: baseKey,
+      kind: "custom",
+      ownerBondId: bond.id,
+      // Custom thường không bán shop
+      enabled: true,
+      price: existing?.price ?? 0,
+    });
+    if (!merged) return { ok: false, reason: "Nhẫn riêng không hợp lệ" };
+    const idx = this.rings.findIndex((g) => g.key === merged.key);
+    if (idx >= 0) this.rings[idx] = merged;
+    else this.rings.push(merged);
+    if (opts?.equip !== false) {
+      bond.ringKey = merged.key;
+    }
+    this.save();
+    return { ok: true, ring: { ...merged }, bond: { ...bond } };
+  }
+
+  listCustomForBond(bondId: string): RingItem[] {
+    const id = String(bondId ?? "").trim();
+    return this.rings
+      .filter((r) => (r.kind ?? "catalog") === "custom" && r.ownerBondId === id)
+      .map((r) => ({ ...r }));
+  }
+
   /** Staff: buộc hủy pending hoặc tách cặp active theo bondId. */
   adminBreakById(
     bondId: string,
@@ -1030,6 +1218,7 @@ class RingStore {
     if (idx < 0) return { ok: false, reason: "Không tìm thấy cặp / lời cầu hôn" };
     const removed = { ...this.bonds[idx]! };
     this.bonds.splice(idx, 1);
+    // Giữ custom rings trong catalog để admin còn xem/sửa; không xóa ảnh.
     this.save();
     return { ok: true, bond: removed };
   }
@@ -1068,6 +1257,7 @@ class RingStore {
         proposedAt: bond.proposedAt,
         acceptedAt: bond.acceptedAt,
         note: bond.note,
+        coupleCode: bond.coupleCode,
         a: a ?? { id: bond.aUserId, code: "—", username: "?", displayName: "?", avatar: "" },
         b: b ?? { id: bond.bUserId, code: "—", username: "?", displayName: "?", avatar: "" },
       };

@@ -233,6 +233,9 @@ export interface RingItem {
   enabled: boolean;
   sort: number;
   category?: RingCategory;
+  /** catalog = shop; custom = nhẫn riêng cặp */
+  kind?: "catalog" | "custom";
+  ownerBondId?: string;
   effect?: RingEffect;
   imageSharpness?: number;
   coupleFrame?: CoupleFrameStyle;
@@ -266,6 +269,7 @@ export interface BondAdminRow {
   proposedAt: number;
   acceptedAt?: number;
   note?: string;
+  coupleCode?: string;
   a: BondPartnerPublic;
   b: BondPartnerPublic;
 }
@@ -290,6 +294,8 @@ export interface UserBondSnippet {
   ringFrameScale?: RingFrameScale | string;
   /** Chữ giữa A — … — B (Kim Cương); trống = «Với» */
   couplePhrase?: string;
+  /** Mã cặp đôi (sau lên nhẫn) */
+  coupleCode?: string;
   since: number;
   status: BondStatus;
 }
@@ -303,6 +309,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Khởi đầu nhẹ nhàng",
     enabled: true,
     sort: 10,
+    kind: "catalog",
     category: "classic",
     effect: "glow",
     imageSharpness: 75,
@@ -323,6 +330,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Ánh vàng ấm",
     enabled: true,
     sort: 20,
+    kind: "catalog",
     category: "luxury",
     effect: "pulse",
     imageSharpness: 80,
@@ -343,6 +351,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Hồng lãng mạn",
     enabled: true,
     sort: 30,
+    kind: "catalog",
     category: "romance",
     effect: "sparkle",
     imageSharpness: 85,
@@ -363,6 +372,7 @@ export const DEFAULT_RINGS: RingItem[] = [
     blurb: "Đỉnh cao · chữ tuỳ chỉnh A — … — B",
     enabled: true,
     sort: 40,
+    kind: "catalog",
     category: "legend",
     effect: "orbit",
     imageSharpness: 95,

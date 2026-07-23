@@ -298,6 +298,8 @@ export interface PublicUser {
     ringFrame?: string;
     ringFrameScale?: string;
     couplePhrase?: string;
+    /** Mã cặp công khai khi đã lên nhẫn (vd. CP1A2B3C) */
+    coupleCode?: string;
     since: number;
     status: "pending" | "active";
   };

@@ -580,8 +580,17 @@ export function RingHubSheet({
                     {coupleWithLabel(myBond.couplePhrase)} {myBond.partnerName} ·
                     ID {myBond.partnerCode}
                   </p>
+                  {myBond.coupleCode ? (
+                    <p className="mt-0.5 font-mono text-[11px] font-bold text-amber-200/90">
+                      Mã cặp {myBond.coupleCode}
+                    </p>
+                  ) : null}
                 </div>
               </div>
+              <p className="mt-2 text-[10px] text-white/40">
+                Đổi thiết kế nhẫn do admin — giữ mã cặp{" "}
+                {myBond.coupleCode ?? "—"}.
+              </p>
               <DiamondPhraseEditor
                 bond={myBond}
                 busy={busy}

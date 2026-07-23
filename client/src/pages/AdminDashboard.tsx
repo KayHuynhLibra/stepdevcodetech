@@ -958,6 +958,55 @@ interface Overview {
   }[];
 }
 
+function AdminBondCustomForm({
+  row,
+  busy,
+  onSave,
+}: {
+  row: BondAdminRow;
+  busy?: boolean;
+  onSave: (opts: { nameVi: string; image: string }) => void;
+}) {
+  const [nameVi, setNameVi] = useState(row.ringNameVi);
+  const [image, setImage] = useState(row.ringImage);
+  useEffect(() => {
+    setNameVi(row.ringNameVi);
+    setImage(row.ringImage);
+  }, [row.id, row.ringKey, row.ringNameVi, row.ringImage]);
+  return (
+    <div className="flex flex-wrap items-end gap-1.5">
+      <label className="min-w-[8rem] flex-1 text-[10px] text-[var(--play-muted)]">
+        Tên nhẫn riêng
+        <input
+          className="app-input !px-2 !py-1 mt-0.5 w-full text-[11px]"
+          value={nameVi}
+          maxLength={40}
+          disabled={busy}
+          onChange={(e) => setNameVi(e.target.value)}
+        />
+      </label>
+      <label className="min-w-[10rem] flex-[1.4] text-[10px] text-[var(--play-muted)]">
+        Ảnh / emoji
+        <input
+          className="app-input !px-2 !py-1 mt-0.5 w-full text-[11px]"
+          value={image}
+          maxLength={200}
+          disabled={busy}
+          onChange={(e) => setImage(e.target.value)}
+        />
+      </label>
+      <button
+        type="button"
+        disabled={busy || !nameVi.trim()}
+        onClick={() => onSave({ nameVi, image })}
+        className="rounded-full bg-[var(--wood-deep)] px-2.5 py-1.5 text-[10px] font-bold text-[var(--cream)] disabled:opacity-45"
+      >
+        Lưu riêng & đeo
+      </button>
+    </div>
+  );
+}
+
 function cardName(id: number) {
   return CARDS.find((c) => c.id === id)?.nameVi ?? `Lá ${id}`;
 }
@@ -3353,6 +3402,72 @@ export default function AdminDashboard() {
       );
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Lỗi hủy bond");
+    } finally {
+      setRingBusy(false);
+    }
+  };
+
+  const adminSetBondRing = async (row: BondAdminRow, ringKey: string) => {
+    if (!ringKey || ringKey === row.ringKey) return;
+    setRingBusy(true);
+    try {
+      const r = await api<{
+        ok: true;
+        bondRows?: BondAdminRow[];
+        rings?: RingItem[];
+        ring?: { nameVi: string };
+      }>("/api/ring/bond-set-ring", {
+        method: "POST",
+        body: JSON.stringify({ bondId: row.id, ringKey }),
+      });
+      if (r.bondRows) setBondRows(r.bondRows);
+      if (r.rings) setRingRows(r.rings);
+      else await loadRingConfig();
+      setMsg(`Đã đổi nhẫn → ${r.ring?.nameVi ?? ringKey}`);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi đổi nhẫn cặp");
+    } finally {
+      setRingBusy(false);
+    }
+  };
+
+  const adminUpsertBondCustom = async (
+    row: BondAdminRow,
+    opts: { nameVi: string; image: string },
+  ) => {
+    const nameVi = opts.nameVi.trim();
+    if (!nameVi) {
+      setMsg("Nhập tên nhẫn riêng");
+      return;
+    }
+    setRingBusy(true);
+    try {
+      const r = await api<{
+        ok: true;
+        bondRows?: BondAdminRow[];
+        rings?: RingItem[];
+        ring?: { nameVi: string; key: string };
+      }>("/api/ring/custom-upsert", {
+        method: "POST",
+        body: JSON.stringify({
+          bondId: row.id,
+          equip: true,
+          ring: {
+            nameVi,
+            image: opts.image.trim() || "💍",
+          },
+        }),
+      });
+      if (r.bondRows) setBondRows(r.bondRows);
+      if (r.rings) setRingRows(r.rings);
+      else await loadRingConfig();
+      setMsg(
+        `Nhẫn riêng «${r.ring?.nameVi ?? nameVi}»${
+          row.coupleCode ? ` · ${row.coupleCode}` : ""
+        }`,
+      );
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi nhẫn riêng");
     } finally {
       setRingBusy(false);
     }
@@ -6849,22 +6964,26 @@ export default function AdminDashboard() {
         <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
           <p className="play-heading text-sm">Cặp đôi & lời cầu hôn</p>
           <p className="text-[11px] text-[var(--play-muted)]">
-            Player: nút <strong>Nhẫn</strong> trên bàn chơi → chọn nhẫn → cầu hôn.
-            Pending bị hủy/từ chối → hoàn xu cho người cầu hôn. Cặp active tách →
-            không hoàn xu.
+            Player: nút <strong>Nhẫn</strong> → chọn mẫu catalog cầu hôn. Sau khi
+            lên nhẫn có <strong>mã cặp</strong>;{" "}
+            <strong>chỉ admin</strong> đổi thiết kế / nhẫn riêng. Pending hủy →
+            hoàn xu.
           </p>
           {bondRows.length === 0 ? (
             <p className="text-[11px] text-[var(--play-muted)]">
               Chưa có pending / cặp active.
             </p>
           ) : (
-            <ul className="max-h-72 space-y-2 overflow-y-auto">
+            <ul className="max-h-[28rem] space-y-2 overflow-y-auto">
               {bondRows.map((row) => {
                 const aName = row.a.displayName || row.a.username;
                 const bName = row.b.displayName || row.b.username;
                 const when = new Date(
                   row.acceptedAt ?? row.proposedAt,
                 ).toLocaleString("vi-VN");
+                const catalogOpts = ringRows.filter(
+                  (r) => (r.kind ?? "catalog") === "catalog" && r.enabled,
+                );
                 return (
                   <li
                     key={row.id}
@@ -6876,10 +6995,18 @@ export default function AdminDashboard() {
                           {aName}{" "}
                           <span className="text-[var(--play-muted)]">×</span>{" "}
                           {bName}
+                          {row.coupleCode ? (
+                            <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-900">
+                              {row.coupleCode}
+                            </span>
+                          ) : null}
                         </p>
                         <p className="text-[10px] text-[var(--play-muted)]">
-                          {row.status === "pending" ? "Chờ chấp nhận" : "Đã lên nhẫn"}{" "}
-                          · {row.ringNameVi} ·{" "}
+                          {row.status === "pending"
+                            ? "Chờ chấp nhận"
+                            : "Đã lên nhẫn"}{" "}
+                          · {row.ringNameVi}{" "}
+                          <span className="font-mono">({row.ringKey})</span> ·{" "}
                           {row.ringPrice.toLocaleString("vi-VN")} xu · {when}
                           {row.note ? ` · “${row.note}”` : ""}
                         </p>
@@ -6896,6 +7023,44 @@ export default function AdminDashboard() {
                         {row.status === "pending" ? "Hủy + hoàn xu" : "Tách cặp"}
                       </button>
                     </div>
+                    {row.status === "active" && (
+                      <div className="mt-2 space-y-1.5 border-t border-[var(--wood-deep)]/10 pt-2">
+                        <p className="text-[10px] font-bold text-[var(--play-ink)]">
+                          Đổi thiết kế (admin)
+                        </p>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <select
+                            className="app-input !px-2 !py-1 max-w-[14rem] text-[11px]"
+                            disabled={ringBusy}
+                            value={
+                              catalogOpts.some((r) => r.key === row.ringKey)
+                                ? row.ringKey
+                                : ""
+                            }
+                            onChange={(e) => {
+                              const key = e.target.value;
+                              if (key) void adminSetBondRing(row, key);
+                            }}
+                          >
+                            <option value="">
+                              {catalogOpts.some((r) => r.key === row.ringKey)
+                                ? "Chọn mẫu catalog…"
+                                : `Đang đeo: ${row.ringNameVi} (không phải catalog)`}
+                            </option>
+                            {catalogOpts.map((r) => (
+                              <option key={r.key} value={r.key}>
+                                {r.nameVi} ({r.key})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <AdminBondCustomForm
+                          row={row}
+                          busy={ringBusy}
+                          onSave={(opts) => void adminUpsertBondCustom(row, opts)}
+                        />
+                      </div>
+                    )}
                   </li>
                 );
               })}
@@ -6916,10 +7081,11 @@ export default function AdminDashboard() {
         <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
           <p className="play-heading text-sm">Catalog nhẫn</p>
           <p className="text-[11px] text-[var(--play-muted)]">
-            Giá tới {ITEM_XU_MAX.toLocaleString("vi-VN")} xu. Mỗi nhẫn chỉnh{" "}
-            <strong>khung màu</strong>, <strong>viền</strong> (cổ điển / đôi /
-            trang trí / mảnh / pha lê / lửa) và <strong>size</strong> (nhỏ→rất
-            lớn). Xem trước ngay bên dưới.
+            <strong>Mẫu (catalog)</strong> = shop cầu hôn.{" "}
+            <strong>Riêng (custom)</strong> = nhẫn cặp (
+            <span className="font-mono">c_cp…</span>
+            ) — <strong>chỉ admin</strong> tạo/sửa. Giá tới{" "}
+            {ITEM_XU_MAX.toLocaleString("vi-VN")} xu.
           </p>
           <ul className="max-h-80 space-y-2 overflow-y-auto">
             {ringRows
@@ -6946,6 +7112,17 @@ export default function AdminDashboard() {
                           {g.nameVi}{" "}
                           <span className="font-mono text-[10px] text-[var(--play-muted)]">
                             {g.key}
+                          </span>{" "}
+                          <span
+                            className={`rounded px-1 py-0.5 text-[9px] font-bold uppercase ${
+                              (g.kind ?? "catalog") === "custom"
+                                ? "bg-rose-100 text-rose-900"
+                                : "bg-emerald-100 text-emerald-900"
+                            }`}
+                          >
+                            {(g.kind ?? "catalog") === "custom"
+                              ? "Riêng"
+                              : "Catalog"}
                           </span>
                         </p>
                         <p className="text-[10px] text-[var(--play-muted)]">
