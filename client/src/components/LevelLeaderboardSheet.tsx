@@ -1,6 +1,7 @@
 import { BottomSheet } from "./BottomSheet";
 import { normalizeAvatar } from "../avatars";
 import { playLevelTitle } from "../playLevel";
+import { RankBadge, sheetRowClass } from "./RankBadge";
 
 export type LevelLeaderboardEntry = {
   rank: number;
@@ -41,15 +42,9 @@ export function LevelLeaderboardSheet({
         {rows.map((row) => (
           <li
             key={`${row.rank}-${row.userId ?? row.name}`}
-            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 ring-1 ${
-              row.isYou
-                ? "bg-[var(--jade)]/15 ring-[var(--jade-soft)]/40"
-                : "bg-white/5 ring-white/10"
-            }`}
+            className={sheetRowClass(row.rank, row.isYou)}
           >
-            <span className="w-6 text-center font-display text-sm font-bold text-[var(--gold-soft)] tabular-nums">
-              {row.rank}
-            </span>
+            <RankBadge rank={row.rank} />
             <button
               type="button"
               className="shrink-0"
@@ -59,7 +54,7 @@ export function LevelLeaderboardSheet({
               <img
                 src={normalizeAvatar(row.avatar)}
                 alt=""
-                className="h-9 w-9 rounded-full object-cover ring-1 ring-[var(--gold)]/35"
+                className="h-9 w-9 rounded-full object-cover ring-1 ring-[var(--gold)]/40"
                 onError={(e) => {
                   const el = e.currentTarget;
                   if (el.src.includes("avatar-default")) return;
@@ -73,7 +68,7 @@ export function LevelLeaderboardSheet({
                 {row.isYou ? " · Bạn" : ""}
                 {row.isVip ? " · VIP" : ""}
               </p>
-              <p className="text-[11px] text-amber-200/90 tabular-nums">
+              <p className="lb-sheet-meta">
                 Lv.{row.playLevel} · {playLevelTitle(row.playLevel)} ·{" "}
                 {row.roundsPlayed.toLocaleString("vi-VN")} ván
               </p>

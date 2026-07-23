@@ -1,4 +1,5 @@
 import { BottomSheet } from "./BottomSheet";
+import { RankBadge, sheetRowClass } from "./RankBadge";
 
 export type StreakHighlightRow = {
   name: string;
@@ -28,24 +29,22 @@ export function StreakLeaderboardSheet({
         </p>
       )}
       <ul className="space-y-2">
-        {rows.map((row, i) => (
-          <li
-            key={`${row.at}-${row.name}-${row.streak}`}
-            className="flex items-center gap-3 rounded-xl bg-white/5 px-3 py-2.5 ring-1 ring-white/10"
-          >
-            <span className="w-6 text-center font-display text-sm font-bold text-[var(--jade-soft)] tabular-nums">
-              {i + 1}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-white">
-                {row.name}
-              </p>
-              <p className="text-[11px] text-amber-200/90 tabular-nums">
-                {row.streak} ván liên tiếp
-              </p>
-            </div>
-          </li>
-        ))}
+        {rows.map((row, i) => {
+          const rank = i + 1;
+          return (
+            <li key={`${row.at}-${row.name}-${row.streak}`} className={sheetRowClass(rank)}>
+              <RankBadge rank={rank} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-white">
+                  {row.name}
+                </p>
+                <p className="lb-sheet-meta">
+                  {row.streak} ván liên tiếp
+                </p>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </BottomSheet>
   );

@@ -1285,9 +1285,10 @@
   background: rgba(58, 34, 16, 0.45);
 }
 
-/* Khung Cao th? + Sao b?i ? g? ??m + vi?n v?ng */
+/* Khung Cao thủ + Sao bài + BXH chung — gỗ đậm + viền vàng */
 .game-task-aces,
-.game-task-stars {
+.game-task-stars,
+.game-task-lb {
   border-width: 2.5px;
   border-color: var(--gold);
   border-radius: 1rem;
@@ -1336,7 +1337,8 @@
 }
 
 .game-task-aces .play-heading,
-.game-task-stars .play-heading {
+.game-task-stars .play-heading,
+.game-task-lb .play-heading {
   color: var(--gold-soft);
 }
 
@@ -1345,9 +1347,10 @@
   color: rgba(255, 244, 224, 0.55);
 }
 
-/* H?ng / ? b?n trong Cao th? & Sao b?i ? vi?n nh? ??u */
+/* Hàng / ô trống trong Cao thủ & Sao bài & BXH — viền nhẹ đều */
 .game-task-aces .rank-row,
-.game-task-stars .rank-row {
+.game-task-stars .rank-row,
+.game-task-lb .rank-row {
   border: 1px solid rgba(232, 176, 80, 0.32);
   border-radius: 0.55rem;
   background: rgba(255, 255, 255, 0.05);
@@ -1355,7 +1358,8 @@
 }
 
 .game-task-aces .rank-row--you,
-.game-task-stars .rank-row--you {
+.game-task-stars .rank-row--you,
+.game-task-lb .rank-row--you {
   border-color: rgba(255, 176, 64, 0.55);
   background: rgba(255, 176, 64, 0.14);
   box-shadow:
@@ -1364,7 +1368,8 @@
 }
 
 .game-task-aces .rank-row--empty,
-.game-task-stars .rank-row--empty {
+.game-task-stars .rank-row--empty,
+.game-task-lb .rank-row--empty {
   border: 1px dashed rgba(232, 176, 80, 0.22);
   border-radius: 0.55rem;
   background: rgba(0, 0, 0, 0.12);
@@ -1377,13 +1382,15 @@
 }
 
 .game-task-aces::before,
-.game-task-stars::before {
+.game-task-stars::before,
+.game-task-lb::before {
   background: var(--gold);
   box-shadow: 0.55rem 0 0 var(--gold-soft);
 }
 
 .game-task-aces::after,
-.game-task-stars::after {
+.game-task-stars::after,
+.game-task-lb::after {
   background: var(--gold-soft);
   box-shadow: -0.55rem 0 0 var(--gold);
 }
@@ -1391,9 +1398,169 @@
 .game-task-aces::before,
 .game-task-aces::after,
 .game-task-stars::before,
-.game-task-stars::after {
+.game-task-stars::after,
+.game-task-lb::before,
+.game-task-lb::after {
   width: 0.55rem;
   height: 0.55rem;
+}
+
+/* ===== BXH chung — hạng 1/2/3 nổi (cùng aces/stars) ===== */
+
+.game-task-lb .rank-row--1,
+.game-task-aces .rank-row--1,
+.game-task-stars .rank-row--1 {
+  border-color: rgba(240, 193, 75, 0.72);
+  background: linear-gradient(
+    90deg,
+    rgba(240, 193, 75, 0.22),
+    rgba(255, 255, 255, 0.04)
+  );
+}
+
+.game-task-lb .rank-row--2,
+.game-task-aces .rank-row--2,
+.game-task-stars .rank-row--2 {
+  border-color: rgba(200, 210, 225, 0.55);
+  background: linear-gradient(
+    90deg,
+    rgba(180, 195, 215, 0.18),
+    rgba(255, 255, 255, 0.04)
+  );
+}
+
+.game-task-lb .rank-row--3,
+.game-task-aces .rank-row--3,
+.game-task-stars .rank-row--3 {
+  border-color: rgba(205, 127, 50, 0.55);
+  background: linear-gradient(
+    90deg,
+    rgba(205, 127, 50, 0.2),
+    rgba(255, 255, 255, 0.04)
+  );
+}
+
+/* Badge hạng 1 / 2 / 3 */
+.rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  font-family: var(--font-play, "Playfair Display", serif);
+  font-size: 0.75rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+}
+
+.rank-badge--sm {
+  width: 1.15rem;
+  height: 1.15rem;
+  font-size: 0.65rem;
+}
+
+.rank-badge--1 {
+  color: #3a2a08;
+  background: linear-gradient(145deg, #ffe9a8, #f0c14b 45%, #b8860b);
+  box-shadow:
+    0 0 0 1px rgba(255, 233, 168, 0.55),
+    0 0 10px rgba(240, 193, 75, 0.35);
+}
+
+.rank-badge--2 {
+  color: #2a3038;
+  background: linear-gradient(145deg, #f4f7fb, #c9d2de 45%, #7f8b9a);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.45),
+    0 0 8px rgba(180, 195, 215, 0.28);
+}
+
+.rank-badge--3 {
+  color: #2e1608;
+  background: linear-gradient(145deg, #ffd0a8, #cd7f32 45%, #7a3e12);
+  box-shadow:
+    0 0 0 1px rgba(255, 192, 137, 0.4),
+    0 0 8px rgba(205, 127, 50, 0.3);
+}
+
+.rank-badge--n {
+  color: var(--gold-soft);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 1px rgba(232, 176, 80, 0.28);
+}
+
+/* Sheet rows — cùng palette mọi BXH */
+.lb-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow:
+    0 0 0 1px rgba(232, 176, 80, 0.22),
+    0 0 0 1px rgba(0, 0, 0, 0.18) inset;
+}
+
+.lb-sheet-row--you {
+  background: rgba(255, 176, 64, 0.14);
+  box-shadow:
+    0 0 0 1px rgba(255, 176, 64, 0.5),
+    0 0 0 1px rgba(255, 210, 120, 0.12) inset,
+    0 0 10px rgba(255, 176, 64, 0.12);
+}
+
+.lb-sheet-row--1 {
+  background: linear-gradient(
+    90deg,
+    rgba(240, 193, 75, 0.22),
+    rgba(255, 255, 255, 0.04)
+  );
+  box-shadow:
+    0 0 0 1px rgba(240, 193, 75, 0.55),
+    0 0 0 1px rgba(0, 0, 0, 0.15) inset;
+}
+
+.lb-sheet-row--2 {
+  background: linear-gradient(
+    90deg,
+    rgba(180, 195, 215, 0.18),
+    rgba(255, 255, 255, 0.04)
+  );
+  box-shadow:
+    0 0 0 1px rgba(200, 210, 225, 0.45),
+    0 0 0 1px rgba(0, 0, 0, 0.15) inset;
+}
+
+.lb-sheet-row--3 {
+  background: linear-gradient(
+    90deg,
+    rgba(205, 127, 50, 0.2),
+    rgba(255, 255, 255, 0.04)
+  );
+  box-shadow:
+    0 0 0 1px rgba(205, 127, 50, 0.48),
+    0 0 0 1px rgba(0, 0, 0, 0.15) inset;
+}
+
+.lb-sheet-row--1.lb-sheet-row--you,
+.lb-sheet-row--2.lb-sheet-row--you,
+.lb-sheet-row--3.lb-sheet-row--you {
+  box-shadow:
+    0 0 0 1px rgba(255, 210, 120, 0.65),
+    0 0 12px rgba(255, 176, 64, 0.2);
+}
+
+.lb-sheet-meta {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 210, 120, 0.92);
 }
 
 

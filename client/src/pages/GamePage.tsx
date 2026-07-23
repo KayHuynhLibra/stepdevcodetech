@@ -53,6 +53,7 @@ import { TarotStarsSheet } from "../components/TarotStarsSheet";
 import { StreakLeaderboardSheet } from "../components/StreakLeaderboardSheet";
 import { RoundWinnersSheet } from "../components/RoundWinnersSheet";
 import { LevelLeaderboardSheet } from "../components/LevelLeaderboardSheet";
+import { RankBadge, zoneRowClass } from "../components/RankBadge";
 import { RulesSheet } from "../components/RulesSheet";
 import type { ChatMode, ShoutEvent } from "../shouts";
 import { SAINT_DISPLAY_MS } from "../shouts";
@@ -2340,13 +2341,9 @@ export default function GamePage() {
             {(state?.topAces ?? []).slice(0, 3).map((ace) => (
               <li
                 key={`${ace.rank}-${ace.name}`}
-                className={`rank-row flex items-center gap-1.5 px-1.5 py-1 ${
-                  ace.isYou ? "rank-row--you" : ""
-                }`}
+                className={`flex items-center gap-1.5 px-1.5 py-1 ${zoneRowClass(ace.rank, ace.isYou)}`}
               >
-                <span className="font-play w-4 shrink-0 text-center text-xs font-bold text-[var(--gold-soft)] tabular-nums">
-                  {ace.rank}
-                </span>
+                <RankBadge rank={ace.rank} size="sm" />
                 <button
                   type="button"
                   onClick={() =>
@@ -2365,7 +2362,7 @@ export default function GamePage() {
                   <img
                     src={normalizeAvatar(ace.avatar)}
                     alt=""
-                    className="h-7 w-7 rounded-full object-cover ring-1 ring-white/25"
+                    className="h-7 w-7 rounded-full object-cover ring-1 ring-[var(--gold)]/40"
                     onError={(e) => {
                       const el = e.currentTarget;
                       if (el.src.includes("avatar-default")) return;
@@ -2450,13 +2447,9 @@ export default function GamePage() {
             {(state?.tarotStars ?? []).slice(0, 3).map((star) => (
               <li
                 key={`${star.rank}-${star.name}`}
-                className={`rank-row flex items-center gap-2 px-2 py-1.5 ${
-                  star.isYou ? "rank-row--you" : ""
-                }`}
+                className={`flex items-center gap-2 px-2 py-1.5 ${zoneRowClass(star.rank, star.isYou)}`}
               >
-                <span className="font-play w-5 shrink-0 text-center text-sm font-bold text-[var(--gold-soft)] tabular-nums">
-                  {star.rank}
-                </span>
+                <RankBadge rank={star.rank} size="sm" />
                 <button
                   type="button"
                   onClick={() =>
@@ -2504,7 +2497,7 @@ export default function GamePage() {
 
         {/* ===== ZONE 9: Chuỗi thắng ===== */}
         {showLbStreak && (
-        <section className="game-task mt-3">
+        <section className="game-task game-task-lb mt-3">
           <button
             type="button"
             onClick={openStreakBoard}
@@ -2528,31 +2521,32 @@ export default function GamePage() {
                 Chưa có chuỗi thắng nổi bật
               </li>
             )}
-            {(state?.streakHighlights ?? []).slice(0, 3).map((row, i) => (
-              <li
-                key={`${row.at}-${row.name}-${row.streak}`}
-                className="rank-row flex items-center gap-1.5 px-1.5 py-1"
-              >
-                <span className="font-play w-4 shrink-0 text-center text-xs font-bold text-[var(--gold-soft)] tabular-nums">
-                  {i + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[11px] font-bold leading-tight text-white">
-                    {row.name}
-                  </p>
-                  <p className="text-[10px] font-semibold leading-tight text-amber-300/90 tabular-nums">
-                    {row.streak} ván liên tiếp
-                  </p>
-                </div>
-              </li>
-            ))}
+            {(state?.streakHighlights ?? []).slice(0, 3).map((row, i) => {
+              const rank = i + 1;
+              return (
+                <li
+                  key={`${row.at}-${row.name}-${row.streak}`}
+                  className={`flex items-center gap-1.5 px-1.5 py-1 ${zoneRowClass(rank)}`}
+                >
+                  <RankBadge rank={rank} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[11px] font-bold leading-tight text-white">
+                      {row.name}
+                    </p>
+                    <p className="text-[10px] font-semibold leading-tight text-amber-300/90 tabular-nums">
+                      {row.streak} ván liên tiếp
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </section>
         )}
 
         {/* ===== ZONE 9b: Cấp độ ===== */}
         {showLbLevel && (
-        <section className="game-task mt-3">
+        <section className="game-task game-task-lb mt-3">
           <button
             type="button"
             onClick={openLevelBoard}
@@ -2579,13 +2573,9 @@ export default function GamePage() {
             {(state?.levelLeaders ?? []).slice(0, 3).map((row) => (
               <li
                 key={`${row.rank}-${row.userId ?? row.name}`}
-                className={`rank-row flex items-center gap-1.5 px-1.5 py-1 ${
-                  row.isYou ? "rank-row--you" : ""
-                }`}
+                className={`flex items-center gap-1.5 px-1.5 py-1 ${zoneRowClass(row.rank, row.isYou)}`}
               >
-                <span className="font-play w-4 shrink-0 text-center text-xs font-bold text-[var(--gold-soft)] tabular-nums">
-                  {row.rank}
-                </span>
+                <RankBadge rank={row.rank} size="sm" />
                 <button
                   type="button"
                   onClick={() =>
@@ -2605,7 +2595,7 @@ export default function GamePage() {
                   <img
                     src={normalizeAvatar(row.avatar)}
                     alt=""
-                    className="h-7 w-7 rounded-full object-cover ring-1 ring-white/25"
+                    className="h-7 w-7 rounded-full object-cover ring-1 ring-[var(--gold)]/40"
                     onError={(e) => {
                       const el = e.currentTarget;
                       if (el.src.includes("avatar-default")) return;
@@ -2630,7 +2620,7 @@ export default function GamePage() {
 
         {/* ===== ZONE 10: Top ván vừa ===== */}
         {showLbRoundWinners && (
-        <section className="game-task mt-3">
+        <section className="game-task game-task-lb mt-3">
           <button
             type="button"
             onClick={openRoundWinners}
@@ -2657,13 +2647,9 @@ export default function GamePage() {
             {(state?.roundTopWinners ?? []).slice(0, 3).map((row) => (
               <li
                 key={`${row.rank}-${row.name}`}
-                className={`rank-row flex items-center gap-1.5 px-1.5 py-1 ${
-                  row.isYou ? "rank-row--you" : ""
-                }`}
+                className={`flex items-center gap-1.5 px-1.5 py-1 ${zoneRowClass(row.rank, row.isYou)}`}
               >
-                <span className="font-play w-4 shrink-0 text-center text-xs font-bold text-[var(--gold-soft)] tabular-nums">
-                  {row.rank}
-                </span>
+                <RankBadge rank={row.rank} size="sm" />
                 <button
                   type="button"
                   onClick={() =>
@@ -2678,7 +2664,7 @@ export default function GamePage() {
                   <img
                     src={normalizeAvatar(row.avatar)}
                     alt=""
-                    className="h-7 w-7 rounded-full object-cover ring-1 ring-white/25"
+                    className="h-7 w-7 rounded-full object-cover ring-1 ring-[var(--gold)]/40"
                     onError={(e) => {
                       const el = e.currentTarget;
                       if (el.src.includes("avatar-default")) return;

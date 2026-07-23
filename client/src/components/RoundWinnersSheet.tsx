@@ -1,6 +1,7 @@
 import { BottomSheet } from "./BottomSheet";
 import { formatXu, type RoundTopWinner } from "../cards";
 import { normalizeAvatar } from "../avatars";
+import { RankBadge, sheetRowClass } from "./RankBadge";
 
 interface RoundWinnersSheetProps {
   open: boolean;
@@ -29,15 +30,9 @@ export function RoundWinnersSheet({
         {rows.map((row) => (
           <li
             key={`${row.rank}-${row.name}`}
-            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 ring-1 ${
-              row.isYou
-                ? "bg-[var(--jade)]/22 ring-[var(--jade-soft)]/45"
-                : "bg-white/5 ring-white/10"
-            }`}
+            className={sheetRowClass(row.rank, row.isYou)}
           >
-            <span className="w-6 text-center font-display text-sm font-bold text-[var(--jade-soft)] tabular-nums">
-              {row.rank}
-            </span>
+            <RankBadge rank={row.rank} />
             <button
               type="button"
               className="shrink-0"
@@ -47,7 +42,7 @@ export function RoundWinnersSheet({
               <img
                 src={normalizeAvatar(row.avatar)}
                 alt=""
-                className="h-9 w-9 rounded-full object-cover"
+                className="h-9 w-9 rounded-full object-cover ring-1 ring-[var(--gold)]/40"
                 onError={(e) => {
                   const el = e.currentTarget;
                   if (el.src.includes("avatar-default")) return;
@@ -60,9 +55,7 @@ export function RoundWinnersSheet({
                 {row.name}
                 {row.isYou ? " (Bạn)" : ""}
               </p>
-              <p className="text-[11px] text-amber-200/90 tabular-nums">
-                +{formatXu(row.profit)} xu
-              </p>
+              <p className="lb-sheet-meta">+{formatXu(row.profit)} xu</p>
             </div>
           </li>
         ))}
