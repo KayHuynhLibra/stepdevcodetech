@@ -74,6 +74,7 @@ import {
 import { leaderboardConfigStore } from "./leaderboardConfigStore.js";
 import { playLevelRewardsStore } from "./playLevelRewardsStore.js";
 import { vaultArcana, vaultGem, vaultStore } from "./vaultStore.js";
+import { feePocketStore } from "./feePocketStore.js";
 import { ACCOUNT_GEM_MAX, ITEM_GEM_MAX } from "./gem.js";
 import {
   cultivationStore,
@@ -1075,6 +1076,7 @@ app.get("/api/admin/overview", (req, res) => {
       payload.vault = vault;
       payload.vaultArcana = vaultArcanaSnap;
       payload.vaultGem = vaultGemSnap;
+      payload.feePocket = feePocketStore.snapshot();
       const day = vault.flows?.windows?.day;
       const week = vault.flows?.windows?.week;
       const couponSum = couponStore.getXuSummary();
@@ -2369,6 +2371,18 @@ function refundPendingRingPropose(bond: {
   const ring = ringStore.getByKey(bond.ringKey);
   const price = ring?.price ?? 0;
   if (price <= 0) return 0;
+  const proposer = authStore.getById(bond.proposedBy);
+  const pocket = feePocketStore.refund({
+    source: "ring",
+    amount: price,
+    userId: bond.proposedBy,
+    username: proposer?.username,
+    note: `Hoàn nhẫn pending (${bond.ringKey})`,
+    ref: bond.ringKey,
+  });
+  if (!pocket.ok) {
+    console.warn("[ring] pocket refund failed:", pocket.reason);
+  }
   const adj = authStore.adjustBalance(bond.proposedBy, price);
   if (!adj.ok) return 0;
   const live = engine.applyAuthBalance(adj.user.id, adj.user.balance);
@@ -2380,6 +2394,32 @@ function refundPendingRingPropose(bond: {
 
 app.get("/api/rings", (_req, res) => {
   res.json({ ok: true, rings: ringStore.publicCatalog() });
+});
+
+app.get("/api/fee-pocket", (req, res) => {
+  if (!requireCapability(req, res, "vault_ops", "Cần quyền kho")) return;
+  res.json({ ok: true, pocket: feePocketStore.snapshot() });
+});
+
+app.post("/api/fee-pocket/to-vault", (req, res) => {
+  const me = requireCapability(req, res, "vault_ops", "Cần quyền kho");
+  if (!me) return;
+  const moved = feePocketStore.transferToVault(req.body?.amount, me.username);
+  if (!moved.ok) return res.status(400).json(moved);
+  vaultStore.recordFeeFromPocket(
+    moved.amount,
+    me.username,
+    `Fee Pocket → Kho · ${moved.amount.toLocaleString("vi-VN")} xu`,
+  );
+  audit(me, "fee_pocket_to_vault", {
+    detail: `amount=${moved.amount} left=${moved.balance}`,
+  });
+  res.json({
+    ok: true,
+    transferred: moved.amount,
+    pocket: feePocketStore.snapshot(),
+    vault: vaultStore.getSnapshot(),
+  });
 });
 
 app.get("/api/ring/config", (req, res) => {
@@ -2705,6 +2745,15 @@ app.post("/api/auth/ring-propose", (req, res) => {
     authStore.adjustBalance(me.id, ring.price);
     return res.status(400).json(proposed);
   }
+
+  feePocketStore.deposit({
+    source: "ring",
+    amount: spend.amount,
+    userId: me.id,
+    username: me.username,
+    note: `Nhẫn ${proposed.ring.nameVi} (${proposed.ring.key})`,
+    ref: proposed.bond.id,
+  });
 
   const fresh = authStore.resolveToken(
     String(req.headers.authorization ?? "").replace(/^Bearer\s+/i, "") ||

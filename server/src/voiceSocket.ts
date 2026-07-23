@@ -9,7 +9,7 @@ import { auditStore } from "./auditStore.js";
 import { normalizeAvatar } from "./avatars.js";
 import { cultivationStore } from "./cultivationStore.js";
 import { rateLimit } from "./rateLimit.js";
-import { vaultTarot } from "./vaultStore.js";
+import { feePocketStore } from "./feePocketStore.js";
 import { voiceLixiStore } from "./voiceLixiStore.js";
 import {
   voiceRoomStore,
@@ -126,11 +126,14 @@ export function attachVoiceSocket(io: Server) {
         }
 
         if (result.fee > 0) {
-          vaultTarot.adjust(
-            result.fee,
-            auth.user.username,
-            `Lì xì Room${mem.roomId} phí ${100 - result.payoutPct}%`,
-          );
+          feePocketStore.deposit({
+            source: "lixi",
+            amount: result.fee,
+            userId: auth.user.id,
+            username: auth.user.username,
+            note: `Lì xì Room${mem.roomId} phí ${100 - result.payoutPct}%`,
+            ref: String(mem.roomId),
+          });
         }
 
         if (balanceSync) {

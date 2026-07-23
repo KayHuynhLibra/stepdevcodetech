@@ -26,6 +26,7 @@ import {
 } from "./cultivationRanks.js";
 import { cultivationStore } from "./cultivationStore.js";
 import { vaultStore } from "./vaultStore.js";
+import { feePocketStore } from "./feePocketStore.js";
 import { ringStore } from "./ringStore.js";
 import {
   normalizeNameColor,
@@ -1318,7 +1319,13 @@ export class AuthStore {
         user.balance -= fee;
         user.cultivationPaidUntil = now + period;
         user.cultivationLastChargeAt = now;
-        vaultStore.recordCultivationFee(fee, user.id, user.username, rank);
+        feePocketStore.deposit({
+          source: "cultivation",
+          amount: fee,
+          userId: user.id,
+          username: user.username,
+          note: `Phí duy trì ${rank}`,
+        });
         charged += 1;
       } else {
         const next = demoteRank(rank);

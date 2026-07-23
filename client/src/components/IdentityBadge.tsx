@@ -1,4 +1,10 @@
-import type { SyntheticEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type SyntheticEvent,
+} from "react";
 import {
   homePath,
   playPath,
@@ -39,6 +45,8 @@ interface IdentityBadgeProps {
   onNameClick?: () => void;
 }
 
+const LONG_PRESS_MS = 480;
+
 /** Hiện rõ username + mã + loại tài khoản (đã login / khách). */
 export function IdentityBadge({
   user,
@@ -73,6 +81,68 @@ export function IdentityBadge({
   const isVip = userShowsVip(user);
   const bondActive = user?.bond?.status === "active";
 
+  const [showLoginHint, setShowLoginHint] = useState(false);
+  const loginHintRef = useRef<HTMLDivElement>(null);
+  const longPressTimer = useRef<number | null>(null);
+  const longPressFired = useRef(false);
+
+  useEffect(() => {
+    setShowLoginHint(false);
+  }, [user?.id, user?.nickname, user?.username]);
+
+  useEffect(() => {
+    if (!showLoginHint) return;
+    const onDoc = (e: MouseEvent | TouchEvent) => {
+      const el = loginHintRef.current;
+      if (!el) return;
+      if (e.target instanceof Node && !el.contains(e.target)) {
+        setShowLoginHint(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("touchstart", onDoc, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("touchstart", onDoc);
+    };
+  }, [showLoginHint]);
+
+  const clearLongPress = () => {
+    if (longPressTimer.current != null) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const onCoupleNamePointerDown = (e: ReactPointerEvent) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    longPressFired.current = false;
+    clearLongPress();
+    if (!onNameClick) return;
+    longPressTimer.current = window.setTimeout(() => {
+      longPressFired.current = true;
+      longPressTimer.current = null;
+      setShowLoginHint(false);
+      onNameClick();
+    }, LONG_PRESS_MS);
+  };
+
+  const onCoupleNamePointerUp = () => {
+    clearLongPress();
+  };
+
+  const onCoupleNameClick = () => {
+    if (longPressFired.current) {
+      longPressFired.current = false;
+      return;
+    }
+    if (loginHint) {
+      setShowLoginHint((v) => !v);
+      return;
+    }
+    onNameClick?.();
+  };
+
   const shellClass = [
     "identity-badge",
     bondActive ? "identity-badge--couple" : "identity-badge--solo",
@@ -89,7 +159,7 @@ export function IdentityBadge({
   const nameClass = `truncate font-play ${
     compact ? "text-sm" : "text-base"
   } ${
-    onNameClick
+    onNameClick || loginHint
       ? "max-w-full rounded px-0.5 -mx-0.5 underline decoration-dotted decoration-[var(--gold)]/70 underline-offset-2 active:opacity-80"
       : ""
   } ${
@@ -125,7 +195,7 @@ export function IdentityBadge({
   const coupleNode =
     bondActive && user?.bond ? (
       <CoupleAvatar
-        displaySize="compact"
+        displaySize="default"
         className="identity-badge__couple"
         avatarA={avatar}
         avatarB={user.bond.partnerAvatar}
@@ -135,12 +205,12 @@ export function IdentityBadge({
         ringSharpness={user.bond.ringSharpness}
         coupleFrame={user.bond.coupleFrame}
         coupleBorder={user.bond.coupleBorder}
-        coupleScale="md"
+        coupleScale={user.bond.coupleScale || "lg"}
         coupleMotion={user.bond.coupleMotion === "none" ? "none" : "breathe"}
-        coupleGap="normal"
-        coupleLayout="classic"
+        coupleGap="span"
+        coupleLayout={user.bond.coupleLayout || "classic"}
         ringFrame={user.bond.ringFrame}
-        ringFrameScale="sm"
+        ringFrameScale={user.bond.ringFrameScale || "md"}
         onAvatarAClick={onAvatarClick}
       />
     ) : null;
@@ -280,30 +350,50 @@ export function IdentityBadge({
     </div>
   );
 
-  if (coupleNode) {
+  if (coupleNode && user?.bond) {
+    const partnerName = user.bond.partnerName;
+    const phrase = coupleWithLabel(user.bond.couplePhrase);
     return (
       <div className={shellClass}>
         <div className="identity-badge__couple-stage">
           <div className="identity-badge__couple-bg" aria-hidden />
           <div className="identity-badge__couple-stars" aria-hidden />
           <div className="identity-badge__couple-wrap">{coupleNode}</div>
-          <div className="identity-badge__couple-identity">
-            <div className="identity-badge__name-row">{nameNode}</div>
-            {loginHint && (
+          <div className="identity-badge__couple-identity" ref={loginHintRef}>
+            <div className="identity-badge__couple-names">
+              <ColoredName
+                as="button"
+                name={name}
+                colorId={user?.nameColor}
+                effectId={user?.nameEffect}
+                className={`${nameClass} identity-badge__couple-name identity-badge__couple-name--a`}
+                title={
+                  loginHint
+                    ? "Ấn xem @username · giữ để đổi tên"
+                    : onNameClick
+                      ? "Đổi tên"
+                      : undefined
+                }
+                onClick={onCoupleNameClick}
+                onPointerDown={onCoupleNamePointerDown}
+                onPointerUp={onCoupleNamePointerUp}
+                onPointerLeave={onCoupleNamePointerUp}
+                onPointerCancel={onCoupleNamePointerUp}
+              />
+              <span className="identity-badge__with">{phrase}</span>
+              <span
+                className="identity-badge__couple-name identity-badge__couple-name--b truncate font-play"
+                title={partnerName}
+              >
+                {partnerName}
+              </span>
+            </div>
+            {loginHint && showLoginHint && (
               <p
-                className="truncate font-mono text-[9px] text-[var(--play-muted)]"
+                className="identity-badge__login-hint"
                 title="Username đăng nhập"
               >
                 @{loginHint}
-              </p>
-            )}
-            {user?.bond && (
-              <p className="identity-badge__partner-line">
-                <span className="identity-badge__with">
-                  {coupleWithLabel(user.bond.couplePhrase)}
-                </span>
-                <span aria-hidden>💖</span>
-                <span className="truncate">{user.bond.partnerName}</span>
               </p>
             )}
           </div>

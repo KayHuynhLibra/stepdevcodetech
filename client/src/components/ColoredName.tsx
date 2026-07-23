@@ -1,4 +1,8 @@
-import type { CSSProperties, ReactNode } from "react";
+import type {
+  CSSProperties,
+  PointerEventHandler,
+  ReactNode,
+} from "react";
 import {
   nameColorStyle,
   normalizeNameEffect,
@@ -16,6 +20,10 @@ interface ColoredNameProps {
   children?: ReactNode;
   title?: string;
   onClick?: () => void;
+  onPointerDown?: PointerEventHandler<HTMLButtonElement>;
+  onPointerUp?: PointerEventHandler<HTMLButtonElement>;
+  onPointerLeave?: PointerEventHandler<HTMLButtonElement>;
+  onPointerCancel?: PointerEventHandler<HTMLButtonElement>;
   type?: "button";
 }
 
@@ -29,6 +37,10 @@ export function ColoredName({
   as = "span",
   title,
   onClick,
+  onPointerDown,
+  onPointerUp,
+  onPointerLeave,
+  onPointerCancel,
   type,
 }: ColoredNameProps) {
   const colorStyle = nameColorStyle(colorId, effectId);
@@ -44,6 +56,10 @@ export function ColoredName({
         style={merged}
         title={title}
         onClick={onClick}
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerLeave}
+        onPointerCancel={onPointerCancel}
         data-fx={fx}
       >
         {name}

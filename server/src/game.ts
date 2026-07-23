@@ -42,6 +42,7 @@ import {
   type BotIdentity,
 } from "./bots.js";
 import { vaultStore } from "./vaultStore.js";
+import { feePocketStore } from "./feePocketStore.js";
 import { cultivationStore } from "./cultivationStore.js";
 import { maxStakeForUser } from "./tutienStakeLimitsStore.js";
 import { guestPlayStore, GUEST_PLAY_LIMIT_MS } from "./guestPlayStore.js";
@@ -1178,13 +1179,13 @@ export class GameEngine {
 
     player.balance -= cost;
     if (cost > 0 && player.userId) {
-      vaultStore.recordChatFee(
-        cost,
-        player.userId,
-        player.name,
-        mode,
-        rank,
-      );
+      feePocketStore.deposit({
+        source: "chat",
+        amount: cost,
+        userId: player.userId,
+        username: player.name,
+        note: `Chat ${mode}${rank ? ` · ${rank}` : ""}`,
+      });
     }
     this.shoutCooldown.set(socketId, now);
     if (mode === "saint") {

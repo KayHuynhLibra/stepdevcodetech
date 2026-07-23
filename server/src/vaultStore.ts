@@ -15,7 +15,9 @@ export type VaultLedgerType =
   | "coupon_mint"
   | "admin_adjust"
   | "chat_fee"
-  | "cultivation_fee";
+  | "cultivation_fee"
+  | "ring_fee"
+  | "pocket_fee";
 
 /** Loại ghi sổ thường làm hao hụt / xu ra khỏi kho. */
 export const VAULT_OUTFLOW_TYPES: readonly VaultLedgerType[] = [
@@ -345,7 +347,9 @@ export class VaultStore {
           break;
         case "chat_fee":
         case "cultivation_fee":
-          fees += Math.max(0, e.amount);
+        case "ring_fee":
+        case "pocket_fee":
+          fees += e.amount;
           break;
         default:
           break;
@@ -472,6 +476,8 @@ export class VaultStore {
           break;
         case "chat_fee":
         case "cultivation_fee":
+        case "ring_fee":
+        case "pocket_fee":
           flow.feesIn += e.amount;
           break;
         case "mint":
@@ -828,6 +834,21 @@ export class VaultStore {
     );
   }
 
+  /** Chuyển từ Fee Pocket → Kho Tarot (admin Add vào vault) */
+  recordFeeFromPocket(amount: number, byUsername: string, note?: string) {
+    const amt = Math.floor(amount);
+    if (amt <= 0) return;
+    this.balance += amt;
+    this.totalMinted += amt;
+    this.totalFeesIn += amt;
+    this.push(
+      "pocket_fee",
+      amt,
+      byUsername.trim() || "admin",
+      note?.trim() || "Fee Pocket → Kho Tarot",
+    );
+  }
+
   /** Phí duy trì cảnh giới → Kho Tarot */
   recordCultivationFee(
     amount: number,
@@ -841,6 +862,44 @@ export class VaultStore {
     this.totalMinted += amt;
     this.totalFeesIn += amt;
     this.push("cultivation_fee", amt, "system", `Phí duy trì ${rank}`, {
+      userId,
+      username,
+    });
+  }
+
+  /** Mua / cầu hôn nhẫn → Kho Tarot (xu đốt từ user vào phí) */
+  recordRingFee(
+    amount: number,
+    userId: string,
+    username: string,
+    ringKey: string,
+    ringNameVi?: string,
+  ) {
+    const amt = Math.floor(amount);
+    if (amt <= 0) return;
+    this.balance += amt;
+    this.totalMinted += amt;
+    this.totalFeesIn += amt;
+    const label = ringNameVi?.trim() || ringKey;
+    this.push("ring_fee", amt, "system", `Nhẫn ${label} (${ringKey})`, {
+      userId,
+      username,
+    });
+  }
+
+  /** Hoàn lời cầu hôn pending → trừ lại phí nhẫn khỏi kho */
+  refundRingFee(
+    amount: number,
+    userId: string,
+    username: string,
+    ringKey: string,
+  ) {
+    const amt = Math.floor(amount);
+    if (amt <= 0) return;
+    this.balance -= amt;
+    this.totalFeesIn = Math.max(0, this.totalFeesIn - amt);
+    this.totalBurned += amt;
+    this.push("ring_fee", -amt, "system", `Hoàn nhẫn pending (${ringKey})`, {
       userId,
       username,
     });

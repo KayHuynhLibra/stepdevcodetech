@@ -715,6 +715,32 @@ interface XuFlowOverview {
   } | null;
 }
 
+interface FeePocketOverview {
+  balance: number;
+  totalIn: number;
+  totalRefunded: number;
+  totalToVault: number;
+  bySource: {
+    ring: number;
+    chat: number;
+    cultivation: number;
+    lixi: number;
+  };
+  ledger: {
+    id: string;
+    at: number;
+    type: string;
+    source: string;
+    amount: number;
+    balanceAfter: number;
+    note: string;
+    byUsername: string;
+    userId?: string;
+    username?: string;
+    ref?: string;
+  }[];
+}
+
 type VaultLedgerRow = {
   id: string;
   at: number;
@@ -840,6 +866,8 @@ interface Overview {
   vault?: VaultSnapshot;
   vaultArcana?: VaultSnapshot;
   vaultGem?: VaultSnapshot;
+  /** Fee Pocket — phí chờ chuyển vào Kho Tarot */
+  feePocket?: FeePocketOverview;
   /** Lưu lượng xu Kho Tarot (Tổng quan) */
   xuFlow?: XuFlowOverview;
   arcanaStats?: ArcanaStats;
@@ -1024,6 +1052,8 @@ const LEDGER_LABEL: Record<string, string> = {
   admin_adjust: "Admin chỉnh xu",
   chat_fee: "Phí chat",
   cultivation_fee: "Phí cảnh giới",
+  ring_fee: "Nhẫn / cầu hôn",
+  pocket_fee: "Fee Pocket → Kho",
 };
 
 export default function AdminDashboard() {
@@ -1241,6 +1271,8 @@ export default function AdminDashboard() {
   const [ringRows, setRingRows] = useState<RingItem[]>([]);
   const [bondRows, setBondRows] = useState<BondAdminRow[]>([]);
   const [ringBusy, setRingBusy] = useState(false);
+  const [feePocketBusy, setFeePocketBusy] = useState(false);
+  const [feePocketAmount, setFeePocketAmount] = useState("");
   const [ringDraft, setRingDraft] = useState({
     key: "",
     nameVi: "",
@@ -3374,6 +3406,50 @@ export default function AdminDashboard() {
     }
   };
 
+  const transferFeePocketToVault = async (all?: boolean) => {
+    const raw = all ? undefined : feePocketAmount.trim();
+    const amt = raw ? Math.floor(Number(raw.replace(/_/g, ""))) : undefined;
+    if (!all && raw && (!Number.isFinite(amt) || (amt ?? 0) <= 0)) {
+      setMsg("Nhập số xu hợp lệ hoặc chuyển hết");
+      return;
+    }
+    const bal = data?.feePocket?.balance ?? 0;
+    const label = all || !amt
+      ? `Chuyển toàn bộ Fee Pocket (${formatXu(bal)} xu) vào Kho Tarot?`
+      : `Chuyển ${formatXu(amt!)} xu từ Fee Pocket vào Kho Tarot?`;
+    if (!window.confirm(label)) return;
+    setFeePocketBusy(true);
+    try {
+      const r = await api<{
+        ok: true;
+        transferred: number;
+        pocket: FeePocketOverview;
+        vault?: VaultSnapshot;
+      }>("/api/fee-pocket/to-vault", {
+        method: "POST",
+        body: JSON.stringify(all || !amt ? {} : { amount: amt }),
+      });
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              feePocket: r.pocket,
+              vault: r.vault ?? prev.vault,
+            }
+          : prev,
+      );
+      setFeePocketAmount("");
+      setMsg(
+        `Đã Add vào Vault · ${formatXu(r.transferred)} xu (còn ${formatXu(r.pocket.balance)})`,
+      );
+      void load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi chuyển Fee Pocket");
+    } finally {
+      setFeePocketBusy(false);
+    }
+  };
+
   const adminBreakBond = async (row: BondAdminRow) => {
     const label =
       row.status === "pending"
@@ -4443,6 +4519,118 @@ export default function AdminDashboard() {
             ))}
           </section>
 
+          {data.feePocket && canVault && (
+            <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+              <div>
+                <p className="play-heading text-sm">Fee Pocket</p>
+                <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+                  Nhẫn · phí chat · Tu Tiên · % lì xì — chờ{" "}
+                  <strong>Add vào Vault</strong> mới vào Kho Tarot / Cashflow
+                  phí.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {(
+                  [
+                    ["Số dư pocket", data.feePocket.balance],
+                    ["Tổng vào", data.feePocket.totalIn],
+                    ["Đã hoàn", data.feePocket.totalRefunded],
+                    ["Đã chuyển kho", data.feePocket.totalToVault],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="rounded-xl bg-amber-50/90 px-2.5 py-2 ring-1 ring-amber-200/80"
+                  >
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-amber-900/70">
+                      {label}
+                    </p>
+                    <p className="font-play mt-0.5 text-sm font-extrabold tabular-nums text-amber-950">
+                      {formatXu(value)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <ul className="grid grid-cols-2 gap-1 text-[11px] text-[var(--play-muted)] sm:grid-cols-4">
+                <li>
+                  Nhẫn:{" "}
+                  <span className="font-play font-bold text-[var(--play-ink)]">
+                    {formatXu(data.feePocket.bySource.ring)}
+                  </span>
+                </li>
+                <li>
+                  Chat:{" "}
+                  <span className="font-play font-bold text-[var(--play-ink)]">
+                    {formatXu(data.feePocket.bySource.chat)}
+                  </span>
+                </li>
+                <li>
+                  Tu Tiên:{" "}
+                  <span className="font-play font-bold text-[var(--play-ink)]">
+                    {formatXu(data.feePocket.bySource.cultivation)}
+                  </span>
+                </li>
+                <li>
+                  Lì xì %:{" "}
+                  <span className="font-play font-bold text-[var(--play-ink)]">
+                    {formatXu(data.feePocket.bySource.lixi)}
+                  </span>
+                </li>
+              </ul>
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="min-w-[8rem] flex-1 text-[10px] text-[var(--play-muted)]">
+                  Số xu chuyển
+                  <input
+                    className="app-input !px-2 !py-1.5 mt-0.5 w-full text-[12px]"
+                    value={feePocketAmount}
+                    disabled={feePocketBusy}
+                    placeholder="Trống = hết"
+                    onChange={(e) => setFeePocketAmount(e.target.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={feePocketBusy || data.feePocket.balance <= 0}
+                  onClick={() => void transferFeePocketToVault(false)}
+                  className="rounded-full bg-[var(--wood-deep)] px-3 py-2 text-[11px] font-bold text-[var(--cream)] disabled:opacity-45"
+                >
+                  Add vào Vault
+                </button>
+                <button
+                  type="button"
+                  disabled={feePocketBusy || data.feePocket.balance <= 0}
+                  onClick={() => void transferFeePocketToVault(true)}
+                  className="rounded-full bg-white px-3 py-2 text-[11px] font-bold ring-1 ring-[var(--wood-deep)]/20 disabled:opacity-45"
+                >
+                  Chuyển hết
+                </button>
+              </div>
+              {data.feePocket.ledger.length > 0 && (
+                <ul className="max-h-40 space-y-1 overflow-y-auto text-[10px]">
+                  {data.feePocket.ledger.slice(0, 25).map((row) => (
+                    <li
+                      key={row.id}
+                      className="flex flex-wrap justify-between gap-2 rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/8"
+                    >
+                      <span>
+                        <span className="font-bold uppercase text-[var(--play-ink)]">
+                          {row.type}
+                        </span>{" "}
+                        · {row.source} · {row.note}
+                      </span>
+                      <span className="font-play font-bold tabular-nums">
+                        {row.type === "refund" || row.type === "to_vault"
+                          ? "−"
+                          : "+"}
+                        {formatXu(row.amount)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+
           {data.xuFlow && (
             <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
               <div>
@@ -4514,7 +4702,7 @@ export default function AdminDashboard() {
                       </span>
                     </li>
                     <li>
-                      Phí chat / duy trì Tu Tiên:{" "}
+                      Phí (từ Fee Pocket → kho):{" "}
                       <span className="font-play font-bold text-[var(--play-ink)]">
                         {formatXu(data.xuFlow.feesIn)}
                       </span>
@@ -6964,10 +7152,10 @@ export default function AdminDashboard() {
         <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
           <p className="play-heading text-sm">Cặp đôi & lời cầu hôn</p>
           <p className="text-[11px] text-[var(--play-muted)]">
-            Player: nút <strong>Nhẫn</strong> → chọn mẫu catalog cầu hôn. Sau khi
-            lên nhẫn có <strong>mã cặp</strong>;{" "}
-            <strong>chỉ admin</strong> đổi thiết kế / nhẫn riêng. Pending hủy →
-            hoàn xu.
+            Player: nút <strong>Nhẫn</strong> → catalog cầu hôn. Giá nhẫn vào{" "}
+            <strong>Fee Pocket</strong> (Tổng quan → Add vào Vault). Hủy pending
+            → hoàn từ pocket. Sau lên nhẫn có <strong>mã cặp</strong>;{" "}
+            <strong>chỉ admin</strong> đổi thiết kế.
           </p>
           {bondRows.length === 0 ? (
             <p className="text-[11px] text-[var(--play-muted)]">
@@ -7007,7 +7195,10 @@ export default function AdminDashboard() {
                             : "Đã lên nhẫn"}{" "}
                           · {row.ringNameVi}{" "}
                           <span className="font-mono">({row.ringKey})</span> ·{" "}
-                          {row.ringPrice.toLocaleString("vi-VN")} xu · {when}
+                          <span className="font-bold text-amber-900">
+                            {formatXu(row.ringPrice)} xu
+                          </span>{" "}
+                          · {when}
                           {row.note ? ` · “${row.note}”` : ""}
                         </p>
                         <p className="font-mono text-[9px] text-[var(--play-muted)]">
