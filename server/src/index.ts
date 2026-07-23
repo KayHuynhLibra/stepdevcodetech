@@ -23,6 +23,7 @@ import {
   type GrantCapability,
 } from "./auth.js";
 import { auditStore } from "./auditStore.js";
+import { staffNotiStore } from "./staffNotiStore.js";
 import {
   AVATARS,
   normalizeAvatar,
@@ -240,6 +241,20 @@ function requireAdmin(
   if (!user) return null;
   if (!canAccessStaffDashboard(user)) {
     res.status(403).json({ ok: false, reason: "Chỉ staff dashboard" });
+    return null;
+  }
+  return user;
+}
+
+/** Chỉ admin | mainadmin (nút Noti trên bàn). */
+function requireStaffAdmin(
+  req: express.Request,
+  res: express.Response,
+): ReturnType<typeof authStore.resolveToken> {
+  const user = requireAuth(req, res);
+  if (!user) return null;
+  if (!isStaff(user)) {
+    res.status(403).json({ ok: false, reason: "Chỉ admin / mainadmin" });
     return null;
   }
   return user;
@@ -954,6 +969,53 @@ app.post("/api/admin/coupons/toggle", (req, res) => {
     coupon: result.coupon,
     coupons: couponStore.listForAdmin(),
   });
+});
+
+app.get("/api/staff/noti", (req, res) => {
+  const me = requireStaffAdmin(req, res);
+  if (!me) return;
+  res.json({
+    ok: true,
+    canCompose: isMainAdmin(me),
+    entries: staffNotiStore.list(50),
+  });
+});
+
+app.post("/api/staff/noti", (req, res) => {
+  const me = requireStaffAdmin(req, res);
+  if (!me) return;
+  if (!isMainAdmin(me)) {
+    return res.status(403).json({ ok: false, reason: "Chỉ mainadmin đăng thông báo" });
+  }
+  const result = staffNotiStore.add({
+    byUserId: me.id,
+    byName: userDisplayName(me) || me.username,
+    title: req.body?.title,
+    body: req.body?.body,
+    pinned: !!req.body?.pinned,
+  });
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "staff_noti_post", { detail: result.entry.title });
+  res.json({ ok: true, entry: result.entry, entries: staffNotiStore.list(50) });
+});
+
+app.delete("/api/staff/noti/:id", (req, res) => {
+  const me = requireStaffAdmin(req, res);
+  if (!me) return;
+  if (!isMainAdmin(me)) {
+    return res.status(403).json({ ok: false, reason: "Chỉ mainadmin xóa thông báo" });
+  }
+  const id = String(req.params.id ?? "");
+  const result = staffNotiStore.remove(id);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "staff_noti_delete", { detail: id });
+  res.json({ ok: true, entries: staffNotiStore.list(50) });
+});
+
+app.get("/api/staff/audit-feed", (req, res) => {
+  const me = requireStaffAdmin(req, res);
+  if (!me) return;
+  res.json({ ok: true, entries: auditStore.list(50) });
 });
 
 app.get("/api/admin/overview", (req, res) => {

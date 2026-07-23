@@ -93,6 +93,7 @@ import { normalizeAvatar } from "../avatars";
 import { AvatarPickerSheet } from "../components/AvatarPickerSheet";
 import { IdentityBadge } from "../components/IdentityBadge";
 import { PlayToolsBar } from "../components/PlayToolsBar";
+import { StaffNotiPopup } from "../components/StaffNotiPopup";
 import { PlayRecentBar } from "../components/PlayRecentBar";
 import { uploadAvatarFromFile } from "../uploadAvatar";
 import { getDevicePayload } from "../device";
@@ -1831,23 +1832,26 @@ export default function GamePage() {
                 SOFIAORE-TAROT
               </h1>
             </div>
-            <PlayToolsBar
-              muted={muted}
-              showBalance={showLbBalance}
-              jackpotLabel={`Hũ ${formatXu(state?.jackpotPool ?? 0)}`}
-              voiceLabel={
-                voiceStatus.inRoom && voiceStatus.roomId
-                  ? `Room ${voiceStatus.roomId}${voiceStatus.isHost ? " · H" : ""}`
-                  : "Room"
-              }
-              voiceLive={!!(voiceStatus.inRoom && voiceStatus.roomOpen)}
-              onRules={() => setSheet("rules")}
-              onGift={() => openGiftHub()}
-              onRing={() => openRingHub()}
-              onBalance={openBalanceBoard}
-              onToggleMute={toggleMute}
-              onVoice={() => playSock.openVoiceRoom()}
-            />
+            <div className="flex shrink-0 items-center gap-1.5">
+              <StaffNotiPopup user={me ?? getStoredUser()} />
+              <PlayToolsBar
+                muted={muted}
+                showBalance={showLbBalance}
+                jackpotLabel={`Hũ ${formatXu(state?.jackpotPool ?? 0)}`}
+                voiceLabel={
+                  voiceStatus.inRoom && voiceStatus.roomId
+                    ? `Room ${voiceStatus.roomId}${voiceStatus.isHost ? " · H" : ""}`
+                    : "Room"
+                }
+                voiceLive={!!(voiceStatus.inRoom && voiceStatus.roomOpen)}
+                onRules={() => setSheet("rules")}
+                onGift={() => openGiftHub()}
+                onRing={() => openRingHub()}
+                onBalance={openBalanceBoard}
+                onToggleMute={toggleMute}
+                onVoice={() => playSock.openVoiceRoom()}
+              />
+            </div>
           </div>
           {!!(getToken() && getStoredUser() && !sessionAuthed) && (
             <div className="mb-2 flex items-center justify-between gap-2 rounded-xl bg-rose-500/15 px-2.5 py-2 ring-1 ring-rose-400/40">
