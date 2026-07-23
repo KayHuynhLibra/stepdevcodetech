@@ -45,6 +45,7 @@ export function VoiceRoomHub({
   );
   const [joinPassword, setJoinPassword] = useState("");
   const [lockPassword, setLockPassword] = useState("");
+  const [lixiAmount, setLixiAmount] = useState("10000000");
 
   useEffect(() => {
     onStatus?.({
@@ -396,6 +397,49 @@ export function VoiceRoomHub({
                 )}
               </div>
             )}
+
+            <div className="mb-3 rounded-xl bg-rose-500/15 px-2.5 py-2 ring-1 ring-rose-400/35">
+              <p className="text-[11px] font-bold text-rose-100">
+                🧧 Lì xì Room
+              </p>
+              <p className="mt-0.5 text-[9px] text-white/55">
+                Tối thiểu{" "}
+                {voice.lixiConfig.minAmount.toLocaleString("vi-VN")} xu · phát{" "}
+                {voice.lixiConfig.payoutPct}% cho người ngồi trong phòng (trừ
+                bạn) · phần còn lại vào kho
+              </p>
+              <div className="mt-1.5 flex flex-wrap items-end gap-2">
+                <label className="min-w-[7rem] flex-1">
+                  <span className="text-[9px] font-semibold text-white/45">
+                    Số xu
+                  </span>
+                  <input
+                    type="number"
+                    min={voice.lixiConfig.minAmount}
+                    step={1_000_000}
+                    value={lixiAmount}
+                    onChange={(e) => setLixiAmount(e.target.value)}
+                    className="mt-0.5 w-full rounded-lg bg-black/25 px-2 py-1.5 text-xs font-semibold text-white outline-none ring-1 ring-white/20"
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={voice.lixiBusy}
+                  onClick={() => {
+                    const n = Math.floor(Number(lixiAmount));
+                    voice.sendLixi(n);
+                  }}
+                  className="rounded-full bg-rose-600 px-3 py-1.5 text-[10px] font-extrabold text-white disabled:opacity-50"
+                >
+                  {voice.lixiBusy ? "…" : "Phát lì xì"}
+                </button>
+              </div>
+              {voice.lastLixi && (
+                <p className="mt-1.5 text-[10px] font-semibold text-amber-100">
+                  {voice.lastLixi}
+                </p>
+              )}
+            </div>
 
             <div className="grid grid-cols-4 gap-2">
               {Array.from({ length: VOICE_SEATS_PER_ROOM }, (_, i) => {

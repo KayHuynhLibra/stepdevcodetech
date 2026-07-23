@@ -30,6 +30,8 @@ interface ShoutBarProps {
   onModeChange: (mode: ChatMode) => void;
   onSendSlang: (id: string) => void;
   onSendText: (text: string) => void;
+  /** Gợi ý chat nhanh (AI nhẹ) */
+  chatSuggests?: string[];
   onAvatarClick?: (line: ShoutEvent) => void;
   /** Hiện nút đăng nhập lại khi phiên chat chết */
   needRelogin?: boolean;
@@ -49,6 +51,7 @@ export function ShoutBar({
   onModeChange,
   onSendSlang,
   onSendText,
+  chatSuggests,
   onAvatarClick,
   needRelogin,
   onRelogin,
@@ -235,6 +238,22 @@ export function ShoutBar({
           ))
         )}
       </div>
+
+      {chatSuggests && chatSuggests.length > 0 && (
+        <div className="flex gap-1 overflow-x-auto border-t border-[var(--wood-deep)]/10 px-1.5 py-1">
+          {chatSuggests.map((s) => (
+            <button
+              key={s}
+              type="button"
+              disabled={disabled || busy}
+              onClick={() => onSendText(s)}
+              className="shrink-0 rounded-full bg-[var(--wood-deep)]/8 px-2.5 py-0.5 text-[10px] font-semibold text-[var(--wood-deep)] ring-1 ring-[var(--wood-deep)]/15 disabled:opacity-45"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="flex gap-1 overflow-x-auto border-t border-[var(--wood-deep)]/10 px-1.5 py-1">
         {SHOUTS.map((s) => (

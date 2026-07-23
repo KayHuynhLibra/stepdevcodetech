@@ -1,3 +1,5 @@
+import type { RoleDisplayPublic } from "./roleDisplay";
+
 export interface CardDef {
   id: number;
   key: string;
@@ -46,6 +48,18 @@ export interface BalanceLeaderboardEntry {
   isYou?: boolean;
   userId?: string;
   code?: string;
+}
+
+export interface LevelLeaderboardEntry {
+  rank: number;
+  name: string;
+  avatar: string;
+  playLevel: number;
+  roundsPlayed: number;
+  isYou?: boolean;
+  userId?: string;
+  code?: string;
+  isVip?: boolean;
 }
 
 export interface TarotStarEntry {
@@ -134,6 +148,7 @@ export interface OnlinePlayerPublic {
   profileTheme?: string;
   nameFrame?: string;
   idFrame?: string;
+  displayBadges?: string[];
 }
 
 export interface GameState {
@@ -164,12 +179,27 @@ export interface GameState {
   topAces?: TopAcePreview[];
   roundTopWinners?: RoundTopWinner[];
   tarotStars?: TarotStarEntry[];
+  levelLeaders?: LevelLeaderboardEntry[];
   /** Mainadmin: ẩn/hiện BXH toàn site (thiếu → hiện) */
   leaderboardFlags?: {
     winToday: boolean;
     balance: boolean;
     tarotStars: boolean;
+    streak: boolean;
+    roundWinners: boolean;
+    level: boolean;
   };
+  /** Thời gian phase + kiểu reveal (admin Tổng quan) */
+  tableTiming?: {
+    placingMs: number;
+    revealingMs: number;
+    payoutMs: number;
+    revealStyle: "classic" | "fan" | "spiral";
+    /** Tối đa số lá đặt / ván — mặc định 4 nếu thiếu */
+    maxCardsPerRound?: number;
+  };
+  /** Thứ tự / size / khung / chữ / tên role rail (cosmetic) */
+  roleDisplay?: RoleDisplayPublic;
   vipPool?: number;
   jackpotPool?: number;
   lastJackpotWin?: { name: string; amount: number; round: number } | null;
@@ -188,6 +218,13 @@ export interface GameState {
   guestPlayLimitMs?: number;
   chatCosts?: { no: number; vip: number; saint: number };
   chatLines?: import("./shouts").ShoutEvent[];
+  /** Tip / gợi ý — staff luôn hiện; player theo flags */
+  aiUx?: {
+    tips: string[];
+    chatSuggests: string[];
+    playTipsForPlayers: boolean;
+    chatSuggestsForPlayers: boolean;
+  };
   botPanel?: BotPanelState;
 }
 

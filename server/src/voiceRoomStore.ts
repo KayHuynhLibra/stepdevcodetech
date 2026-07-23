@@ -159,6 +159,25 @@ class VoiceRoomStore {
     return { roomId, seat: (idx + 1) as VoiceSeatIndex };
   }
 
+  /** User đang ngồi trong phòng (unique), có thể exclude người gửi lì xì */
+  listSeatedUserIds(
+    roomId: VoiceRoomId,
+    excludeUserId?: string,
+  ): { userId: string; name: string; avatar: string }[] {
+    const room = this.rooms.get(roomId);
+    if (!room) return [];
+    const seen = new Set<string>();
+    const out: { userId: string; name: string; avatar: string }[] = [];
+    for (const s of room.seats) {
+      if (!s?.userId) continue;
+      if (excludeUserId && s.userId === excludeUserId) continue;
+      if (seen.has(s.userId)) continue;
+      seen.add(s.userId);
+      out.push({ userId: s.userId, name: s.name, avatar: s.avatar });
+    }
+    return out;
+  }
+
   join(opts: {
     socketId: string;
     roomId: unknown;

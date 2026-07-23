@@ -9,9 +9,11 @@ import {
 } from "./interStore.js";
 import {
   applyEngagementToWeights,
+  computeCardHeat,
   type PickEngagement,
 } from "./tarotEngagement.js";
-import type { CardDef } from "./types.js";
+import { smartAiStore } from "./smartAiStore.js";
+import type { CardDef, RoundResult } from "./types.js";
 import { vaultArcana, vaultStore } from "./vaultStore.js";
 
 export type { PickEngagement } from "./tarotEngagement.js";
@@ -267,10 +269,127 @@ export function coolWeights(
   });
 }
 
+/**
+ * FogBreak — bẻ cầu mềm, nhìn như ngẫu nhiên:
+ * - Giảm nhẹ lá thắng gần đây (nhẹ hơn cool)
+ * - Giảm nhẹ lá đang bị pile stake (nhẹ hơn crowdcap)
+ * - Nhiễu nhân từng ván
+ * - ~18% ván “thả cầu” gần như không can thiệp → không lộ pattern luôn bẻ
+ */
+export function fogBreakWeights(
+  baseWeights: number[],
+  realStakes: number[] = [],
+  recentWins: number[] = [],
+): number[] {
+  // Thỉnh thoảng để cầu chạy — tránh cảm giác “cứ ngược”
+  if (Math.random() < 0.18) {
+    return baseWeights.map((w) => w * (0.85 + Math.random() * 0.35));
+  }
+
+  const recent = recentWins.slice(0, 5);
+  const streakMul = (cardId: number): number => {
+    const pos = recent.indexOf(cardId);
+    if (pos < 0) return 1;
+    // pos 0 = vừa thắng → giảm nhẹ; càng xa càng ít
+    if (pos === 0) return 0.55;
+    if (pos === 1) return 0.7;
+    if (pos === 2) return 0.82;
+    return 0.92;
+  };
+
+  const totalStake = realStakes.reduce((a, b) => a + Math.max(0, b), 0);
+  return baseWeights.map((w, i) => {
+    const id = CARDS[i]!.id;
+    let m = streakMul(id);
+    if (totalStake > 0) {
+      const share = Math.max(0, realStakes[i] ?? 0) / totalStake;
+      // Đám đông theo cầu → hạ nhẹ, không cắt sạch
+      if (share >= 0.35) m *= 0.62;
+      else if (share >= 0.22) m *= 0.78;
+      else if (share <= 0.04) m *= 1.18; // lá vắng → nhích lên
+    }
+    // Nhiễu — mỗi ván khác nhau
+    const noise = 0.78 + Math.random() * 0.5;
+    return Math.max(0.05, w * m * noise);
+  });
+}
+
+/**
+ * SmartAI — online weights từ affinity + feature (cầu/stake/heat/kho).
+ * ~15% thả cầu gần như base+noise để không lộ pattern.
+ */
+export function smartAiWeights(
+  baseWeights: number[],
+  realStakes: number[] = [],
+  recentWins: number[] = [],
+  history: RoundResult[] = [],
+): number[] {
+  if (Math.random() < 0.15) {
+    return baseWeights.map((w) => w * (0.85 + Math.random() * 0.4));
+  }
+
+  const affinity = smartAiStore.getAffinity();
+  const coeffs = smartAiStore.getCoeffs();
+  const heat = computeCardHeat(
+    history.length > 0
+      ? history
+      : recentWins.map((win, i) => ({ round: i, win })),
+  );
+  const totalStake = realStakes.reduce((a, b) => a + Math.max(0, b), 0);
+  const liab = cardLiabilities(realStakes);
+  const maxLiab = Math.max(1, ...liab);
+  const vaultNet =
+    vaultStore.getSnapshot().netFromPlay ??
+    vaultStore.getSnapshot().netHouse ??
+    0;
+  // −1 (kho lỗ nặng) … +1 (kho lãi)
+  const vaultEdge = Math.max(-1, Math.min(1, vaultNet / 200_000));
+
+  const recent = recentWins.slice(0, 5);
+  const coolMul = (cardId: number): number => {
+    const pos = recent.indexOf(cardId);
+    if (pos < 0) return 1;
+    if (pos === 0) return 1 - 0.45 * coeffs.cool;
+    if (pos === 1) return 1 - 0.3 * coeffs.cool;
+    if (pos === 2) return 1 - 0.15 * coeffs.cool;
+    return 1;
+  };
+
+  return baseWeights.map((w, i) => {
+    const id = CARDS[i]!.id;
+    let m = (affinity[i] ?? 1) * coolMul(id);
+
+    const h = heat[i]?.level ?? "neutral";
+    if (h === "hot") m *= 1 + 0.25 * coeffs.heat;
+    else if (h === "cold") m *= 1 - 0.2 * coeffs.heat;
+
+    if (totalStake > 0) {
+      const share = Math.max(0, realStakes[i] ?? 0) / totalStake;
+      if (share >= 0.35) m *= 1 - 0.45 * coeffs.crowd;
+      else if (share >= 0.22) m *= 1 - 0.25 * coeffs.crowd;
+      else if (share <= 0.05) m *= 1 + 0.2 * coeffs.crowd;
+    }
+
+    const liabNorm = liab[i]! / maxLiab;
+    // Kho lỗ → thích liability thấp; kho lãi → cho phép liability cao hơn
+    const liabSteer =
+      vaultEdge < 0
+        ? 1 - liabNorm * coeffs.liability * Math.abs(vaultEdge)
+        : 1 + liabNorm * coeffs.liability * vaultEdge * 0.35;
+    m *= Math.max(0.25, liabSteer);
+
+    m *= 1 + vaultEdge * coeffs.vault * 0.15 * (1 - liabNorm);
+
+    const noise = 0.82 + Math.random() * 0.4;
+    return Math.max(0.05, w * m * noise);
+  });
+}
+
 function resolveWeights(
   mode: InterMode,
   realStakes?: number[],
   recentWins?: number[],
+  history?: RoundResult[],
 ): number[] {
   let weights: number[];
   if (isPackMode(mode)) {
@@ -281,6 +400,19 @@ function resolveWeights(
     weights = coolWeights(
       CARDS.map((c) => c.weight),
       recentWins ?? [],
+    );
+  } else if (mode === "fogbreak") {
+    weights = fogBreakWeights(
+      CARDS.map((c) => c.weight),
+      realStakes ?? [],
+      recentWins ?? [],
+    );
+  } else if (mode === "smartai") {
+    weights = smartAiWeights(
+      CARDS.map((c) => c.weight),
+      realStakes ?? [],
+      recentWins ?? [],
+      history ?? [],
     );
   } else if (mode === "hot") {
     weights = hotWeights(
@@ -326,8 +458,9 @@ export function pickWinningCard(
   realStakes?: number[],
   recentWins?: number[],
   engagement?: PickEngagement,
+  history?: RoundResult[],
 ): number {
-  let weights = resolveWeights(mode, realStakes, recentWins);
+  let weights = resolveWeights(mode, realStakes, recentWins, history);
   if (engagement) {
     weights = applyEngagementToWeights(weights, engagement);
   }
@@ -338,11 +471,20 @@ export type UserRoundBias = {
   /** Stake theo 8 lá (index 0 = lá 1) */
   stakes: number[];
   mode: "win" | "lose";
+  /** Khi mode=win: outcomeWinPct (80–100) — ưu tiên người % cao hơn */
+  winPct?: number;
 };
+
+function biasTotalStake(stakes: number[]): number {
+  let t = 0;
+  for (const x of stakes) t += x;
+  return t;
+}
 
 /**
  * Ưu tiên mode win/lose từng user (admin) trước Inter phòng.
  * win → chọn lá user đó đã xu đặt; lose → tránh lá họ xu đặt.
+ * Nhiều win cùng lúc: chỉ nhóm % cao nhất quyết định lá (tie → tổng stake).
  */
 export function pickWinningCardWithUserBias(
   mode: InterMode,
@@ -350,6 +492,7 @@ export function pickWinningCardWithUserBias(
   biases: UserRoundBias[],
   recentWins?: number[],
   engagement?: PickEngagement,
+  history?: RoundResult[],
 ): number {
   const winBiases = biases.filter(
     (b) => b.mode === "win" && b.stakes.some((x) => x > 0),
@@ -359,11 +502,25 @@ export function pickWinningCardWithUserBias(
   );
 
   if (winBiases.length > 0) {
+    let maxPct = 0;
+    for (const b of winBiases) {
+      const pct = typeof b.winPct === "number" ? b.winPct : 100;
+      if (pct > maxPct) maxPct = pct;
+    }
+    const primaryWins = winBiases.filter(
+      (b) => (typeof b.winPct === "number" ? b.winPct : 100) >= maxPct,
+    );
+    // Cùng % cao nhất: ưu tiên người đặt nhiều hơn (ổn định hơn cộng ngang)
+    primaryWins.sort(
+      (a, b) => biasTotalStake(b.stakes) - biasTotalStake(a.stakes),
+    );
+
     const winStake = new Array(CARDS.length).fill(0) as number[];
     const loseLiab = new Array(CARDS.length).fill(0) as number[];
-    for (const b of winBiases) {
+    for (const b of primaryWins) {
+      const weight = typeof b.winPct === "number" ? b.winPct : 100;
       for (let i = 0; i < CARDS.length; i++) {
-        winStake[i]! += b.stakes[i] ?? 0;
+        winStake[i]! += (b.stakes[i] ?? 0) * weight;
       }
     }
     for (const b of loseBiases) {
@@ -392,7 +549,7 @@ export function pickWinningCardWithUserBias(
         loseStake[i]! += b.stakes[i] ?? 0;
       }
     }
-    const base = resolveWeights(mode, policyStakes, recentWins);
+    const base = resolveWeights(mode, policyStakes, recentWins, history);
     let safeWeights = base.map((w, i) => (loseStake[i]! <= 0 ? w : 0));
     if (engagement) {
       safeWeights = applyEngagementToWeights(safeWeights, engagement);
@@ -422,7 +579,7 @@ export function pickWinningCardWithUserBias(
     return CARDS[best]!.id;
   }
 
-  return pickWinningCard(mode, policyStakes, recentWins, engagement);
+  return pickWinningCard(mode, policyStakes, recentWins, engagement, history);
 }
 
 /** Xác suất hiển thị cho tab Inter (%). Policy modes cần auth stakes ván hiện tại. */

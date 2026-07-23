@@ -26,6 +26,8 @@ export const ROTATE_MODE_IDS = [
   "flowguard",
   "moneysteer",
   "crowdcap",
+  "fogbreak",
+  "smartai",
 ] as const;
 
 export type RotateMode = (typeof ROTATE_MODE_IDS)[number];
@@ -61,6 +63,8 @@ export const ROTATE_LABELS: Record<RotateMode, string> = {
   flowguard: "FlowGuard — theo % dòng tiền 1h/24h",
   moneysteer: "MoneySteer — gộp % cả 2 kho + flow (điều khiển)",
   crowdcap: "CrowdCap — giảm lá bị đám đông pile",
+  fogbreak: "FogBreak — bẻ cầu mềm (nhiễu, không lộ)",
+  smartai: "SmartAI — học online từ cầu/stake/kho (nhẹ)",
 };
 
 /** Bộ mode 1–4 — chuỗi xoay cố định. */
@@ -85,11 +89,14 @@ export const MODE_PACK_ROTATIONS: Record<PackMode, RotateMode[]> = {
     "hot",
     "dense",
     "sparse",
+    "fogbreak",
     "highmult",
   ],
   pack4: [
     "wild",
     "crowdcap",
+    "fogbreak",
+    "smartai",
     "vaultguard",
     "vaultpct",
     "moneysteer",
@@ -105,8 +112,8 @@ export const MODE_PACK_ROTATIONS: Record<PackMode, RotateMode[]> = {
 export const MODE_PACK_LABELS: Record<PackMode, string> = {
   pack1: "Bộ 1 — Cân bằng / bias nhóm",
   pack2: "Bộ 2 — Giữ xu / nhà / kho",
-  pack3: "Bộ 3 — Trả xu / cầu",
-  pack4: "Bộ 4 — Hỗn hợp + guard",
+  pack3: "Bộ 3 — Trả xu / cầu / bẻ cầu mềm",
+  pack4: "Bộ 4 — Hỗn hợp + guard + fog",
 };
 
 export function isRotateMode(v: unknown): v is RotateMode {
@@ -139,4 +146,6 @@ export const ALL_ROTATION_DEFAULT: RotateMode[] = [
   "cool",
   "user",
   "crowdcap",
+  "fogbreak",
+  "smartai",
 ];

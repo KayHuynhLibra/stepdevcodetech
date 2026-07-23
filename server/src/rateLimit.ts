@@ -43,17 +43,27 @@ export function startRateLimitPrune(intervalMs = 60_000) {
 }
 
 export function clientIp(req: Request): string {
+  // Với app.set("trust proxy", …) Express đã resolve IP đúng (không tin XFF thô).
+  const fromExpress = typeof req.ip === "string" ? req.ip.trim() : "";
+  if (fromExpress) {
+    return fromExpress.replace(/^::ffff:/i, "") || "unknown";
+  }
   const xf = req.headers["x-forwarded-for"];
-  if (typeof xf === "string" && xf.length) return xf.split(",")[0]!.trim();
-  return req.socket.remoteAddress || "unknown";
+  if (typeof xf === "string" && xf.length) {
+    // Fallback khi chưa bật trust proxy — lấy IP đầu chuỗi (client gần nhất theo proxy chuẩn).
+    return xf.split(",")[0]!.trim().replace(/^::ffff:/i, "") || "unknown";
+  }
+  return (req.socket.remoteAddress || "unknown").replace(/^::ffff:/i, "");
 }
 
 export function socketIp(socket: {
   handshake: { address?: string; headers: Record<string, unknown> };
 }): string {
   const xf = socket.handshake.headers["x-forwarded-for"];
-  if (typeof xf === "string" && xf.length) return xf.split(",")[0]!.trim();
-  return socket.handshake.address || "unknown";
+  if (typeof xf === "string" && xf.length) {
+    return xf.split(",")[0]!.trim().replace(/^::ffff:/i, "") || "unknown";
+  }
+  return (socket.handshake.address || "unknown").replace(/^::ffff:/i, "");
 }
 
 /** Global HTTP — whitelist /health để Railway probe không bị chặn. */

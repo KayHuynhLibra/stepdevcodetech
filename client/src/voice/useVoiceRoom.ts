@@ -72,6 +72,13 @@ export function useVoiceRoom({ socket, enabled = true }: UseVoiceRoomOpts) {
     initialVol.outputVolume,
   );
   const [outputMuted, setOutputMutedState] = useState(initialVol.outputMuted);
+  const [lixiConfig, setLixiConfig] = useState<{
+    payoutPct: number;
+    minAmount: number;
+    maxAmount: number;
+  }>({ payoutPct: 100, minAmount: 10_000_000, maxAmount: 999_999_999_999 });
+  const [lixiBusy, setLixiBusy] = useState(false);
+  const [lastLixi, setLastLixi] = useState<string | null>(null);
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const rawMicStreamRef = useRef<MediaStream | null>(null);
@@ -506,11 +513,66 @@ export function useVoiceRoom({ socket, enabled = true }: UseVoiceRoomOpts) {
     [socket],
   );
 
+  const sendLixi = useCallback(
+    (amount: number, note?: string) => {
+      if (!socket) return;
+      setLixiBusy(true);
+      setError(null);
+      socket.emit(
+        "voice:lixi",
+        { amount, note, token: token() },
+        (r: {
+          ok?: boolean;
+          reason?: string;
+          amount?: number;
+          pool?: number;
+          payoutPct?: number;
+          recipientCount?: number;
+        }) => {
+          setLixiBusy(false);
+          if (!r?.ok) {
+            setError(r?.reason || "Phát lì xì thất bại");
+            return;
+          }
+          setLastLixi(
+            `Đã phát ${Number(r.amount).toLocaleString("vi-VN")} · chia ${r.pool?.toLocaleString("vi-VN")} (${r.payoutPct}%) cho ${r.recipientCount} người`,
+          );
+          window.setTimeout(() => setLastLixi(null), 5000);
+        },
+      );
+    },
+    [socket],
+  );
+
   useEffect(() => {
     if (!socket || !enabled) return;
     socketIdRef.current = socket.id ?? null;
 
     const onLobby = (rows: VoiceRoomPublic[]) => setLobby(rows);
+    const onLixiConfig = (cfg: {
+      payoutPct?: number;
+      minAmount?: number;
+      maxAmount?: number;
+    }) => {
+      setLixiConfig({
+        payoutPct: Math.max(1, Math.min(100, Number(cfg.payoutPct) || 100)),
+        minAmount: Number(cfg.minAmount) || 10_000_000,
+        maxAmount: Number(cfg.maxAmount) || 999_999_999_999,
+      });
+    };
+    const onLixiEvent = (ev: {
+      fromName?: string;
+      amount?: number;
+      pool?: number;
+      payoutPct?: number;
+      recipientCount?: number;
+    }) => {
+      if (!ev?.fromName) return;
+      setLastLixi(
+        `🧧 ${ev.fromName} phát ${Number(ev.amount).toLocaleString("vi-VN")} · ${ev.recipientCount} người nhận (${ev.payoutPct}%)`,
+      );
+      window.setTimeout(() => setLastLixi(null), 6000);
+    };
     const onRoom = (r: VoiceRoomPublic) => {
       setRoom(r);
       const meId = socket.id;
@@ -578,8 +640,11 @@ export function useVoiceRoom({ socket, enabled = true }: UseVoiceRoomOpts) {
     socket.on("voice:kicked", onKicked);
     socket.on("voice:forceMuted", onForceMuted);
     socket.on("voice:error", onError);
+    socket.on("voice:lixiConfig", onLixiConfig);
+    socket.on("voice:lixi", onLixiEvent);
 
     socket.emit("voice:list");
+    socket.emit("voice:lixi-config");
 
     return () => {
       socket.off("voice:lobby", onLobby);
@@ -590,6 +655,8 @@ export function useVoiceRoom({ socket, enabled = true }: UseVoiceRoomOpts) {
       socket.off("voice:kicked", onKicked);
       socket.off("voice:forceMuted", onForceMuted);
       socket.off("voice:error", onError);
+      socket.off("voice:lixiConfig", onLixiConfig);
+      socket.off("voice:lixi", onLixiEvent);
     };
   }, [
     socket,
@@ -644,5 +711,9 @@ export function useVoiceRoom({ socket, enabled = true }: UseVoiceRoomOpts) {
     claimHost,
     setRoomOpen,
     setRoomPassword,
+    lixiConfig,
+    lixiBusy,
+    lastLixi,
+    sendLixi,
   };
 }

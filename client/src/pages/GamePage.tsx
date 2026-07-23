@@ -3,6 +3,7 @@ import {
   CARDS,
   formatXu,
   type BalanceLeaderboardEntry,
+  type LevelLeaderboardEntry,
   type StakeEntry,
   type GameState,
   type LeaderboardEntry,
@@ -47,6 +48,9 @@ import { ShoutBar } from "../components/ShoutBar";
 import { ShoutMarquee } from "../components/ShoutMarquee";
 import { SaintOverlay } from "../components/SaintOverlay";
 import { TarotStarsSheet } from "../components/TarotStarsSheet";
+import { StreakLeaderboardSheet } from "../components/StreakLeaderboardSheet";
+import { RoundWinnersSheet } from "../components/RoundWinnersSheet";
+import { LevelLeaderboardSheet } from "../components/LevelLeaderboardSheet";
 import { RulesSheet } from "../components/RulesSheet";
 import type { ChatMode, ShoutEvent } from "../shouts";
 import { SAINT_DISPLAY_MS } from "../shouts";
@@ -100,6 +104,9 @@ type Sheet =
   | "leaderboard"
   | "balanceBoard"
   | "tarotStars"
+  | "streak"
+  | "roundWinners"
+  | "levelBoard"
   | "avatar"
   | "players"
   | "coupon"
@@ -151,6 +158,9 @@ export default function GamePage() {
   const [balanceBoardRows, setBalanceBoardRows] = useState<
     BalanceLeaderboardEntry[]
   >([]);
+  const [levelBoardRows, setLevelBoardRows] = useState<LevelLeaderboardEntry[]>(
+    [],
+  );
   const [giftBusy, setGiftBusy] = useState(false);
   const [giftPreset, setGiftPreset] = useState<GiftHubTarget | null>(null);
   const [giftFlyQueue, setGiftFlyQueue] = useState<GiftFlyQueueItem[]>([]);
@@ -200,11 +210,20 @@ export default function GamePage() {
   staffViewerRef.current = staffViewer;
   onlineViewerRef.current = onlineViewer;
 
-  const lbFlags = state?.leaderboardFlags ?? {
-    winToday: true,
-    balance: true,
-    tarotStars: true,
+  const lbFlags = {
+    winToday: state?.leaderboardFlags?.winToday !== false,
+    balance: state?.leaderboardFlags?.balance !== false,
+    tarotStars: state?.leaderboardFlags?.tarotStars !== false,
+    streak: state?.leaderboardFlags?.streak !== false,
+    roundWinners: state?.leaderboardFlags?.roundWinners !== false,
+    level: state?.leaderboardFlags?.level !== false,
   };
+  const showLbWinToday = lbFlags.winToday || staffViewer;
+  const showLbBalance = lbFlags.balance || staffViewer;
+  const showLbTarotStars = lbFlags.tarotStars || staffViewer;
+  const showLbStreak = lbFlags.streak || staffViewer;
+  const showLbRoundWinners = lbFlags.roundWinners || staffViewer;
+  const showLbLevel = lbFlags.level || staffViewer;
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -401,6 +420,10 @@ export default function GamePage() {
       setBalanceBoardRows(rows);
     };
 
+    const onLevelLeaderboardData = (rows: LevelLeaderboardEntry[]) => {
+      setLevelBoardRows(rows);
+    };
+
     const onTarotStarsData = (rows: TarotStarEntry[]) => {
       setTarotStarRows(rows);
     };
@@ -546,6 +569,7 @@ export default function GamePage() {
     s.on("historyData", onHistoryData);
     s.on("leaderboardData", onLeaderboardData);
     s.on("balanceLeaderboardData", onBalanceLeaderboardData);
+    s.on("levelLeaderboardData", onLevelLeaderboardData);
     s.on("tarotStarsData", onTarotStarsData);
     s.on("shout", onShout);
     s.on("giftReceived", onGiftReceived);
@@ -573,6 +597,7 @@ export default function GamePage() {
       s.off("historyData", onHistoryData);
       s.off("leaderboardData", onLeaderboardData);
       s.off("balanceLeaderboardData", onBalanceLeaderboardData);
+      s.off("levelLeaderboardData", onLevelLeaderboardData);
       s.off("tarotStarsData", onTarotStarsData);
       s.off("shout", onShout);
       s.off("giftReceived", onGiftReceived);
@@ -653,6 +678,7 @@ export default function GamePage() {
         profileTheme: match.profileTheme ?? prev.profileTheme,
         nameFrame: match.nameFrame ?? prev.nameFrame,
         idFrame: match.idFrame ?? prev.idFrame,
+        displayBadges: match.displayBadges ?? prev.displayBadges,
         isBot: match.isBot,
         isGuest: !match.isBot && !match.code && !match.userId,
       };
@@ -673,6 +699,8 @@ export default function GamePage() {
         next.profileTheme === prev.profileTheme &&
         next.nameFrame === prev.nameFrame &&
         next.idFrame === prev.idFrame &&
+        JSON.stringify(next.displayBadges ?? []) ===
+          JSON.stringify(prev.displayBadges ?? []) &&
         next.isGuest === prev.isGuest
       ) {
         return prev;
@@ -807,8 +835,9 @@ export default function GamePage() {
     const alreadyOnCard = (stakes[cardId - 1] ?? 0) > 0;
     if (!alreadyOnCard) {
       const distinct = stakes.filter((v) => v > 0).length;
-      if (distinct >= 5) {
-        showToast("Mỗi lượt chỉ được đặt tối đa 5 lá");
+      const lim = state.tableTiming?.maxCardsPerRound ?? 4;
+      if (distinct >= lim) {
+        showToast(`Mỗi lượt chỉ được đặt tối đa ${lim} lá`);
         return;
       }
     }
@@ -947,6 +976,7 @@ export default function GamePage() {
           profileTheme?: string;
           nameFrame?: string;
           idFrame?: string;
+          displayBadges?: string[];
           bond?: UserBondSnippet | null;
         };
       }>(`/api/players/card?${q}`);
@@ -988,6 +1018,7 @@ export default function GamePage() {
             profileTheme: card.profileTheme ?? prev.profileTheme,
             nameFrame: card.nameFrame ?? prev.nameFrame,
             idFrame: card.idFrame ?? prev.idFrame,
+            displayBadges: card.displayBadges ?? prev.displayBadges,
             bond: card.bond ?? prev.bond ?? null,
             isGuest: false,
           };
@@ -1022,6 +1053,7 @@ export default function GamePage() {
         profileTheme: p.profileTheme,
         nameFrame: p.nameFrame,
         idFrame: p.idFrame,
+        displayBadges: p.displayBadges,
       });
     },
     [openPlayerInfo],
@@ -1245,21 +1277,37 @@ export default function GamePage() {
   };
 
   const openLeaderboard = () => {
-    if (!lbFlags.winToday) return;
+    if (!showLbWinToday) return;
     socket?.emit("getLeaderboard");
     setSheet("leaderboard");
   };
 
   const openBalanceBoard = () => {
-    if (!lbFlags.balance) return;
+    if (!showLbBalance) return;
     socket?.emit("getBalanceLeaderboard");
     setSheet("balanceBoard");
   };
 
   const openTarotStars = () => {
-    if (!lbFlags.tarotStars) return;
+    if (!showLbTarotStars) return;
     socket?.emit("getTarotStars");
     setSheet("tarotStars");
+  };
+
+  const openStreakBoard = () => {
+    if (!showLbStreak) return;
+    setSheet("streak");
+  };
+
+  const openRoundWinners = () => {
+    if (!showLbRoundWinners) return;
+    setSheet("roundWinners");
+  };
+
+  const openLevelBoard = () => {
+    if (!showLbLevel) return;
+    socket?.emit("getLevelLeaderboard");
+    setSheet("levelBoard");
   };
 
   const giftXuToPlayer = async (opts: {
@@ -1743,7 +1791,7 @@ export default function GamePage() {
             </div>
             <PlayToolsBar
               muted={muted}
-              showBalance={lbFlags.balance}
+              showBalance={showLbBalance}
               jackpotLabel={`Hũ ${formatXu(state?.jackpotPool ?? 0)}`}
               voiceLabel={
                 voiceStatus.inRoom && voiceStatus.roomId
@@ -1784,6 +1832,7 @@ export default function GamePage() {
               guestAvatar={me ? null : guestAvatar}
               compact
               showPath={false}
+              roleDisplay={state?.roleDisplay}
               onAvatarClick={openAvatarPicker}
               onNameClick={() => {
                 setRenameDraft(
@@ -2024,12 +2073,45 @@ export default function GamePage() {
         </div>
 
         {/* ===== ZONE 4+6: Form bàn đặt xu (deck) ===== */}
-        {state?.viewerEngagement?.warmActive && (
-          <p className="mt-2 px-1 text-center text-[10px] font-semibold text-amber-700">
-            Chuỗi thua {state.viewerEngagement.lossStreak} — vận ấm nhẹ lá bạn
-            đặt xu nhiều nhất
-          </p>
-        )}
+        {/* ===== Tip bàn: chuỗi thua + admin/player tip — khung cố định, chữ rõ ===== */}
+        {(() => {
+          const warm = !!state?.viewerEngagement?.warmActive;
+          const loss = state?.viewerEngagement?.lossStreak ?? 0;
+          const ux = state?.aiUx;
+          const tipText = ux?.tips?.[0]?.trim() || "";
+          const showTip =
+            !!tipText && !!(staffViewer || ux?.playTipsForPlayers);
+          if (!warm && !showTip) return null;
+          return (
+            <div
+              className="play-tip-board mt-2"
+              aria-live="polite"
+            >
+              <table className="play-tip-board__table">
+                <tbody>
+                  {warm && (
+                    <tr>
+                      <th scope="row">Chuỗi thua</th>
+                      <td>
+                        {loss} — vận ấm nhẹ lá bạn đặt xu nhiều nhất
+                      </td>
+                    </tr>
+                  )}
+                  {showTip && (
+                    <tr>
+                      <th scope="row">
+                        {staffViewer && !ux?.playTipsForPlayers
+                          ? "Admin tip"
+                          : "Gợi ý"}
+                      </th>
+                      <td>{tipText}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
         <PlayBoard
           phaseEndsAt={state?.phaseEndsAt ?? 0}
           serverTime={state?.serverTime ?? Date.now()}
@@ -2039,6 +2121,11 @@ export default function GamePage() {
           winningCardId={winning}
           phase={state?.phase ?? null}
           cardHeat={state?.cardHeat}
+          winStreak={state?.viewerEngagement?.winStreak ?? 0}
+          lossStreak={state?.viewerEngagement?.lossStreak ?? 0}
+          maxCardsPerRound={
+            state?.tableTiming?.maxCardsPerRound ?? 4
+          }
           onPick={openStake}
         />
 
@@ -2154,6 +2241,12 @@ export default function GamePage() {
           }}
           onSendSlang={(id) => sendChat({ id })}
           onSendText={(text) => sendChat({ text })}
+          chatSuggests={
+            state?.aiUx &&
+            (staffViewer || state.aiUx.chatSuggestsForPlayers)
+              ? state.aiUx.chatSuggests
+              : undefined
+          }
           onAvatarClick={openChatPlayer}
           onReport={async (line) => {
             if (!sessionAuthed) {
@@ -2177,15 +2270,20 @@ export default function GamePage() {
         />
 
         {/* ===== ZONE 7: Cao thủ — gọn, đủ thông tin ===== */}
-        {lbFlags.winToday && (
+        {showLbWinToday && (
         <section className="game-task game-task-aces mt-3">
           <button
             type="button"
             onClick={openLeaderboard}
             className="flex w-full items-center justify-between text-left"
           >
-            <p className="play-heading text-sm sm:text-base">
+            <p className="play-heading flex items-center gap-1.5 text-sm sm:text-base">
               Cao thủ dự đoán ›
+              {!lbFlags.winToday && staffViewer ? (
+                <span className="rounded bg-slate-600/85 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white/85">
+                  Staff
+                </span>
+              ) : null}
             </p>
             <span className="text-[10px] font-medium text-white/45">
               Vòng trước
@@ -2282,14 +2380,21 @@ export default function GamePage() {
         )}
 
         {/* ===== ZONE 8: Sao bài Tarot — xu dùng dự đoán tuần ===== */}
-        {lbFlags.tarotStars && (
+        {showLbTarotStars && (
         <section className="game-task game-task-stars mt-4">
           <button
             type="button"
             onClick={openTarotStars}
             className="flex w-full flex-col text-left"
           >
-            <p className="play-heading text-base sm:text-lg">Sao bài Tarot ›</p>
+            <p className="play-heading flex items-center gap-1.5 text-base sm:text-lg">
+              Sao bài Tarot ›
+              {!lbFlags.tarotStars && staffViewer ? (
+                <span className="rounded bg-slate-600/85 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white/85">
+                  Staff
+                </span>
+              ) : null}
+            </p>
             <p className="mt-0.5 text-[11px] text-[var(--cream)]/55">
               Xếp hạng theo số xu dùng dự đoán mỗi tuần
             </p>
@@ -2355,12 +2460,212 @@ export default function GamePage() {
           </ul>
         </section>
         )}
+
+        {/* ===== ZONE 9: Chuỗi thắng ===== */}
+        {showLbStreak && (
+        <section className="game-task mt-3">
+          <button
+            type="button"
+            onClick={openStreakBoard}
+            className="flex w-full items-center justify-between text-left"
+          >
+            <p className="play-heading flex items-center gap-1.5 text-sm sm:text-base">
+              Chuỗi thắng ›
+              {!lbFlags.streak && staffViewer ? (
+                <span className="rounded bg-slate-600/85 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white/85">
+                  Staff
+                </span>
+              ) : null}
+            </p>
+            <span className="text-[10px] font-medium text-white/45">
+              Gần đây
+            </span>
+          </button>
+          <ul className="mt-1.5 space-y-1">
+            {(state?.streakHighlights ?? []).length === 0 && (
+              <li className="rank-row--empty py-3 text-center text-[11px] text-white/40">
+                Chưa có chuỗi thắng nổi bật
+              </li>
+            )}
+            {(state?.streakHighlights ?? []).slice(0, 3).map((row, i) => (
+              <li
+                key={`${row.at}-${row.name}-${row.streak}`}
+                className="rank-row flex items-center gap-1.5 px-1.5 py-1"
+              >
+                <span className="font-play w-4 shrink-0 text-center text-xs font-bold text-[var(--gold-soft)] tabular-nums">
+                  {i + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[11px] font-bold leading-tight text-white">
+                    {row.name}
+                  </p>
+                  <p className="text-[10px] font-semibold leading-tight text-amber-300/90 tabular-nums">
+                    {row.streak} ván liên tiếp
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+        )}
+
+        {/* ===== ZONE 9b: Cấp độ ===== */}
+        {showLbLevel && (
+        <section className="game-task mt-3">
+          <button
+            type="button"
+            onClick={openLevelBoard}
+            className="flex w-full items-center justify-between text-left"
+          >
+            <p className="play-heading flex items-center gap-1.5 text-sm sm:text-base">
+              Cấp độ ›
+              {!lbFlags.level && staffViewer ? (
+                <span className="rounded bg-slate-600/85 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white/85">
+                  Staff
+                </span>
+              ) : null}
+            </p>
+            <span className="text-[10px] font-medium text-white/45">
+              Lifetime
+            </span>
+          </button>
+          <ul className="mt-1.5 space-y-1">
+            {(state?.levelLeaders ?? []).length === 0 && (
+              <li className="rank-row--empty py-3 text-center text-[11px] text-white/40">
+                Chưa có dữ liệu cấp độ
+              </li>
+            )}
+            {(state?.levelLeaders ?? []).slice(0, 3).map((row) => (
+              <li
+                key={`${row.rank}-${row.userId ?? row.name}`}
+                className={`rank-row flex items-center gap-1.5 px-1.5 py-1 ${
+                  row.isYou ? "rank-row--you" : ""
+                }`}
+              >
+                <span className="font-play w-4 shrink-0 text-center text-xs font-bold text-[var(--gold-soft)] tabular-nums">
+                  {row.rank}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    openPlayerInfo({
+                      name: row.name,
+                      avatar: row.avatar,
+                      userId: row.userId,
+                      code: row.code,
+                      isVip: row.isVip,
+                      roundsPlayed: row.roundsPlayed,
+                      playLevel: row.playLevel,
+                    })
+                  }
+                  className="shrink-0"
+                  title="Xem thông tin"
+                >
+                  <img
+                    src={normalizeAvatar(row.avatar)}
+                    alt=""
+                    className="h-7 w-7 rounded-full object-cover ring-1 ring-white/25"
+                    onError={(e) => {
+                      const el = e.currentTarget;
+                      if (el.src.includes("avatar-default")) return;
+                      el.src = "/assets/ui/avatar-default.png";
+                    }}
+                  />
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[11px] font-bold leading-tight text-white">
+                    {row.name}
+                    {row.isYou ? " ·Bạn" : ""}
+                  </p>
+                  <p className="text-[10px] font-semibold leading-tight text-amber-300/90 tabular-nums">
+                    Lv.{row.playLevel} · {row.roundsPlayed.toLocaleString("vi-VN")} ván
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+        )}
+
+        {/* ===== ZONE 10: Top ván vừa ===== */}
+        {showLbRoundWinners && (
+        <section className="game-task mt-3">
+          <button
+            type="button"
+            onClick={openRoundWinners}
+            className="flex w-full items-center justify-between text-left"
+          >
+            <p className="play-heading flex items-center gap-1.5 text-sm sm:text-base">
+              Top ván vừa ›
+              {!lbFlags.roundWinners && staffViewer ? (
+                <span className="rounded bg-slate-600/85 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white/85">
+                  Staff
+                </span>
+              ) : null}
+            </p>
+            <span className="text-[10px] font-medium text-white/45">
+              Ván này
+            </span>
+          </button>
+          <ul className="mt-1.5 space-y-1">
+            {(state?.roundTopWinners ?? []).length === 0 && (
+              <li className="rank-row--empty py-3 text-center text-[11px] text-white/40">
+                Chưa có top ván này
+              </li>
+            )}
+            {(state?.roundTopWinners ?? []).slice(0, 3).map((row) => (
+              <li
+                key={`${row.rank}-${row.name}`}
+                className={`rank-row flex items-center gap-1.5 px-1.5 py-1 ${
+                  row.isYou ? "rank-row--you" : ""
+                }`}
+              >
+                <span className="font-play w-4 shrink-0 text-center text-xs font-bold text-[var(--gold-soft)] tabular-nums">
+                  {row.rank}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    openPlayerInfo({
+                      name: row.name,
+                      avatar: row.avatar,
+                    })
+                  }
+                  className="shrink-0"
+                  title="Xem thông tin"
+                >
+                  <img
+                    src={normalizeAvatar(row.avatar)}
+                    alt=""
+                    className="h-7 w-7 rounded-full object-cover ring-1 ring-white/25"
+                    onError={(e) => {
+                      const el = e.currentTarget;
+                      if (el.src.includes("avatar-default")) return;
+                      el.src = "/assets/ui/avatar-default.png";
+                    }}
+                  />
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[11px] font-bold leading-tight text-white">
+                    {row.name}
+                    {row.isYou ? " ·Bạn" : ""}
+                  </p>
+                  <p className="text-[10px] font-semibold leading-tight text-amber-300/90 tabular-nums">
+                    +{formatXu(row.profit)}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+        )}
       </div>
 
       <RevealPopup
         open={revealOpen}
         winningCardId={winning}
         yourStake={myStakeOnWinner}
+        revealStyle={state?.tableTiming?.revealStyle}
         onGatherSfx={() => play("gather")}
         onShuffleSfx={() => play("shuffle")}
         onSuspenseSfx={() => play("suspense")}
@@ -2584,12 +2889,12 @@ export default function GamePage() {
         onClose={() => setSheet(null)}
       />
       <LeaderboardSheet
-        open={sheet === "leaderboard" && lbFlags.winToday}
+        open={sheet === "leaderboard" && showLbWinToday}
         rows={leaderboardRows}
         onClose={() => setSheet(null)}
       />
       <BalanceLeaderboardSheet
-        open={sheet === "balanceBoard" && lbFlags.balance}
+        open={sheet === "balanceBoard" && showLbBalance}
         rows={balanceBoardRows}
         onClose={() => setSheet(null)}
         onOpenPlayer={(row) => {
@@ -2603,7 +2908,7 @@ export default function GamePage() {
         }}
       />
       <TarotStarsSheet
-        open={sheet === "tarotStars" && lbFlags.tarotStars}
+        open={sheet === "tarotStars" && showLbTarotStars}
         rows={
           tarotStarRows.length > 0
             ? tarotStarRows
@@ -2611,7 +2916,47 @@ export default function GamePage() {
         }
         onClose={() => setSheet(null)}
       />
-      <RulesSheet open={sheet === "rules"} onClose={() => setSheet(null)} />
+      <StreakLeaderboardSheet
+        open={sheet === "streak" && showLbStreak}
+        rows={state?.streakHighlights ?? []}
+        onClose={() => setSheet(null)}
+      />
+      <RoundWinnersSheet
+        open={sheet === "roundWinners" && showLbRoundWinners}
+        rows={state?.roundTopWinners ?? []}
+        onClose={() => setSheet(null)}
+        onOpenPlayer={(row) => {
+          openPlayerInfo({
+            name: row.name,
+            avatar: row.avatar,
+          });
+        }}
+      />
+      <LevelLeaderboardSheet
+        open={sheet === "levelBoard" && showLbLevel}
+        rows={
+          levelBoardRows.length > 0
+            ? levelBoardRows
+            : (state?.levelLeaders ?? [])
+        }
+        onClose={() => setSheet(null)}
+        onOpenPlayer={(row) => {
+          openPlayerInfo({
+            name: row.name,
+            avatar: row.avatar,
+            userId: row.userId,
+            code: row.code,
+            isVip: row.isVip,
+            roundsPlayed: row.roundsPlayed,
+            playLevel: row.playLevel,
+          });
+        }}
+      />
+      <RulesSheet
+        open={sheet === "rules"}
+        onClose={() => setSheet(null)}
+        maxCardsPerRound={state?.tableTiming?.maxCardsPerRound ?? 4}
+      />
       <AvatarPickerSheet
         open={sheet === "avatar"}
         current={me ? me.avatar : guestAvatar}

@@ -4,6 +4,7 @@ import { formatXu } from "../cards";
 import { CoupleAvatar } from "./CoupleAvatar";
 import { ColoredName } from "./ColoredName";
 import { RoleAvatarFrame } from "./RoleAvatarFrame";
+import { RoleRail } from "./RoleRail";
 import { PlayLevelBadge } from "./PlayLevelBadge";
 import { isRingEmoji, coupleWithLabel, type UserBondSnippet } from "../rings";
 import {
@@ -18,6 +19,14 @@ import {
   getCultivationColor,
   isCultivationRank,
 } from "../cultivation";
+import { displayBadgeDef } from "../displayBadges";
+import {
+  resolveRoleColorStyle,
+  resolveRoleGlyph,
+  resolveRoleLabel,
+  type RoleLabelKey,
+} from "../roleDisplay";
+import { useRoleDisplay } from "./RoleRail";
 
 export interface PlayerInfoView {
   name: string;
@@ -34,6 +43,7 @@ export interface PlayerInfoView {
   outcomeMode?: "normal" | "win" | "lose";
   isVip?: boolean;
   roundsPlayed?: number;
+  playLevel?: number;
   vipGranted?: boolean;
   cultivationRank?: string | null;
   nameColor?: string | null;
@@ -42,6 +52,7 @@ export interface PlayerInfoView {
   profileTheme?: string | null;
   nameFrame?: string | null;
   idFrame?: string | null;
+  displayBadges?: string[] | null;
   bond?: UserBondSnippet | null;
 }
 
@@ -99,6 +110,7 @@ export function PlayerInfoSheet({
   );
   const [localBalance, setLocalBalance] = useState<number | undefined>();
   const [localGranted, setLocalGranted] = useState(false);
+  const rd = useRoleDisplay();
 
   useEffect(() => {
     if (!player) return;
@@ -111,13 +123,14 @@ export function PlayerInfoSheet({
 
   if (!open || !player) return null;
 
-  const kind = player.isBot
-    ? "Bot"
-    : player.code
-      ? "Người chơi"
-      : player.isGuest
-        ? "Khách"
-        : "Người chơi";
+  const roleLabelKey: RoleLabelKey = player.isBot
+    ? "bot"
+    : player.isGuest
+      ? "guest"
+      : "player";
+  const kind = resolveRoleLabel(roleLabelKey, rd.roleLabels);
+  const coupleLabel = resolveRoleLabel("couple", rd.roleLabels);
+  const vipLabel = resolveRoleLabel("vip", rd.roleLabels);
 
   const rounds = player.roundsPlayed ?? 0;
   const autoVip = rounds >= VIP_ROUNDS_REQUIRED;
@@ -338,56 +351,96 @@ export function PlayerInfoSheet({
             </div>
           )}
 
-          <div className="profile-celestial__roles role-rail" role="list">
-            <div className="role-rail__pills">
-              {targetBonded && (
-                <span className="role-pill role-pill--couple" role="listitem">
-                  <span className="role-pill__glyph" aria-hidden>
-                    ♥
+          <div className="profile-celestial__roles" role="list">
+            <RoleRail
+              slots={{
+                couple: targetBonded ? (
+                  <span
+                    className="role-pill role-pill--couple"
+                    role="listitem"
+                    style={resolveRoleColorStyle("couple", rd.roleColors)}
+                  >
+                    <span className="role-pill__glyph" aria-hidden>
+                      {resolveRoleGlyph("couple")}
+                    </span>
+                    <span className="role-pill__text">{coupleLabel}</span>
                   </span>
-                  <span className="role-pill__text">Cặp đôi</span>
-                </span>
-              )}
-              {showVip && (
-                <span className="role-pill role-pill--vip" role="listitem">
-                  <span className="role-pill__glyph" aria-hidden>
-                    ★
+                ) : null,
+                vip: showVip ? (
+                  <span
+                    className="role-pill role-pill--vip"
+                    role="listitem"
+                    style={resolveRoleColorStyle("vip", rd.roleColors)}
+                  >
+                    <span className="role-pill__glyph" aria-hidden>
+                      {resolveRoleGlyph("vip")}
+                    </span>
+                    <span className="role-pill__text">{vipLabel}</span>
                   </span>
-                  <span className="role-pill__text">VIP</span>
-                </span>
-              )}
-              {player.cultivationRank &&
-              isCultivationRank(player.cultivationRank) ? (
-                <span
-                  className="role-pill role-pill--cult"
-                  role="listitem"
-                  title={
-                    cultivationLabel(player.cultivationRank) ?? "Cảnh giới"
-                  }
-                  style={{
-                    borderColor: getCultivationColor(player.cultivationRank)
-                      ?.border,
-                    color: getCultivationColor(player.cultivationRank)?.text,
-                  }}
-                >
-                  <span className="role-pill__glyph" aria-hidden>
-                    ᚱ
+                ) : null,
+                cult:
+                  player.cultivationRank &&
+                  isCultivationRank(player.cultivationRank) ? (
+                    <span
+                      className="role-pill role-pill--cult"
+                      role="listitem"
+                      title={
+                        cultivationLabel(player.cultivationRank) ?? "Cảnh giới"
+                      }
+                      style={{
+                        ...resolveRoleColorStyle("tutien", rd.roleColors),
+                        borderColor: getCultivationColor(player.cultivationRank)
+                          ?.border,
+                        color:
+                          resolveRoleColorStyle("tutien", rd.roleColors)
+                            ?.color ??
+                          getCultivationColor(player.cultivationRank)?.text,
+                      }}
+                    >
+                      <span className="role-pill__glyph" aria-hidden>
+                        ᚱ
+                      </span>
+                      <span className="role-pill__text">
+                        {cultivationLabel(player.cultivationRank)}
+                      </span>
+                    </span>
+                  ) : null,
+                role: (
+                  <span
+                    className={`role-pill role-pill--role ${roleKindClass}`}
+                    role="listitem"
+                    style={resolveRoleColorStyle(roleLabelKey, rd.roleColors)}
+                  >
+                    <span className="role-pill__glyph" aria-hidden>
+                      {resolveRoleGlyph(roleLabelKey)}
+                    </span>
+                    <span className="role-pill__text">{kind}</span>
                   </span>
-                  <span className="role-pill__text">
-                    {cultivationLabel(player.cultivationRank)}
-                  </span>
-                </span>
-              ) : null}
-              <span
-                className={`role-pill role-pill--role ${roleKindClass}`}
-                role="listitem"
-              >
-                <span className="role-pill__glyph" aria-hidden>
-                  {player.isBot ? "⚙" : player.isGuest ? "◌" : "👤"}
-                </span>
-                <span className="role-pill__text">{kind}</span>
-              </span>
-            </div>
+                ),
+                badges:
+                  player.displayBadges && player.displayBadges.length > 0 ? (
+                    <>
+                      {player.displayBadges.map((bid) => {
+                        const def = displayBadgeDef(bid);
+                        if (!def) return null;
+                        return (
+                          <span
+                            key={def.id}
+                            className={`role-pill role-pill--badge role-pill--badge-${def.tone}`}
+                            role="listitem"
+                            title={def.label}
+                          >
+                            <span className="role-pill__glyph" aria-hidden>
+                              {def.glyph}
+                            </span>
+                            <span className="role-pill__text">{def.label}</span>
+                          </span>
+                        );
+                      })}
+                    </>
+                  ) : null,
+              }}
+            />
           </div>
 
           {player.userId && !player.isBot && (

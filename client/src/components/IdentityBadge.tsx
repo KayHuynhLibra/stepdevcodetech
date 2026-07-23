@@ -5,12 +5,12 @@ import {
   userDisplayName,
   userShowsVip,
   type AuthUser,
-  type UserRole,
 } from "../auth";
 import { normalizeAvatar, DEFAULT_AVATAR } from "../avatars";
 import { CoupleAvatar } from "./CoupleAvatar";
 import { ColoredName } from "./ColoredName";
 import { RoleAvatarFrame } from "./RoleAvatarFrame";
+import { RoleRail } from "./RoleRail";
 import {
   cultivationLabel,
   getCultivationColor,
@@ -18,21 +18,14 @@ import {
 } from "../cultivation";
 import { PlayLevelBadge } from "./PlayLevelBadge";
 import { coupleWithLabel } from "../rings";
-
-function roleMeta(role?: UserRole | "guest"): { glyph: string; label: string } {
-  if (role === "mainadmin") return { glyph: "✦", label: "Mainadmin" };
-  if (role === "admin") return { glyph: "🛡", label: "Admin" };
-  if (role === "eco") return { glyph: "🌿", label: "Eco" };
-  if (role === "audit") return { glyph: "👁", label: "Audit" };
-  if (role === "sgift") return { glyph: "🎁", label: "SGift" };
-  if (role === "ring") return { glyph: "💍", label: "Ring" };
-  if (role === "deal") return { glyph: "⚖", label: "Deal" };
-  if (role === "onl") return { glyph: "📡", label: "Onl" };
-  if (role === "tutien") return { glyph: "☯", label: "Tu Tiên" };
-  if (role === "mod") return { glyph: "⚔", label: "Mod" };
-  if (role === "guest") return { glyph: "◌", label: "Khách" };
-  return { glyph: "👤", label: "Player" };
-}
+import type { RoleDisplayPublic } from "../roleDisplay";
+import {
+  resolveRoleColorStyle,
+  resolveRoleGlyph,
+  resolveRoleLabel,
+} from "../roleDisplay";
+import { useRoleDisplay } from "./RoleRail";
+import { displayBadgeDef } from "../displayBadges";
 
 interface IdentityBadgeProps {
   user?: AuthUser | null;
@@ -41,6 +34,7 @@ interface IdentityBadgeProps {
   guestAvatar?: string | null;
   compact?: boolean;
   showPath?: boolean;
+  roleDisplay?: RoleDisplayPublic | null;
   onAvatarClick?: () => void;
   onNameClick?: () => void;
 }
@@ -53,9 +47,11 @@ export function IdentityBadge({
   guestAvatar,
   compact = false,
   showPath = true,
+  roleDisplay,
   onAvatarClick,
   onNameClick,
 }: IdentityBadgeProps) {
+  const rd = useRoleDisplay(roleDisplay);
   const isGuest = !user;
   const name = user ? userDisplayName(user) : guestName || "Khách";
   const loginHint =
@@ -64,7 +60,11 @@ export function IdentityBadge({
       : null;
   const code = user?.code || (guestCode ? guestCode.toUpperCase() : "");
   const role = isGuest ? "guest" : user!.role;
-  const { glyph: roleGlyph, label: roleName } = roleMeta(role);
+  const roleKey = role === "user" ? "user" : role;
+  const roleGlyph = resolveRoleGlyph(roleKey);
+  const roleName = resolveRoleLabel(roleKey, rd.roleLabels);
+  const coupleLabel = resolveRoleLabel("couple", rd.roleLabels);
+  const vipLabel = resolveRoleLabel("vip", rd.roleLabels);
   const avatar = user
     ? normalizeAvatar(user.avatar)
     : normalizeAvatar(guestAvatar) || DEFAULT_AVATAR;
@@ -167,61 +167,101 @@ export function IdentityBadge({
 
   const rolesTable = (
     <div className="identity-badge__roles-table" aria-label="Vai trò">
-      <div className="role-rail">
-        <div className="role-rail__pills">
-          {bondActive && (
-            <span className="role-pill role-pill--couple" title="Cặp đôi">
-              <span className="role-pill__glyph" aria-hidden>
-                ♥
-              </span>
-              <span className="role-pill__text">Cặp đôi</span>
-            </span>
-          )}
-          {user && !compact && (
-            <PlayLevelBadge
-              rounds={user.roundsPlayed ?? 0}
-              size="sm"
-              className="role-rail__level"
-            />
-          )}
-          <span
-            className={`role-pill role-pill--role role-pill--${role}`}
-            title={roleName}
-            data-role={role}
-          >
-            <span className="role-pill__glyph" aria-hidden>
-              {roleGlyph}
-            </span>
-            <span className="role-pill__text">{roleName}</span>
-          </span>
-          {user?.cultivationRank && isCultivationRank(user.cultivationRank) && (
+      <RoleRail
+        config={rd}
+        slots={{
+          couple: bondActive ? (
             <span
-              className="role-pill role-pill--cult"
-              title={cultivationLabel(user.cultivationRank) ?? "Cảnh giới"}
-              style={{
-                borderColor: getCultivationColor(user.cultivationRank)?.border,
-                color: getCultivationColor(user.cultivationRank)?.text,
-              }}
+              className="role-pill role-pill--couple"
+              title={coupleLabel}
+              style={resolveRoleColorStyle("couple", rd.roleColors)}
             >
               <span className="role-pill__glyph" aria-hidden>
-                ᚱ
+                {resolveRoleGlyph("couple")}
               </span>
-              <span className="role-pill__text">
-                {cultivationLabel(user.cultivationRank)}
-              </span>
+              <span className="role-pill__text">{coupleLabel}</span>
             </span>
-          )}
-          {isVip && (
-            <span className="role-pill role-pill--vip" title="VIP">
+          ) : null,
+          level:
+            user && !compact ? (
+              <PlayLevelBadge
+                rounds={user.roundsPlayed ?? 0}
+                size="sm"
+                className="role-rail__level"
+              />
+            ) : null,
+          role: (
+            <span
+              className={`role-pill role-pill--role role-pill--${role}`}
+              title={roleName}
+              data-role={role}
+              style={resolveRoleColorStyle(
+                role === "user" ? "user" : role,
+                rd.roleColors,
+              )}
+            >
               <span className="role-pill__glyph" aria-hidden>
-                ★
+                {roleGlyph}
               </span>
-              <span className="role-pill__text">VIP</span>
+              <span className="role-pill__text">{roleName}</span>
             </span>
-          )}
-        </div>
-        {code && (
-          <div className="role-rail__id">
+          ),
+          cult:
+            user?.cultivationRank && isCultivationRank(user.cultivationRank) ? (
+              <span
+                className="role-pill role-pill--cult"
+                title={cultivationLabel(user.cultivationRank) ?? "Cảnh giới"}
+                style={{
+                  ...resolveRoleColorStyle("tutien", rd.roleColors),
+                  borderColor: getCultivationColor(user.cultivationRank)?.border,
+                  color:
+                    resolveRoleColorStyle("tutien", rd.roleColors)?.color ??
+                    getCultivationColor(user.cultivationRank)?.text,
+                }}
+              >
+                <span className="role-pill__glyph" aria-hidden>
+                  ᚱ
+                </span>
+                <span className="role-pill__text">
+                  {cultivationLabel(user.cultivationRank)}
+                </span>
+              </span>
+            ) : null,
+          vip: isVip ? (
+            <span
+              className="role-pill role-pill--vip"
+              title={vipLabel}
+              style={resolveRoleColorStyle("vip", rd.roleColors)}
+            >
+              <span className="role-pill__glyph" aria-hidden>
+                {resolveRoleGlyph("vip")}
+              </span>
+              <span className="role-pill__text">{vipLabel}</span>
+            </span>
+          ) : null,
+          badges:
+            user?.displayBadges && user.displayBadges.length > 0 ? (
+              <>
+                {user.displayBadges.map((bid) => {
+                  const def = displayBadgeDef(bid);
+                  if (!def) return null;
+                  return (
+                    <span
+                      key={def.id}
+                      className={`role-pill role-pill--badge role-pill--badge-${def.tone}`}
+                      title={def.label}
+                      data-badge={def.id}
+                    >
+                      <span className="role-pill__glyph" aria-hidden>
+                        {def.glyph}
+                      </span>
+                      <span className="role-pill__text">{def.label}</span>
+                    </span>
+                  );
+                })}
+              </>
+            ) : null,
+          id: code ? (
             <span
               className={`role-id${isVip ? " role-id--vip" : ""}`}
               title={
@@ -234,9 +274,9 @@ export function IdentityBadge({
               <span className="role-id__label">ID</span>
               <span className="role-id__value">{code}</span>
             </span>
-          </div>
-        )}
-      </div>
+          ) : null,
+        }}
+      />
     </div>
   );
 

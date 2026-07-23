@@ -1,3 +1,5 @@
+import type { RoleDisplayPublic } from "./roleDisplayStore.js";
+
 export type Phase = "placing" | "revealing" | "payout";
 
 export interface CardDef {
@@ -128,6 +130,7 @@ export interface OnlinePlayerPublic {
   profileTheme?: string;
   nameFrame?: string;
   idFrame?: string;
+  displayBadges?: string[];
 }
 
 export interface PublicState {
@@ -161,12 +164,37 @@ export interface PublicState {
   roundTopWinners: RoundTopWinner[];
   /** Top xu dùng dự đoán tuần này */
   tarotStars: TarotStarEntry[];
+  /** Top cấp độ chơi (preview BXH) */
+  levelLeaders?: {
+    rank: number;
+    name: string;
+    avatar: string;
+    playLevel: number;
+    roundsPlayed: number;
+    isYou?: boolean;
+    userId?: string;
+    code?: string;
+    isVip?: boolean;
+  }[];
   /** Mainadmin: ẩn/hiện BXH toàn site (thiếu → coi như hiện) */
   leaderboardFlags?: {
     winToday: boolean;
     balance: boolean;
     tarotStars: boolean;
+    streak: boolean;
+    roundWinners: boolean;
+    level: boolean;
   };
+  /** Thời gian phase + kiểu reveal + số lá đặt tối đa (admin chỉnh ở Tổng quan) */
+  tableTiming?: {
+    placingMs: number;
+    revealingMs: number;
+    payoutMs: number;
+    revealStyle: "classic" | "fan" | "spiral";
+    maxCardsPerRound?: number;
+  };
+  /** Thứ tự / size / khung / chữ / tên role rail (cosmetic) */
+  roleDisplay?: RoleDisplayPublic;
   /** Quỹ VIP hiển thị (cosmetic, dao động) */
   vipPool: number;
   /** Quỹ hũ Tarot thật (cộng dồn từ xu đặt, trả bonus ngẫu nhiên) */
@@ -196,6 +224,13 @@ export interface PublicState {
     cost: number;
     at: number;
   }[];
+  /** Tip / gợi ý AI nhẹ — client ẩn với player nếu flags = false (staff vẫn hiện) */
+  aiUx?: {
+    tips: string[];
+    chatSuggests: string[];
+    playTipsForPlayers: boolean;
+    chatSuggestsForPlayers: boolean;
+  };
   botPanel: BotPanelState;
 }
 
@@ -215,8 +250,10 @@ export const ACCOUNT_BALANCE_MAX = ITEM_XU_MAX;
 export const MAX_STAKE = 1_000_000;
 /** Bước tăng xu khi đặt xu */
 export const STAKE_STEP = 10;
-/** Tối đa số lá khác nhau mỗi người được đặt trong 1 ván */
-export const MAX_CARDS_PER_ROUND = 5;
+/** Tối đa số lá khác nhau mỗi người được đặt trong 1 ván (mặc định; admin chỉnh ở table-config). */
+export const MAX_CARDS_PER_ROUND = 4;
+export const MAX_CARDS_PER_ROUND_MIN = 1;
+export const MAX_CARDS_PER_ROUND_MAX = 8;
 export const TARGET_DISPLAY_CCU = 2;
 export const MIN_BOTS = 0;
 export const MAX_BOTS = 50;

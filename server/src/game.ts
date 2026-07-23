@@ -16,6 +16,8 @@ import {
 } from "./cards.js";
 import { interStore, isPackMode, isPolicyMode } from "./interStore.js";
 import { interObserveStore } from "./interObserveStore.js";
+import { smartAiStore } from "./smartAiStore.js";
+import { aiFeaturesStore } from "./aiFeaturesStore.js";
 import {
   computeCardHeat,
   engagementAllowedForMode,
@@ -30,10 +32,13 @@ import {
 import {
   CHASER_BOT_COUNT,
   createIdentityPool,
+  personaStakesPerRound,
+  pickBotPersonaCard,
   randomBotStakeAmount,
   randomBotStakesPerRound,
   randomCardId,
   randomChaserStakeAmount,
+  randomPersonaStakeAmount,
   type BotIdentity,
 } from "./bots.js";
 import { vaultStore } from "./vaultStore.js";
@@ -41,6 +46,9 @@ import { cultivationStore } from "./cultivationStore.js";
 import { maxStakeForUser } from "./tutienStakeLimitsStore.js";
 import { guestPlayStore, GUEST_PLAY_LIMIT_MS } from "./guestPlayStore.js";
 import { chatConfigStore } from "./chatConfigStore.js";
+import { tableConfigStore } from "./tableConfigStore.js";
+import { roleDisplayStore } from "./roleDisplayStore.js";
+import { buildChatSuggests, buildPlayTips } from "./playTips.js";
 import {
   CHAT_COOLDOWN_MS,
   CHAT_HISTORY_LIMIT,
@@ -59,10 +67,8 @@ import {
   STAKE_STEP,
   MAX_STAKE,
   MAX_BOTS,
-  MAX_CARDS_PER_ROUND,
   MIN_STAKE,
   MIN_BOTS,
-  PHASE_MS,
   STARTING_BALANCE,
   TARGET_DISPLAY_CCU,
   ACCOUNT_BALANCE_MAX,
@@ -139,11 +145,13 @@ interface BotJob {
   cardId: number;
   amount: number;
   chase?: boolean;
+  /** Persona — re-pick lá lúc đặt theo stake live */
+  livePersona?: import("./bots.js").BotPersona;
 }
 
 export class GameEngine {
   private phase: Phase = "placing";
-  private phaseEndsAt = Date.now() + PHASE_MS.placing;
+  private phaseEndsAt = Date.now() + tableConfigStore.phaseMs("placing");
   private roundNumber = 1;
   /** Ngày UTC đang đếm thứ tự ván — đổi ngày → reset về 1 */
   private roundDayKey = todayKey();
@@ -1057,10 +1065,11 @@ export class GameEngine {
       for (const v of player.stakes.values()) {
         if (v > 0) distinct += 1;
       }
-      if (distinct >= MAX_CARDS_PER_ROUND) {
+      if (distinct >= tableConfigStore.cardsPerRoundLimit()) {
+        const lim = tableConfigStore.cardsPerRoundLimit();
         return {
           ok: false,
-          reason: `Mỗi lượt chỉ được đặt tối đa ${MAX_CARDS_PER_ROUND} lá`,
+          reason: `Mỗi lượt chỉ được đặt tối đa ${lim} lá`,
         };
       }
     }
@@ -1371,6 +1380,10 @@ export class GameEngine {
       if (linked?.idFrame) {
         row.idFrame = linked.idFrame;
       }
+      const badges = linked?.displayBadges;
+      if (badges?.length) {
+        row.displayBadges = badges;
+      }
       if (forStaff && linked) {
         row.balance = linked.balance;
         row.outcomeMode = authStore.getOutcomeMode(linked.id);
@@ -1398,6 +1411,8 @@ export class GameEngine {
       if (mode === "win") {
         const pct = authStore.getOutcomeWinPct(p.userId);
         if (Math.random() * 100 >= pct) return;
+        biases.push({ stakes, mode, winPct: pct });
+        return;
       }
       biases.push({ stakes, mode });
     };
@@ -1523,6 +1538,28 @@ export class GameEngine {
       }
     }
 
+    const aiFlags = aiFeaturesStore.getPublicFlags();
+    const heat = computeCardHeat(this.history);
+    const hotCardIds = heat.filter((h) => h.level === "hot").map((h) => h.cardId);
+    const coldCardIds = heat.filter((h) => h.level === "cold").map((h) => h.cardId);
+    const tipCtxBase = {
+      phase: this.phase,
+      secondsLeft: Math.max(
+        0,
+        Math.ceil((this.phaseEndsAt - Date.now()) / 1000),
+      ),
+      lossStreak: 0,
+      winStreak: 0,
+      warmActive: false,
+      hotCardIds,
+      coldCardIds,
+      isVip: false,
+    };
+
+    const viewerUserId = playerId
+      ? this.players.get(playerId)?.userId
+      : undefined;
+
     const base: PublicState = {
       phase: this.phase,
       phaseEndsAt: this.phaseEndsAt,
@@ -1545,16 +1582,25 @@ export class GameEngine {
       topAces: this.getTopAces(playerId),
       roundTopWinners: this.getRoundTopWinners(playerId),
       tarotStars: this.getTarotStars(playerId),
+      levelLeaders: authStore.listLevelLeaders(5, viewerUserId),
       leaderboardFlags: leaderboardConfigStore.publicFlags(),
+      tableTiming: tableConfigStore.getPublic(),
+      roleDisplay: roleDisplayStore.getPublic(),
       vipPool: Math.round(this.vipPool),
       jackpotPool: Math.round(this.jackpotPool),
       lastJackpotWin: this.lastJackpotWin,
-      cardHeat: computeCardHeat(this.history),
+      cardHeat: heat,
       streakHighlights: this.streakHighlights
         .filter((h) => !hiddenFromLeaderboards(h.userId))
         .slice(0, 8),
       chatLines: this.getChatLines(),
       chatCosts: chatConfigStore.getPublicCosts(),
+      aiUx: {
+        tips: buildPlayTips(tipCtxBase),
+        chatSuggests: buildChatSuggests(tipCtxBase),
+        playTipsForPlayers: aiFlags.playTipsForPlayers,
+        chatSuggestsForPlayers: aiFlags.chatSuggestsForPlayers,
+      },
       // Không lộ bot panel cho client thường — staff lấy qua socket getBotPanel
       botPanel: this.emptyBotPanel(),
     };
@@ -1587,6 +1633,19 @@ export class GameEngine {
           lossStreak: loss,
           winStreak: p.tarotWinStreak ?? 0,
           warmActive: loss >= WARM_MIN_LOSS_STREAK,
+        };
+        const tipCtx = {
+          ...tipCtxBase,
+          lossStreak: loss,
+          winStreak: p.tarotWinStreak ?? 0,
+          warmActive: loss >= WARM_MIN_LOSS_STREAK,
+          isVip: !!base.viewerAuth?.isVip,
+        };
+        base.aiUx = {
+          tips: buildPlayTips(tipCtx),
+          chatSuggests: buildChatSuggests(tipCtx),
+          playTipsForPlayers: aiFlags.playTipsForPlayers,
+          chatSuggestsForPlayers: aiFlags.chatSuggestsForPlayers,
         };
         if (!p.userId && p.guestCode) {
           base.guestPlayRemainingMs = guestPlayStore.getRemainingMs(
@@ -1791,7 +1850,7 @@ export class GameEngine {
   private advancePhase() {
     if (this.phase === "placing") {
       this.phase = "revealing";
-      this.phaseEndsAt = Date.now() + PHASE_MS.revealing;
+      this.phaseEndsAt = Date.now() + tableConfigStore.phaseMs("revealing");
       const storedMode = interStore.getMode();
       const authStakes = this.getAuthStakes();
       const displayStake =
@@ -1806,6 +1865,7 @@ export class GameEngine {
       const userBiases = this.collectUserBiases();
       const recentWins = this.getHistory(3).map((h) => h.win);
       const heatHistory = this.getHistory(20).map((h) => h.win);
+      const roundHistory = this.getHistory(20);
       const warmPlayers = this.collectWarmStreakBiases();
       const engagement = engagementAllowedForMode(interMode)
         ? { heatHistory, warmPlayers }
@@ -1817,10 +1877,18 @@ export class GameEngine {
         userBiases,
         recentWins,
         engagement,
+        roundHistory,
       );
       const winIdx = (this.winningCard ?? 1) - 1;
       const profits = houseProfitByCard(authStakes);
       const expectedHouse = profits[winIdx] ?? 0;
+      if (interMode === "smartai") {
+        smartAiStore.learn({
+          winIdx,
+          houseProfit: expectedHouse,
+          authStake,
+        });
+      }
       this.snapshotRoundTopWinners();
       const modeLabel =
         storedMode === "all"
@@ -1830,7 +1898,11 @@ export class GameEngine {
             : interMode;
       const biasNote =
         userBiases.length > 0
-          ? ` · userBias[${userBiases.map((b) => b.mode).join(",")}]`
+          ? ` · userBias[${userBiases
+              .map((b) =>
+                b.mode === "win" ? `win@${b.winPct ?? 100}%` : b.mode,
+              )
+              .join(",")}]`
           : "";
       this.pushLog({
         botId: "system",
@@ -1882,7 +1954,7 @@ export class GameEngine {
 
     if (this.phase === "revealing") {
       this.phase = "payout";
-      this.phaseEndsAt = Date.now() + PHASE_MS.payout;
+      this.phaseEndsAt = Date.now() + tableConfigStore.phaseMs("payout");
       this.applyPayouts();
       if (this.winningCard != null) {
         this.history.unshift({ round: this.roundNumber, win: this.winningCard });
@@ -2091,7 +2163,7 @@ export class GameEngine {
 
   private resetPlacingPhase() {
     this.phase = "placing";
-    this.phaseEndsAt = Date.now() + PHASE_MS.placing;
+    this.phaseEndsAt = Date.now() + tableConfigStore.phaseMs("placing");
     this.winningCard = null;
     this.realStakes = new Array(CARDS.length).fill(0);
     this.realPlacers = new Array(CARDS.length).fill(0);
@@ -2131,24 +2203,46 @@ export class GameEngine {
     const windowEnd = Math.max(windowStart + 400, remaining - 800);
     if (windowEnd <= windowStart) return;
 
+    const personasOn = aiFeaturesStore.get().botPersonasEnabled;
     const normals = this.activeBots.filter((b) => !b.isChaser);
     const chasers = this.activeBots.filter((b) => b.isChaser).slice(0, CHASER_BOT_COUNT);
+    const recentWins = this.getHistory(5).map((h) => h.win);
+    const displayNow = this.realStakes.map((v, i) => v + this.botStakes[i]!);
 
-    // Bot thường — mỗi bot 1–4 lệnh, mệnh giá ngẫu nhiên, rải thời gian
+    // Bot thường — persona / jitter thời gian / đôi khi bỏ ván
     if (normals.length > 0) {
       for (const bot of normals) {
-        const nStakes = randomBotStakesPerRound();
+        const persona = personasOn ? bot.persona : "random";
+        const nStakes = personasOn
+          ? personaStakesPerRound(persona === "chaser" ? "random" : persona)
+          : randomBotStakesPerRound();
+        if (nStakes <= 0) continue;
+
+        // Timing: follower sớm hơn, contrarian muộn hơn, random giữa
+        let w0 = windowStart;
+        let w1 = windowEnd;
+        if (personasOn && persona === "follower") {
+          w1 = windowStart + (windowEnd - windowStart) * 0.72;
+        } else if (personasOn && persona === "contrarian") {
+          w0 = windowStart + (windowEnd - windowStart) * 0.28;
+        }
+
         for (let j = 0; j < nStakes; j++) {
           const t =
             start +
-            windowStart +
-            ((j + Math.random() * 0.85) / Math.max(1, nStakes)) *
-              (windowEnd - windowStart);
+            w0 +
+            ((j + Math.random() * 0.85) / Math.max(1, nStakes)) * (w1 - w0);
+          const cardId = personasOn
+            ? pickBotPersonaCard(persona, displayNow, recentWins)
+            : randomCardId();
           this.botSchedule.push({
             at: t,
             botId: bot.id,
-            cardId: randomCardId(),
-            amount: randomBotStakeAmount(),
+            cardId,
+            amount: personasOn
+              ? randomPersonaStakeAmount(persona)
+              : randomBotStakeAmount(),
+            livePersona: personasOn ? persona : undefined,
           });
         }
       }
@@ -2159,10 +2253,15 @@ export class GameEngine {
       const chaseStart = start + remaining * 0.28;
       const chaseEnd = start + Math.max(remaining * 0.28 + 600, remaining - 1200);
       const chaseWindow = Math.max(400, chaseEnd - chaseStart);
-      const stakesPerChaser = 2 + Math.floor(Math.random() * 3);
       for (const bot of chasers) {
+        const stakesPerChaser = personasOn
+          ? personaStakesPerRound("chaser")
+          : 2 + Math.floor(Math.random() * 3);
         for (let i = 0; i < stakesPerChaser; i++) {
-          const t = chaseStart + ((i + 0.15 + Math.random() * 0.7) / stakesPerChaser) * chaseWindow;
+          const t =
+            chaseStart +
+            ((i + 0.15 + Math.random() * 0.7) / Math.max(1, stakesPerChaser)) *
+              chaseWindow;
           this.botSchedule.push({
             at: Math.min(t, start + remaining - 400),
             botId: bot.id,
@@ -2223,6 +2322,15 @@ export class GameEngine {
       }
 
       let cardId = job.chase ? this.pickChaseCardId() : job.cardId;
+      if (
+        !job.chase &&
+        job.livePersona &&
+        (job.livePersona === "follower" || job.livePersona === "contrarian")
+      ) {
+        const displayNow = this.realStakes.map((v, i) => v + this.botStakes[i]!);
+        const recentWins = this.getHistory(5).map((h) => h.win);
+        cardId = pickBotPersonaCard(job.livePersona, displayNow, recentWins);
+      }
       if (!cardId || cardId < 1 || cardId > CARDS.length) cardId = randomCardId();
 
       const prevOnCard = map.get(cardId) ?? 0;
@@ -2231,8 +2339,8 @@ export class GameEngine {
         for (const v of map.values()) {
           if (v > 0) distinct += 1;
         }
-        if (distinct >= MAX_CARDS_PER_ROUND) {
-          // Đã đủ 5 lá — cộng thêm vào 1 lá đã đặt thay vì mở lá mới
+        if (distinct >= tableConfigStore.cardsPerRoundLimit()) {
+          // Đã đủ số lá tối đa — cộng thêm vào 1 lá đã đặt thay vì mở lá mới
           const existing = [...map.entries()].filter(([, v]) => v > 0);
           if (existing.length === 0) continue;
           if (job.chase) {

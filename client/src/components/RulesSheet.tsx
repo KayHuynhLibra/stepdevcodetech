@@ -10,10 +10,16 @@ import {
 interface RulesSheetProps {
   open: boolean;
   onClose: () => void;
+  /** Số lá tối đa mỗi ván (từ tableTiming). */
+  maxCardsPerRound?: number;
 }
 
 /** Luật chơi / bảng hệ số — giảm hỏi support. */
-export function RulesSheet({ open, onClose }: RulesSheetProps) {
+export function RulesSheet({
+  open,
+  onClose,
+  maxCardsPerRound = 4,
+}: RulesSheetProps) {
   if (!open) return null;
 
   return (
@@ -40,7 +46,8 @@ export function RulesSheet({ open, onClose }: RulesSheetProps) {
 
         <div className="space-y-3 text-[12px] leading-relaxed text-[var(--cream)]/85">
           <p>
-            Mỗi ván chọn tối đa <strong className="text-white">5 lá</strong>,
+            Mỗi ván chọn tối đa{" "}
+            <strong className="text-white">{maxCardsPerRound} lá</strong>,
             mỗi lá tối đa <strong className="text-white">100.000 xu</strong>.
             Thắng = xu × hệ số lá đó.
           </p>

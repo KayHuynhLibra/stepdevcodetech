@@ -10,6 +10,7 @@ import {
 import { STARTING_BALANCE, weekKey, MIN_STAKE } from "./types.js";
 
 import { ITEM_XU_MAX, ACCOUNT_BALANCE_MAX } from "./types.js";
+import { VOICE_LIXI_MAX, VOICE_LIXI_MIN } from "./voiceLixiStore.js";
 /** Trần tặng xu / vật phẩm mỗi lần — 12 chữ số */
 export const GIFT_XU_MAX = ITEM_XU_MAX;
 import {
@@ -42,7 +43,11 @@ import {
   type NameFrameId,
   type IdFrameId,
 } from "./profileStyles.js";
-import { playLevelFromRounds } from "./playLevel.js";
+import {
+  normalizeDisplayBadges,
+} from "./displayBadges.js";
+import { playLevelFromRounds, roundsToReachLevel, PLAY_LEVEL_MAX, PLAY_LEVEL_MIN } from "./playLevel.js";
+import { playLevelRewardsStore } from "./playLevelRewardsStore.js";
 import {
   canControlVoiceRoomLock as grantsCanControlVoiceRoomLock,
   clampStaffGrantLevel,
@@ -131,6 +136,8 @@ export interface UserRecord {
   outcomeWinPct?: number;
   /** Số ván đã chơi (lifetime — có đặt xu khi settle) */
   roundsPlayed?: number;
+  /** Các mốc level đã nhận thưởng (playLevel rewards) */
+  claimedLevelRewards?: number[];
   /** Admin cấp VIP thủ công */
   vipGranted?: boolean;
   /** Legacy — migrate sang vipGranted khi load */
@@ -182,6 +189,8 @@ export interface UserRecord {
   nameFrame?: string;
   /** Khung bao ID badge — RoleAD */
   idFrame?: string;
+  /** Huy hiệu cosmetic (không liên quan role) — tối đa 4 */
+  displayBadges?: string[];
 }
 
 /** Lịch sử IP theo user — không lộ ra PublicUser / client player */
@@ -231,6 +240,8 @@ export interface PublicUser {
   roundsPlayed: number;
   /** Cấp 1–99 suy từ roundsPlayed */
   playLevel: number;
+  /** Mốc level đã nhận thưởng */
+  claimedLevelRewards?: number[];
   vipGranted: boolean;
   /** vipGranted || roundsPlayed >= VIP_ROUNDS_REQUIRED */
   isVip: boolean;
@@ -265,6 +276,8 @@ export interface PublicUser {
   nameFrame?: string;
   /** Khung bao ID badge (RoleAD) */
   idFrame?: string;
+  /** Huy hiệu cosmetic — không liên quan role */
+  displayBadges?: string[];
   /** Cặp đôi / nhẫn — active công khai; pending chỉ self */
   bond?: {
     partnerId: string;
@@ -401,6 +414,22 @@ function ensureDay(u: UserRecord) {
   if (typeof u.roundsPlayed !== "number" || !Number.isFinite(u.roundsPlayed)) {
     u.roundsPlayed = 0;
   }
+  if (!Array.isArray(u.claimedLevelRewards)) {
+    u.claimedLevelRewards = [];
+  } else {
+    u.claimedLevelRewards = [
+      ...new Set(
+        u.claimedLevelRewards
+          .map((x) => Math.floor(Number(x)))
+          .filter(
+            (n) =>
+              Number.isFinite(n) &&
+              n >= PLAY_LEVEL_MIN &&
+              n <= PLAY_LEVEL_MAX,
+          ),
+      ),
+    ].sort((a, b) => a - b);
+  }
   if (typeof u.gemBalance !== "number" || !Number.isFinite(u.gemBalance)) {
     u.gemBalance = STARTING_GEM;
   } else {
@@ -463,6 +492,9 @@ function toPublic(
     outcomeWinPct: clampOutcomeWinPct(u.outcomeWinPct),
     roundsPlayed,
     playLevel: playLevelFromRounds(roundsPlayed),
+    claimedLevelRewards: Array.isArray(u.claimedLevelRewards)
+      ? [...u.claimedLevelRewards]
+      : [],
     vipGranted,
     isVip: computeIsVip(u),
     banned: !!u.banned,
@@ -499,6 +531,8 @@ function toPublic(
   if (nf !== "none") pub.nameFrame = nf;
   const idf = normalizeIdFrame(u.idFrame);
   if (idf !== "classic") pub.idFrame = idf;
+  const badges = normalizeDisplayBadges(u.displayBadges);
+  if (badges.length) pub.displayBadges = badges;
   if (opts?.includeRecovery && u.recoveryCode) {
     pub.recoveryCode = u.recoveryCode;
   }
@@ -1568,6 +1602,7 @@ export class AuthStore {
     if (!user) return null;
     ensureDay(user);
     user.roundsPlayed = Math.max(0, Math.floor(user.roundsPlayed ?? 0)) + 1;
+    this.applyPendingLevelRewards(userId);
     this.scheduleSave();
     return toPublic(user);
   }
@@ -1575,6 +1610,134 @@ export class AuthStore {
   getRoundsPlayed(userId: string): number {
     const user = this.byId.get(userId);
     return Math.max(0, Math.floor(user?.roundsPlayed ?? 0));
+  }
+
+  /**
+   * Mainadmin: đặt số ván lifetime (đồng bộ playLevel).
+   * Có thể kèm auto nhận thưởng mốc đã đạt.
+   */
+  setRoundsPlayed(
+    userId: string,
+    roundsRaw: unknown,
+    opts?: { grantRewards?: boolean },
+  ):
+    | {
+        ok: true;
+        user: PublicUser;
+        granted: { level: number; xu: number; gem: number }[];
+      }
+    | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    const rounds = Math.max(0, Math.floor(Number(roundsRaw) || 0));
+    ensureDay(user);
+    user.roundsPlayed = rounds;
+    const granted =
+      opts?.grantRewards !== false
+        ? this.applyPendingLevelRewards(userId)
+        : [];
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user), granted };
+  }
+
+  /**
+   * Mainadmin: đặt cấp (rounds = mốc đạt cấp).
+   */
+  setPlayLevel(
+    userId: string,
+    levelRaw: unknown,
+    opts?: { grantRewards?: boolean },
+  ):
+    | {
+        ok: true;
+        user: PublicUser;
+        granted: { level: number; xu: number; gem: number }[];
+      }
+    | { ok: false; reason: string } {
+    const level = Math.floor(Number(levelRaw));
+    if (
+      !Number.isFinite(level) ||
+      level < PLAY_LEVEL_MIN ||
+      level > PLAY_LEVEL_MAX
+    ) {
+      return {
+        ok: false,
+        reason: `Cấp phải từ ${PLAY_LEVEL_MIN}–${PLAY_LEVEL_MAX}`,
+      };
+    }
+    return this.setRoundsPlayed(userId, roundsToReachLevel(level), opts);
+  }
+
+  clearClaimedLevelRewards(
+    userId: string,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    user.claimedLevelRewards = [];
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  /**
+   * Cộng thưởng các mốc level đã đạt nhưng chưa claim.
+   * Trả danh sách vừa nhận.
+   */
+  applyPendingLevelRewards(
+    userId: string,
+  ): { level: number; xu: number; gem: number }[] {
+    const user = this.byId.get(userId);
+    if (!user) return [];
+    ensureDay(user);
+    const level = playLevelFromRounds(user.roundsPlayed);
+    const pending = playLevelRewardsStore.pendingForLevel(
+      level,
+      user.claimedLevelRewards,
+    );
+    if (pending.length === 0) return [];
+
+    const granted: { level: number; xu: number; gem: number }[] = [];
+    let addXu = 0;
+    let addGem = 0;
+    const claimed = new Set(
+      Array.isArray(user.claimedLevelRewards)
+        ? user.claimedLevelRewards
+        : [],
+    );
+    for (const row of pending) {
+      claimed.add(row.level);
+      const xu = Math.max(0, Math.floor(row.xu || 0));
+      const gem = Math.max(0, Math.floor(row.gem || 0));
+      addXu += xu;
+      addGem += gem;
+      granted.push({ level: row.level, xu, gem });
+    }
+    user.claimedLevelRewards = [...claimed].sort((a, b) => a - b);
+    if (addXu > 0) {
+      user.balance = Math.max(
+        0,
+        Math.min(ACCOUNT_BALANCE_MAX, Math.floor(user.balance) + addXu),
+      );
+    }
+    if (addGem > 0) {
+      user.gemBalance = clampGem(clampGem(user.gemBalance) + addGem);
+    }
+    this.scheduleSave();
+    return granted;
+  }
+
+  claimPendingLevelRewards(
+    userId: string,
+  ):
+    | {
+        ok: true;
+        user: PublicUser;
+        granted: { level: number; xu: number; gem: number }[];
+      }
+    | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    const granted = this.applyPendingLevelRewards(userId);
+    return { ok: true, user: toPublic(user), granted };
   }
 
   getTarotStreaks(userId: string): { loss: number; win: number } {
@@ -1644,6 +1807,7 @@ export class AuthStore {
         profileTheme?: string;
         nameFrame?: string;
         idFrame?: string;
+        displayBadges?: string[];
       }
     | null {
     const id = String(opts.userId ?? "").trim();
@@ -1674,6 +1838,7 @@ export class AuthStore {
       profileTheme?: string;
       nameFrame?: string;
       idFrame?: string;
+      displayBadges?: string[];
     } = {
       userId: user.id,
       username: user.username,
@@ -1700,6 +1865,8 @@ export class AuthStore {
     if (nf !== "none") card.nameFrame = nf;
     const idf = normalizeIdFrame(user.idFrame);
     if (idf !== "classic") card.idFrame = idf;
+    const badges = normalizeDisplayBadges(user.displayBadges);
+    if (badges.length) card.displayBadges = badges;
     return card;
   }
 
@@ -1876,6 +2043,7 @@ export class AuthStore {
       profileTheme?: unknown;
       nameFrame?: unknown;
       idFrame?: unknown;
+      displayBadges?: unknown;
     },
   ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
     const user = this.byId.get(userId);
@@ -1910,6 +2078,11 @@ export class AuthStore {
       const idf = normalizeIdFrame(opts.idFrame) as IdFrameId;
       if (idf === "classic") delete user.idFrame;
       else user.idFrame = idf;
+    }
+    if (opts.displayBadges !== undefined) {
+      const badges = normalizeDisplayBadges(opts.displayBadges);
+      if (badges.length === 0) delete user.displayBadges;
+      else user.displayBadges = badges;
     }
 
     this.scheduleSave();
@@ -2018,6 +2191,108 @@ export class AuthStore {
   }
 
   /**
+   * Lì xì Room — trừ full amount người gửi; chia `payoutPct`% cho recipients;
+   * phần còn lại trả về caller để đưa vào vault (phí).
+   */
+  sendRoomLixi(
+    fromId: string,
+    recipientIds: string[],
+    amountRaw: unknown,
+    payoutPctRaw: unknown,
+  ):
+    | {
+        ok: true;
+        from: PublicUser;
+        amount: number;
+        pool: number;
+        fee: number;
+        payoutPct: number;
+        shares: { userId: string; amount: number; user: PublicUser }[];
+      }
+    | { ok: false; reason: string } {
+    const amount = Math.floor(Number(amountRaw));
+    if (!Number.isFinite(amount) || amount < VOICE_LIXI_MIN) {
+      return {
+        ok: false,
+        reason: `Lì xì tối thiểu ${VOICE_LIXI_MIN.toLocaleString("vi-VN")} xu`,
+      };
+    }
+    if (amount > VOICE_LIXI_MAX) {
+      return {
+        ok: false,
+        reason: `Tối đa ${VOICE_LIXI_MAX.toLocaleString("vi-VN")} xu / lần`,
+      };
+    }
+    let payoutPct = Math.floor(Number(payoutPctRaw));
+    if (!Number.isFinite(payoutPct)) payoutPct = 100;
+    payoutPct = Math.max(1, Math.min(100, payoutPct));
+
+    const from = this.byId.get(fromId);
+    if (!from) return { ok: false, reason: "Không tìm thấy người gửi" };
+    if (from.banned) return { ok: false, reason: "Tài khoản bị khóa" };
+    if (from.balance < amount) {
+      return { ok: false, reason: "Số dư không đủ" };
+    }
+
+    const uniq = [...new Set(recipientIds.map((id) => String(id).trim()).filter(Boolean))];
+    const recipients = uniq
+      .map((id) => this.byId.get(id))
+      .filter((u): u is UserRecord => !!u && !u.banned && u.id !== fromId);
+    if (recipients.length === 0) {
+      return { ok: false, reason: "Không có ai trong room để nhận lì xì" };
+    }
+
+    const pool = Math.floor((amount * payoutPct) / 100);
+    const fee = amount - pool;
+    if (pool < recipients.length) {
+      return {
+        ok: false,
+        reason: "Số xu phát quá nhỏ sau % — tăng số lì xì hoặc % phát",
+      };
+    }
+
+    const base = Math.floor(pool / recipients.length);
+    let rem = pool - base * recipients.length;
+    const planned: { user: UserRecord; amount: number }[] = [];
+    for (const u of recipients) {
+      let share = base + (rem > 0 ? 1 : 0);
+      if (rem > 0) rem -= 1;
+      const room = ACCOUNT_BALANCE_MAX - u.balance;
+      if (room <= 0) continue;
+      if (share > room) share = room;
+      if (share <= 0) continue;
+      planned.push({ user: u, amount: share });
+    }
+    if (planned.length === 0) {
+      return { ok: false, reason: "Người nhận đã gần trần xu" };
+    }
+
+    const paidOut = planned.reduce((s, p) => s + p.amount, 0);
+    const feeExtra = pool - paidOut;
+    const totalFee = fee + feeExtra;
+
+    from.balance -= amount;
+    for (const p of planned) {
+      p.user.balance += p.amount;
+    }
+    this.scheduleSave();
+
+    return {
+      ok: true,
+      from: toPublic(from),
+      amount,
+      pool: paidOut,
+      fee: totalFee,
+      payoutPct,
+      shares: planned.map((p) => ({
+        userId: p.user.id,
+        amount: p.amount,
+        user: toPublic(p.user),
+      })),
+    };
+  }
+
+  /**
    * Tặng xu P2P — zero-sum, không đụng vault.
    * amount ≥ MIN_STAKE, ≤ GIFT_XU_MAX.
    */
@@ -2123,6 +2398,67 @@ export class AuthStore {
       balance: r.balance,
       userId: r.id,
       code: r.code,
+      isYou: !!viewerUserId && r.id === viewerUserId,
+    }));
+  }
+
+  /**
+   * BXH cấp độ — top playLevel / roundsPlayed.
+   */
+  listLevelLeaders(
+    limit = 20,
+    viewerUserId?: string,
+  ): {
+    rank: number;
+    name: string;
+    avatar: string;
+    playLevel: number;
+    roundsPlayed: number;
+    isYou?: boolean;
+    userId?: string;
+    code?: string;
+    isVip?: boolean;
+  }[] {
+    const cap = Math.max(1, Math.min(50, Math.floor(limit) || 20));
+    const rows: {
+      id: string;
+      name: string;
+      avatar: string;
+      roundsPlayed: number;
+      playLevel: number;
+      code: string;
+      isVip: boolean;
+    }[] = [];
+    for (const u of this.byId.values()) {
+      if (u.hideFromLeaderboard) continue;
+      if (u.banned) continue;
+      const rounds = Math.max(0, Math.floor(u.roundsPlayed ?? 0));
+      if (rounds <= 0) continue;
+      rows.push({
+        id: u.id,
+        name: userDisplayName(u),
+        avatar: normalizeAvatar(u.avatar),
+        roundsPlayed: rounds,
+        playLevel: playLevelFromRounds(rounds),
+        code: u.code,
+        isVip: computeIsVip(u),
+      });
+    }
+    rows.sort(
+      (a, b) =>
+        b.playLevel - a.playLevel ||
+        b.roundsPlayed - a.roundsPlayed ||
+        a.name.localeCompare(b.name),
+    );
+    return rows.slice(0, cap).map((r, i) => ({
+      rank: i + 1,
+      name: r.name,
+      avatar: r.avatar,
+      playLevel: r.playLevel,
+      roundsPlayed: r.roundsPlayed,
+      userId: r.id,
+      code: r.code,
+      isVip: r.isVip,
       isYou: !!viewerUserId && r.id === viewerUserId,
     }));
   }

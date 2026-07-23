@@ -14,8 +14,14 @@ studying/
 # Cybersecurity notes nội bộ — không commit / không push
 cybersecurity/
 
-# Bản chụp Version 1 — chỉ local, không push GitHub
+# Lab bảo mật chi tiết — local only (scripts, checklist, logs…)
+# Chỉ README giới thiệu được push lên GitHub
+hackmyapp/*
+!hackmyapp/README.md
+
+# Bản chụp Version — chỉ local, không push GitHub
 version 1/
+version 2/
 
 .asset-backup/
 

@@ -6,6 +6,10 @@ interface BottomSheetProps {
   onClose: () => void;
   children: ReactNode;
   heightClass?: string;
+  /** Overlay nền — mặc định tối vừa; cosmetics dùng nhạt hơn */
+  backdropClass?: string;
+  /** Thêm class cho panel (vd. sheet-shell-light) */
+  shellClass?: string;
 }
 
 export function BottomSheet({
@@ -14,6 +18,8 @@ export function BottomSheet({
   onClose,
   children,
   heightClass = "max-h-[80vh]",
+  backdropClass = "bg-black/55",
+  shellClass = "",
 }: BottomSheetProps) {
   if (!open) return null;
 
@@ -22,11 +28,11 @@ export function BottomSheet({
       <button
         type="button"
         aria-label="Đóng"
-        className="absolute inset-0 bg-black/55"
+        className={`absolute inset-0 ${backdropClass}`}
         onClick={onClose}
       />
       <div
-        className={`sheet-shell relative w-full max-w-md ${heightClass} animate-[sheet-up_0.18s_ease-out] overflow-hidden rounded-t-2xl ring-1 ring-[var(--jade)]/45`}
+        className={`sheet-shell relative w-full max-w-md ${heightClass} animate-[sheet-up_0.18s_ease-out] overflow-hidden rounded-t-2xl ring-1 ring-[var(--jade)]/45 ${shellClass}`}
         role="dialog"
         aria-modal="true"
       >
@@ -48,7 +54,9 @@ export function BottomSheet({
           style={{
             maxHeight: heightClass.includes("90vh")
               ? "calc(90vh - 52px)"
-              : "calc(80vh - 52px)",
+              : heightClass.includes("88vh")
+                ? "calc(88vh - 52px)"
+                : "calc(80vh - 52px)",
           }}
         >
           {children}

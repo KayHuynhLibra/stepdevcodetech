@@ -17,6 +17,22 @@ export type VaultLedgerType =
   | "chat_fee"
   | "cultivation_fee";
 
+/** Loại ghi sổ thường làm hao hụt / xu ra khỏi kho. */
+export const VAULT_OUTFLOW_TYPES: readonly VaultLedgerType[] = [
+  "payout_out",
+  "coupon_mint",
+  "grant_user",
+  "burn",
+  "stake_refund",
+] as const;
+
+export function isVaultOutflowEntry(e: {
+  type: string;
+  amount: number;
+}): boolean {
+  if (e.amount < 0) return true;
+  return (VAULT_OUTFLOW_TYPES as readonly string[]).includes(e.type);
+}
 export interface VaultLedgerEntry {
   id: string;
   at: number;
@@ -212,6 +228,14 @@ interface VaultFile {
   totalPayoutOut: number;
   totalMinted: number;
   totalBurned: number;
+  /** Xu đã phát qua coupon (all-time) */
+  totalCouponOut?: number;
+  /** Xu admin cấp user (all-time) */
+  totalGrantOut?: number;
+  /** Xu thu về từ user (all-time) */
+  totalSeizeIn?: number;
+  /** Phí chat + duy trì cảnh giới (all-time) */
+  totalFeesIn?: number;
   ledger: VaultLedgerEntry[];
   interFlags?: Partial<VaultInterFlags>;
 }
@@ -227,6 +251,10 @@ export class VaultStore {
   private totalPayoutOut = 0;
   private totalMinted = 0;
   private totalBurned = 0;
+  private totalCouponOut = 0;
+  private totalGrantOut = 0;
+  private totalSeizeIn = 0;
+  private totalFeesIn = 0;
   private ledger: VaultLedgerEntry[] = [];
   private interFlags: VaultInterFlags;
   private readonly defaultFlags: VaultInterFlags;
@@ -264,8 +292,24 @@ export class VaultStore {
         this.totalMinted = parsed.totalMinted;
       if (typeof parsed.totalBurned === "number")
         this.totalBurned = parsed.totalBurned;
+      const hasLifetimeOps =
+        typeof parsed.totalCouponOut === "number" ||
+        typeof parsed.totalGrantOut === "number" ||
+        typeof parsed.totalSeizeIn === "number" ||
+        typeof parsed.totalFeesIn === "number";
+      if (typeof parsed.totalCouponOut === "number")
+        this.totalCouponOut = parsed.totalCouponOut;
+      if (typeof parsed.totalGrantOut === "number")
+        this.totalGrantOut = parsed.totalGrantOut;
+      if (typeof parsed.totalSeizeIn === "number")
+        this.totalSeizeIn = parsed.totalSeizeIn;
+      if (typeof parsed.totalFeesIn === "number")
+        this.totalFeesIn = parsed.totalFeesIn;
       if (Array.isArray(parsed.ledger)) {
         this.ledger = parsed.ledger.slice(0, LEDGER_CAP);
+      }
+      if (!hasLifetimeOps) {
+        this.hydrateLifetimeOpsFromLedger();
       }
       if (parsed.interFlags && typeof parsed.interFlags === "object") {
         this.interFlags = mergeVaultInterFlags(
@@ -281,6 +325,38 @@ export class VaultStore {
     }
   }
 
+  /** Seed bộ đếm ops từ ledger còn giữ (lần đầu migrate). */
+  private hydrateLifetimeOpsFromLedger() {
+    let coupon = 0;
+    let grant = 0;
+    let seize = 0;
+    let fees = 0;
+    for (const e of this.ledger) {
+      const a = Math.abs(e.amount);
+      switch (e.type) {
+        case "coupon_mint":
+          coupon += a;
+          break;
+        case "grant_user":
+          grant += a;
+          break;
+        case "seize_user":
+          seize += Math.max(0, e.amount);
+          break;
+        case "chat_fee":
+        case "cultivation_fee":
+          fees += Math.max(0, e.amount);
+          break;
+        default:
+          break;
+      }
+    }
+    this.totalCouponOut = coupon;
+    this.totalGrantOut = grant;
+    this.totalSeizeIn = seize;
+    this.totalFeesIn = fees;
+  }
+
   private save() {
     try {
       if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
@@ -291,6 +367,10 @@ export class VaultStore {
         totalPayoutOut: this.totalPayoutOut,
         totalMinted: this.totalMinted,
         totalBurned: this.totalBurned,
+        totalCouponOut: this.totalCouponOut,
+        totalGrantOut: this.totalGrantOut,
+        totalSeizeIn: this.totalSeizeIn,
+        totalFeesIn: this.totalFeesIn,
         ledger: this.ledger.slice(0, LEDGER_CAP),
         interFlags: { ...this.interFlags },
       };
@@ -439,6 +519,16 @@ export class VaultStore {
       totalPayoutOut: this.totalPayoutOut,
       totalMinted: this.totalMinted,
       totalBurned: this.totalBurned,
+      totalCouponOut: this.totalCouponOut,
+      totalGrantOut: this.totalGrantOut,
+      totalSeizeIn: this.totalSeizeIn,
+      totalFeesIn: this.totalFeesIn,
+      /** Xu lấy về từ user (stake + thu + phí) */
+      inflowFromUsers:
+        this.totalStakeIn + this.totalSeizeIn + this.totalFeesIn,
+      /** Xu phát ra cho user (trả thưởng + coupon + cấp) */
+      outflowToUsers:
+        this.totalPayoutOut + this.totalCouponOut + this.totalGrantOut,
       netHouse:
         this.totalStakeIn -
         this.totalPayoutOut +
@@ -447,10 +537,46 @@ export class VaultStore {
       /** Lãi/lỗ thuần từ xu user (không gồm mint/burn admin) */
       netFromPlay: this.totalStakeIn - this.totalPayoutOut,
       breakdown,
-      ledger: this.ledger.slice(0, 50),
+      ledger: this.ledger.slice(0, 100),
       flows: this.getFlowWindows(),
       interFlags: this.getInterFlags(),
       health: this.getHealth(),
+    };
+  }
+
+  /**
+   * Lọc sổ cái cho admin (hao hụt / theo loại).
+   * Trả rows mới nhất trước + tổng |amount| trong tập đã lọc (trước khi cắt limit).
+   */
+  listLedger(opts?: {
+    type?: string;
+    limit?: number;
+    onlyOutflow?: boolean;
+  }): {
+    rows: VaultLedgerEntry[];
+    sumAbs: number;
+    filteredCount: number;
+    totalLedger: number;
+  } {
+    const lim = Math.min(
+      200,
+      Math.max(1, Math.floor(Number(opts?.limit) || 80)),
+    );
+    const typeKey = String(opts?.type ?? "").trim();
+    let filtered = this.ledger;
+    if (typeKey) {
+      filtered = filtered.filter((e) => e.type === typeKey);
+    }
+    if (opts?.onlyOutflow) {
+      filtered = filtered.filter((e) => isVaultOutflowEntry(e));
+    }
+    let sumAbs = 0;
+    for (const e of filtered) sumAbs += Math.abs(e.amount);
+    return {
+      rows: filtered.slice(0, lim),
+      sumAbs,
+      filteredCount: filtered.length,
+      totalLedger: this.ledger.length,
     };
   }
 
@@ -612,6 +738,7 @@ export class VaultStore {
     note: string,
   ) {
     this.balance -= amount;
+    this.totalGrantOut += amount;
     this.push("grant_user", -amount, byUsername, note || "Cấp xu từ kho", {
       userId,
       username,
@@ -626,6 +753,7 @@ export class VaultStore {
     note: string,
   ) {
     this.balance += amount;
+    this.totalSeizeIn += amount;
     this.push("seize_user", amount, byUsername, note || "Thu xu về kho", {
       userId,
       username,
@@ -646,6 +774,7 @@ export class VaultStore {
     if (amt <= 0) return;
     this.balance -= amt;
     this.totalMinted += amt;
+    this.totalCouponOut += amt;
     this.push("coupon_mint", -amt, "system", `Coupon ${code}`, {
       userId,
       username,
@@ -688,6 +817,7 @@ export class VaultStore {
     if (amt <= 0) return;
     this.balance += amt;
     this.totalMinted += amt;
+    this.totalFeesIn += amt;
     const rankNote = rank ? ` · ${rank}` : "";
     this.push(
       "chat_fee",
@@ -709,6 +839,7 @@ export class VaultStore {
     if (amt <= 0) return;
     this.balance += amt;
     this.totalMinted += amt;
+    this.totalFeesIn += amt;
     this.push("cultivation_fee", amt, "system", `Phí duy trì ${rank}`, {
       userId,
       username,

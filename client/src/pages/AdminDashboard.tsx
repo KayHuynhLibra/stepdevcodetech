@@ -24,9 +24,25 @@ import {
 } from "../auth";
 import { AVATARS, DEFAULT_AVATAR, isCustomAvatar, normalizeAvatar } from "../avatars";
 import { CARDS, formatXu } from "../cards";
+import {
+  playLevelFromRounds,
+  playLevelTitle,
+  roundsToReachLevel,
+  PLAY_LEVEL_MAX,
+} from "../playLevel";
 import { formatGem } from "../gem";
+import {
+  parseXuFromDetail,
+  xuHitLevel,
+  xuHitLevelMax,
+  xuHitRowClass,
+  XU_HIGHLIGHT_HUGE,
+  XU_HIGHLIGHT_LARGE,
+} from "../xuHighlight";
 import { AppShell } from "../components/AppShell";
 import { IdentityBadge } from "../components/IdentityBadge";
+import { CosmeticsEditSheet } from "../components/CosmeticsEditSheet";
+import { CelestialProfilePreview } from "../components/CelestialProfilePreview";
 import { ImageUploadPopup } from "../components/ImageUploadPopup";
 import { CoupleAvatar } from "../components/CoupleAvatar";
 import { uploadAvatarFromFile } from "../uploadAvatar";
@@ -42,6 +58,24 @@ import {
 import { CultivationChip } from "../components/CultivationChip";
 import { TrafficPanel, type TrafficPayload } from "../components/TrafficPanel";
 import { onArcanaImgError } from "../lib/arcanaImages";
+import {
+  REVEAL_STYLE_IDS,
+  REVEAL_STYLE_LABELS,
+} from "../tableConfig";
+import {
+  DEFAULT_ROLE_DISPLAY,
+  ROLE_DISPLAY_SLOT_LABELS,
+  normalizeRoleDisplay,
+  resolveRoleColorStyle,
+  resolveRoleLabel,
+  setRoleDisplayCache,
+  type RoleDisplayPublic,
+  type RoleLabelKey,
+} from "../roleDisplay";
+import {
+  displayBadgeDef,
+  type DisplayBadgeId,
+} from "../displayBadges";
 import {
   GIFT_CATEGORIES,
   type GiftCategory,
@@ -94,22 +128,12 @@ import {
   normalizeRingFrameScale,
 } from "../rings";
 import {
-  NAME_COLOR_PRESETS,
-  NAME_EFFECT_PRESETS,
   normalizeNameColor,
   normalizeNameEffect,
   type NameColorId,
   type NameEffectId,
 } from "../nameColors";
 import {
-  AVATAR_FRAME_PRESETS,
-  PROFILE_THEME_PRESETS,
-  NAME_FRAME_PRESETS,
-  ID_FRAME_PRESETS,
-  normalizeAvatarFrame,
-  normalizeProfileTheme,
-  normalizeNameFrame,
-  normalizeIdFrame,
   type AvatarFrameId,
   type ProfileThemeId,
   type NameFrameId,
@@ -198,6 +222,7 @@ type TabId =
   | "arcana"
   | "rolead"
   | "tutien"
+  | "level"
   | "gifts"
   | "rings"
   | "room"
@@ -373,6 +398,14 @@ interface UserHisPayload {
     profit: number;
     seed: string;
   }[];
+  /** Admin cộng/trừ xu (và grant/seize kho) nhắm user này */
+  balanceAdjusts?: {
+    id: string;
+    at: number;
+    actorName: string;
+    action: string;
+    detail?: string;
+  }[];
   xu24h: {
     xu24h: number;
     stakes24h: number;
@@ -407,7 +440,9 @@ type RotateStep =
   | "vaultpct"
   | "flowguard"
   | "moneysteer"
-  | "crowdcap";
+  | "crowdcap"
+  | "fogbreak"
+  | "smartai";
 
 type InterMode = "all" | PackMode | RotateStep | ForceCardMode;
 
@@ -440,6 +475,14 @@ const FALLBACK_ROTATE_CATALOG: { id: RotateStep; label: string }[] = [
   { id: "flowguard", label: "FlowGuard — theo % dòng tiền 1h/24h" },
   { id: "moneysteer", label: "MoneySteer — gộp % cả 2 kho + flow" },
   { id: "crowdcap", label: "CrowdCap — giảm lá bị đám đông pile" },
+  {
+    id: "fogbreak",
+    label: "FogBreak — bẻ cầu mềm (nhiễu, không lộ)",
+  },
+  {
+    id: "smartai",
+    label: "SmartAI — học online từ cầu/stake/kho (nhẹ)",
+  },
 ];
 
 const DEFAULT_ALL_ROTATION: RotateStep[] = [
@@ -454,6 +497,7 @@ const DEFAULT_ALL_ROTATION: RotateStep[] = [
   "moneysteer",
   "fed",
   "cool",
+  "fogbreak",
   "user",
   "crowdcap",
 ];
@@ -559,11 +603,33 @@ interface VaultSnapshot {
   totalPayoutOut: number;
   totalMinted: number;
   totalBurned: number;
+  totalCouponOut?: number;
+  totalGrantOut?: number;
+  totalSeizeIn?: number;
+  totalFeesIn?: number;
+  inflowFromUsers?: number;
+  outflowToUsers?: number;
   netHouse: number;
   netFromPlay?: number;
   interFlags?: VaultInterFlags;
   health?: VaultHealth;
   breakdown?: Record<string, { count: number; sum: number }>;
+  flows?: {
+    note?: string;
+    ledgerRows?: number;
+    windows?: Record<
+      string,
+      {
+        stakeIn: number;
+        payoutOut: number;
+        couponOut: number;
+        grantOut: number;
+        seizeIn: number;
+        feesIn: number;
+        net: number;
+      }
+    >;
+  };
   ledger: {
     id: string;
     at: number;
@@ -573,8 +639,77 @@ interface VaultSnapshot {
     note: string;
     byUsername: string;
     username?: string;
+    userId?: string;
   }[];
 }
+
+interface XuFlowOverview {
+  note?: string;
+  balance: number;
+  couponOut: number;
+  couponBookXu: number;
+  couponRedeems: number;
+  couponUsers: number;
+  couponCodes: number;
+  grantOut: number;
+  payoutOut: number;
+  stakeIn: number;
+  seizeIn: number;
+  feesIn: number;
+  inflowFromUsers: number;
+  outflowToUsers: number;
+  netFromPlay: number;
+  haoHut?: {
+    outflowToUsers: number;
+    payoutOut: number;
+    couponOut: number;
+    grantOut: number;
+    burn: number;
+  };
+  hour?: {
+    net: number;
+    payoutOut: number;
+    couponOut: number;
+    grantOut: number;
+    stakeIn: number;
+  } | null;
+  day: {
+    couponOut: number;
+    grantOut: number;
+    seizeIn: number;
+    feesIn: number;
+    stakeIn: number;
+    payoutOut: number;
+    net?: number;
+    burn?: number;
+  } | null;
+  week: {
+    couponOut: number;
+    grantOut: number;
+    seizeIn: number;
+    feesIn: number;
+    stakeIn: number;
+    payoutOut: number;
+    net?: number;
+    burn?: number;
+  } | null;
+}
+
+type VaultLedgerRow = {
+  id: string;
+  at: number;
+  type: string;
+  amount: number;
+  balanceAfter: number;
+  note: string;
+  byUsername: string;
+  username?: string;
+  userId?: string;
+};
+
+type CashflowPopup =
+  | { kind: "summary" }
+  | { kind: "ledger"; title: string; type?: string; outflow?: boolean };
 
 interface ArcanaSlotAdmin {
   id: number;
@@ -685,6 +820,8 @@ interface Overview {
   vault?: VaultSnapshot;
   vaultArcana?: VaultSnapshot;
   vaultGem?: VaultSnapshot;
+  /** Lưu lượng xu Kho Tarot (Tổng quan) */
+  xuFlow?: XuFlowOverview;
   arcanaStats?: ArcanaStats;
   arcanaConfig?: ArcanaConfig;
   arcanaRtpPreview?: ArcanaRtpRow[];
@@ -696,8 +833,27 @@ interface Overview {
     label: string;
     enabled: boolean;
     oncePerUser: boolean;
+    usesPerUser: number;
     maxUses: number;
+    cultivationOnly: boolean;
+    expiresAt?: number;
     redeemCount: number;
+    userCount?: number;
+    byUser?: {
+      userId: string;
+      username: string;
+      redeemCount: number;
+      totalAmount: number;
+      lastAt: number;
+    }[];
+    recentRedemptions?: {
+      id: string;
+      at: number;
+      code: string;
+      userId: string;
+      username: string;
+      amount: number;
+    }[];
   }[];
   invites?: InviteRow[];
   /** Eco/main: bắt buộc mã TV khi đăng ký */
@@ -716,6 +872,45 @@ interface Overview {
     updatedAt: number;
     updatedBy?: string;
   };
+  /** Inter: timer + kiểu xoay lá Tarot + số lá đặt */
+  tableConfig?: {
+    placingMs: number;
+    revealingMs: number;
+    payoutMs: number;
+    revealStyle: "classic" | "fan" | "spiral";
+    maxCardsPerRound: number;
+    updatedAt: number;
+    updatedBy?: string;
+  };
+  tableConfigLimits?: {
+    placingMs: { min: number; max: number };
+    revealingMs: { min: number; max: number };
+    payoutMs: { min: number; max: number };
+    maxCardsPerRound: { min: number; max: number };
+  };
+  revealStyleLabels?: Record<string, string>;
+  /** AI nhẹ — tip ẩn/hiện + bot + risk */
+  aiFeatures?: {
+    playTipsForPlayers: boolean;
+    chatSuggestsForPlayers: boolean;
+    botPersonasEnabled: boolean;
+    riskSoftGateEnabled: boolean;
+    riskSoftGateMinScore: number;
+    updatedAt?: number;
+    updatedBy?: string;
+  };
+  smartAi?: {
+    affinity: number[];
+    rounds: number;
+    updatedAt: number;
+  };
+  riskTop?: {
+    userId: string;
+    username?: string;
+    score: number;
+    level: string;
+    factors: { key: string; label: string; points: number }[];
+  }[];
   /** Chỉ mainadmin */
   traffic?: TrafficPayload;
   audit?: {
@@ -816,12 +1011,48 @@ export default function AdminDashboard() {
     profitPct: 12,
   });
   const [vaultFlagsBusy, setVaultFlagsBusy] = useState(false);
+  const [cashflowPopup, setCashflowPopup] = useState<CashflowPopup | null>(
+    null,
+  );
+  const [cashflowLedger, setCashflowLedger] = useState<{
+    rows: VaultLedgerRow[];
+    sumAbs: number;
+    filteredCount: number;
+    busy: boolean;
+  }>({ rows: [], sumAbs: 0, filteredCount: 0, busy: false });
+  const [vaultLedgerFilter, setVaultLedgerFilter] = useState<string>("all");
+  const [vaultRowDetail, setVaultRowDetail] = useState<VaultLedgerRow | null>(
+    null,
+  );
   const [lbFlagsDraft, setLbFlagsDraft] = useState({
     winToday: true,
     balance: true,
     tarotStars: true,
+    streak: true,
+    roundWinners: true,
+    level: true,
   });
   const [lbFlagsBusy, setLbFlagsBusy] = useState(false);
+  const [levelRewardsDraft, setLevelRewardsDraft] = useState<{
+    enabled: boolean;
+    rewards: { level: number; xu: number; gem?: number }[];
+  }>({ enabled: true, rewards: [] });
+  const [levelRewardsBusy, setLevelRewardsBusy] = useState(false);
+  const [levelUserId, setLevelUserId] = useState("");
+  const [levelSetValue, setLevelSetValue] = useState("10");
+  const [levelSetMode, setLevelSetMode] = useState<"level" | "rounds">("level");
+  const [levelGrantOnSet, setLevelGrantOnSet] = useState(true);
+  const [levelUserBusy, setLevelUserBusy] = useState(false);
+  const [levelUserFilter, setLevelUserFilter] = useState("");
+  const [roleDisplayDraft, setRoleDisplayDraft] = useState<RoleDisplayPublic>(
+    () => ({
+      ...DEFAULT_ROLE_DISPLAY,
+      order: [...DEFAULT_ROLE_DISPLAY.order],
+      roleLabels: { ...DEFAULT_ROLE_DISPLAY.roleLabels },
+      roleColors: { ...DEFAULT_ROLE_DISPLAY.roleColors },
+    }),
+  );
+  const [roleDisplayBusy, setRoleDisplayBusy] = useState(false);
   const [cultivationBusy, setCultivationBusy] = useState(false);
   const [rankDraftUserId, setRankDraftUserId] = useState("");
   const [rankDraftValue, setRankDraftValue] = useState<string>("");
@@ -906,10 +1137,18 @@ export default function AdminDashboard() {
     amount: "10000",
     label: "",
     oncePerUser: true,
+    usesPerUser: "1",
     enabled: true,
     maxUses: "0",
+    cultivationOnly: false,
+    /** YYYY-MM-DD · trống = không hạn */
+    expiresOn: "",
   });
   const [couponBusy, setCouponBusy] = useState(false);
+  const [couponHistoryOpen, setCouponHistoryOpen] = useState<string | null>(
+    null,
+  );
+  const [couponUserFilter, setCouponUserFilter] = useState("");
   const [inviteForm, setInviteForm] = useState({
     code: "",
     maxUses: "10",
@@ -962,6 +1201,12 @@ export default function AdminDashboard() {
   const [codeBusyId, setCodeBusyId] = useState<string | null>(null);
   const [selfNickDraft, setSelfNickDraft] = useState<string | null>(null);
   const [selfNickBusy, setSelfNickBusy] = useState(false);
+  const [cosmeticsEditUserId, setCosmeticsEditUserId] = useState<string | null>(
+    null,
+  );
+  const [cosmeticsInitialTab, setCosmeticsInitialTab] = useState<
+    "color" | "role"
+  >("color");
   const [ipRows, setIpRows] = useState<IpRow[]>([]);
   const [ipBusy, setIpBusy] = useState(false);
   const [userFilter, setUserFilter] = useState("");
@@ -1034,6 +1279,8 @@ export default function AdminDashboard() {
   const [arcanaSpinFilter, setArcanaSpinFilter] = useState("");
   const [roomLobby, setRoomLobby] = useState<VoiceRoomAdmin[]>([]);
   const [roomBusy, setRoomBusy] = useState(false);
+  const [lixiPctDraft, setLixiPctDraft] = useState("100");
+  const [lixiPctBusy, setLixiPctBusy] = useState(false);
 
   const selectManagedGame = (g: ManagedGame) => {
     setManagedGame(g);
@@ -1050,8 +1297,10 @@ export default function AdminDashboard() {
     const r = await api<{
       ok: true;
       rooms: VoiceRoomAdmin[];
+      lixi?: { payoutPct: number; minAmount: number; maxAmount: number };
     }>("/api/room/overview");
     setRoomLobby(r.rooms);
+    if (r.lixi) setLixiPctDraft(String(r.lixi.payoutPct));
   }, []);
 
   const loadGiftConfig = useCallback(async () => {
@@ -1222,13 +1471,50 @@ export default function AdminDashboard() {
             winToday: boolean;
             balance: boolean;
             tarotStars: boolean;
+            streak?: boolean;
+            roundWinners?: boolean;
+            level?: boolean;
           };
         }>("/api/mainadmin/leaderboard-config");
         setLbFlagsDraft({
           winToday: lb.config.winToday,
           balance: lb.config.balance,
           tarotStars: lb.config.tarotStars,
+          streak: lb.config.streak !== false,
+          roundWinners: lb.config.roundWinners !== false,
+          level: lb.config.level !== false,
         });
+      } catch {
+        /* ignore */
+      }
+      try {
+        const lr = await api<{
+          ok: true;
+          config: {
+            enabled: boolean;
+            rewards: { level: number; xu: number; gem?: number }[];
+          };
+        }>("/api/mainadmin/play-level-rewards");
+        setLevelRewardsDraft({
+          enabled: lr.config.enabled !== false,
+          rewards: Array.isArray(lr.config.rewards)
+            ? lr.config.rewards.map((row) => ({
+                level: row.level,
+                xu: row.xu,
+                ...(row.gem ? { gem: row.gem } : {}),
+              }))
+            : [],
+        });
+      } catch {
+        /* ignore */
+      }
+      try {
+        const rd = await api<{ ok: true; config: RoleDisplayPublic }>(
+          "/api/mainadmin/role-display",
+        );
+        const cfg = normalizeRoleDisplay(rd.config);
+        setRoleDisplayDraft(cfg);
+        setRoleDisplayCache(cfg);
       } catch {
         /* ignore */
       }
@@ -1634,6 +1920,9 @@ export default function AdminDashboard() {
           winToday: boolean;
           balance: boolean;
           tarotStars: boolean;
+          streak: boolean;
+          roundWinners: boolean;
+          level: boolean;
         };
       }>("/api/mainadmin/leaderboard-config", {
         method: "POST",
@@ -1643,12 +1932,146 @@ export default function AdminDashboard() {
         winToday: r.config.winToday,
         balance: r.config.balance,
         tarotStars: r.config.tarotStars,
+        streak: r.config.streak !== false,
+        roundWinners: r.config.roundWinners !== false,
+        level: r.config.level !== false,
       });
       setMsg("Đã lưu ẩn/hiện BXH toàn site");
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi lưu BXH");
     } finally {
       setLbFlagsBusy(false);
+    }
+  };
+
+  const saveLevelRewards = async () => {
+    setLevelRewardsBusy(true);
+    try {
+      const r = await api<{
+        ok: true;
+        config: {
+          enabled: boolean;
+          rewards: { level: number; xu: number; gem?: number }[];
+        };
+      }>("/api/mainadmin/play-level-rewards", {
+        method: "POST",
+        body: JSON.stringify(levelRewardsDraft),
+      });
+      setLevelRewardsDraft({
+        enabled: r.config.enabled !== false,
+        rewards: r.config.rewards ?? [],
+      });
+      setMsg("Đã lưu bảng thưởng level");
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi lưu thưởng level");
+    } finally {
+      setLevelRewardsBusy(false);
+    }
+  };
+
+  const setUserPlayLevel = async () => {
+    if (!levelUserId) {
+      setMsg("Chọn user");
+      return;
+    }
+    setLevelUserBusy(true);
+    try {
+      const body =
+        levelSetMode === "level"
+          ? {
+              userId: levelUserId,
+              level: Number(levelSetValue),
+              grantRewards: levelGrantOnSet,
+            }
+          : {
+              userId: levelUserId,
+              roundsPlayed: Number(levelSetValue),
+              grantRewards: levelGrantOnSet,
+            };
+      const r = await api<{
+        ok: true;
+        user: AuthUser;
+        granted: { level: number; xu: number; gem: number }[];
+      }>("/api/mainadmin/user-play-level", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      const g = r.granted.length
+        ? ` · thưởng ${r.granted.length} mốc`
+        : "";
+      setMsg(
+        `Đã set ${r.user.username}: Lv.${r.user.playLevel} · ${(r.user.roundsPlayed ?? 0).toLocaleString("vi-VN")} ván${g}`,
+      );
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi set level");
+    } finally {
+      setLevelUserBusy(false);
+    }
+  };
+
+  const forceClaimLevelRewards = async (userId: string) => {
+    setLevelUserBusy(true);
+    try {
+      const r = await api<{
+        ok: true;
+        user: AuthUser;
+        granted: { level: number; xu: number; gem: number }[];
+      }>("/api/mainadmin/user-claim-level-rewards", {
+        method: "POST",
+        body: JSON.stringify({ userId }),
+      });
+      setMsg(
+        r.granted.length
+          ? `Đã phát ${r.granted.length} mốc cho ${r.user.username}`
+          : `${r.user.username}: không còn mốc pending`,
+      );
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi phát thưởng");
+    } finally {
+      setLevelUserBusy(false);
+    }
+  };
+
+  const clearUserLevelRewards = async (userId: string) => {
+    setLevelUserBusy(true);
+    try {
+      const r = await api<{ ok: true; user: AuthUser }>(
+        "/api/mainadmin/user-clear-level-rewards",
+        {
+          method: "POST",
+          body: JSON.stringify({ userId }),
+        },
+      );
+      setMsg(`Đã xóa claimed rewards của ${r.user.username}`);
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi xóa claimed");
+    } finally {
+      setLevelUserBusy(false);
+    }
+  };
+
+  const saveRoleDisplay = async (override?: RoleDisplayPublic) => {
+    setRoleDisplayBusy(true);
+    try {
+      const body = override ?? roleDisplayDraft;
+      const r = await api<{ ok: true; config: RoleDisplayPublic }>(
+        "/api/mainadmin/role-display",
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+        },
+      );
+      const cfg = normalizeRoleDisplay(r.config);
+      setRoleDisplayDraft(cfg);
+      setRoleDisplayCache(cfg);
+      setMsg("Đã lưu hiển thị role (chỉ UI)");
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi lưu hiển thị role");
+    } finally {
+      setRoleDisplayBusy(false);
     }
   };
 
@@ -1864,30 +2287,65 @@ export default function AdminDashboard() {
       profileTheme?: ProfileThemeId;
       nameFrame?: NameFrameId;
       idFrame?: IdFrameId;
+      displayBadges?: DisplayBadgeId[];
     },
   ) => {
     try {
-      await api("/api/mainadmin/user-cosmetics", {
-        method: "POST",
-        body: JSON.stringify({ userId, ...patch }),
-      });
-      const bits = [
-        patch.color && `màu ${patch.color}`,
-        patch.effect && `fx ${patch.effect}`,
-        patch.avatarFrame && `khung ${patch.avatarFrame}`,
-        patch.nameFrame && `tên ${patch.nameFrame}`,
-        patch.idFrame && `ID ${patch.idFrame}`,
-        patch.profileTheme && `nền ${patch.profileTheme}`,
-      ].filter(Boolean);
-      setMsg(`Cosmetics: ${bits.join(" · ") || "ok"}`);
-      await load();
+      const r = await api<{ ok: true; user?: AuthUser }>(
+        "/api/mainadmin/user-cosmetics",
+        {
+          method: "POST",
+          body: JSON.stringify({ userId, ...patch }),
+        },
+      );
+      // Patch nhẹ — không load() cả dashboard (gây lag)
+      if (r.user) {
+        setData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            users: prev.users.map((u) => (u.id === userId ? { ...u, ...r.user } : u)),
+            me: prev.me.id === userId ? { ...prev.me, ...r.user } : prev.me,
+          };
+        });
+      } else {
+        setData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            users: prev.users.map((u) => {
+              if (u.id !== userId) return u;
+              return {
+                ...u,
+                ...(patch.color != null ? { nameColor: patch.color } : {}),
+                ...(patch.effect != null ? { nameEffect: patch.effect } : {}),
+                ...(patch.avatarFrame != null
+                  ? { avatarFrame: patch.avatarFrame }
+                  : {}),
+                ...(patch.profileTheme != null
+                  ? { profileTheme: patch.profileTheme }
+                  : {}),
+                ...(patch.nameFrame != null
+                  ? { nameFrame: patch.nameFrame }
+                  : {}),
+                ...(patch.idFrame != null ? { idFrame: patch.idFrame } : {}),
+                ...(patch.displayBadges != null
+                  ? { displayBadges: patch.displayBadges }
+                  : {}),
+              };
+            }),
+          };
+        });
+      }
       if (userId === me?.id) {
         const token = getToken();
         if (token) {
           try {
-            const r = await api<{ ok: true; user: AuthUser }>("/api/auth/me");
-            saveSession(token, r.user);
-            setMe(r.user);
+            const meRes = await api<{ ok: true; user: AuthUser }>(
+              "/api/auth/me",
+            );
+            saveSession(token, meRes.user);
+            setMe(meRes.user);
           } catch {
             /* ignore */
           }
@@ -1896,10 +2354,6 @@ export default function AdminDashboard() {
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi cosmetics");
     }
-  };
-
-  const setUserNameColor = async (userId: string, color: NameColorId) => {
-    await setUserCosmetics(userId, { color });
   };
 
   const saveSelfNickname = async () => {
@@ -2173,14 +2627,17 @@ export default function AdminDashboard() {
           code: couponForm.code.trim(),
           amount: Number(couponForm.amount),
           label: couponForm.label.trim() || undefined,
-          oncePerUser: couponForm.oncePerUser,
+          usesPerUser: Number(couponForm.usesPerUser),
           enabled: couponForm.enabled,
           maxUses: Number(couponForm.maxUses),
+          cultivationOnly: couponForm.cultivationOnly,
+          expiresAt: couponForm.expiresOn.trim() || undefined,
+          clearExpiresAt: !couponForm.expiresOn.trim(),
           secret: true,
         }),
       });
       setMsg("Đã lưu coupon");
-      setCouponForm((f) => ({ ...f, code: "", label: "" }));
+      setCouponForm((f) => ({ ...f, code: "", label: "", expiresOn: "" }));
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi coupon");
@@ -2272,6 +2729,38 @@ export default function AdminDashboard() {
       setMsg(err instanceof Error ? err.message : "Lỗi");
     } finally {
       setCouponBusy(false);
+    }
+  };
+
+  const openCashflowLedger = async (popup: CashflowPopup) => {
+    setCashflowPopup(popup);
+    if (popup.kind !== "ledger") return;
+    setCashflowLedger((s) => ({ ...s, busy: true, rows: [] }));
+    try {
+      const q = new URLSearchParams();
+      q.set("limit", "80");
+      if (popup.type) q.set("type", popup.type);
+      if (popup.outflow) q.set("outflow", "1");
+      const res = await api<{
+        ok: boolean;
+        rows: VaultLedgerRow[];
+        sumAbs: number;
+        filteredCount: number;
+      }>(`/api/mainadmin/vault/ledger?${q.toString()}`);
+      setCashflowLedger({
+        rows: res.rows ?? [],
+        sumAbs: res.sumAbs ?? 0,
+        filteredCount: res.filteredCount ?? 0,
+        busy: false,
+      });
+    } catch (err) {
+      setCashflowLedger({
+        rows: [],
+        sumAbs: 0,
+        filteredCount: 0,
+        busy: false,
+      });
+      setMsg(err instanceof Error ? err.message : "Lỗi tải sổ kho");
     }
   };
 
@@ -2998,6 +3487,7 @@ export default function AdminDashboard() {
       show: canVault,
     },
     { id: "tutien", label: "Tu Tiên", show: canCultivation },
+    { id: "level", label: "Level", show: main },
     {
       id: "gifts",
       label: "Quà",
@@ -3390,16 +3880,26 @@ export default function AdminDashboard() {
                     Xu đặt gần của user đầu tiên
                   </p>
                   <ul className="max-h-40 space-y-1 overflow-y-auto text-[10px]">
-                    {toolsResult.recentStakes.map((b) => (
+                    {toolsResult.recentStakes.map((b) => {
+                      const hit = xuHitLevelMax(b.amount, b.profit);
+                      return (
                       <li
                         key={b.id}
-                        className="rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/10"
+                        className={`rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/10 ${xuHitRowClass(hit)}`}
                       >
-                        Ván #{b.round} · lá {b.cardId} · {formatXu(b.amount)} ·{" "}
-                        {b.result} · {formatXu(b.profit)} ·{" "}
-                        {new Date(b.at).toLocaleString("vi-VN")}
+                        Ván #{b.round} · lá {b.cardId} ·{" "}
+                        <span className="xu-hit__amt">{formatXu(b.amount)}</span>{" "}
+                        · {b.result} ·{" "}
+                        <span className="xu-hit__amt">{formatXu(b.profit)}</span>{" "}
+                        · {new Date(b.at).toLocaleString("vi-VN")}
+                        {hit !== "normal" && (
+                          <span className="ml-1 text-[9px] font-extrabold uppercase opacity-80">
+                            {hit === "huge" ? "RẤT LỚN" : "LỚN"}
+                          </span>
+                        )}
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 </div>
               )}
@@ -3483,6 +3983,297 @@ export default function AdminDashboard() {
             ))}
           </section>
 
+          {canInter && managedGame === "tarot" && data.tableConfig && (
+            <>
+              <section className="app-panel mt-4 p-3 sm:p-4">
+                <p className="play-heading text-sm">Đếm ngược bàn Tarot</p>
+                <p className="mt-1 text-[11px] text-[var(--play-muted)]">
+                  Áp dụng từ phase tiếp theo. Đặt cược = thời gian đếm ngược
+                  người chơi thấy.
+                </p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="text-[11px] font-semibold text-[var(--play-muted)]">
+                    Đặt cược (giây)
+                    <input
+                      id="admin-table-placing-s"
+                      key={`place-${data.tableConfig.updatedAt}`}
+                      type="number"
+                      min={Math.round(
+                        (data.tableConfigLimits?.placingMs.min ?? 15_000) / 1000,
+                      )}
+                      max={Math.round(
+                        (data.tableConfigLimits?.placingMs.max ?? 90_000) / 1000,
+                      )}
+                      step={1}
+                      defaultValue={Math.round(data.tableConfig.placingMs / 1000)}
+                      className="app-input mt-1 w-full !py-1.5 text-sm tabular-nums"
+                    />
+                  </label>
+                  <label className="text-[11px] font-semibold text-[var(--play-muted)]">
+                    Xoay / reveal (giây)
+                    <input
+                      id="admin-table-revealing-s"
+                      key={`reveal-${data.tableConfig.updatedAt}`}
+                      type="number"
+                      min={Math.round(
+                        (data.tableConfigLimits?.revealingMs.min ?? 4_000) / 1000,
+                      )}
+                      max={Math.round(
+                        (data.tableConfigLimits?.revealingMs.max ?? 15_000) / 1000,
+                      )}
+                      step={1}
+                      defaultValue={Math.round(
+                        data.tableConfig.revealingMs / 1000,
+                      )}
+                      className="app-input mt-1 w-full !py-1.5 text-sm tabular-nums"
+                    />
+                  </label>
+                  <label className="text-[11px] font-semibold text-[var(--play-muted)]">
+                    Trả thưởng (giây)
+                    <input
+                      id="admin-table-payout-s"
+                      key={`payout-${data.tableConfig.updatedAt}`}
+                      type="number"
+                      min={Math.round(
+                        (data.tableConfigLimits?.payoutMs.min ?? 3_000) / 1000,
+                      )}
+                      max={Math.round(
+                        (data.tableConfigLimits?.payoutMs.max ?? 12_000) / 1000,
+                      )}
+                      step={1}
+                      defaultValue={Math.round(data.tableConfig.payoutMs / 1000)}
+                      className="app-input mt-1 w-full !py-1.5 text-sm tabular-nums"
+                    />
+                  </label>
+                  <label className="text-[11px] font-semibold text-[var(--play-muted)]">
+                    Số lá đặt tối đa / ván
+                    <input
+                      id="admin-table-max-cards"
+                      key={`cards-${data.tableConfig.updatedAt}`}
+                      type="number"
+                      min={data.tableConfigLimits?.maxCardsPerRound.min ?? 1}
+                      max={data.tableConfigLimits?.maxCardsPerRound.max ?? 8}
+                      step={1}
+                      defaultValue={data.tableConfig.maxCardsPerRound ?? 4}
+                      className="app-input mt-1 w-full !py-1.5 text-sm tabular-nums"
+                    />
+                    <span className="mt-0.5 block text-[10px] font-normal opacity-80">
+                      Mặc định 4 · khoảng{" "}
+                      {data.tableConfigLimits?.maxCardsPerRound.min ?? 1}–
+                      {data.tableConfigLimits?.maxCardsPerRound.max ?? 8}
+                    </span>
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  className="app-btn-primary mt-3 !w-auto !px-4 !py-2 !text-xs"
+                  onClick={async () => {
+                    const placeEl = document.getElementById(
+                      "admin-table-placing-s",
+                    ) as HTMLInputElement | null;
+                    const revEl = document.getElementById(
+                      "admin-table-revealing-s",
+                    ) as HTMLInputElement | null;
+                    const payEl = document.getElementById(
+                      "admin-table-payout-s",
+                    ) as HTMLInputElement | null;
+                    const cardsEl = document.getElementById(
+                      "admin-table-max-cards",
+                    ) as HTMLInputElement | null;
+                    try {
+                      await api("/api/admin/table-config", {
+                        method: "POST",
+                        body: JSON.stringify({
+                          placingMs: Math.round(Number(placeEl?.value) * 1000),
+                          revealingMs: Math.round(Number(revEl?.value) * 1000),
+                          payoutMs: Math.round(Number(payEl?.value) * 1000),
+                          maxCardsPerRound: Math.round(Number(cardsEl?.value)),
+                          revealStyle: data.tableConfig?.revealStyle,
+                        }),
+                      });
+                      setMsg("Đã lưu cấu hình bàn Tarot");
+                      await load();
+                    } catch (err) {
+                      setMsg(
+                        err instanceof Error
+                          ? err.message
+                          : "Lỗi lưu cấu hình bàn",
+                      );
+                    }
+                  }}
+                >
+                  Lưu cấu hình bàn
+                </button>
+              </section>
+
+              <section className="app-panel mt-4 p-3 sm:p-4">
+                <p className="play-heading text-sm">Kiểu xoay lá thắng</p>
+                <p className="mt-1 text-[11px] text-[var(--play-muted)]">
+                  Chọn 1 trong 3 cơ chế animation khi hiện lá Tarot thắng.
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  {REVEAL_STYLE_IDS.map((id) => {
+                    const active = data.tableConfig?.revealStyle === id;
+                    const label =
+                      data.revealStyleLabels?.[id] ?? REVEAL_STYLE_LABELS[id];
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await api("/api/admin/table-config", {
+                              method: "POST",
+                              body: JSON.stringify({ revealStyle: id }),
+                            });
+                            setMsg(`Kiểu xoay: ${label}`);
+                            await load();
+                          } catch (err) {
+                            setMsg(
+                              err instanceof Error
+                                ? err.message
+                                : "Lỗi đổi kiểu xoay",
+                            );
+                          }
+                        }}
+                        className={`rounded-xl px-3 py-2.5 text-left text-[11px] font-semibold ring-1 transition ${
+                          active
+                            ? "bg-[var(--wood-deep)] text-white ring-[var(--wood-deep)]"
+                            : "bg-white/80 text-[var(--play-ink)] ring-[var(--wood-deep)]/15 hover:ring-[var(--wood-deep)]/35"
+                        }`}
+                      >
+                        <span className="block font-bold capitalize">{id}</span>
+                        <span
+                          className={`mt-0.5 block text-[10px] font-medium leading-snug ${
+                            active ? "text-white/75" : "text-[var(--play-muted)]"
+                          }`}
+                        >
+                          {label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {data.tableConfig.updatedBy && (
+                  <p className="mt-2 text-[10px] text-[var(--play-muted)]">
+                    Cập nhật: {data.tableConfig.updatedBy}
+                    {data.tableConfig.updatedAt
+                      ? ` · ${new Date(data.tableConfig.updatedAt).toLocaleString("vi-VN")}`
+                      : ""}
+                  </p>
+                )}
+              </section>
+            </>
+          )}
+
+          {main && canInter && managedGame === "tarot" && data.aiFeatures && (
+            <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+              <div>
+                <p className="play-heading text-sm">AI nhẹ (ẩn/hiện vs player)</p>
+                <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+                  Tip &amp; gợi ý chat: admin luôn thấy trên bàn. Player chỉ thấy
+                  khi bật. Soft-gate coupon khi điểm rủi ro cao.
+                </p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {(
+                  [
+                    ["playTipsForPlayers", "Hiện tip bàn cho player"],
+                    ["chatSuggestsForPlayers", "Hiện gợi ý chat cho player"],
+                    ["botPersonasEnabled", "Bot AI personas"],
+                    ["riskSoftGateEnabled", "Soft-gate coupon theo risk"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <label
+                    key={key}
+                    className="flex items-center gap-2 rounded-lg bg-white/70 px-2.5 py-2 text-[11px] font-semibold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/10"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!data.aiFeatures?.[key]}
+                      onChange={async (e) => {
+                        try {
+                          await api("/api/mainadmin/ai-features", {
+                            method: "POST",
+                            body: JSON.stringify({ [key]: e.target.checked }),
+                          });
+                          await load();
+                          setMsg("Đã lưu AI features");
+                        } catch (err) {
+                          setMsg(
+                            err instanceof Error ? err.message : "Lỗi lưu",
+                          );
+                        }
+                      }}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <label className="block text-[11px] font-semibold text-[var(--play-muted)]">
+                Ngưỡng soft-gate (score)
+                <input
+                  type="number"
+                  min={40}
+                  max={95}
+                  key={`risk-min-${data.aiFeatures.updatedAt ?? 0}`}
+                  defaultValue={data.aiFeatures.riskSoftGateMinScore ?? 70}
+                  className="app-input mt-0.5 max-w-[8rem] !py-1"
+                  onBlur={async (e) => {
+                    const n = Math.floor(Number(e.target.value));
+                    if (!Number.isFinite(n)) return;
+                    try {
+                      await api("/api/mainadmin/ai-features", {
+                        method: "POST",
+                        body: JSON.stringify({ riskSoftGateMinScore: n }),
+                      });
+                      await load();
+                    } catch (err) {
+                      setMsg(
+                        err instanceof Error ? err.message : "Lỗi lưu",
+                      );
+                    }
+                  }}
+                />
+              </label>
+              {data.smartAi && (
+                <p className="text-[10px] text-[var(--play-muted)]">
+                  SmartAI đã học {data.smartAi.rounds} ván
+                  {data.smartAi.updatedAt
+                    ? ` · ${new Date(data.smartAi.updatedAt).toLocaleString("vi-VN")}`
+                    : ""}
+                </p>
+              )}
+            </section>
+          )}
+
+          {data.riskTop && data.riskTop.length > 0 && (
+            <section className="app-panel mt-4 space-y-2 p-3 sm:p-4">
+              <p className="play-heading text-sm">Rủi ro tài khoản (top)</p>
+              <ul className="max-h-48 space-y-1 overflow-y-auto text-[11px]">
+                {data.riskTop.slice(0, 12).map((r) => (
+                  <li
+                    key={r.userId}
+                    className="flex flex-wrap items-baseline justify-between gap-1 rounded-md bg-white/60 px-2 py-1 ring-1 ring-[var(--wood-deep)]/8"
+                  >
+                    <span className="font-semibold text-[var(--play-ink)]">
+                      {r.username || r.userId.slice(0, 8)}
+                      <span className="ml-1 font-normal text-[var(--play-muted)]">
+                        · {r.level} · {r.score}
+                      </span>
+                    </span>
+                    <span className="text-[10px] text-[var(--play-muted)]">
+                      {r.factors
+                        .slice(0, 2)
+                        .map((f) => f.label)
+                        .join(" · ")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <section className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
             {[
               ["Xu đặt gần đây", String(data.stakeStats?.rows ?? 0)],
@@ -3503,6 +4294,292 @@ export default function AdminDashboard() {
               </div>
             ))}
           </section>
+
+          {data.xuFlow && (
+            <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+              <div>
+                <p className="play-heading text-sm">Lưu lượng xu (Kho Tarot)</p>
+                <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+                  Xu vào từ user vs xu phát ra — giúp đọc dòng tiền app. Số
+                  all-time bền; 24h/7 ngày lấy từ ledger gần đây.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {(
+                  [
+                    [
+                      "Xu từ coupon",
+                      formatXu(data.xuFlow.couponOut),
+                      `${data.xuFlow.couponRedeems} lần · ${data.xuFlow.couponUsers} user · sổ ${formatXu(data.xuFlow.couponBookXu)}`,
+                    ],
+                    [
+                      "Xu lấy về (user)",
+                      formatXu(data.xuFlow.inflowFromUsers),
+                      `Stake ${formatXu(data.xuFlow.stakeIn)} · Thu ${formatXu(data.xuFlow.seizeIn)} · Phí ${formatXu(data.xuFlow.feesIn)}`,
+                    ],
+                    [
+                      "Xu phát ra (user)",
+                      formatXu(data.xuFlow.outflowToUsers),
+                      `Trả ${formatXu(data.xuFlow.payoutOut)} · Coupon ${formatXu(data.xuFlow.couponOut)} · Cấp ${formatXu(data.xuFlow.grantOut)}`,
+                    ],
+                    [
+                      "Edge chơi",
+                      formatXu(data.xuFlow.netFromPlay),
+                      `Số dư kho ${formatXu(data.xuFlow.balance)}`,
+                    ],
+                  ] as const
+                ).map(([label, value, hint]) => (
+                  <div
+                    key={label}
+                    className="rounded-xl bg-white/75 px-2.5 py-2 ring-1 ring-[var(--wood-deep)]/10"
+                  >
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
+                      {label}
+                    </p>
+                    <p className="font-play mt-0.5 text-sm font-extrabold tabular-nums text-[var(--play-ink)]">
+                      {value}
+                    </p>
+                    <p className="mt-0.5 text-[9px] leading-snug text-[var(--play-muted)]">
+                      {hint}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="rounded-lg bg-[rgba(20,28,40,0.04)] px-2.5 py-2 text-[11px] ring-1 ring-[var(--wood-deep)]/10">
+                  <p className="font-bold text-[var(--play-ink)]">
+                    Xu vào từ user (chi tiết)
+                  </p>
+                  <ul className="mt-1 space-y-0.5 text-[var(--play-muted)]">
+                    <li>
+                      Đặt cược (stake) → kho:{" "}
+                      <span className="font-play font-bold text-[var(--play-ink)]">
+                        {formatXu(data.xuFlow.stakeIn)}
+                      </span>
+                    </li>
+                    <li>
+                      Admin thu về (seize):{" "}
+                      <span className="font-play font-bold text-[var(--play-ink)]">
+                        {formatXu(data.xuFlow.seizeIn)}
+                      </span>
+                    </li>
+                    <li>
+                      Phí chat / duy trì Tu Tiên:{" "}
+                      <span className="font-play font-bold text-[var(--play-ink)]">
+                        {formatXu(data.xuFlow.feesIn)}
+                      </span>
+                    </li>
+                  </ul>
+                </div>
+                <div className="rounded-lg bg-[rgba(20,28,40,0.04)] px-2.5 py-2 text-[11px] ring-1 ring-[var(--wood-deep)]/10">
+                  <p className="font-bold text-[var(--play-ink)]">
+                    Xu ra tới user (chi tiết)
+                  </p>
+                  <ul className="mt-1 space-y-0.5 text-[var(--play-muted)]">
+                    <li>
+                      Coupon nạp:{" "}
+                      <span className="font-play font-bold text-[var(--play-ink)]">
+                        {formatXu(data.xuFlow.couponOut)}
+                      </span>
+                      <span className="ml-1 text-[9px]">
+                        ({data.xuFlow.couponCodes} mã)
+                      </span>
+                    </li>
+                    <li>
+                      Admin cấp (grant):{" "}
+                      <span className="font-play font-bold text-[var(--play-ink)]">
+                        {formatXu(data.xuFlow.grantOut)}
+                      </span>
+                    </li>
+                    <li>
+                      Trả thưởng bàn:{" "}
+                      <span className="font-play font-bold text-[var(--play-ink)]">
+                        {formatXu(data.xuFlow.payoutOut)}
+                      </span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              {(data.xuFlow.day || data.xuFlow.week) && (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[28rem] text-left text-[10px]">
+                    <thead>
+                      <tr className="text-[var(--play-muted)]">
+                        <th className="py-1 pr-2 font-semibold">Cửa sổ</th>
+                        <th className="py-1 pr-2 font-semibold">Coupon</th>
+                        <th className="py-1 pr-2 font-semibold">Cấp</th>
+                        <th className="py-1 pr-2 font-semibold">Thu</th>
+                        <th className="py-1 pr-2 font-semibold">Phí</th>
+                        <th className="py-1 pr-2 font-semibold">Stake</th>
+                        <th className="py-1 font-semibold">Trả</th>
+                      </tr>
+                    </thead>
+                    <tbody className="font-play tabular-nums text-[var(--play-ink)]">
+                      {data.xuFlow.day && (
+                        <tr className="border-t border-[var(--wood-deep)]/10">
+                          <td className="py-1 pr-2 font-semibold">24 giờ</td>
+                          <td className="py-1 pr-2">
+                            {formatXu(data.xuFlow.day.couponOut)}
+                          </td>
+                          <td className="py-1 pr-2">
+                            {formatXu(data.xuFlow.day.grantOut)}
+                          </td>
+                          <td className="py-1 pr-2">
+                            {formatXu(data.xuFlow.day.seizeIn)}
+                          </td>
+                          <td className="py-1 pr-2">
+                            {formatXu(data.xuFlow.day.feesIn)}
+                          </td>
+                          <td className="py-1 pr-2">
+                            {formatXu(data.xuFlow.day.stakeIn)}
+                          </td>
+                          <td className="py-1">
+                            {formatXu(data.xuFlow.day.payoutOut)}
+                          </td>
+                        </tr>
+                      )}
+                      {data.xuFlow.week && (
+                        <tr className="border-t border-[var(--wood-deep)]/10">
+                          <td className="py-1 pr-2 font-semibold">7 ngày</td>
+                          <td className="py-1 pr-2">
+                            {formatXu(data.xuFlow.week.couponOut)}
+                          </td>
+                          <td className="py-1 pr-2">
+                            {formatXu(data.xuFlow.week.grantOut)}
+                          </td>
+                          <td className="py-1 pr-2">
+                            {formatXu(data.xuFlow.week.seizeIn)}
+                          </td>
+                          <td className="py-1 pr-2">
+                            {formatXu(data.xuFlow.week.feesIn)}
+                          </td>
+                          <td className="py-1 pr-2">
+                            {formatXu(data.xuFlow.week.stakeIn)}
+                          </td>
+                          <td className="py-1">
+                            {formatXu(data.xuFlow.week.payoutOut)}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                  <p className="mt-1 text-[9px] text-[var(--play-muted)]">
+                    Bảng 24h/7d chỉ từ ledger gần đây (tối đa ~200 dòng) — không
+                    thay số all-time phía trên.
+                  </p>
+                </div>
+              )}
+            </section>
+          )}
+
+          {data.xuFlow && (
+            <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="play-heading text-sm">Hao hụt kho xu</p>
+                  <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+                    Xu ra khỏi Kho Tarot (trả / coupon / cấp / rút). Bấm ô để xem
+                    sổ lọc.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="app-btn-soft !px-3 !py-1 !text-[10px] font-bold"
+                  onClick={() => setCashflowPopup({ kind: "summary" })}
+                >
+                  Chi tiết dòng tiền
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {(
+                  [
+                    {
+                      key: "out",
+                      label: "Tổng xu ra",
+                      value: data.xuFlow.haoHut?.outflowToUsers ?? data.xuFlow.outflowToUsers,
+                      hint: `24h trả ${formatXu(data.xuFlow.day?.payoutOut ?? 0)} · cấp ${formatXu(data.xuFlow.day?.grantOut ?? 0)}`,
+                      popup: {
+                        kind: "ledger" as const,
+                        title: "Hao hụt (xu ra)",
+                        outflow: true,
+                      },
+                    },
+                    {
+                      key: "payout",
+                      label: "Trả thưởng",
+                      value: data.xuFlow.haoHut?.payoutOut ?? data.xuFlow.payoutOut,
+                      hint: `24h ${formatXu(data.xuFlow.day?.payoutOut ?? 0)} · 7d ${formatXu(data.xuFlow.week?.payoutOut ?? 0)}`,
+                      popup: {
+                        kind: "ledger" as const,
+                        title: "Trả thưởng (payout)",
+                        type: "payout_out",
+                      },
+                    },
+                    {
+                      key: "coupon",
+                      label: "Coupon",
+                      value: data.xuFlow.haoHut?.couponOut ?? data.xuFlow.couponOut,
+                      hint: `24h ${formatXu(data.xuFlow.day?.couponOut ?? 0)} · 7d ${formatXu(data.xuFlow.week?.couponOut ?? 0)}`,
+                      popup: {
+                        kind: "ledger" as const,
+                        title: "Coupon nạp",
+                        type: "coupon_mint",
+                      },
+                    },
+                    {
+                      key: "grant",
+                      label: "Cấp admin",
+                      value: data.xuFlow.haoHut?.grantOut ?? data.xuFlow.grantOut,
+                      hint: `24h ${formatXu(data.xuFlow.day?.grantOut ?? 0)} · 7d ${formatXu(data.xuFlow.week?.grantOut ?? 0)}`,
+                      popup: {
+                        kind: "ledger" as const,
+                        title: "Cấp user (grant)",
+                        type: "grant_user",
+                      },
+                    },
+                  ] as const
+                ).map((card) => (
+                  <button
+                    key={card.key}
+                    type="button"
+                    onClick={() => void openCashflowLedger(card.popup)}
+                    className="rounded-xl bg-rose-50/90 px-2.5 py-2 text-left ring-1 ring-rose-200/80 transition hover:bg-rose-100/90"
+                  >
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-rose-800/80">
+                      {card.label}
+                    </p>
+                    <p className="font-play mt-0.5 text-sm font-extrabold tabular-nums text-rose-800">
+                      {formatXu(card.value)}
+                    </p>
+                    <p className="mt-0.5 text-[9px] leading-snug text-rose-900/55">
+                      {card.hint}
+                    </p>
+                  </button>
+                ))}
+              </div>
+              {(data.xuFlow.hour || data.xuFlow.day) && (
+                <p className="text-[10px] text-[var(--play-muted)]">
+                  Net ledger gần đây: 1h{" "}
+                  <span className="font-play font-bold tabular-nums text-[var(--play-ink)]">
+                    {formatXu(data.xuFlow.hour?.net ?? 0)}
+                  </span>
+                  {" · "}
+                  24h{" "}
+                  <span className="font-play font-bold tabular-nums text-[var(--play-ink)]">
+                    {formatXu(data.xuFlow.day?.net ?? 0)}
+                  </span>
+                  {" · "}
+                  7d{" "}
+                  <span className="font-play font-bold tabular-nums text-[var(--play-ink)]">
+                    {formatXu(data.xuFlow.week?.net ?? 0)}
+                  </span>
+                </p>
+              )}
+            </section>
+          )}
 
           <section className="app-panel mt-4 p-3">
             <p className="play-heading mb-2 text-sm">
@@ -3529,22 +4606,33 @@ export default function AdminDashboard() {
             <p className="play-heading mb-2 text-sm">
               Xu user gần đây ({data.recentStakes?.length ?? 0})
             </p>
+            <p className="mb-1.5 text-[10px] text-[var(--play-muted)]">
+              Khoanh vàng ≥ {formatXu(XU_HIGHLIGHT_LARGE)} · đỏ ≥{" "}
+              {formatXu(XU_HIGHLIGHT_HUGE)}.
+            </p>
             <ul className="max-h-44 space-y-1.5 overflow-y-auto">
               {(data.recentStakes?.length ?? 0) === 0 ? (
                 <li className="text-xs text-[var(--play-muted)]">
                   Chưa ghi nhận ván.
                 </li>
               ) : (
-                data.recentStakes!.map((b) => (
+                data.recentStakes!.map((b) => {
+                  const hit = xuHitLevelMax(b.amount, b.profit);
+                  return (
                   <li
                     key={b.id}
-                    className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
+                    className={`flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10 ${xuHitRowClass(hit)}`}
                   >
                     <span className="min-w-0 truncate font-semibold">
                       {b.username} · #{b.round} · {cardName(b.cardId)}
+                      {hit !== "normal" && (
+                        <span className="ml-1 text-[9px] font-extrabold uppercase opacity-80">
+                          {hit === "huge" ? "RẤT LỚN" : "LỚN"}
+                        </span>
+                      )}
                     </span>
                     <span
-                      className={`shrink-0 font-play font-bold tabular-nums ${
+                      className={`xu-hit__amt shrink-0 font-play font-bold tabular-nums ${
                         b.result === "win" ? "text-[var(--wood-deep)]" : "text-rose-600"
                       }`}
                     >
@@ -3552,7 +4640,8 @@ export default function AdminDashboard() {
                       {formatXu(b.profit)}
                     </span>
                   </li>
-                ))
+                  );
+                })
               )}
             </ul>
           </section>
@@ -4098,6 +5187,121 @@ export default function AdminDashboard() {
 
       {tab === "rolead" && main && (
         <>
+          <section className="app-panel mt-4 space-y-2 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="play-heading text-sm">Hiển thị role (cosmetic)</p>
+                <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+                  Thứ tự / cỡ / style / khung rail — chỉnh trong popup cosmetics
+                  cùng màu chữ. Không đổi quyền.
+                </p>
+                <p className="mt-1 font-mono text-[10px] text-[var(--play-ink)]">
+                  {roleDisplayDraft.size} · {roleDisplayDraft.textStyle} ·{" "}
+                  {roleDisplayDraft.frameStyle}
+                  {roleDisplayDraft.showGlyph ? " · glyph" : ""} ·{" "}
+                  {roleDisplayDraft.order.join(" › ")}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setCosmeticsInitialTab("role");
+                  setCosmeticsEditUserId(data.me.id);
+                }}
+                className="app-btn-primary shrink-0 !w-auto !px-3 !py-1.5 !text-[11px]"
+              >
+                Chỉnh role + màu…
+              </button>
+            </div>
+            <div
+              className={`rounded-lg bg-[#121d2d] px-2 py-1.5 ring-1 ring-white/10 role-rail--size-${roleDisplayDraft.size} role-rail--frame-${roleDisplayDraft.frameStyle} role-rail--text-${roleDisplayDraft.textStyle} ${
+                roleDisplayDraft.showGlyph
+                  ? "role-rail--glyph"
+                  : "role-rail--no-glyph"
+              }`}
+            >
+              <div className="role-rail__pills !justify-start">
+                {roleDisplayDraft.order
+                  .filter((s) => s !== "id" && s !== "level")
+                  .flatMap((slot) => {
+                    if (slot === "badges") {
+                      const meUser =
+                        data.users.find((u) => u.id === data.me.id) ?? null;
+                      const badges = meUser?.displayBadges ?? [];
+                      if (badges.length === 0) {
+                        return [
+                          <span
+                            key="badges-empty"
+                            className="role-pill role-pill--badge opacity-55"
+                          >
+                            <span className="role-pill__glyph" aria-hidden>
+                              ★
+                            </span>
+                            <span className="role-pill__text">
+                              {ROLE_DISPLAY_SLOT_LABELS.badges}
+                            </span>
+                          </span>,
+                        ];
+                      }
+                      return badges.slice(0, 3).map((bid) => {
+                        const def = displayBadgeDef(bid);
+                        if (!def) return null;
+                        return (
+                          <span
+                            key={def.id}
+                            className={`role-pill role-pill--badge role-pill--badge-${def.tone}`}
+                          >
+                            <span className="role-pill__glyph" aria-hidden>
+                              {def.glyph}
+                            </span>
+                            <span className="role-pill__text">{def.label}</span>
+                          </span>
+                        );
+                      });
+                    }
+                    const labelKey: RoleLabelKey =
+                      slot === "couple"
+                        ? "couple"
+                        : slot === "vip"
+                          ? "vip"
+                          : slot === "role"
+                            ? "player"
+                            : slot === "cult"
+                              ? "tutien"
+                              : "player";
+                    return [
+                      <span
+                        key={slot}
+                        className={`role-pill role-pill--${
+                          slot === "role" ? "player" : slot
+                        }`}
+                        style={resolveRoleColorStyle(
+                          labelKey,
+                          roleDisplayDraft.roleColors,
+                        )}
+                      >
+                        <span className="role-pill__glyph" aria-hidden>
+                          {slot === "couple"
+                            ? "♥"
+                            : slot === "vip"
+                              ? "★"
+                              : slot === "cult"
+                                ? "ᚱ"
+                                : "👤"}
+                        </span>
+                        <span className="role-pill__text">
+                          {resolveRoleLabel(
+                            labelKey,
+                            roleDisplayDraft.roleLabels,
+                          )}
+                        </span>
+                      </span>,
+                    ];
+                  })}
+              </div>
+            </div>
+          </section>
+
           <section className="app-panel mt-4 space-y-3 p-3">
             <div>
               <p className="play-heading text-sm">RoleAD · Quyền của bạn</p>
@@ -4178,139 +5382,85 @@ export default function AdminDashboard() {
                       Màu nick công khai
                     </p>
                     <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
-                      RoleAD gán màu tên trên bàn / hồ sơ. Preview:{" "}
-                      <ColoredName
-                        name={self.displayName ?? self.username}
-                        colorId={self.nameColor}
-                        effectId={self.nameEffect}
-                        className="font-semibold"
-                      />
+                      RoleAD gán màu tên trên bàn / hồ sơ.
                     </p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {NAME_COLOR_PRESETS.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => void setUserNameColor(self.id, c.id)}
-                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${
-                            normalizeNameColor(self.nameColor) === c.id
-                              ? "bg-[var(--wood-deep)] text-white ring-[var(--wood-deep)]"
-                              : "bg-white text-[var(--play-ink)] ring-[var(--wood-deep)]/20"
-                          }`}
-                        >
-                          {c.label}
-                        </button>
-                      ))}
+
+                    <div className="rolead-preview-table mt-2 overflow-hidden rounded-xl ring-1 ring-[var(--wood-deep)]/15">
+                      <div className="grid grid-cols-2 gap-0 border-b border-[var(--wood-deep)]/10">
+                        <div className="bg-[#121d2d] px-2 py-1.5">
+                          <p className="mb-1 text-[8px] font-bold uppercase tracking-wide text-white/45">
+                            Bàn
+                          </p>
+                          <IdentityBadge
+                            user={self}
+                            compact
+                            showPath={false}
+                            roleDisplay={roleDisplayDraft}
+                          />
+                        </div>
+                        <div className="border-l border-white/10 bg-[#0B1528] p-1">
+                          <CelestialProfilePreview
+                            user={self}
+                            roleDisplay={roleDisplayDraft}
+                            compact
+                            className="!rounded-lg !shadow-none"
+                          />
+                        </div>
+                      </div>
+                      <table className="w-full border-collapse text-left text-[10px]">
+                        <thead>
+                          <tr className="bg-white/90 text-[var(--play-muted)]">
+                            <th className="px-2 py-1 font-bold">Mục</th>
+                            <th className="px-2 py-1 font-bold">Hiện tại</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white/70 text-[var(--play-ink)]">
+                          <tr className="border-t border-[var(--wood-deep)]/10">
+                            <td className="px-2 py-1 font-semibold text-[var(--play-muted)]">
+                              Nick
+                            </td>
+                            <td className="px-2 py-1">
+                              <ColoredName
+                                name={self.displayName ?? self.username}
+                                colorId={self.nameColor}
+                                effectId={self.nameEffect}
+                                className="font-semibold"
+                              />
+                            </td>
+                          </tr>
+                          <tr className="border-t border-[var(--wood-deep)]/10">
+                            <td className="px-2 py-1 font-semibold text-[var(--play-muted)]">
+                              Màu / FX
+                            </td>
+                            <td className="px-2 py-1 font-mono">
+                              {normalizeNameColor(self.nameColor)} ·{" "}
+                              {normalizeNameEffect(self.nameEffect)}
+                            </td>
+                          </tr>
+                          <tr className="border-t border-[var(--wood-deep)]/10">
+                            <td className="px-2 py-1 font-semibold text-[var(--play-muted)]">
+                              Rail
+                            </td>
+                            <td className="px-2 py-1 font-mono">
+                              {roleDisplayDraft.size} ·{" "}
+                              {roleDisplayDraft.textStyle} ·{" "}
+                              {roleDisplayDraft.frameStyle}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
-                    <p className="mt-2 text-[10px] font-bold text-[var(--play-ink)]">
-                      Hiệu ứng chữ
-                    </p>
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {NAME_EFFECT_PRESETS.map((fx) => (
-                        <button
-                          key={fx.id}
-                          type="button"
-                          onClick={() =>
-                            void setUserCosmetics(self.id, { effect: fx.id })
-                          }
-                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${
-                            normalizeNameEffect(self.nameEffect) === fx.id
-                              ? "bg-indigo-800 text-white ring-indigo-800"
-                              : "bg-white text-[var(--play-ink)] ring-[var(--wood-deep)]/20"
-                          }`}
-                        >
-                          {fx.label}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="mt-2 text-[10px] font-bold text-[var(--play-ink)]">
-                      Khung avatar (role)
-                    </p>
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {AVATAR_FRAME_PRESETS.map((f) => (
-                        <button
-                          key={f.id}
-                          type="button"
-                          onClick={() =>
-                            void setUserCosmetics(self.id, {
-                              avatarFrame: f.id,
-                            })
-                          }
-                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${
-                            normalizeAvatarFrame(self.avatarFrame) === f.id
-                              ? "bg-amber-800 text-white ring-amber-800"
-                              : "bg-white text-[var(--play-ink)] ring-[var(--wood-deep)]/20"
-                          }`}
-                        >
-                          {f.label}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="mt-2 text-[10px] font-bold text-[var(--play-ink)]">
-                      Nền hồ sơ chiêm tinh
-                    </p>
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {PROFILE_THEME_PRESETS.map((t) => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() =>
-                            void setUserCosmetics(self.id, {
-                              profileTheme: t.id,
-                            })
-                          }
-                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${
-                            normalizeProfileTheme(self.profileTheme) === t.id
-                              ? "bg-violet-800 text-white ring-violet-800"
-                              : "bg-white text-[var(--play-ink)] ring-[var(--wood-deep)]/20"
-                          }`}
-                        >
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="mt-2 text-[10px] font-bold text-[var(--play-ink)]">
-                      Khung tên
-                    </p>
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {NAME_FRAME_PRESETS.map((f) => (
-                        <button
-                          key={f.id}
-                          type="button"
-                          onClick={() =>
-                            void setUserCosmetics(self.id, { nameFrame: f.id })
-                          }
-                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${
-                            normalizeNameFrame(self.nameFrame) === f.id
-                              ? "bg-rose-800 text-white ring-rose-800"
-                              : "bg-white text-[var(--play-ink)] ring-[var(--wood-deep)]/20"
-                          }`}
-                        >
-                          {f.label}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="mt-2 text-[10px] font-bold text-[var(--play-ink)]">
-                      Khung ID
-                    </p>
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {ID_FRAME_PRESETS.map((f) => (
-                        <button
-                          key={f.id}
-                          type="button"
-                          onClick={() =>
-                            void setUserCosmetics(self.id, { idFrame: f.id })
-                          }
-                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ${
-                            normalizeIdFrame(self.idFrame) === f.id
-                              ? "bg-teal-800 text-white ring-teal-800"
-                              : "bg-white text-[var(--play-ink)] ring-[var(--wood-deep)]/20"
-                          }`}
-                        >
-                          {f.label}
-                        </button>
-                      ))}
-                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCosmeticsInitialTab("color");
+                        setCosmeticsEditUserId(self.id);
+                      }}
+                      className="app-btn-primary mt-2.5 !w-auto !px-4 !py-2 !text-xs"
+                    >
+                      Chỉnh cosmetics…
+                    </button>
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -4360,7 +5510,7 @@ export default function AdminDashboard() {
           <section className="app-panel mt-3 space-y-2 p-3">
             <p className="play-heading text-sm">Ẩn / hiện BXH toàn site</p>
             <p className="text-[11px] text-[var(--play-muted)]">
-              Tắt để ẩn khu vực bảng xếp hạng trên bàn chơi cho mọi người chơi.
+              Tắt = ẩn với người chơi trên bàn. Staff vẫn thấy (nhãn Staff).
             </p>
             <div className="flex flex-wrap gap-2">
               {(
@@ -4368,6 +5518,9 @@ export default function AdminDashboard() {
                   ["winToday", "Cao thủ"],
                   ["balance", "Đại gia"],
                   ["tarotStars", "Sao bài"],
+                  ["streak", "Chuỗi thắng"],
+                  ["roundWinners", "Top ván vừa"],
+                  ["level", "Cấp độ"],
                 ] as const
               ).map(([key, label]) => {
                 const on = lbFlagsDraft[key];
@@ -4452,110 +5605,22 @@ export default function AdminDashboard() {
                       </div>
                     </div>
 
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      <span className="w-full text-[9px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
-                        Màu nick
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCosmeticsInitialTab("color");
+                          setCosmeticsEditUserId(u.id);
+                        }}
+                        className="rounded-full bg-[var(--wood-deep)] px-2.5 py-1 text-[10px] font-bold text-white"
+                      >
+                        Cosmetics…
+                      </button>
+                      <span className="text-[9px] text-[var(--play-muted)]">
+                        {normalizeNameColor(u.nameColor)} ·{" "}
+                        {normalizeNameEffect(u.nameEffect)} ·{" "}
+                        {(u.displayBadges ?? []).length} huy hiệu
                       </span>
-                      {NAME_COLOR_PRESETS.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => void setUserNameColor(u.id, c.id)}
-                          className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
-                            normalizeNameColor(u.nameColor) === c.id
-                              ? "bg-[var(--wood-deep)] text-white"
-                              : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
-                          }`}
-                          title={c.label}
-                        >
-                          {c.label}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      <span className="w-full text-[9px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
-                        Fx chữ · khung · nền
-                      </span>
-                      {NAME_EFFECT_PRESETS.map((fx) => (
-                        <button
-                          key={`fx-${fx.id}`}
-                          type="button"
-                          onClick={() =>
-                            void setUserCosmetics(u.id, { effect: fx.id })
-                          }
-                          className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
-                            normalizeNameEffect(u.nameEffect) === fx.id
-                              ? "bg-indigo-800 text-white"
-                              : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
-                          }`}
-                        >
-                          {fx.label}
-                        </button>
-                      ))}
-                      {AVATAR_FRAME_PRESETS.map((f) => (
-                        <button
-                          key={`af-${f.id}`}
-                          type="button"
-                          onClick={() =>
-                            void setUserCosmetics(u.id, { avatarFrame: f.id })
-                          }
-                          className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
-                            normalizeAvatarFrame(u.avatarFrame) === f.id
-                              ? "bg-amber-800 text-white"
-                              : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
-                          }`}
-                        >
-                          {f.label}
-                        </button>
-                      ))}
-                      {PROFILE_THEME_PRESETS.map((t) => (
-                        <button
-                          key={`pt-${t.id}`}
-                          type="button"
-                          onClick={() =>
-                            void setUserCosmetics(u.id, { profileTheme: t.id })
-                          }
-                          className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
-                            normalizeProfileTheme(u.profileTheme) === t.id
-                              ? "bg-violet-800 text-white"
-                              : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
-                          }`}
-                        >
-                          {t.label}
-                        </button>
-                      ))}
-                      {NAME_FRAME_PRESETS.map((f) => (
-                        <button
-                          key={`nf-${f.id}`}
-                          type="button"
-                          onClick={() =>
-                            void setUserCosmetics(u.id, { nameFrame: f.id })
-                          }
-                          className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
-                            normalizeNameFrame(u.nameFrame) === f.id
-                              ? "bg-rose-800 text-white"
-                              : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
-                          }`}
-                        >
-                          Tên·{f.label}
-                        </button>
-                      ))}
-                      {ID_FRAME_PRESETS.map((f) => (
-                        <button
-                          key={`idf-${f.id}`}
-                          type="button"
-                          onClick={() =>
-                            void setUserCosmetics(u.id, { idFrame: f.id })
-                          }
-                          className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
-                            normalizeIdFrame(u.idFrame) === f.id
-                              ? "bg-teal-800 text-white"
-                              : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
-                          }`}
-                        >
-                          ID·{f.label}
-                        </button>
-                      ))}
                     </div>
 
                     {u.role !== "mainadmin" && (
@@ -5084,6 +6149,314 @@ export default function AdminDashboard() {
             >
               Lưu mức đặt thêm
             </button>
+          </section>
+        </>
+      )}
+
+      {tab === "level" && main && data && (
+        <>
+          <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+            <p className="play-heading text-sm">Công thức cấp</p>
+            <p className="text-[11px] text-[var(--play-muted)]">
+              Lv.1–{PLAY_LEVEL_MAX} · ván để đạt L = 5×(L−1)² · VIP ≈{" "}
+              {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván (~Lv.
+              {playLevelFromRounds(VIP_ROUNDS_REQUIRED)}).
+            </p>
+            <div className="grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+              {[5, 15, 45, 99].map((L) => (
+                <div
+                  key={L}
+                  className="rounded-lg bg-white/70 px-2 py-1.5 ring-1 ring-[var(--wood-deep)]/10"
+                >
+                  <p className="font-bold text-[var(--play-ink)]">
+                    Lv.{L} · {playLevelTitle(L)}
+                  </p>
+                  <p className="tabular-nums text-[var(--play-muted)]">
+                    {roundsToReachLevel(L).toLocaleString("vi-VN")} ván
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="play-heading text-sm">Thưởng theo mốc cấp</p>
+                <p className="text-[11px] text-[var(--play-muted)]">
+                  Tự cộng khi lên cấp (sau ván settle). Có thể phát tay /
+                  reset claimed.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setLevelRewardsDraft((prev) => ({
+                    ...prev,
+                    enabled: !prev.enabled,
+                  }))
+                }
+                className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                  levelRewardsDraft.enabled
+                    ? "bg-emerald-800 text-emerald-50"
+                    : "bg-slate-600 text-white"
+                }`}
+              >
+                {levelRewardsDraft.enabled ? "Thưởng: BẬT" : "Thưởng: TẮT"}
+              </button>
+            </div>
+            <ul className="max-h-72 space-y-1.5 overflow-y-auto">
+              {levelRewardsDraft.rewards.map((row, idx) => (
+                <li
+                  key={`${row.level}-${idx}`}
+                  className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
+                >
+                  <label className="font-semibold text-[var(--play-muted)]">
+                    Lv
+                    <input
+                      type="number"
+                      min={1}
+                      max={PLAY_LEVEL_MAX}
+                      value={row.level}
+                      onChange={(e) => {
+                        const level = Math.floor(Number(e.target.value) || 1);
+                        setLevelRewardsDraft((prev) => {
+                          const next = [...prev.rewards];
+                          next[idx] = { ...next[idx]!, level };
+                          return { ...prev, rewards: next };
+                        });
+                      }}
+                      className="app-input ml-1 w-14 !py-1 text-sm"
+                    />
+                  </label>
+                  <label className="font-semibold text-[var(--play-muted)]">
+                    Xu
+                    <input
+                      type="number"
+                      min={0}
+                      value={row.xu}
+                      onChange={(e) => {
+                        const xu = Math.max(
+                          0,
+                          Math.floor(Number(e.target.value) || 0),
+                        );
+                        setLevelRewardsDraft((prev) => {
+                          const next = [...prev.rewards];
+                          next[idx] = { ...next[idx]!, xu };
+                          return { ...prev, rewards: next };
+                        });
+                      }}
+                      className="app-input ml-1 w-28 !py-1 text-sm"
+                    />
+                  </label>
+                  <label className="font-semibold text-[var(--play-muted)]">
+                    Gem
+                    <input
+                      type="number"
+                      min={0}
+                      value={row.gem ?? 0}
+                      onChange={(e) => {
+                        const gem = Math.max(
+                          0,
+                          Math.floor(Number(e.target.value) || 0),
+                        );
+                        setLevelRewardsDraft((prev) => {
+                          const next = [...prev.rewards];
+                          const cur = { ...next[idx]! };
+                          if (gem > 0) cur.gem = gem;
+                          else delete cur.gem;
+                          next[idx] = cur;
+                          return { ...prev, rewards: next };
+                        });
+                      }}
+                      className="app-input ml-1 w-20 !py-1 text-sm"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLevelRewardsDraft((prev) => ({
+                        ...prev,
+                        rewards: prev.rewards.filter((_, i) => i !== idx),
+                      }))
+                    }
+                    className="rounded-full bg-white px-2 py-0.5 text-[9px] font-bold text-red-800 ring-1 ring-red-300/60"
+                  >
+                    Xóa
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setLevelRewardsDraft((prev) => ({
+                    ...prev,
+                    rewards: [
+                      ...prev.rewards,
+                      { level: 5, xu: 5_000 },
+                    ].sort((a, b) => a.level - b.level),
+                  }))
+                }
+                className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+              >
+                + Mốc
+              </button>
+              <button
+                type="button"
+                disabled={levelRewardsBusy}
+                onClick={() => void saveLevelRewards()}
+                className="rounded-full bg-[var(--wood-deep)] px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+              >
+                {levelRewardsBusy ? "…" : "Lưu bảng thưởng"}
+              </button>
+            </div>
+          </section>
+
+          <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+            <p className="play-heading text-sm">Chỉnh cấp / ván user</p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <label className="min-w-0 flex-1 text-[11px] font-semibold text-[var(--play-muted)]">
+                Người chơi
+                <select
+                  value={levelUserId}
+                  onChange={(e) => setLevelUserId(e.target.value)}
+                  className="app-input mt-1 w-full !py-1.5 text-sm"
+                >
+                  <option value="">Chọn user…</option>
+                  {data.users
+                    .filter((u) => {
+                      const q = levelUserFilter.trim().toLowerCase();
+                      if (!q) return true;
+                      return `${u.username} ${u.code} ${u.id}`
+                        .toLowerCase()
+                        .includes(q);
+                    })
+                    .slice(0, 200)
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.username} · {u.code} · Lv.
+                        {u.playLevel ?? playLevelFromRounds(u.roundsPlayed ?? 0)}{" "}
+                        · {(u.roundsPlayed ?? 0).toLocaleString("vi-VN")} ván
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="sm:w-28 text-[11px] font-semibold text-[var(--play-muted)]">
+                Mode
+                <select
+                  value={levelSetMode}
+                  onChange={(e) =>
+                    setLevelSetMode(e.target.value as "level" | "rounds")
+                  }
+                  className="app-input mt-1 w-full !py-1.5 text-sm"
+                >
+                  <option value="level">Cấp</option>
+                  <option value="rounds">Ván</option>
+                </select>
+              </label>
+              <label className="sm:w-32 text-[11px] font-semibold text-[var(--play-muted)]">
+                Giá trị
+                <input
+                  value={levelSetValue}
+                  onChange={(e) => setLevelSetValue(e.target.value)}
+                  className="app-input mt-1 w-full !py-1.5 text-sm"
+                />
+              </label>
+              <button
+                type="button"
+                disabled={levelUserBusy || !levelUserId}
+                onClick={() => void setUserPlayLevel()}
+                className="rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
+              >
+                Áp dụng
+              </button>
+            </div>
+            <label className="flex items-center gap-2 text-[11px] font-semibold text-[var(--play-muted)]">
+              <input
+                type="checkbox"
+                checked={levelGrantOnSet}
+                onChange={(e) => setLevelGrantOnSet(e.target.checked)}
+              />
+              Tự phát thưởng mốc đã đạt khi set
+            </label>
+            <input
+              value={levelUserFilter}
+              onChange={(e) => setLevelUserFilter(e.target.value)}
+              placeholder="Lọc danh sách…"
+              className="app-input w-full !py-1.5 text-sm"
+            />
+            <ul className="mt-1 max-h-72 space-y-1.5 overflow-y-auto">
+              {data.users
+                .filter((u) => {
+                  const q = levelUserFilter.trim().toLowerCase();
+                  if (!q) return true;
+                  return `${u.username} ${u.code} ${u.id}`
+                    .toLowerCase()
+                    .includes(q);
+                })
+                .sort(
+                  (a, b) =>
+                    (b.roundsPlayed ?? 0) - (a.roundsPlayed ?? 0),
+                )
+                .slice(0, 40)
+                .map((u) => {
+                  const lv =
+                    u.playLevel ?? playLevelFromRounds(u.roundsPlayed ?? 0);
+                  const claimed = u.claimedLevelRewards ?? [];
+                  return (
+                    <li
+                      key={u.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-[var(--play-ink)]">
+                          {u.username}{" "}
+                          <span className="font-mono text-[var(--play-muted)]">
+                            · {u.code}
+                          </span>
+                        </p>
+                        <p className="tabular-nums text-[var(--play-muted)]">
+                          Lv.{lv} · {playLevelTitle(lv)} ·{" "}
+                          {(u.roundsPlayed ?? 0).toLocaleString("vi-VN")} ván ·
+                          claimed {claimed.length}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          disabled={levelUserBusy}
+                          onClick={() => {
+                            setLevelUserId(u.id);
+                            setLevelSetMode("level");
+                            setLevelSetValue(String(lv));
+                          }}
+                          className="rounded-full bg-white px-2 py-0.5 text-[9px] font-bold ring-1 ring-[var(--wood-deep)]/20"
+                        >
+                          Chọn
+                        </button>
+                        <button
+                          type="button"
+                          disabled={levelUserBusy}
+                          onClick={() => void forceClaimLevelRewards(u.id)}
+                          className="rounded-full bg-emerald-800 px-2 py-0.5 text-[9px] font-bold text-emerald-50"
+                        >
+                          Phát pending
+                        </button>
+                        <button
+                          type="button"
+                          disabled={levelUserBusy}
+                          onClick={() => void clearUserLevelRewards(u.id)}
+                          className="rounded-full bg-white px-2 py-0.5 text-[9px] font-bold text-red-800 ring-1 ring-red-300/60"
+                        >
+                          Reset claimed
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+            </ul>
           </section>
         </>
       )}
@@ -6012,6 +7385,66 @@ export default function AdminDashboard() {
               Làm mới
             </button>
           </div>
+
+          {main && (
+            <div className="rounded-xl bg-rose-50/90 px-3 py-2.5 ring-1 ring-rose-300/50">
+              <p className="text-[11px] font-bold text-[var(--play-ink)]">
+                🧧 Lì xì Room — % phát
+              </p>
+              <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
+                Người gửi trừ đủ số lì xì (tối thiểu 10.000.000). Chỉ{" "}
+                <strong>{lixiPctDraft || "…"}%</strong> được chia đều cho người
+                ngồi trong phòng (trừ người gửi); phần còn lại vào kho Tarot.
+              </p>
+              <div className="mt-2 flex flex-wrap items-end gap-2">
+                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
+                  % phát (1–100)
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={lixiPctDraft}
+                    onChange={(e) => setLixiPctDraft(e.target.value)}
+                    className="app-input mt-0.5 !w-24 !py-1.5 text-sm"
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={lixiPctBusy}
+                  onClick={() => {
+                    void (async () => {
+                      setLixiPctBusy(true);
+                      try {
+                        const r = await api<{
+                          ok: true;
+                          config: { payoutPct: number };
+                        }>("/api/mainadmin/voice-lixi", {
+                          method: "POST",
+                          body: JSON.stringify({
+                            payoutPct: Number(lixiPctDraft),
+                          }),
+                        });
+                        setLixiPctDraft(String(r.config.payoutPct));
+                        setMsg(`Đã lưu lì xì Room · phát ${r.config.payoutPct}%`);
+                      } catch (err) {
+                        setMsg(
+                          err instanceof Error
+                            ? err.message
+                            : "Lỗi lưu % lì xì",
+                        );
+                      } finally {
+                        setLixiPctBusy(false);
+                      }
+                    })();
+                  }}
+                  className="rounded-full bg-rose-700 px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-50"
+                >
+                  {lixiPctBusy ? "…" : "Lưu %"}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-3">
             {(roomLobby.length
               ? roomLobby
@@ -6166,7 +7599,8 @@ export default function AdminDashboard() {
           <section className="app-panel mt-4 p-3 sm:p-4">
             <p className="play-heading text-sm">Audit log</p>
             <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-              Thao tác staff gần đây (Inter, VIP, ban, vault…).
+              Thao tác staff gần đây (Inter, VIP, ban, vault…). Khoanh vàng ≥{" "}
+              {formatXu(XU_HIGHLIGHT_LARGE)} · đỏ ≥ {formatXu(XU_HIGHLIGHT_HUGE)}.
             </p>
             <ul className="mt-2 max-h-64 space-y-1.5 overflow-y-auto sm:max-h-80">
               {(data.audit ?? []).length === 0 && (
@@ -6174,22 +7608,41 @@ export default function AdminDashboard() {
                   Chưa có bản ghi
                 </li>
               )}
-              {(data.audit ?? []).map((a) => (
-                <li
-                  key={a.id}
-                  className="rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
-                >
-                  <span className="font-semibold text-[var(--play-ink)]">
-                    {a.actorName}
-                  </span>{" "}
-                  · {a.action}
-                  {a.targetName ? ` → ${a.targetName}` : ""}
-                  {a.detail ? ` · ${a.detail}` : ""}
-                  <span className="block text-[10px] text-[var(--play-muted)]">
-                    {new Date(a.at).toLocaleString("vi-VN")}
-                  </span>
-                </li>
-              ))}
+              {(data.audit ?? []).map((a) => {
+                const amt = parseXuFromDetail(a.detail);
+                const hit = xuHitLevel(amt);
+                return (
+                  <li
+                    key={a.id}
+                    className={`rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10 ${xuHitRowClass(hit)}`}
+                    title={
+                      hit !== "normal"
+                        ? `Số lớn: ${formatXu(amt)}`
+                        : undefined
+                    }
+                  >
+                    <span className="font-semibold text-[var(--play-ink)]">
+                      {a.actorName}
+                    </span>{" "}
+                    · {a.action}
+                    {a.targetName ? ` → ${a.targetName}` : ""}
+                    {a.detail ? (
+                      <>
+                        {" · "}
+                        <span className="xu-hit__amt">{a.detail}</span>
+                      </>
+                    ) : null}
+                    {hit !== "normal" && (
+                      <span className="ml-1 text-[9px] font-extrabold uppercase opacity-80">
+                        {hit === "huge" ? "RẤT LỚN" : "LỚN"}
+                      </span>
+                    )}
+                    <span className="block text-[10px] text-[var(--play-muted)]">
+                      {new Date(a.at).toLocaleString("vi-VN")}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           </section>
           <section className="app-panel mt-4 p-3 sm:p-4">
@@ -6864,71 +8317,139 @@ export default function AdminDashboard() {
           <section className="app-panel mt-4 p-3">
             <p className="play-heading text-sm">Tạo / cập nhật coupon</p>
             <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-              Mã trùng sẽ cập nhật số xu &amp; cấu hình. Redeem trừ kho xu.
-              Giới hạn lượt toàn hệ thống: 0 = không giới hạn (∞). Mỗi user vẫn
-              có thể bị chặn bởi «1 lần / user».
+              Mã trùng sẽ cập nhật cấu hình. Đổi mã trừ kho xu. Mỗi ô có chú
+              thích bên dưới.
             </p>
-            <form onSubmit={createCoupon} className="mt-3 space-y-2">
-              <div className="flex flex-wrap gap-2">
-                <input
-                  value={couponForm.code}
-                  onChange={(e) =>
-                    setCouponForm((f) => ({ ...f, code: e.target.value }))
-                  }
-                  placeholder="Mã (vd NAP50K)"
-                  className="app-input !py-1.5 text-xs"
-                  required
-                />
-                <input
-                  value={couponForm.amount}
-                  onChange={(e) =>
-                    setCouponForm((f) => ({ ...f, amount: e.target.value }))
-                  }
-                  placeholder="Số xu"
-                  type="number"
-                  min={10}
-                  max={ITEM_XU_MAX}
-                  className="app-input !w-28 !py-1.5 text-xs"
-                  required
-                />
-                <input
-                  value={couponForm.maxUses}
-                  onChange={(e) =>
-                    setCouponForm((f) => ({ ...f, maxUses: e.target.value }))
-                  }
-                  placeholder="Max lượt (0=∞)"
-                  type="number"
-                  min={0}
-                  max={10_000_000}
-                  className="app-input !w-32 !py-1.5 text-xs"
-                  title="0 = không giới hạn"
-                />
-              </div>
-              <input
-                value={couponForm.label}
-                onChange={(e) =>
-                  setCouponForm((f) => ({ ...f, label: e.target.value }))
-                }
-                placeholder="Nhãn (tuỳ chọn)"
-                className="app-input !py-1.5 text-xs"
-              />
-              <div className="flex flex-wrap items-center gap-3 text-[11px]">
-                <label className="flex items-center gap-1.5 font-semibold text-[var(--play-ink)]">
+            <form onSubmit={createCoupon} className="mt-3 space-y-3">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="block text-[11px] font-bold text-[var(--play-ink)]">
+                  Mã coupon
                   <input
-                    type="checkbox"
-                    checked={couponForm.oncePerUser}
+                    value={couponForm.code}
+                    onChange={(e) =>
+                      setCouponForm((f) => ({ ...f, code: e.target.value }))
+                    }
+                    placeholder="vd NAP50K"
+                    className="app-input mt-1 w-full !py-1.5 text-xs"
+                    required
+                  />
+                  <span className="mt-0.5 block text-[10px] font-normal text-[var(--play-muted)]">
+                    3–32 ký tự: chữ, số, _ hoặc -. User nhập mã này để nạp xu.
+                  </span>
+                </label>
+                <label className="block text-[11px] font-bold text-[var(--play-ink)]">
+                  Số xu cộng
+                  <input
+                    value={couponForm.amount}
+                    onChange={(e) =>
+                      setCouponForm((f) => ({ ...f, amount: e.target.value }))
+                    }
+                    type="number"
+                    min={10}
+                    max={ITEM_XU_MAX}
+                    className="app-input mt-1 w-full !py-1.5 text-xs"
+                    required
+                  />
+                  <span className="mt-0.5 block text-[10px] font-normal text-[var(--play-muted)]">
+                    Xu cộng vào ví user mỗi lần đổi thành công (tối thiểu 10).
+                  </span>
+                </label>
+                <label className="block text-[11px] font-bold text-[var(--play-ink)]">
+                  Max lượt toàn hệ thống
+                  <input
+                    value={couponForm.maxUses}
+                    onChange={(e) =>
+                      setCouponForm((f) => ({ ...f, maxUses: e.target.value }))
+                    }
+                    type="number"
+                    min={0}
+                    max={10_000_000}
+                    className="app-input mt-1 w-full !py-1.5 text-xs"
+                  />
+                  <span className="mt-0.5 block text-[10px] font-normal text-[var(--play-muted)]">
+                    Tổng số lần mọi người được đổi mã này. <strong>0 = không
+                    giới hạn</strong>.
+                  </span>
+                </label>
+                <label className="block text-[11px] font-bold text-[var(--play-ink)]">
+                  Lượt / mỗi user
+                  <input
+                    value={couponForm.usesPerUser}
                     onChange={(e) =>
                       setCouponForm((f) => ({
                         ...f,
-                        oncePerUser: e.target.checked,
+                        usesPerUser: e.target.value,
+                        oncePerUser: Number(e.target.value) === 1,
+                      }))
+                    }
+                    type="number"
+                    min={0}
+                    max={10_000}
+                    className="app-input mt-1 w-full !py-1.5 text-xs"
+                  />
+                  <span className="mt-0.5 block text-[10px] font-normal text-[var(--play-muted)]">
+                    Mỗi tài khoản được đổi bao nhiêu lần. <strong>0 = ∞</strong>
+                    · <strong>1 = một lần</strong> · N = tối đa N lần.
+                  </span>
+                </label>
+                <label className="block text-[11px] font-bold text-[var(--play-ink)]">
+                  Hết hạn ngày
+                  <input
+                    value={couponForm.expiresOn}
+                    onChange={(e) =>
+                      setCouponForm((f) => ({
+                        ...f,
+                        expiresOn: e.target.value,
+                      }))
+                    }
+                    type="date"
+                    className="app-input mt-1 w-full !py-1.5 text-xs"
+                  />
+                  <span className="mt-0.5 block text-[10px] font-normal text-[var(--play-muted)]">
+                    Sau ngày này (23:59 VN) mã không dùng được.{" "}
+                    <strong>Để trống = không hết hạn</strong>.
+                  </span>
+                </label>
+                <label className="block text-[11px] font-bold text-[var(--play-ink)]">
+                  Nhãn (tuỳ chọn)
+                  <input
+                    value={couponForm.label}
+                    onChange={(e) =>
+                      setCouponForm((f) => ({ ...f, label: e.target.value }))
+                    }
+                    placeholder="Ghi chú nội bộ admin"
+                    className="app-input mt-1 w-full !py-1.5 text-xs"
+                  />
+                  <span className="mt-0.5 block text-[10px] font-normal text-[var(--play-muted)]">
+                    Chỉ admin thấy — user không thấy nhãn này.
+                  </span>
+                </label>
+              </div>
+              <div className="flex flex-wrap items-start gap-4 text-[11px]">
+                <label className="flex max-w-xs items-start gap-1.5 font-semibold text-[var(--play-ink)]">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={couponForm.cultivationOnly}
+                    onChange={(e) =>
+                      setCouponForm((f) => ({
+                        ...f,
+                        cultivationOnly: e.target.checked,
                       }))
                     }
                   />
-                  1 lần / user
+                  <span>
+                    Tu tiên hệ
+                    <span className="mt-0.5 block text-[10px] font-normal text-[var(--play-muted)]">
+                      Chỉ user cảnh giới Trúc Cơ → Độ Kiếp mới đổi được (Luyện
+                      Khí / chưa có cảnh giới bị chặn).
+                    </span>
+                  </span>
                 </label>
-                <label className="flex items-center gap-1.5 font-semibold text-[var(--play-ink)]">
+                <label className="flex max-w-xs items-start gap-1.5 font-semibold text-[var(--play-ink)]">
                   <input
                     type="checkbox"
+                    className="mt-0.5"
                     checked={couponForm.enabled}
                     onChange={(e) =>
                       setCouponForm((f) => ({
@@ -6937,7 +8458,12 @@ export default function AdminDashboard() {
                       }))
                     }
                   />
-                  Bật ngay
+                  <span>
+                    Bật ngay
+                    <span className="mt-0.5 block text-[10px] font-normal text-[var(--play-muted)]">
+                      Tắt = mã tồn tại nhưng user không đổi được.
+                    </span>
+                  </span>
                 </label>
                 <button
                   type="submit"
@@ -6975,10 +8501,16 @@ export default function AdminDashboard() {
                     <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
                       {c.label}
                       {c.secret ? " · bí mật" : ""}
-                      {c.oncePerUser ? " · 1 lần/user" : ""}
+                      {c.cultivationOnly ? " · Tu tiên hệ" : ""}
+                      {(c.usesPerUser ?? (c.oncePerUser ? 1 : 0)) > 0
+                        ? ` · ${c.usesPerUser ?? 1} lần/user`
+                        : " · ∞/user"}
                       {c.enabled ? "" : " · tắt"}
                       {" · "}đã đổi {c.redeemCount}/
                       {(c.maxUses ?? 0) > 0 ? c.maxUses : "∞"}
+                      {(c.expiresAt ?? 0) > 0
+                        ? ` · hết hạn ${new Date(c.expiresAt!).toLocaleDateString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}${Date.now() > (c.expiresAt ?? 0) ? " (đã hết)" : ""}`
+                        : " · không hạn"}
                     </p>
                     <div className="mt-1.5 flex gap-1">
                       <button
@@ -6996,21 +8528,164 @@ export default function AdminDashboard() {
                       <button
                         type="button"
                         disabled={couponBusy}
-                        onClick={() =>
+                        onClick={() => {
+                          const exp = Number(c.expiresAt) || 0;
+                          let expiresOn = "";
+                          if (exp > 0) {
+                            expiresOn = new Intl.DateTimeFormat("en-CA", {
+                              timeZone: "Asia/Ho_Chi_Minh",
+                              year: "numeric",
+                              month: "2-digit",
+                              day: "2-digit",
+                            }).format(new Date(exp));
+                          }
                           setCouponForm({
                             code: c.code,
                             amount: String(c.amount),
                             label: c.label,
-                            oncePerUser: c.oncePerUser,
+                            oncePerUser:
+                              (c.usesPerUser ?? (c.oncePerUser ? 1 : 0)) === 1,
+                            usesPerUser: String(
+                              c.usesPerUser ?? (c.oncePerUser ? 1 : 0),
+                            ),
                             enabled: c.enabled,
                             maxUses: String(c.maxUses ?? 0),
-                          })
-                        }
+                            cultivationOnly: !!c.cultivationOnly,
+                            expiresOn,
+                          });
+                        }}
                         className="rounded-full bg-white px-2.5 py-0.5 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
                       >
                         Sửa form
                       </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCouponHistoryOpen((cur) => {
+                            const next = cur === c.code ? null : c.code;
+                            setCouponUserFilter("");
+                            return next;
+                          })
+                        }
+                        className="rounded-full bg-white px-2.5 py-0.5 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                      >
+                        {couponHistoryOpen === c.code
+                          ? "Ẩn lịch sử"
+                          : `Theo user (${c.userCount ?? c.byUser?.length ?? 0})`}
+                      </button>
                     </div>
+                    {couponHistoryOpen === c.code && (
+                      <div className="mt-2 space-y-2 rounded-md bg-[rgba(20,28,40,0.04)] px-2 py-2 ring-1 ring-[var(--wood-deep)]/10">
+                        <p className="text-[10px] text-[var(--play-muted)]">
+                          Tổng hợp <strong>mỗi user</strong> (số lần + xu) — không
+                          mất khi log gần đây đầy. Limit mã:{" "}
+                          {(c.usesPerUser ?? (c.oncePerUser ? 1 : 0)) > 0
+                            ? `${c.usesPerUser ?? 1} lần/user`
+                            : "∞/user"}
+                          .
+                        </p>
+                        <input
+                          value={
+                            couponHistoryOpen === c.code ? couponUserFilter : ""
+                          }
+                          onChange={(e) => setCouponUserFilter(e.target.value)}
+                          placeholder="Lọc username / id…"
+                          className="app-input w-full !py-1 text-[11px]"
+                        />
+                        <ul className="max-h-52 space-y-1 overflow-y-auto">
+                          {(() => {
+                            const q = couponUserFilter.trim().toLowerCase();
+                            const rows = (c.byUser ?? []).filter((u) => {
+                              if (!q) return true;
+                              return (
+                                u.username.toLowerCase().includes(q) ||
+                                u.userId.toLowerCase().includes(q)
+                              );
+                            });
+                            if (rows.length === 0) {
+                              return (
+                                <li className="text-[10px] text-[var(--play-muted)]">
+                                  {(c.byUser?.length ?? 0) === 0
+                                    ? "Chưa ai đổi mã này"
+                                    : "Không khớp bộ lọc"}
+                                </li>
+                              );
+                            }
+                            const lim =
+                              c.usesPerUser ?? (c.oncePerUser ? 1 : 0);
+                            return rows.map((u) => {
+                              const over =
+                                lim > 0 && u.redeemCount >= lim;
+                              return (
+                                <li
+                                  key={u.userId}
+                                  className={`flex items-center justify-between gap-2 rounded px-1.5 py-1 text-[10px] ${
+                                    over
+                                      ? "bg-rose-50 ring-1 ring-rose-200/80"
+                                      : "bg-white/70"
+                                  }`}
+                                >
+                                  <span className="min-w-0 truncate font-semibold text-[var(--play-ink)]">
+                                    {u.username}
+                                    <span className="ml-1 font-mono font-normal text-[var(--play-muted)]">
+                                      · {u.userId.slice(0, 8)}
+                                    </span>
+                                  </span>
+                                  <span className="shrink-0 text-right tabular-nums">
+                                    <span
+                                      className={`font-play font-bold ${
+                                        over
+                                          ? "text-rose-700"
+                                          : "text-[var(--wood-deep)]"
+                                      }`}
+                                    >
+                                      {u.redeemCount}
+                                      {lim > 0 ? `/${lim}` : ""} lần
+                                    </span>
+                                    <span className="mx-1 text-[var(--play-muted)]">
+                                      ·
+                                    </span>
+                                    <span className="font-play font-bold text-[var(--wood-deep)]">
+                                      {formatXu(u.totalAmount)}
+                                    </span>
+                                    <span className="mt-0.5 block text-[9px] text-[var(--play-muted)]">
+                                      gần nhất{" "}
+                                      {new Date(u.lastAt).toLocaleString(
+                                        "vi-VN",
+                                      )}
+                                    </span>
+                                  </span>
+                                </li>
+                              );
+                            });
+                          })()}
+                        </ul>
+                        {(c.recentRedemptions?.length ?? 0) > 0 && (
+                          <details className="text-[10px]">
+                            <summary className="cursor-pointer font-semibold text-[var(--play-muted)]">
+                              Log chi tiết gần đây (
+                              {c.recentRedemptions!.length})
+                            </summary>
+                            <ul className="mt-1 max-h-28 space-y-0.5 overflow-y-auto">
+                              {c.recentRedemptions!.map((r) => (
+                                <li
+                                  key={r.id}
+                                  className="flex justify-between gap-2 text-[var(--play-ink)]"
+                                >
+                                  <span className="truncate">
+                                    {r.username}
+                                  </span>
+                                  <span className="shrink-0 tabular-nums text-[var(--play-muted)]">
+                                    +{formatXu(r.amount)} ·{" "}
+                                    {new Date(r.at).toLocaleString("vi-VN")}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
+                        )}
+                      </div>
+                    )}
                   </li>
                 ))
               )}
@@ -7019,7 +8694,13 @@ export default function AdminDashboard() {
 
           <section className="app-panel mt-4 p-3">
             <p className="play-heading mb-2 text-sm">
-              Lịch sử đổi mã ({(data.couponRedemptions ?? []).length})
+              Lịch sử đổi mã gần đây (toàn site ·{" "}
+              {(data.couponRedemptions ?? []).length})
+            </p>
+            <p className="mb-2 text-[10px] text-[var(--play-muted)]">
+              Log toàn site gần đây. Để kiểm soát từng người → nút{" "}
+              <strong>Theo user</strong> trên mỗi mã (tổng lần bền, có lọc
+              username).
             </p>
             <ul className="max-h-56 space-y-1.5 overflow-y-auto">
               {(data.couponRedemptions ?? []).length === 0 ? (
@@ -7421,8 +9102,8 @@ export default function AdminDashboard() {
                 <p className="play-heading text-sm">Inter — thuật toán lá thắng</p>
                 <p className="mt-1 text-[11px] text-[var(--play-muted)]">
                   ALL xoay chuỗi mode — chọn 1–9 phút/slot (&lt; 10 phút).
-                  Policy đọc cầu user đăng nhập. Cool dùng 3 lá thắng gần
-                  nhất.
+                  Policy đọc cầu user đăng nhập. Cool cắt mạnh cầu gần đây.
+                  FogBreak bẻ cầu mềm + nhiễu (không lộ).
                 </p>
               </div>
               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-900 ring-1 ring-amber-300/60">
@@ -7534,6 +9215,8 @@ export default function AdminDashboard() {
                     <option value="flowguard">flowguard</option>
                     <option value="moneysteer">moneysteer</option>
                     <option value="crowdcap">crowdcap</option>
+                    <option value="fogbreak">fogbreak</option>
+                    <option value="smartai">smartai</option>
                   </select>
                 </label>
                 <label className="text-[10px] font-semibold text-[var(--play-muted)]">
@@ -7860,7 +9543,10 @@ export default function AdminDashboard() {
                     m.id === "contrarian" ||
                     m.id === "momentum" ||
                     m.id === "sparse" ||
-                    m.id === "dense";
+                    m.id === "dense" ||
+                    m.id === "crowdcap" ||
+                    m.id === "fogbreak" ||
+                    m.id === "smartai";
                   return (
                     <button
                       key={m.id}
@@ -7871,7 +9557,11 @@ export default function AdminDashboard() {
                         active
                           ? stakeHint
                             ? "bg-rose-600 text-white ring-rose-700 shadow-sm"
-                            : "bg-[var(--wood-deep)] text-white ring-[var(--wood-deep)] shadow-sm"
+                            : m.id === "fogbreak" ||
+                                m.id === "smartai" ||
+                                m.id === "cool"
+                              ? "bg-indigo-700 text-white ring-indigo-800 shadow-sm"
+                              : "bg-[var(--wood-deep)] text-white ring-[var(--wood-deep)] shadow-sm"
                           : "bg-white/90 text-[var(--play-ink)] ring-[var(--wood-deep)]/15 hover:bg-white"
                       } ${interBusy ? "opacity-60" : ""}`}
                     >
@@ -8016,6 +9706,8 @@ export default function AdminDashboard() {
               data.inter.mode === "flowguard" ||
               data.inter.mode === "moneysteer" ||
               data.inter.mode === "crowdcap" ||
+              data.inter.mode === "fogbreak" ||
+              data.inter.mode === "smartai" ||
               data.inter.effectiveMode === "app" ||
               data.inter.effectiveMode === "softapp" ||
               data.inter.effectiveMode === "user" ||
@@ -8028,10 +9720,13 @@ export default function AdminDashboard() {
               data.inter.effectiveMode === "dense" ||
               data.inter.effectiveMode === "vaultpct" ||
               data.inter.effectiveMode === "flowguard" ||
-              data.inter.effectiveMode === "moneysteer") && (
+              data.inter.effectiveMode === "moneysteer" ||
+              data.inter.effectiveMode === "fogbreak" ||
+              data.inter.effectiveMode === "smartai") && (
               <p className="text-[10px] text-[var(--play-muted)]">
-                Theo stake user đăng nhập · Trả = xu×hệ số · Lời app = tổng
-                stake − trả · Mode % kho: vaultpct / flowguard / moneysteer
+                Theo stake user đăng nhập · FogBreak/SmartAI nhìn lịch sử + nhiễu
+                · SmartAI học online nhẹ · Mode % kho: vaultpct / flowguard /
+                moneysteer
               </p>
             )}
             {(() => {
@@ -8419,6 +10114,8 @@ export default function AdminDashboard() {
                   <option value="vaultpct">vaultpct</option>
                   <option value="flowguard">flowguard</option>
                   <option value="moneysteer">moneysteer</option>
+                  <option value="fogbreak">fogbreak</option>
+                  <option value="smartai">smartai</option>
                 </select>
               </label>
               <label className="text-[10px] font-semibold text-[var(--play-muted)]">
@@ -8596,39 +10293,102 @@ export default function AdminDashboard() {
           )}
 
           <section className="app-panel mt-4 p-3">
-            <p className="play-heading mb-2 text-sm">Sổ kho (gần đây)</p>
-            <ul className="max-h-56 space-y-1.5 overflow-y-auto">
-              {activeVault.ledger.length === 0 ? (
-                <li className="text-xs text-[var(--play-muted)]">Chưa có giao dịch</li>
-              ) : (
-                activeVault.ledger.map((row) => (
-                  <li
-                    key={row.id}
-                    className="rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
-                  >
-                    <div className="flex justify-between gap-2">
-                      <span className="font-semibold">
-                        {LEDGER_LABEL[row.type] ?? row.type}
-                        {row.username ? ` · ${row.username}` : ""}
-                      </span>
-                      <span
-                        className={`font-play font-bold tabular-nums ${
-                          row.amount >= 0 ? "text-[var(--wood-deep)]" : "text-rose-600"
-                        }`}
-                      >
-                        {row.amount >= 0 ? "+" : ""}
-                        {formatXu(row.amount)}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-[var(--play-muted)]">
-                      {new Date(row.at).toLocaleString("vi-VN")} · sau{" "}
-                      {formatXu(row.balanceAfter)} · {row.byUsername}
-                      {row.note ? ` · ${row.note}` : ""}
-                    </p>
-                  </li>
-                ))
-              )}
-            </ul>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="play-heading text-sm">Sổ kho (gần đây)</p>
+              <select
+                value={vaultLedgerFilter}
+                onChange={(e) => setVaultLedgerFilter(e.target.value)}
+                className="app-input !w-auto !py-1 text-[10px]"
+              >
+                <option value="all">Tất cả</option>
+                <option value="outflow">Hao hụt (xu ra)</option>
+                {Object.entries(LEDGER_LABEL).map(([id, label]) => (
+                  <option key={id} value={id}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {(() => {
+              const rows = (activeVault.ledger ?? []).filter((row) => {
+                if (vaultLedgerFilter === "all") return true;
+                if (vaultLedgerFilter === "outflow") {
+                  return (
+                    row.amount < 0 ||
+                    row.type === "payout_out" ||
+                    row.type === "coupon_mint" ||
+                    row.type === "grant_user" ||
+                    row.type === "burn" ||
+                    row.type === "stake_refund"
+                  );
+                }
+                return row.type === vaultLedgerFilter;
+              });
+              return (
+                <div className="max-h-72 overflow-auto">
+                  <table className="w-full min-w-[28rem] border-collapse text-left text-[10px]">
+                    <thead className="sticky top-0 bg-[rgba(255,248,235,0.96)] text-[var(--play-muted)]">
+                      <tr>
+                        <th className="px-1.5 py-1 font-semibold">Thời gian</th>
+                        <th className="px-1.5 py-1 font-semibold">Loại</th>
+                        <th className="px-1.5 py-1 font-semibold">User</th>
+                        <th className="px-1.5 py-1 text-right font-semibold">Xu</th>
+                        <th className="px-1.5 py-1 text-right font-semibold">
+                          Sau
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={5}
+                            className="px-1.5 py-3 text-[var(--play-muted)]"
+                          >
+                            Không có dòng khớp bộ lọc
+                          </td>
+                        </tr>
+                      ) : (
+                        rows.map((row) => (
+                          <tr
+                            key={row.id}
+                            className="cursor-pointer border-t border-[var(--wood-deep)]/8 hover:bg-white/80"
+                            onClick={() => setVaultRowDetail(row)}
+                          >
+                            <td className="px-1.5 py-1 tabular-nums text-[var(--play-muted)]">
+                              {new Date(row.at).toLocaleString("vi-VN")}
+                            </td>
+                            <td className="px-1.5 py-1 font-semibold">
+                              {LEDGER_LABEL[row.type] ?? row.type}
+                            </td>
+                            <td className="max-w-[6rem] truncate px-1.5 py-1">
+                              {row.username || "—"}
+                            </td>
+                            <td
+                              className={`px-1.5 py-1 text-right font-play font-bold tabular-nums ${
+                                row.amount < 0
+                                  ? "text-rose-600"
+                                  : "text-[var(--wood-deep)]"
+                              }`}
+                            >
+                              {row.amount >= 0 ? "+" : ""}
+                              {formatXu(row.amount)}
+                            </td>
+                            <td className="px-1.5 py-1 text-right tabular-nums text-[var(--play-muted)]">
+                              {formatXu(row.balanceAfter)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+            <p className="mt-1.5 text-[9px] text-[var(--play-muted)]">
+              Bấm dòng để xem chi tiết. Bộ lọc chỉ trên {activeVault.ledger.length}{" "}
+              dòng snapshot — dùng popup Tổng quan để tải thêm theo loại.
+            </p>
           </section>
         </>
       )}
@@ -9015,6 +10775,27 @@ export default function AdminDashboard() {
         </button>
       </div>
 
+      <CosmeticsEditSheet
+        open={!!cosmeticsEditUserId}
+        user={
+          cosmeticsEditUserId
+            ? (data?.users.find((u) => u.id === cosmeticsEditUserId) ?? null)
+            : null
+        }
+        roleDisplay={roleDisplayDraft}
+        initialTab={cosmeticsInitialTab}
+        roleDisplayDraft={main ? roleDisplayDraft : null}
+        onSaveRoleDisplay={
+          main ? (cfg) => void saveRoleDisplay(cfg) : undefined
+        }
+        roleDisplayBusy={roleDisplayBusy}
+        onClose={() => {
+          setCosmeticsEditUserId(null);
+          setCosmeticsInitialTab("color");
+        }}
+        onApply={(userId, patch) => void setUserCosmetics(userId, patch)}
+      />
+
       {(hisBusy || hisData) && (canIp || canTools) && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-3 sm:items-center"
@@ -9120,59 +10901,139 @@ export default function AdminDashboard() {
 
                 <div>
                   <p className="mb-1 text-xs font-bold text-[var(--play-ink)]">
-                    Xu đặt gần (Tarot)
+                    Admin cộng / trừ xu · Gem · kho
                   </p>
-                  <ul className="max-h-40 space-y-1 overflow-y-auto">
-                    {hisData.recentStakes.length === 0 && (
-                      <li className="text-[var(--play-muted)]">Không có</li>
-                    )}
-                    {hisData.recentStakes.map((b) => (
-                      <li
-                        key={b.id}
-                        className="rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/10"
-                      >
-                        Ván #{b.round} · lá {b.cardId} · {formatXu(b.amount)} ·{" "}
-                        {b.result} · {formatXu(b.profit)} ·{" "}
-                        {new Date(b.at).toLocaleString("vi-VN")}
+                  <p className="mb-1 text-[10px] text-[var(--play-muted)]">
+                    Khoanh vàng ≥ {formatXu(XU_HIGHLIGHT_LARGE)} · đỏ ≥{" "}
+                    {formatXu(XU_HIGHLIGHT_HUGE)}. Audit toàn site: Mod → Audit
+                    log.
+                  </p>
+                  <ul className="max-h-52 space-y-1 overflow-y-auto">
+                    {(hisData.balanceAdjusts?.length ?? 0) === 0 && (
+                      <li className="text-[var(--play-muted)]">
+                        Chưa có bản ghi cộng/trừ
                       </li>
-                    ))}
+                    )}
+                    {(hisData.balanceAdjusts ?? []).map((a) => {
+                      const amt = parseXuFromDetail(a.detail);
+                      const hit = xuHitLevel(amt);
+                      return (
+                        <li
+                          key={a.id}
+                          className={`rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/10 ${xuHitRowClass(hit)}`}
+                          title={
+                            hit !== "normal"
+                              ? `Số lớn: ${formatXu(amt)}`
+                              : undefined
+                          }
+                        >
+                          <span className="font-semibold">{a.actorName}</span>
+                          {" · "}
+                          {a.action}
+                          {a.detail ? (
+                            <>
+                              {" · "}
+                              <span className="xu-hit__amt">{a.detail}</span>
+                            </>
+                          ) : null}
+                          {hit !== "normal" && (
+                            <span className="ml-1 text-[9px] font-extrabold uppercase text-inherit opacity-80">
+                              {hit === "huge" ? "RẤT LỚN" : "LỚN"}
+                            </span>
+                          )}
+                          <span className="block text-[10px] text-[var(--play-muted)]">
+                            {new Date(a.at).toLocaleString("vi-VN")}
+                          </span>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
 
                 <div>
                   <p className="mb-1 text-xs font-bold text-[var(--play-ink)]">
-                    Lịch sử Bánh xe Arcana
+                    Xu đặt Tarot ({hisData.recentStakes.length})
                   </p>
-                  <ul className="max-h-48 space-y-1 overflow-y-auto">
+                  <ul className="max-h-56 space-y-1 overflow-y-auto">
+                    {hisData.recentStakes.length === 0 && (
+                      <li className="text-[var(--play-muted)]">Không có</li>
+                    )}
+                    {hisData.recentStakes.map((b) => {
+                      const hit = xuHitLevelMax(b.amount, b.profit);
+                      return (
+                        <li
+                          key={b.id}
+                          className={`rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/10 ${xuHitRowClass(hit)}`}
+                        >
+                          Ván #{b.round} · lá {b.cardId} ·{" "}
+                          <span className="xu-hit__amt">
+                            {formatXu(b.amount)}
+                          </span>{" "}
+                          · {b.result} ·{" "}
+                          <span className="xu-hit__amt">
+                            {formatXu(b.profit)}
+                          </span>{" "}
+                          · {new Date(b.at).toLocaleString("vi-VN")}
+                          {hit !== "normal" && (
+                            <span className="ml-1 text-[9px] font-extrabold uppercase opacity-80">
+                              {hit === "huge" ? "RẤT LỚN" : "LỚN"}
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+
+                <div>
+                  <p className="mb-1 text-xs font-bold text-[var(--play-ink)]">
+                    Lịch sử Bánh xe Arcana (
+                    {hisData.recentArcanaSpins?.length ?? 0})
+                  </p>
+                  <ul className="max-h-52 space-y-1 overflow-y-auto">
                     {(hisData.recentArcanaSpins?.length ?? 0) === 0 && (
                       <li className="text-[var(--play-muted)]">
                         Chưa có lượt quay Arcana
                       </li>
                     )}
-                    {(hisData.recentArcanaSpins ?? []).map((sp) => (
-                      <li
-                        key={sp.id}
-                        className="rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/10"
-                      >
-                        {formatXu(sp.stake)} · picks [
-                        {(sp.pickIds?.length ? sp.pickIds : [sp.pickId]).join(
-                          ", ",
-                        )}
-                        ] → #{sp.winId} ·{" "}
-                        <span
-                          className={
-                            sp.won
-                              ? "text-[var(--jade-deep)]"
-                              : "text-rose-600"
-                          }
+                    {(hisData.recentArcanaSpins ?? []).map((sp) => {
+                      const hit = xuHitLevelMax(sp.stake, sp.profit);
+                      return (
+                        <li
+                          key={sp.id}
+                          className={`rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/10 ${xuHitRowClass(hit)}`}
                         >
-                          {sp.won ? "win" : "lose"} {formatXu(sp.profit)}
-                        </span>
-                        <span className="block text-[10px] text-[var(--play-muted)]">
-                          {new Date(sp.at).toLocaleString("vi-VN")}
-                        </span>
-                      </li>
-                    ))}
+                          <span className="xu-hit__amt">
+                            {formatXu(sp.stake)}
+                          </span>{" "}
+                          · picks [
+                          {(sp.pickIds?.length ? sp.pickIds : [sp.pickId]).join(
+                            ", ",
+                          )}
+                          ] → #{sp.winId} ·{" "}
+                          <span
+                            className={
+                              sp.won
+                                ? "text-[var(--jade-deep)]"
+                                : "text-rose-600"
+                            }
+                          >
+                            {sp.won ? "win" : "lose"}{" "}
+                            <span className="xu-hit__amt">
+                              {formatXu(sp.profit)}
+                            </span>
+                          </span>
+                          {hit !== "normal" && (
+                            <span className="ml-1 text-[9px] font-extrabold uppercase opacity-80">
+                              {hit === "huge" ? "RẤT LỚN" : "LỚN"}
+                            </span>
+                          )}
+                          <span className="block text-[10px] text-[var(--play-muted)]">
+                            {new Date(sp.at).toLocaleString("vi-VN")}
+                          </span>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               </div>
@@ -9280,6 +11141,209 @@ export default function AdminDashboard() {
                 </button>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {cashflowPopup && data?.xuFlow && (
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/45 p-3 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setCashflowPopup(null)}
+        >
+          <div
+            className="app-panel max-h-[85vh] w-full max-w-lg overflow-hidden p-0 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-[var(--wood-deep)]/10 px-3 py-2.5">
+              <p className="play-heading text-sm">
+                {cashflowPopup.kind === "summary"
+                  ? "Chi tiết dòng tiền"
+                  : cashflowPopup.title}
+              </p>
+              <button
+                type="button"
+                className="app-btn-soft !px-2.5 !py-0.5 !text-[10px]"
+                onClick={() => setCashflowPopup(null)}
+              >
+                Đóng
+              </button>
+            </div>
+            <div className="max-h-[70vh] overflow-y-auto px-3 py-3">
+              {cashflowPopup.kind === "summary" ? (
+                <div className="space-y-3 text-[11px]">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-lg bg-white/80 px-2.5 py-2 ring-1 ring-[var(--wood-deep)]/10">
+                      <p className="font-bold text-[var(--play-ink)]">Xu vào</p>
+                      <p className="font-play text-sm font-extrabold tabular-nums">
+                        {formatXu(data.xuFlow.inflowFromUsers)}
+                      </p>
+                      <p className="mt-0.5 text-[9px] text-[var(--play-muted)]">
+                        Stake {formatXu(data.xuFlow.stakeIn)} · Thu{" "}
+                        {formatXu(data.xuFlow.seizeIn)} · Phí{" "}
+                        {formatXu(data.xuFlow.feesIn)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-rose-50 px-2.5 py-2 ring-1 ring-rose-200/70">
+                      <p className="font-bold text-rose-900">Xu ra</p>
+                      <p className="font-play text-sm font-extrabold tabular-nums text-rose-800">
+                        {formatXu(data.xuFlow.outflowToUsers)}
+                      </p>
+                      <p className="mt-0.5 text-[9px] text-rose-900/60">
+                        Trả {formatXu(data.xuFlow.payoutOut)} · Coupon{" "}
+                        {formatXu(data.xuFlow.couponOut)} · Cấp{" "}
+                        {formatXu(data.xuFlow.grantOut)}
+                      </p>
+                    </div>
+                  </div>
+                  <p>
+                    Edge chơi (stake − trả):{" "}
+                    <span className="font-play font-bold tabular-nums">
+                      {formatXu(data.xuFlow.netFromPlay)}
+                    </span>
+                    {" · "}
+                    Số dư kho{" "}
+                    <span className="font-play font-bold tabular-nums">
+                      {formatXu(data.xuFlow.balance)}
+                    </span>
+                  </p>
+                  <ul className="space-y-1 rounded-lg bg-[rgba(20,28,40,0.04)] px-2.5 py-2 ring-1 ring-[var(--wood-deep)]/10">
+                    <li>
+                      Net 1h:{" "}
+                      <span className="font-play font-bold tabular-nums">
+                        {formatXu(data.xuFlow.hour?.net ?? 0)}
+                      </span>
+                    </li>
+                    <li>
+                      Net 24h:{" "}
+                      <span className="font-play font-bold tabular-nums">
+                        {formatXu(data.xuFlow.day?.net ?? 0)}
+                      </span>
+                    </li>
+                    <li>
+                      Net 7d:{" "}
+                      <span className="font-play font-bold tabular-nums">
+                        {formatXu(data.xuFlow.week?.net ?? 0)}
+                      </span>
+                    </li>
+                  </ul>
+                  <p className="text-[9px] text-[var(--play-muted)]">
+                    {data.xuFlow.note}
+                  </p>
+                  <button
+                    type="button"
+                    className="app-btn-primary !w-full !py-2 !text-xs"
+                    onClick={() =>
+                      void openCashflowLedger({
+                        kind: "ledger",
+                        title: "Hao hụt gần đây",
+                        outflow: true,
+                      })
+                    }
+                  >
+                    Xem sổ hao hụt
+                  </button>
+                </div>
+              ) : cashflowLedger.busy ? (
+                <p className="text-[11px] text-[var(--play-muted)]">Đang tải…</p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[10px] text-[var(--play-muted)]">
+                    {cashflowLedger.filteredCount} GD khớp · |tổng|{" "}
+                    <span className="font-play font-bold text-[var(--play-ink)]">
+                      {formatXu(cashflowLedger.sumAbs)}
+                    </span>
+                  </p>
+                  <ul className="max-h-[55vh] space-y-1.5 overflow-y-auto">
+                    {cashflowLedger.rows.length === 0 ? (
+                      <li className="text-[11px] text-[var(--play-muted)]">
+                        Không có dòng
+                      </li>
+                    ) : (
+                      cashflowLedger.rows.map((row) => (
+                        <li
+                          key={row.id}
+                          className="rounded-lg bg-white/80 px-2 py-1.5 text-[10px] ring-1 ring-[var(--wood-deep)]/10"
+                        >
+                          <div className="flex justify-between gap-2">
+                            <span className="font-semibold">
+                              {LEDGER_LABEL[row.type] ?? row.type}
+                              {row.username ? ` · ${row.username}` : ""}
+                            </span>
+                            <span
+                              className={`font-play font-bold tabular-nums ${
+                                row.amount < 0
+                                  ? "text-rose-600"
+                                  : "text-[var(--wood-deep)]"
+                              }`}
+                            >
+                              {row.amount >= 0 ? "+" : ""}
+                              {formatXu(row.amount)}
+                            </span>
+                          </div>
+                          <p className="text-[9px] text-[var(--play-muted)]">
+                            {new Date(row.at).toLocaleString("vi-VN")} · sau{" "}
+                            {formatXu(row.balanceAfter)} · {row.byUsername}
+                            {row.note ? ` · ${row.note}` : ""}
+                          </p>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {vaultRowDetail && (
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/45 p-3 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setVaultRowDetail(null)}
+        >
+          <div
+            className="app-panel w-full max-w-md p-3 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="play-heading text-sm">Chi tiết giao dịch kho</p>
+              <button
+                type="button"
+                className="app-btn-soft !px-2.5 !py-0.5 !text-[10px]"
+                onClick={() => setVaultRowDetail(null)}
+              >
+                Đóng
+              </button>
+            </div>
+            <dl className="space-y-1.5 text-[11px]">
+              {(
+                [
+                  ["Loại", LEDGER_LABEL[vaultRowDetail.type] ?? vaultRowDetail.type],
+                  ["Số xu", `${vaultRowDetail.amount >= 0 ? "+" : ""}${formatXu(vaultRowDetail.amount)}`],
+                  ["Số dư sau", formatXu(vaultRowDetail.balanceAfter)],
+                  ["Thời gian", new Date(vaultRowDetail.at).toLocaleString("vi-VN")],
+                  ["User", vaultRowDetail.username || "—"],
+                  ["User ID", vaultRowDetail.userId || "—"],
+                  ["Bởi", vaultRowDetail.byUsername],
+                  ["Ghi chú", vaultRowDetail.note || "—"],
+                  ["ID GD", vaultRowDetail.id],
+                ] as const
+              ).map(([k, v]) => (
+                <div
+                  key={k}
+                  className="flex justify-between gap-3 border-b border-[var(--wood-deep)]/8 py-1"
+                >
+                  <dt className="shrink-0 text-[var(--play-muted)]">{k}</dt>
+                  <dd className="text-right font-semibold text-[var(--play-ink)] break-all">
+                    {v}
+                  </dd>
+                </div>
+              ))}
+            </dl>
           </div>
         </div>
       )}

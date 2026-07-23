@@ -46,6 +46,8 @@ export interface AuthUser {
   roundsPlayed?: number;
   /** Cấp 1–99 suy từ roundsPlayed */
   playLevel?: number;
+  /** Mốc level đã nhận thưởng */
+  claimedLevelRewards?: number[];
   /** Admin cấp VIP */
   vipGranted?: boolean;
   /** VIP hiệu lực (admin hoặc đủ 10k ván) */
@@ -78,6 +80,8 @@ export interface AuthUser {
   nameFrame?: string;
   /** Khung bao ID badge (RoleAD) */
   idFrame?: string;
+  /** Huy hiệu cosmetic — không liên quan role */
+  displayBadges?: string[];
   /** Cặp đôi / nhẫn */
   bond?: {
     partnerId: string;

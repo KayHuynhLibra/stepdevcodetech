@@ -88,6 +88,8 @@ const TEN_NGAN = [
   "Liễu",
 ];
 
+export type BotPersona = "follower" | "contrarian" | "random" | "chaser";
+
 export interface BotIdentity {
   id: string;
   name: string;
@@ -95,6 +97,7 @@ export interface BotIdentity {
   isVip: boolean;
   /** Bot chuyên dí theo cầu đang có stake lớn nhất */
   isChaser: boolean;
+  persona: BotPersona;
   /** Tổng xu lời trong ngày — dùng chung list với người chơi */
   winToday: number;
   guessesToday: number;
@@ -105,6 +108,21 @@ export interface BotIdentity {
 
 /** Luôn giữ 2 bot dí cầu khi có đủ bot active */
 export const CHASER_BOT_COUNT = 2;
+
+const NON_CHASER_PERSONAS: BotPersona[] = [
+  "follower",
+  "contrarian",
+  "random",
+  "follower",
+  "contrarian",
+  "random",
+  "random",
+];
+
+function assignPersona(index: number, isChaser: boolean): BotPersona {
+  if (isChaser) return "chaser";
+  return NON_CHASER_PERSONAS[index % NON_CHASER_PERSONAS.length]!;
+}
 
 function shuffleInPlace<T>(arr: T[]): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -136,6 +154,7 @@ export function createIdentityPool(size = 50): BotIdentity[] {
       avatar,
       isVip: isChaser || Math.random() < 0.12,
       isChaser,
+      persona: assignPersona(i, isChaser),
       winToday: 0,
       guessesToday: 0,
       dayKey: day,
@@ -212,6 +231,78 @@ export function randomBotStakesPerRound(): number {
   return 4;
 }
 
+/** Persona: đôi khi bỏ ván / ít lệnh hơn. */
+export function personaStakesPerRound(persona: BotPersona): number {
+  if (persona === "chaser") return 2 + Math.floor(Math.random() * 3);
+  // ~12% skip (0 lệnh) — xử lý ở caller
+  if (Math.random() < 0.12) return 0;
+  if (persona === "random") return randomBotStakesPerRound();
+  if (persona === "contrarian") {
+    const r = Math.random();
+    if (r < 0.45) return 1;
+    if (r < 0.8) return 2;
+    return 3;
+  }
+  // follower
+  const r = Math.random();
+  if (r < 0.3) return 1;
+  if (r < 0.7) return 2;
+  return 3;
+}
+
 export function randomCardId(): number {
   return 1 + Math.floor(Math.random() * 8);
 }
+
+/**
+ * Chọn lá theo persona.
+ * displayStakes: real+bot hiện tại; recentWins: id lá thắng gần đây.
+ */
+export function pickBotPersonaCard(
+  persona: BotPersona,
+  displayStakes: number[],
+  recentWins: number[],
+): number {
+  if (persona === "random" || persona === "chaser") {
+    return randomCardId();
+  }
+
+  const ranked = displayStakes
+    .map((amount, i) => ({ cardId: i + 1, amount: Math.max(0, amount) }))
+    .sort((a, b) => b.amount - a.amount);
+
+  if (persona === "follower") {
+    // Theo hot / stake cao; đôi khi lá vừa thắng
+    if (recentWins[0] && Math.random() < 0.28) return recentWins[0]!;
+    const top = ranked.filter((r) => r.amount > 0).slice(0, 3);
+    if (top.length === 0) return randomCardId();
+    const pick = top[Math.floor(Math.random() * top.length)]!;
+    return pick.cardId;
+  }
+
+  // contrarian — cold / stake thấp
+  const cold = [...ranked].reverse();
+  const low = cold.filter((r) => r.amount <= (ranked[0]?.amount ?? 0) * 0.35);
+  const pool = low.length > 0 ? low.slice(0, 4) : cold.slice(0, 3);
+  if (pool.length === 0) return randomCardId();
+  // Tránh lá vừa thắng nếu có lựa chọn khác
+  const avoid = new Set(recentWins.slice(0, 2));
+  const filtered = pool.filter((p) => !avoid.has(p.cardId));
+  const use = filtered.length > 0 ? filtered : pool;
+  return use[Math.floor(Math.random() * use.length)]!.cardId;
+}
+
+/** Mệnh giá theo persona — follower vừa, contrarian nhỏ hơn, random full spectrum. */
+export function randomPersonaStakeAmount(persona: BotPersona): number {
+  if (persona === "chaser") return randomChaserStakeAmount();
+  if (persona === "contrarian") {
+    const tier = pickWeightedTier(NORMAL_STAKE_TIERS.slice(0, 5));
+    return randomAmountInTier(tier);
+  }
+  if (persona === "follower") {
+    const tier = pickWeightedTier(NORMAL_STAKE_TIERS.slice(1, 6));
+    return randomAmountInTier(tier);
+  }
+  return randomBotStakeAmount();
+}
+

@@ -9,6 +9,8 @@ import { auditStore } from "./auditStore.js";
 import { normalizeAvatar } from "./avatars.js";
 import { cultivationStore } from "./cultivationStore.js";
 import { rateLimit } from "./rateLimit.js";
+import { vaultTarot } from "./vaultStore.js";
+import { voiceLixiStore } from "./voiceLixiStore.js";
 import {
   voiceRoomStore,
   type VoiceRoomId,
@@ -16,6 +18,18 @@ import {
 } from "./voiceRoomStore.js";
 
 type Ack = (r: unknown) => void;
+
+export type VoiceBalanceSync = (
+  userId: string,
+  balance: number,
+) => { socketIds: string[]; balance: number };
+
+let balanceSync: VoiceBalanceSync | undefined;
+
+/** Gọi sau khi GameEngine sẵn sàng — cập nhật số dư live trên bàn. */
+export function setVoiceBalanceSync(fn: VoiceBalanceSync) {
+  balanceSync = fn;
+}
 
 function resolveVoiceUser(token?: string) {
   const user = authStore.resolveToken(token);
@@ -48,6 +62,129 @@ export function attachVoiceSocket(io: Server) {
       socket.emit("voice:lobby", lobby);
       ack?.({ ok: true, lobby });
     });
+
+    socket.on("voice:lixi-config", (_payload?: unknown, ack?: Ack) => {
+      ack?.({ ok: true, config: voiceLixiStore.getPublic() });
+      socket.emit("voice:lixiConfig", voiceLixiStore.getPublic());
+    });
+
+    socket.on(
+      "voice:lixi",
+      (
+        payload: { amount?: unknown; token?: string; note?: string },
+        ack?: Ack,
+      ) => {
+        const auth = resolveVoiceUser(payload?.token);
+        if (!auth.ok) {
+          const r = { ok: false as const, reason: auth.reason };
+          socket.emit("voice:error", r);
+          ack?.(r);
+          return;
+        }
+        if (
+          !rateLimit(`voice:lixi:${auth.user.id}`, 5, 60_000) ||
+          !rateLimit(`voice:lixi:sock:${socket.id}`, 5, 60_000)
+        ) {
+          const r = {
+            ok: false as const,
+            reason: "Phát lì xì quá nhanh — thử lại sau",
+          };
+          ack?.(r);
+          return;
+        }
+        const mem = voiceRoomStore.getMembership(socket.id);
+        if (!mem) {
+          const r = {
+            ok: false as const,
+            reason: "Cần ngồi trong Room để phát lì xì",
+          };
+          ack?.(r);
+          return;
+        }
+        const recipients = voiceRoomStore.listSeatedUserIds(
+          mem.roomId,
+          auth.user.id,
+        );
+        if (recipients.length === 0) {
+          const r = {
+            ok: false as const,
+            reason: "Cần ít nhất 1 người khác trong Room",
+          };
+          ack?.(r);
+          return;
+        }
+        const cfg = voiceLixiStore.getPublic();
+        const result = authStore.sendRoomLixi(
+          auth.user.id,
+          recipients.map((r) => r.userId),
+          payload?.amount,
+          cfg.payoutPct,
+        );
+        if (!result.ok) {
+          ack?.(result);
+          return;
+        }
+
+        if (result.fee > 0) {
+          vaultTarot.adjust(
+            result.fee,
+            auth.user.username,
+            `Lì xì Room${mem.roomId} phí ${100 - result.payoutPct}%`,
+          );
+        }
+
+        if (balanceSync) {
+          const fromLive = balanceSync(result.from.id, result.from.balance);
+          for (const sid of fromLive.socketIds) {
+            io.to(sid).emit("balanceUpdate", { balance: fromLive.balance });
+          }
+          for (const share of result.shares) {
+            const live = balanceSync(share.userId, share.user.balance);
+            for (const sid of live.socketIds) {
+              io.to(sid).emit("balanceUpdate", { balance: live.balance });
+              io.to(sid).emit("giftReceived", {
+                amount: share.amount,
+                fromName:
+                  result.from.displayName?.trim() || result.from.username,
+                giftKey: "lixi",
+                giftEmoji: "🧧",
+                giftNameVi: "Lì xì Room",
+                note: `Room ${mem.roomId}`,
+              });
+            }
+          }
+        }
+
+        const note = String(payload?.note ?? "").trim().slice(0, 40);
+        const event = {
+          roomId: mem.roomId,
+          fromName: result.from.displayName?.trim() || result.from.username,
+          fromUserId: result.from.id,
+          amount: result.amount,
+          pool: result.pool,
+          fee: result.fee,
+          payoutPct: result.payoutPct,
+          recipientCount: result.shares.length,
+          shares: result.shares.map((s) => ({
+            userId: s.userId,
+            name: s.user.displayName?.trim() || s.user.username,
+            amount: s.amount,
+          })),
+          note: note || undefined,
+          at: Date.now(),
+        };
+        io.to(`voice:${mem.roomId}`).emit("voice:lixi", event);
+
+        auditStore.log({
+          actorId: auth.user.id,
+          actorName: auth.user.username,
+          action: "voice_lixi",
+          detail: `room=${mem.roomId} amount=${result.amount} pool=${result.pool} fee=${result.fee} pct=${result.payoutPct}% n=${result.shares.length}${note ? ` note=${note}` : ""}`,
+        });
+
+        ack?.({ ok: true, ...event });
+      },
+    );
 
     socket.on(
       "voice:join",

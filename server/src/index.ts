@@ -57,14 +57,29 @@ import { tutienStakeLimitsStore } from "./tutienStakeLimitsStore.js";
 import { giftStore } from "./giftStore.js";
 import { ringStore } from "./ringStore.js";
 import { chatConfigStore } from "./chatConfigStore.js";
+import {
+  tableConfigStore,
+  TABLE_CONFIG_LIMITS,
+  REVEAL_STYLE_LABELS,
+} from "./tableConfigStore.js";
+import { roleDisplayStore } from "./roleDisplayStore.js";
+import { aiFeaturesStore } from "./aiFeaturesStore.js";
+import { smartAiStore } from "./smartAiStore.js";
+import {
+  listTopRiskUsers,
+  scoreUserRisk,
+  softGateCouponReason,
+} from "./riskScoreStore.js";
 import { leaderboardConfigStore } from "./leaderboardConfigStore.js";
+import { playLevelRewardsStore } from "./playLevelRewardsStore.js";
 import { vaultArcana, vaultGem, vaultStore } from "./vaultStore.js";
 import { ACCOUNT_GEM_MAX, ITEM_GEM_MAX } from "./gem.js";
 import {
   cultivationStore,
   isCultivationRank,
 } from "./cultivationStore.js";
-import { attachVoiceSocket, broadcastVoiceRoom } from "./voiceSocket.js";
+import { attachVoiceSocket, broadcastVoiceRoom, setVoiceBalanceSync } from "./voiceSocket.js";
+import { voiceLixiStore } from "./voiceLixiStore.js";
 import {
   isRoomId,
   voiceRoomStore,
@@ -78,24 +93,26 @@ import {
   trackSocketConnect,
   trackSocketDisconnect,
 } from "./rateLimit.js";
-import { securityHeaders, warnOpenCorsIfProd } from "./securityHeaders.js";
+import { securityHeaders, warnOpenCorsIfProd, resolveAllowedOrigins, corsOriginOk } from "./securityHeaders.js";
 
 const PORT = Number(process.env.PORT) || 3001;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST = join(__dirname, "..", "..", "client", "dist");
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
+const ALLOWED_ORIGINS_RAW = (process.env.ALLOWED_ORIGINS || "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+const ALLOWED_ORIGINS = resolveAllowedOrigins(ALLOWED_ORIGINS_RAW);
 
 const app = express();
-warnOpenCorsIfProd(ALLOWED_ORIGINS);
+app.disable("x-powered-by");
+/** Railway / reverse proxy — req.ip + rate-limit theo client thật */
+app.set("trust proxy", 1);
+warnOpenCorsIfProd(ALLOWED_ORIGINS_RAW);
 app.use(
   cors({
     origin: (origin, cb) => {
-      if (!origin) return cb(null, true);
-      if (ALLOWED_ORIGINS.length === 0) return cb(null, true);
-      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      if (corsOriginOk(origin, ALLOWED_ORIGINS)) return cb(null, true);
       return cb(null, false);
     },
   }),
@@ -190,6 +207,11 @@ const engine = new GameEngine((state: PublicState, playerId?: string) => {
       chatLines: state.chatLines,
     });
   }
+});
+
+setVoiceBalanceSync((userId, balance) => {
+  const live = engine.applyAuthBalance(userId, balance);
+  return { socketIds: live.socketIds, balance: live.balance };
 });
 
 function bearer(req: express.Request): string | null {
@@ -327,7 +349,7 @@ function buildInterPayload() {
   };
 }
 
-app.get("/health", (_req, res) => {
+app.get("/health", (req, res) => {
   const stats = engine.getOnlineStats();
   const dataDir = join(__dirname, "..", "data");
   const checks = {
@@ -339,6 +361,24 @@ app.get("/health", (_req, res) => {
   // Liveness luôn 200 khi process sống — tránh Railway fail deploy vì check phụ.
   // `ready` = đủ điều kiện phục vụ (dist + data + cards).
   const ready = Object.values(checks).every(Boolean);
+  res.setHeader("Cache-Control", "no-store");
+
+  const detailEnv = String(process.env.HEALTH_DETAIL || "").trim();
+  const wantDetail =
+    detailEnv === "1" ||
+    detailEnv.toLowerCase() === "true" ||
+    (detailEnv.length > 8 &&
+      String(req.query.token || "") === detailEnv);
+
+  // Public: tối giản — giảm lộ phase/online/node version cho attacker.
+  if (!wantDetail) {
+    return res.status(200).json({
+      ok: true,
+      ready,
+      ts: Date.now(),
+    });
+  }
+
   res.status(200).json({
     ok: true,
     ready,
@@ -812,8 +852,23 @@ app.post("/api/auth/redeem-coupon", (req, res) => {
     return res.status(429).json({ ok: false, reason: "Quá nhiều lần thử" });
   }
   const code = String(req.body?.code ?? "");
-  const preview = couponStore.previewRedeem(code, user.id);
+  const preview = couponStore.previewRedeem(code, user.id, {
+    cultivationRank: user.cultivationRank,
+  });
   if (!preview.ok) return res.status(400).json(preview);
+
+  const aiCfg = aiFeaturesStore.get();
+  const couponMeta = couponStore
+    .listForAdmin(1)
+    .find((c) => c.code.toLowerCase() === preview.code.toLowerCase());
+  const gate = softGateCouponReason(user.id, preview.amount, {
+    enabled: aiCfg.riskSoftGateEnabled,
+    minScore: aiCfg.riskSoftGateMinScore,
+    cultivationOnly: !!couponMeta?.cultivationOnly,
+  });
+  if (gate) {
+    return res.status(403).json({ ok: false, reason: gate });
+  }
 
   const adj = authStore.adjustBalance(user.id, preview.amount);
   if (!adj.ok) {
@@ -857,9 +912,17 @@ app.post("/api/admin/coupons", (req, res) => {
     label: req.body?.label != null ? String(req.body.label) : undefined,
     enabled: req.body?.enabled,
     oncePerUser: req.body?.oncePerUser,
+    usesPerUser:
+      req.body?.usesPerUser !== undefined
+        ? Number(req.body.usesPerUser)
+        : undefined,
     secret: req.body?.secret,
     maxUses:
       req.body?.maxUses !== undefined ? Number(req.body.maxUses) : undefined,
+    cultivationOnly: req.body?.cultivationOnly,
+    expiresAt:
+      req.body?.expiresAt !== undefined ? req.body.expiresAt : undefined,
+    clearExpiresAt: !!req.body?.clearExpiresAt,
   });
   if (!result.ok) return res.status(400).json(result);
   audit(me, "coupon_upsert", { detail: result.coupon.code });
@@ -925,7 +988,7 @@ app.get("/api/admin/overview", (req, res) => {
     payload.coupons = couponStore.listForAdmin();
     payload.couponRedemptions = couponStore.recentRedemptions(40);
   }
-  payload.audit = auditStore.list(80);
+  payload.audit = auditStore.list(200);
   payload.reports = reportStore.list(60);
   payload.liveGuests = engine.listLiveGuestsForAdmin();
 
@@ -948,6 +1011,72 @@ app.get("/api/admin/overview", (req, res) => {
       payload.vault = vault;
       payload.vaultArcana = vaultArcanaSnap;
       payload.vaultGem = vaultGemSnap;
+      const day = vault.flows?.windows?.day;
+      const week = vault.flows?.windows?.week;
+      const couponSum = couponStore.getXuSummary();
+      payload.xuFlow = {
+        note: "Kho Tarot — hiểu lưu lượng xu in/out. Coupon tổng từ sổ coupon bền; kho đếm all-time sau migrate.",
+        balance: vault.balance,
+        /** Xu phát qua coupon (kho) */
+        couponOut: vault.totalCouponOut ?? 0,
+        /** Đối chiếu sổ coupon */
+        couponBookXu: couponSum.totalXu,
+        couponRedeems: couponSum.redeemCount,
+        couponUsers: couponSum.userCount,
+        couponCodes: couponSum.couponCount,
+        /** Admin cấp user */
+        grantOut: vault.totalGrantOut ?? 0,
+        /** Trả thưởng bàn */
+        payoutOut: vault.totalPayoutOut,
+        /** Xu lấy về từ user */
+        stakeIn: vault.totalStakeIn,
+        seizeIn: vault.totalSeizeIn ?? 0,
+        feesIn: vault.totalFeesIn ?? 0,
+        inflowFromUsers: vault.inflowFromUsers ?? 0,
+        outflowToUsers: vault.outflowToUsers ?? 0,
+        netFromPlay: vault.netFromPlay ?? vault.totalStakeIn - vault.totalPayoutOut,
+        /** Cửa sổ ledger gần đây (không all-time) */
+        day: day
+          ? {
+              couponOut: day.couponOut,
+              grantOut: day.grantOut,
+              seizeIn: day.seizeIn,
+              feesIn: day.feesIn,
+              stakeIn: day.stakeIn,
+              payoutOut: day.payoutOut,
+              net: day.net,
+              burn: day.burn ?? 0,
+            }
+          : null,
+        week: week
+          ? {
+              couponOut: week.couponOut,
+              grantOut: week.grantOut,
+              seizeIn: week.seizeIn,
+              feesIn: week.feesIn,
+              stakeIn: week.stakeIn,
+              payoutOut: week.payoutOut,
+              net: week.net,
+              burn: week.burn ?? 0,
+            }
+          : null,
+        hour: vault.flows?.windows?.hour
+          ? {
+              net: vault.flows.windows.hour.net,
+              payoutOut: vault.flows.windows.hour.payoutOut,
+              couponOut: vault.flows.windows.hour.couponOut,
+              grantOut: vault.flows.windows.hour.grantOut,
+              stakeIn: vault.flows.windows.hour.stakeIn,
+            }
+          : null,
+        haoHut: {
+          outflowToUsers: vault.outflowToUsers ?? 0,
+          payoutOut: vault.totalPayoutOut,
+          couponOut: vault.totalCouponOut ?? 0,
+          grantOut: vault.totalGrantOut ?? 0,
+          burn: vault.totalBurned ?? 0,
+        },
+      };
     }
     if (canArcana) {
       payload.arcanaStats = arcanaWheelStore.getStats();
@@ -956,6 +1085,14 @@ app.get("/api/admin/overview", (req, res) => {
     }
     if (canInter) {
       payload.inter = buildInterPayload();
+      payload.tableConfig = tableConfigStore.getSnapshot();
+      payload.tableConfigLimits = TABLE_CONFIG_LIMITS;
+      payload.revealStyleLabels = REVEAL_STYLE_LABELS;
+      payload.aiFeatures = aiFeaturesStore.getSnapshot();
+      payload.smartAi = smartAiStore.getSnapshot();
+    }
+    if (isMainAdmin(me) || me.role === "admin" || me.role === "mod") {
+      payload.riskTop = listTopRiskUsers(20);
     }
     if (canChat) {
       payload.chatConfig = chatConfigStore.getSnapshot();
@@ -1088,6 +1225,22 @@ app.post("/api/mainadmin/inter", (req, res) => {
 app.get("/api/mainadmin/vault", (req, res) => {
   if (!requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)")) return;
   res.json({ ok: true, vault: vaultStore.getSnapshot() });
+});
+
+app.get("/api/mainadmin/vault/ledger", (req, res) => {
+  if (!requireCapability(req, res, "vault_ops", "Cần quyền kho (eco)")) return;
+  const type = String(req.query?.type ?? "").trim();
+  const limit = Number(req.query?.limit) || 80;
+  const outflow =
+    req.query?.outflow === "1" ||
+    req.query?.outflow === "true" ||
+    req.query?.outflow === "yes";
+  const result = vaultStore.listLedger({
+    type: type || undefined,
+    limit,
+    onlyOutflow: outflow,
+  });
+  res.json({ ok: true, ...result });
 });
 
 app.post("/api/mainadmin/vault/adjust", (req, res) => {
@@ -1767,6 +1920,49 @@ app.post("/api/admin/user-reset-password", (req, res) => {
   });
 });
 
+/** Inter: thời gian đếm ngược + kiểu xoay lá Tarot. */
+app.post("/api/admin/table-config", (req, res) => {
+  const me = requireCapability(
+    req,
+    res,
+    "inter_control",
+    "Cần quyền Inter / bàn Tarot",
+  );
+  if (!me) return;
+  const result = tableConfigStore.update(
+    {
+      placingMs: req.body?.placingMs,
+      revealingMs: req.body?.revealingMs,
+      payoutMs: req.body?.payoutMs,
+      revealStyle: req.body?.revealStyle,
+      maxCardsPerRound: req.body?.maxCardsPerRound,
+    },
+    me.username,
+  );
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "table_config", {
+    detail: `place ${result.config.placingMs}ms · reveal ${result.config.revealingMs}ms · payout ${result.config.payoutMs}ms · cards ${result.config.maxCardsPerRound} · ${result.config.revealStyle}`,
+  });
+  engine.refreshAllClients();
+  res.json({ ok: true, tableConfig: result.config });
+});
+
+app.get("/api/admin/table-config", (req, res) => {
+  const me = requireCapability(
+    req,
+    res,
+    "inter_control",
+    "Cần quyền Inter / bàn Tarot",
+  );
+  if (!me) return;
+  res.json({
+    ok: true,
+    tableConfig: tableConfigStore.getSnapshot(),
+    limits: TABLE_CONFIG_LIMITS,
+    revealStyleLabels: REVEAL_STYLE_LABELS,
+  });
+});
+
 /** Mainadmin: chỉnh giá chat No / VIP / Saint. */
 app.post("/api/mainadmin/chat-config", (req, res) => {
   const me = requireCapability(req, res, "chat_config", "Cần quyền chat (audit)");
@@ -1900,8 +2096,20 @@ app.get("/api/mainadmin/users/:userId/history", (req, res) => {
     lastIpAt: intel.lastIpAt ?? null,
     ipHistory: intel.ipHistory,
     relatedIps: guestIpStore.findIpsForUser(userId),
-    recentStakes: stakeStore.getByUser(userId, 20),
-    recentArcanaSpins: arcanaWheelStore.listSpins(40, userId),
+    recentStakes: stakeStore.getByUser(userId, 100),
+    recentArcanaSpins: arcanaWheelStore.listSpins(80, userId),
+    balanceAdjusts: auditStore.listForTarget(userId, {
+      actions: [
+        "adjust_balance",
+        "adjust_balance_guest",
+        "adjust_gem",
+        "vault_grant",
+        "vault_seize",
+        "vault_gem_grant",
+        "vault_gem_seize",
+      ],
+      limit: 200,
+    }),
     xu24h: stakeStore.getUserStats24h(userId),
   });
 });
@@ -2684,6 +2892,86 @@ app.get("/api/mainadmin/leaderboard-config", (req, res) => {
   res.json({ ok: true, config: leaderboardConfigStore.get() });
 });
 
+/** Public — chỉ cosmetic role rail. */
+app.get("/api/role-display", (_req, res) => {
+  res.json({ ok: true, config: roleDisplayStore.getPublic() });
+});
+
+app.get("/api/mainadmin/role-display", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  res.json({ ok: true, config: roleDisplayStore.getSnapshot() });
+});
+
+app.post("/api/mainadmin/role-display", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const result = roleDisplayStore.update(
+    {
+      order: req.body?.order,
+      size: req.body?.size,
+      frameStyle: req.body?.frameStyle,
+      textStyle: req.body?.textStyle,
+      showGlyph: req.body?.showGlyph,
+      roleLabels: req.body?.roleLabels,
+    },
+    me.username,
+  );
+  if (!result.ok) return res.status(400).json(result);
+  const labelKeys = Object.keys(result.config.roleLabels ?? {}).join("|");
+  audit(me, "role_display", {
+    detail: `size=${result.config.size};frame=${result.config.frameStyle};labels=${labelKeys || "-"}`,
+  });
+  engine.refreshAllClients();
+  res.json({ ok: true, config: result.config });
+});
+
+/** AI features — tip ẩn/hiện vs player + bot personas + risk soft-gate. */
+app.get("/api/mainadmin/ai-features", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  res.json({
+    ok: true,
+    config: aiFeaturesStore.getSnapshot(),
+    smartAi: smartAiStore.getSnapshot(),
+  });
+});
+
+app.post("/api/mainadmin/ai-features", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const result = aiFeaturesStore.update(
+    {
+      playTipsForPlayers: req.body?.playTipsForPlayers,
+      chatSuggestsForPlayers: req.body?.chatSuggestsForPlayers,
+      botPersonasEnabled: req.body?.botPersonasEnabled,
+      riskSoftGateEnabled: req.body?.riskSoftGateEnabled,
+      riskSoftGateMinScore: req.body?.riskSoftGateMinScore,
+    },
+    me.username,
+  );
+  audit(me, "ai_features", {
+    detail: `tips=${result.config.playTipsForPlayers};chat=${result.config.chatSuggestsForPlayers};bots=${result.config.botPersonasEnabled};risk=${result.config.riskSoftGateEnabled}@${result.config.riskSoftGateMinScore}`,
+  });
+  engine.refreshAllClients();
+  res.json({ ok: true, config: result.config });
+});
+
+app.get("/api/admin/risk-scores", (req, res) => {
+  const me = requireAdmin(req, res);
+  if (!me) return;
+  const limit = Number(req.query?.limit) || 40;
+  const userId = String(req.query?.userId ?? "").trim();
+  if (userId) {
+    const u = authStore.getById(userId);
+    return res.json({
+      ok: true,
+      row: scoreUserRisk(userId, u?.username),
+    });
+  }
+  res.json({ ok: true, rows: listTopRiskUsers(limit) });
+});
+
 app.post("/api/mainadmin/leaderboard-config", (req, res) => {
   const me = requireMainAdmin(req, res);
   if (!me) return;
@@ -2692,14 +2980,127 @@ app.post("/api/mainadmin/leaderboard-config", (req, res) => {
       winToday: req.body?.winToday,
       balance: req.body?.balance,
       tarotStars: req.body?.tarotStars,
+      streak: req.body?.streak,
+      roundWinners: req.body?.roundWinners,
+      level: req.body?.level,
     },
     me.username,
   );
   audit(me, "leaderboard_config", {
-    detail: `winToday=${result.config.winToday} balance=${result.config.balance} tarotStars=${result.config.tarotStars}`,
+    detail: `winToday=${result.config.winToday} balance=${result.config.balance} tarotStars=${result.config.tarotStars} streak=${result.config.streak} roundWinners=${result.config.roundWinners} level=${result.config.level}`,
   });
   engine.refreshAllClients();
   res.json({ ok: true, config: result.config });
+});
+
+/** Cấu hình thưởng theo cấp (mainadmin). */
+app.get("/api/mainadmin/play-level-rewards", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  res.json({ ok: true, config: playLevelRewardsStore.get() });
+});
+
+app.post("/api/mainadmin/play-level-rewards", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const result = playLevelRewardsStore.set(
+    {
+      enabled: req.body?.enabled,
+      rewards: req.body?.rewards,
+    },
+    me.username,
+  );
+  audit(me, "play_level_rewards", {
+    detail: `enabled=${result.config.enabled} rows=${result.config.rewards.length}`,
+  });
+  res.json({ ok: true, config: result.config });
+});
+
+/** Public bảng thưởng level (để UI người chơi). */
+app.get("/api/play-level-rewards", (_req, res) => {
+  res.json({ ok: true, config: playLevelRewardsStore.getPublic() });
+});
+
+/** Mainadmin: đặt số ván / cấp người chơi. */
+app.post("/api/mainadmin/user-play-level", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const userId = String(req.body?.userId ?? "").trim();
+  if (!userId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId" });
+  }
+  const grantRewards = req.body?.grantRewards !== false;
+  let result:
+    | {
+        ok: true;
+        user: import("./auth.js").PublicUser;
+        granted: { level: number; xu: number; gem: number }[];
+      }
+    | { ok: false; reason: string };
+
+  if (req.body?.level != null && req.body?.level !== "") {
+    result = authStore.setPlayLevel(userId, req.body.level, { grantRewards });
+  } else if (req.body?.roundsPlayed != null && req.body?.roundsPlayed !== "") {
+    result = authStore.setRoundsPlayed(userId, req.body.roundsPlayed, {
+      grantRewards,
+    });
+  } else {
+    return res
+      .status(400)
+      .json({ ok: false, reason: "Thiếu level hoặc roundsPlayed" });
+  }
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "user_play_level", {
+    targetId: result.user.id,
+    targetName: result.user.username,
+    detail: `lv=${result.user.playLevel} rounds=${result.user.roundsPlayed} grant=${grantRewards} rewarded=${result.granted.length}`,
+  });
+  engine.refreshAllClients();
+  res.json(result);
+});
+
+app.post("/api/mainadmin/user-clear-level-rewards", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const userId = String(req.body?.userId ?? "").trim();
+  if (!userId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId" });
+  }
+  const result = authStore.clearClaimedLevelRewards(userId);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "user_clear_level_rewards", {
+    targetId: result.user.id,
+    targetName: result.user.username,
+  });
+  res.json(result);
+});
+
+app.post("/api/mainadmin/user-claim-level-rewards", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const userId = String(req.body?.userId ?? "").trim();
+  if (!userId) {
+    return res.status(400).json({ ok: false, reason: "Thiếu userId" });
+  }
+  const result = authStore.claimPendingLevelRewards(userId);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "user_force_level_rewards", {
+    targetId: result.user.id,
+    targetName: result.user.username,
+    detail: `granted=${result.granted.length}`,
+  });
+  if (result.granted.length) engine.refreshAllClients();
+  res.json(result);
+});
+
+/** Người chơi tự nhận thưởng mốc còn thiếu (idempotent). */
+app.post("/api/auth/claim-level-rewards", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  const result = authStore.claimPendingLevelRewards(me.id);
+  if (!result.ok) return res.status(400).json(result);
+  if (result.granted.length) engine.refreshAllClients();
+  res.json(result);
 });
 
 /** Dashboard Room — danh sách 5 phòng voice + ghế. */
@@ -2711,7 +3112,23 @@ app.get("/api/room/overview", (req, res) => {
     me: { id: me.id, username: me.username, role: me.role },
     rooms: voiceRoomStore.listAllRooms(),
     canAccessRoomAdmin: canAccessRoomAdmin(me),
+    lixi: voiceLixiStore.getPublic(),
   });
+});
+
+app.get("/api/room/lixi-config", (_req, res) => {
+  res.json({ ok: true, config: voiceLixiStore.getPublic() });
+});
+
+app.post("/api/mainadmin/voice-lixi", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const result = voiceLixiStore.setPayoutPct(req.body?.payoutPct, me.username);
+  audit(me, "voice_lixi_config", {
+    detail: `payoutPct=${result.config.payoutPct}`,
+  });
+  io.emit("voice:lixiConfig", voiceLixiStore.getPublic());
+  res.json({ ok: true, config: result.config });
 });
 
 app.post("/api/room/set-open", (req, res) => {
@@ -3018,6 +3435,7 @@ function applyCosmeticsPatch(body: Record<string, unknown>) {
     profileTheme?: unknown;
     nameFrame?: unknown;
     idFrame?: unknown;
+    displayBadges?: unknown;
   } = {};
   if (body.color !== undefined) patch.color = body.color;
   if (body.effect !== undefined) patch.effect = body.effect;
@@ -3025,6 +3443,7 @@ function applyCosmeticsPatch(body: Record<string, unknown>) {
   if (body.profileTheme !== undefined) patch.profileTheme = body.profileTheme;
   if (body.nameFrame !== undefined) patch.nameFrame = body.nameFrame;
   if (body.idFrame !== undefined) patch.idFrame = body.idFrame;
+  if (body.displayBadges !== undefined) patch.displayBadges = body.displayBadges;
   return patch;
 }
 
@@ -3051,6 +3470,7 @@ app.post("/api/mainadmin/user-name-color", (req, res) => {
       `nameFrame=${result.user.nameFrame ?? "none"}`,
       `idFrame=${result.user.idFrame ?? "classic"}`,
       `theme=${result.user.profileTheme ?? "cosmic"}`,
+      `badges=${(result.user.displayBadges ?? []).join(",") || "none"}`,
     ].join(" · "),
   });
   engine.refreshAllClients();
@@ -3080,6 +3500,7 @@ app.post("/api/mainadmin/user-cosmetics", (req, res) => {
       `nameFrame=${result.user.nameFrame ?? "none"}`,
       `idFrame=${result.user.idFrame ?? "classic"}`,
       `theme=${result.user.profileTheme ?? "cosmic"}`,
+      `badges=${(result.user.displayBadges ?? []).join(",") || "none"}`,
     ].join(" · "),
   });
   engine.refreshAllClients();
@@ -3439,6 +3860,14 @@ io.on("connection", (socket) => {
     socket.emit(
       "balanceLeaderboardData",
       authStore.listBalanceLeaders(20, viewerUserId),
+    );
+  });
+
+  socket.on("getLevelLeaderboard", () => {
+    const viewerUserId = engine.getUserIdForSocket(socket.id);
+    socket.emit(
+      "levelLeaderboardData",
+      authStore.listLevelLeaders(20, viewerUserId),
     );
   });
 

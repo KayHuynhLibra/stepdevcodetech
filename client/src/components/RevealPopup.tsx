@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CARD_BACK, CARDS, formatXu, type CardDef } from "../cards";
+import {
+  normalizeRevealStyle,
+  type RevealStyleId,
+} from "../tableConfig";
 
 type RevealStage = "gather" | "shuffle" | "question" | "flip" | "done";
 
@@ -8,6 +12,8 @@ interface RevealPopupProps {
   open: boolean;
   winningCardId: number | null;
   yourStake?: number;
+  /** classic | fan | spiral — từ admin Tổng quan */
+  revealStyle?: RevealStyleId | string;
   onGatherSfx?: () => void;
   onShuffleSfx?: () => void;
   onSuspenseSfx?: () => void;
@@ -21,6 +27,7 @@ export function RevealPopup({
   open,
   winningCardId,
   yourStake = 0,
+  revealStyle: revealStyleRaw,
   onGatherSfx,
   onShuffleSfx,
   onSuspenseSfx,
@@ -29,6 +36,7 @@ export function RevealPopup({
   onLoseSfx,
   onDone,
 }: RevealPopupProps) {
+  const style = normalizeRevealStyle(revealStyleRaw);
   const [stage, setStage] = useState<RevealStage>("gather");
   const onDoneRef = useRef(onDone);
   const onGatherRef = useRef(onGatherSfx);
@@ -88,7 +96,6 @@ export function RevealPopup({
       else onLoseRef.current?.();
     }, 3100);
     const t4 = window.setTimeout(() => setStage("done"), 4200);
-    // Parent closes when phase leaves revealing; keep short safety
     const t5 = window.setTimeout(() => onDoneRef.current?.(), 4800);
 
     timersRef.current = [t1, t2, t3, tResult, t4, t5];
@@ -96,9 +103,12 @@ export function RevealPopup({
     return () => {
       clearTimers();
     };
-  }, [open, winningCardId, yourStake]);
+  }, [open, winningCardId, yourStake, style]);
 
   if (!open || winningCardId == null || !winner) return null;
+
+  const stageLabel =
+    stage === "flip" || stage === "done" ? "Kết quả" : "Đang rút bài…";
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center">
@@ -108,7 +118,6 @@ export function RevealPopup({
         aria-label="Đóng"
         onClick={dismiss}
       />
-      {/* vignette */}
       <div
         className="pointer-events-none absolute inset-0 z-[1]"
         style={{
@@ -119,7 +128,7 @@ export function RevealPopup({
 
       <div className="relative z-10 flex flex-col items-center px-4 pointer-events-none">
         <p className="mb-1 font-display text-sm tracking-[0.25em] text-[var(--gold-soft)] uppercase">
-          {stage === "flip" || stage === "done" ? "Kết quả" : "Đang rút bài…"}
+          {stageLabel}
         </p>
         <p className="reveal-popup-hint mb-3 text-[10px] font-semibold text-white/40">
           Chạm nền để đóng
@@ -128,64 +137,36 @@ export function RevealPopup({
         <div className="relative h-56 w-52">
           <AnimatePresence mode="sync">
             {(stage === "gather" || stage === "shuffle") &&
-              CARDS.map((card, i) => {
-                const angle = (i / CARDS.length) * Math.PI * 2;
-                const r = stage === "gather" ? 70 : 18 + (i % 3) * 6;
-                return (
-                  <motion.div
-                    key={`face-${card.id}`}
-                    className="absolute left-1/2 top-1/2 h-20 w-[3.75rem] -translate-x-1/2 -translate-y-1/2"
-                    initial={{
-                      x: Math.cos(angle) * 120,
-                      y: Math.sin(angle) * 120,
-                      rotate: i * 20,
-                      opacity: 0.3,
-                      scale: 0.7,
-                    }}
-                    animate={
-                      stage === "gather"
-                        ? {
-                            x: Math.cos(angle) * r,
-                            y: Math.sin(angle) * r,
-                            rotate: i * 40,
-                            opacity: 1,
-                            scale: 1,
-                          }
-                        : {
-                            x: Math.cos(angle + i) * r,
-                            y: Math.sin(angle * 2 + i) * r,
-                            rotate: [0, 180, 360, 520],
-                            opacity: 1,
-                            scale: [1, 0.9, 1.05, 0.85],
-                          }
-                    }
-                    transition={
-                      stage === "shuffle"
-                        ? { duration: 1.2, ease: "easeInOut" }
-                        : { duration: 0.55, delay: i * 0.03 }
-                    }
-                  >
-                    <img
-                      src={CARD_BACK}
-                      alt=""
-                      decoding="async"
-                      className="h-full w-full rounded-[0.45rem] object-cover object-center shadow-lg ring-1 ring-white/20"
-                    />
-                    <span className="font-play absolute -left-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--gold)] px-1 text-[10px] font-bold text-[#1a1208] tabular-nums shadow ring-1 ring-black/20">
-                      {card.id}
-                    </span>
-                  </motion.div>
-                );
-              })}
+              CARDS.map((card, i) => (
+                <DeckCard
+                  key={`${style}-face-${card.id}`}
+                  cardId={card.id}
+                  index={i}
+                  stage={stage}
+                  style={style}
+                />
+              ))}
 
             {stage === "question" && (
               <motion.div
-                key="q"
+                key={`${style}-q`}
                 className="absolute inset-0 flex items-center justify-center"
-                initial={{ scale: 0.4, opacity: 0, rotateY: 0 }}
-                animate={{ scale: 1, opacity: 1, rotateY: [0, 8, -8, 0] }}
+                initial={
+                  style === "spiral"
+                    ? { scale: 0.2, opacity: 0, rotate: -540 }
+                    : style === "fan"
+                      ? { y: 40, scale: 0.6, opacity: 0, rotate: -18 }
+                      : { scale: 0.4, opacity: 0, rotateY: 0 }
+                }
+                animate={
+                  style === "spiral"
+                    ? { scale: 1, opacity: 1, rotate: 0 }
+                    : style === "fan"
+                      ? { y: 0, scale: 1, opacity: 1, rotate: 0 }
+                      : { scale: 1, opacity: 1, rotateY: [0, 8, -8, 0] }
+                }
                 exit={{ scale: 0.5, opacity: 0 }}
-                transition={{ duration: 0.7 }}
+                transition={{ duration: style === "spiral" ? 0.85 : 0.7 }}
               >
                 <img
                   src={CARD_BACK}
@@ -198,10 +179,20 @@ export function RevealPopup({
 
             {(stage === "flip" || stage === "done") && (
               <motion.div
-                key="win"
+                key={`${style}-win`}
                 className="absolute inset-0 flex items-center justify-center"
-                initial={{ rotateY: 90, scale: 0.4, opacity: 0 }}
-                animate={{ rotateY: 0, scale: 1, opacity: 1 }}
+                initial={
+                  style === "spiral"
+                    ? { rotate: 180, scale: 0.2, opacity: 0 }
+                    : style === "fan"
+                      ? { rotateY: -90, y: -24, scale: 0.5, opacity: 0 }
+                      : { rotateY: 90, scale: 0.4, opacity: 0 }
+                }
+                animate={
+                  style === "spiral"
+                    ? { rotate: 0, scale: 1, opacity: 1 }
+                    : { rotateY: 0, y: 0, scale: 1, opacity: 1 }
+                }
                 transition={{ type: "spring", stiffness: 220, damping: 18 }}
               >
                 <div className="flex flex-col items-center gap-2">
@@ -249,5 +240,159 @@ export function RevealPopup({
         )}
       </div>
     </div>
+  );
+}
+
+function DeckCard({
+  cardId,
+  index: i,
+  stage,
+  style,
+}: {
+  cardId: number;
+  index: number;
+  stage: "gather" | "shuffle";
+  style: RevealStyleId;
+}) {
+  const n = CARDS.length;
+
+  /** Góc quỹ đạo (rad) → độ xoay CSS để đỉnh lá hướng về tâm */
+  const faceCenterDeg = (rad: number) => (rad * 180) / Math.PI - 90;
+
+  const classicAngle = (i / n) * Math.PI * 2;
+  const classicR = stage === "gather" ? 70 : 22;
+
+  // Quạt: cung ngang — đỉnh lá hướng về điểm tụ phía dưới
+  const fanT = n <= 1 ? 0 : i / (n - 1);
+  const fanRot = -55 + fanT * 110;
+  const fanRad = (fanRot * Math.PI) / 180;
+  const fanR = stage === "gather" ? 78 : 52;
+  const fanX = Math.sin(fanRad) * fanR;
+  const fanY = 28 - Math.cos(fanRad) * (fanR * 0.35);
+
+  // Spiral / classic: vòng tròn — rotate luôn = góc quỹ đạo (đồng điệu về tâm)
+  const spiralTurns = 1.25;
+  const spiralBase = (i / n) * Math.PI * 2;
+  const spiralAngle = spiralBase * spiralTurns;
+  const spiralR = stage === "gather" ? 14 + (i / Math.max(1, n - 1)) * 72 : 28;
+
+  let initial: Record<string, number>;
+  let animate: Record<string, number | number[]>;
+  let transition: {
+    duration: number;
+    ease?: "easeInOut" | "easeOut" | "easeIn" | "linear";
+    delay?: number;
+  };
+
+  if (style === "fan") {
+    initial = {
+      x: (i - n / 2) * 28,
+      y: 110,
+      rotate: fanRot * 0.3,
+      opacity: 0.2,
+      scale: 0.65,
+    };
+    animate =
+      stage === "gather"
+        ? {
+            x: fanX,
+            y: fanY,
+            rotate: fanRot,
+            opacity: 1,
+            scale: 1,
+          }
+        : {
+            // Xáo nhẹ nhưng giữ hướng quạt (về điểm tụ)
+            x: [fanX, fanX * 0.92, fanX * 1.04, fanX],
+            y: [fanY, fanY - 6, fanY + 2, fanY],
+            rotate: [fanRot, fanRot - 3, fanRot + 3, fanRot],
+            opacity: 1,
+            scale: [1, 1.03, 0.97, 1],
+          };
+    transition =
+      stage === "shuffle"
+        ? { duration: 1.15, ease: "easeInOut" }
+        : { duration: 0.6, delay: i * 0.028 };
+  } else if (style === "spiral") {
+    const spin = [0, Math.PI * 0.55, Math.PI * 1.1, Math.PI * 1.65];
+    const orbitAngles = spin.map((d) => spiralAngle + d);
+    initial = {
+      x: Math.cos(spiralAngle) * 130,
+      y: Math.sin(spiralAngle) * 130,
+      rotate: faceCenterDeg(spiralAngle),
+      opacity: 0.15,
+      scale: 0.5,
+    };
+    animate =
+      stage === "gather"
+        ? {
+            x: Math.cos(spiralAngle) * spiralR,
+            y: Math.sin(spiralAngle) * spiralR,
+            rotate: faceCenterDeg(spiralAngle),
+            opacity: 1,
+            scale: 1,
+          }
+        : {
+            x: orbitAngles.map((a) => Math.cos(a) * spiralR),
+            y: orbitAngles.map((a) => Math.sin(a) * spiralR),
+            rotate: orbitAngles.map((a) => faceCenterDeg(a)),
+            opacity: 1,
+            scale: [1, 0.94, 1.02, 0.96],
+          };
+    transition =
+      stage === "shuffle"
+        ? { duration: 1.25, ease: "linear" }
+        : { duration: 0.65, delay: i * 0.025 };
+  } else {
+    // classic: vòng tròn đều, đỉnh lá luôn hướng tâm
+    const spin = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5];
+    const orbitAngles = spin.map((d) => classicAngle + d);
+    initial = {
+      x: Math.cos(classicAngle) * 120,
+      y: Math.sin(classicAngle) * 120,
+      rotate: faceCenterDeg(classicAngle),
+      opacity: 0.3,
+      scale: 0.7,
+    };
+    animate =
+      stage === "gather"
+        ? {
+            x: Math.cos(classicAngle) * classicR,
+            y: Math.sin(classicAngle) * classicR,
+            rotate: faceCenterDeg(classicAngle),
+            opacity: 1,
+            scale: 1,
+          }
+        : {
+            x: orbitAngles.map((a) => Math.cos(a) * classicR),
+            y: orbitAngles.map((a) => Math.sin(a) * classicR),
+            rotate: orbitAngles.map((a) => faceCenterDeg(a)),
+            opacity: 1,
+            scale: [1, 0.95, 1.02, 0.92],
+          };
+    transition =
+      stage === "shuffle"
+        ? { duration: 1.2, ease: "linear" }
+        : { duration: 0.55, delay: i * 0.03 };
+  }
+
+  return (
+    <motion.div
+      className="absolute left-1/2 top-1/2 h-20 w-[3.75rem] -translate-x-1/2 -translate-y-1/2"
+      initial={initial}
+      animate={animate}
+      transition={transition}
+      style={{ transformOrigin: "center center" }}
+    >
+      <img
+        src={CARD_BACK}
+        alt=""
+        decoding="async"
+        className="h-full w-full rounded-[0.45rem] object-cover object-center shadow-lg ring-1 ring-white/20"
+      />
+      <span className="font-play absolute -left-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--gold)] px-1 text-[10px] font-bold text-[#1a1208] tabular-nums shadow ring-1 ring-black/20">
+        {cardId}
+      </span>
+    </motion.div>
   );
 }

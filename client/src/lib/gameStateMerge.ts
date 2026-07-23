@@ -78,8 +78,58 @@ function leaderboardFlagsSame(prev: GameState | null, next: GameState): boolean 
   return (
     a.winToday === b.winToday &&
     a.balance === b.balance &&
-    a.tarotStars === b.tarotStars
+    a.tarotStars === b.tarotStars &&
+    a.streak === b.streak &&
+    a.roundWinners === b.roundWinners &&
+    a.level === b.level
   );
+}
+
+function tableTimingSame(prev: GameState | null, next: GameState): boolean {
+  const a = prev?.tableTiming;
+  const b = next.tableTiming;
+  if (a === b) return true;
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return (
+    a.placingMs === b.placingMs &&
+    a.revealingMs === b.revealingMs &&
+    a.payoutMs === b.payoutMs &&
+    a.revealStyle === b.revealStyle &&
+    (a.maxCardsPerRound ?? 4) === (b.maxCardsPerRound ?? 4)
+  );
+}
+
+function roleDisplaySame(prev: GameState | null, next: GameState): boolean {
+  const a = prev?.roleDisplay;
+  const b = next.roleDisplay;
+  if (a === b) return true;
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  if (
+    a.size !== b.size ||
+    a.frameStyle !== b.frameStyle ||
+    a.textStyle !== b.textStyle ||
+    a.showGlyph !== b.showGlyph
+  ) {
+    return false;
+  }
+  if (a.order.length !== b.order.length) return false;
+  for (let i = 0; i < a.order.length; i++) {
+    if (a.order[i] !== b.order[i]) return false;
+  }
+  const aKeys = Object.keys(a.roleLabels ?? {}).sort();
+  const bKeys = Object.keys(b.roleLabels ?? {}).sort();
+  if (aKeys.length !== bKeys.length) return false;
+  for (let i = 0; i < aKeys.length; i++) {
+    const k = aKeys[i]!;
+    if (k !== bKeys[i]) return false;
+    if ((a.roleLabels ?? {})[k as keyof typeof a.roleLabels] !==
+      (b.roleLabels ?? {})[k as keyof typeof b.roleLabels]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** Gộp state socket — tránh re-render khi chỉ serverTime/vipPool jitter. */
@@ -105,6 +155,8 @@ export function mergeGameState(
     chatSame(prev, next) &&
     viewerAuthSame(prev, next) &&
     leaderboardFlagsSame(prev, next) &&
+    tableTimingSame(prev, next) &&
+    roleDisplaySame(prev, next) &&
     prev.onlineDisplay === next.onlineDisplay &&
     (!trackOnline || onlinePlayersSame(prev, next));
 

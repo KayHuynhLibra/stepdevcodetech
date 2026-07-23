@@ -42,7 +42,9 @@ export type PolicyMode =
   | "vaultpct"
   | "flowguard"
   | "moneysteer"
-  | "crowdcap";
+  | "crowdcap"
+  | "fogbreak"
+  | "smartai";
 /** Legacy bias subset */
 export type BiasMode = "auto" | "small" | "big" | "flat" | "cool";
 
@@ -76,6 +78,8 @@ export const POLICY_MODES: PolicyMode[] = [
   "flowguard",
   "moneysteer",
   "crowdcap",
+  "fogbreak",
+  "smartai",
 ];
 
 /** Thứ tự xoay mặc định khi mode = ALL (tùy chỉnh được). */
@@ -163,7 +167,12 @@ export function isPolicyMode(v: unknown): v is PolicyMode {
     v === "sparse" ||
     v === "dense" ||
     v === "vaultguard" ||
-    v === "crowdcap"
+    v === "vaultpct" ||
+    v === "flowguard" ||
+    v === "moneysteer" ||
+    v === "crowdcap" ||
+    v === "fogbreak" ||
+    v === "smartai"
   );
 }
 

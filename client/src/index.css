@@ -239,6 +239,52 @@
     0 10px 26px rgba(40, 20, 8, 0.16);
 }
 
+/* Tip bàn: chuỗi thua / admin tip — nền đặc, chữ rõ, ít nhảy layout */
+.play-tip-board {
+  margin-top: 0.5rem;
+  min-height: 2.6rem;
+  border-radius: 0.65rem;
+  background: rgba(28, 18, 10, 0.88);
+  box-shadow: 0 1px 0 rgba(255, 236, 200, 0.12) inset;
+  border: 1px solid rgba(255, 220, 160, 0.22);
+  overflow: hidden;
+}
+
+.play-tip-board__table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.play-tip-board__table th,
+.play-tip-board__table td {
+  padding: 0.35rem 0.55rem;
+  vertical-align: top;
+  font-size: 0.6875rem;
+  line-height: 1.35;
+}
+
+.play-tip-board__table th {
+  width: 5.75rem;
+  text-align: left;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fbbf24;
+  white-space: nowrap;
+}
+
+.play-tip-board__table td {
+  color: #f8f1e4;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.play-tip-board__table tr + tr th,
+.play-tip-board__table tr + tr td {
+  border-top: 1px solid rgba(255, 220, 160, 0.14);
+}
+
 /* Bar popup c?ng c? b?n ch?i (Lu?t / Qu? / Nh?n / ?) */
 .play-tools-bar {
   position: relative;
@@ -552,17 +598,24 @@
   gap: 0.45rem;
 }
 
-.board-timer-frame {
-  --timer-pct: 100%;
+.board-timer-cluster {
   align-self: center;
   z-index: 3;
   display: flex;
+  align-items: stretch;
+  gap: 0.45rem;
+  width: min(100%, 16.5rem);
+}
+
+.board-timer-frame {
+  --timer-pct: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
   align-items: stretch;
+  justify-content: center;
   gap: 0.35rem;
-  min-width: 9.5rem;
-  max-width: 12rem;
-  width: 42%;
   padding: 0.45rem 0.85rem 0.5rem;
   border-radius: 1.15rem;
   border: 2px solid rgba(232, 176, 80, 0.65);
@@ -652,6 +705,54 @@
 
 .board-timer-frame--urgent .board-timer-bar {
   background: linear-gradient(90deg, #fb7185 0%, #f43f5e 100%);
+}
+
+/* ? vu?ng chu?i th?ng/thua ? c?ng cao v?i ??m ng??c */
+.board-streak-frame {
+  flex: 0 0 auto;
+  aspect-ratio: 1 / 1;
+  align-self: stretch;
+  width: auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  padding: 0.28rem 0.35rem;
+  border-radius: 1rem;
+  border: 2px solid rgba(232, 176, 80, 0.65);
+  background: linear-gradient(
+    165deg,
+    #1f4f47 0%,
+    #142824 55%,
+    #0f1c19 100%
+  );
+  box-shadow:
+    0 0 0 1px rgba(255, 230, 170, 0.2),
+    0 1px 0 rgba(255, 255, 255, 0.1) inset,
+    0 6px 18px rgba(6, 20, 18, 0.45);
+  color: #e8fff8;
+}
+
+.board-streak-frame__num {
+  font-size: 1.55rem;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+  letter-spacing: -0.02em;
+  color: #fff8e7;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+}
+
+.board-streak-frame--win .board-streak-frame__num {
+  color: #22c55e;
+  text-shadow: 0 0 10px rgba(34, 197, 94, 0.45);
+}
+
+.board-streak-frame--lose .board-streak-frame__num {
+  color: #ef4444;
+  text-shadow: 0 0 10px rgba(239, 68, 68, 0.45);
 }
 
 @keyframes timer-pulse {
@@ -1452,6 +1553,13 @@
   color: var(--jade-deep);
 }
 
+.sheet-shell-light h2 {
+  color: var(--wood-deep) !important;
+}
+.sheet-shell-light .border-b {
+  border-color: rgba(26, 107, 92, 0.2) !important;
+}
+
 .ui-pill {
   border-radius: 999px;
   background: rgba(255, 248, 232, 0.62);
@@ -1616,6 +1724,10 @@ input {
   gap: 0.35rem;
   width: 100%;
 }
+/* Nhiều pill trong 1 slot (huy hiệu) cùng hàng với role/vip */
+.role-rail__slot {
+  display: contents;
+}
 .role-rail__id {
   display: flex;
   width: 100%;
@@ -1668,7 +1780,245 @@ input {
   line-height: 1.1;
   white-space: nowrap;
   padding-right: 0.2rem;
+  /* Override RoleAD: ưu tiên --role-fg (màu chữ), không đụng border */
+  color: var(--role-fg, inherit);
 }
+
+/* Size / frame ? mainadmin RoleAD (ch? cosmetic) */
+.role-rail--size-sm .role-pill {
+  min-height: 1.35rem;
+  gap: 0.22rem;
+  padding: 0.12rem 0.4rem 0.12rem 0.2rem;
+}
+.role-rail--size-sm .role-pill__glyph {
+  width: 1.05rem;
+  height: 1.05rem;
+  font-size: 0.58rem;
+}
+.role-rail--size-sm .role-pill__text {
+  font-size: 0.58rem;
+}
+.role-rail--size-sm .role-id {
+  font-size: 0.58rem;
+  min-height: 1.35rem;
+  padding: 0.12rem 0.45rem;
+}
+
+.role-rail--size-lg .role-pill {
+  min-height: 2.15rem;
+  gap: 0.42rem;
+  padding: 0.28rem 0.7rem 0.28rem 0.35rem;
+}
+.role-rail--size-lg .role-pill__glyph {
+  width: 1.65rem;
+  height: 1.65rem;
+  font-size: 0.85rem;
+}
+.role-rail--size-lg .role-pill__text {
+  font-size: 0.82rem;
+}
+.role-rail--size-lg .role-id {
+  font-size: 0.78rem;
+  min-height: 2.15rem;
+  padding: 0.28rem 0.65rem;
+}
+
+.role-rail--frame-chip .role-pill,
+.role-rail--frame-chip .role-id {
+  border-radius: 0.55rem;
+}
+.role-rail--frame-chip .role-pill__glyph {
+  border-radius: 0.4rem;
+}
+
+.role-rail--frame-badge .role-pill,
+.role-rail--frame-badge .role-id {
+  border-radius: 0.4rem;
+  border-width: 2px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 236, 200, 0.16),
+    0 2px 6px rgba(20, 12, 4, 0.22);
+}
+.role-rail--frame-badge .role-pill__glyph {
+  border-radius: 0.35rem;
+  border-width: 1.5px;
+}
+
+.role-rail--frame-plain .role-pill,
+.role-rail--frame-plain .role-id {
+  border-radius: 0.35rem;
+  background: rgba(18, 28, 40, 0.55);
+  box-shadow: none;
+  border-color: rgba(180, 160, 120, 0.35);
+}
+.role-rail--frame-plain .role-pill__glyph {
+  background: transparent;
+  box-shadow: none;
+  border-color: rgba(200, 180, 120, 0.35);
+}
+
+.role-rail--frame-ribbon .role-pill,
+.role-rail--frame-ribbon .role-id {
+  border-radius: 0.2rem 0.85rem 0.2rem 0.85rem;
+  border-color: rgba(229, 193, 88, 0.55);
+  background: linear-gradient(
+    105deg,
+    #2a1a0e 0%,
+    #4a3018 40%,
+    #2a1a0e 100%
+  );
+}
+.role-rail--frame-ribbon .role-pill__glyph {
+  border-radius: 0.25rem;
+}
+
+.role-rail--frame-glass .role-pill,
+.role-rail--frame-glass .role-id {
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(8px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 2px 10px rgba(0, 0, 0, 0.18);
+}
+.role-rail--frame-glass .role-pill__glyph {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: none;
+}
+
+.role-rail--frame-outline .role-pill,
+.role-rail--frame-outline .role-id {
+  border-radius: 999px;
+  background: transparent;
+  border-width: 1.5px;
+  border-color: rgba(229, 193, 88, 0.7);
+  box-shadow: none;
+}
+.role-rail--frame-outline .role-pill__glyph {
+  background: transparent;
+  box-shadow: none;
+  border-color: rgba(229, 193, 88, 0.55);
+}
+
+.role-rail--frame-stamp .role-pill,
+.role-rail--frame-stamp .role-id {
+  border-radius: 0.2rem;
+  border-width: 2px;
+  border-style: double;
+  border-color: rgba(196, 80, 70, 0.75);
+  background: rgba(40, 12, 10, 0.55);
+  box-shadow: none;
+  transform: rotate(-1.5deg);
+}
+.role-rail--frame-stamp .role-pill__glyph {
+  border-radius: 0.15rem;
+  border-style: solid;
+  border-color: rgba(196, 80, 70, 0.55);
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Style ch? pill */
+.role-rail--text-bold .role-pill__text,
+.role-rail--text-bold .role-id__label,
+.role-rail--text-bold .role-id__value {
+  font-weight: 900;
+}
+.role-rail--text-caps .role-pill__text,
+.role-rail--text-caps .role-id__label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.role-rail--text-wide .role-pill__text,
+.role-rail--text-wide .role-id__label,
+.role-rail--text-wide .role-id__value {
+  letter-spacing: 0.14em;
+  font-weight: 700;
+}
+.role-rail--text-serif .role-pill__text,
+.role-rail--text-serif .role-id__label,
+.role-rail--text-serif .role-id__value {
+  font-family: "Cormorant Garamond", "Libre Baskerville", Georgia, serif;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.role-rail--text-outline .role-pill__text,
+.role-rail--text-outline .role-id__label,
+.role-rail--text-outline .role-id__value {
+  font-weight: 900;
+  /* Giữ màu chữ (inherit / --role-fg); chỉ thêm viền chữ bằng shadow */
+  color: var(--role-fg, inherit);
+  text-shadow:
+    -1px -1px 0 rgba(40, 24, 8, 0.9),
+    1px -1px 0 rgba(40, 24, 8, 0.9),
+    -1px 1px 0 rgba(40, 24, 8, 0.9),
+    1px 1px 0 rgba(40, 24, 8, 0.9),
+    0 0 6px rgba(229, 193, 88, 0.45);
+}
+
+.role-rail--no-glyph .role-pill__glyph {
+  display: none;
+}
+.role-rail--no-glyph .role-pill {
+  padding-left: 0.55rem;
+}
+
+/* Huy hi?u cosmetic (kh?ng ph?i role) */
+.role-pill--badge {
+  border-color: rgba(212, 168, 75, 0.5);
+}
+.role-pill--badge-gold {
+  border-color: rgba(232, 176, 80, 0.7);
+  color: #ffe9a8;
+}
+.role-pill--badge-royal {
+  border-color: rgba(180, 140, 255, 0.65);
+  background: linear-gradient(180deg, #2a1f48 0%, #1a1430 100%);
+  color: #e8dcff;
+}
+.role-pill--badge-fire {
+  border-color: rgba(251, 146, 60, 0.7);
+  color: #ffd4a8;
+}
+.role-pill--badge-moon {
+  border-color: rgba(148, 163, 184, 0.65);
+  color: #e2e8f0;
+}
+.role-pill--badge-spark {
+  border-color: rgba(250, 204, 21, 0.7);
+  color: #fef08a;
+}
+.role-pill--badge-steel {
+  border-color: rgba(148, 163, 184, 0.55);
+  color: #cbd5e1;
+}
+.role-pill--badge-heart {
+  border-color: rgba(244, 114, 182, 0.65);
+  color: #fecdd3;
+}
+.role-pill--badge-rose {
+  border-color: rgba(251, 113, 133, 0.6);
+  color: #fecdd3;
+}
+.role-pill--badge-ice {
+  border-color: rgba(56, 189, 248, 0.65);
+  color: #bae6fd;
+}
+.role-pill--badge-fox {
+  border-color: rgba(251, 146, 60, 0.55);
+  color: #fed7aa;
+}
+.role-pill--badge-lotus {
+  border-color: rgba(244, 114, 182, 0.5);
+  color: #fbcfe8;
+}
+.role-pill--badge-bolt {
+  border-color: rgba(250, 204, 21, 0.75);
+  color: #fef08a;
+}
+
 .role-pill--couple {
   border-color: rgba(244, 114, 182, 0.45);
   background: linear-gradient(180deg, #3a1a28 0%, #241018 100%);
@@ -2432,23 +2782,23 @@ input {
   outline: 2px solid var(--gold);
 }
 
-/* Reveal: cards orbit then spiral to center ? mobile snappy */
+/* Reveal: cards orbit — đỉnh lá luôn hướng tâm (không counter-rotate thẳng đứng) */
 @keyframes orbit-in {
   0% {
     transform: translate(-50%, -50%) rotate(calc(var(--i) * 45deg))
-      translateY(-100px) rotate(0deg) scale(1);
+      translateY(-100px) rotate(180deg) scale(1);
     opacity: 1;
   }
   60% {
     transform: translate(-50%, -50%)
       rotate(calc(var(--i) * 45deg + 220deg)) translateY(-48px)
-      rotate(-220deg) scale(0.85);
+      rotate(180deg) scale(0.85);
     opacity: 1;
   }
   100% {
     transform: translate(-50%, -50%)
       rotate(calc(var(--i) * 45deg + 400deg)) translateY(0)
-      rotate(-400deg) scale(0.3);
+      rotate(180deg) scale(0.3);
     opacity: 0;
   }
 }
@@ -3833,6 +4183,31 @@ input {
 }
 
 /* Profile theme catalog */
+.profile-celestial--preview {
+  max-height: none;
+}
+.profile-celestial--preview-compact .profile-celestial__couple-stage {
+  min-height: 4.5rem;
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
+}
+.profile-celestial--preview-compact .profile-celestial__identity {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+.profile-celestial--preview-compact .role-rail {
+  margin-top: 0.25rem;
+}
+/* Preview cạnh nhau trong popup cosmetics / RoleAD */
+.profile-celestial--preview-compact.profile-celestial--preview {
+  font-size: 0.85em;
+}
+.profile-celestial--preview-compact .profile-celestial__couple-stage .h-16,
+.profile-celestial--preview-compact .profile-celestial__couple-stage .w-16 {
+  height: 2.75rem;
+  width: 2.75rem;
+}
+
 .profile-celestial[data-theme="aurora"] {
   background: linear-gradient(
     160deg,
@@ -4669,3 +5044,36 @@ input {
   }
 }
 
+
+/* Khoanh v?ng xu l?n tr?n l?ch s? His / audit */
+.xu-hit--large {
+  box-shadow:
+    0 0 0 2px rgba(245, 158, 11, 0.85),
+    0 0 0 4px rgba(245, 158, 11, 0.2);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 251, 235, 0.95) 0%,
+    rgba(254, 243, 199, 0.75) 100%
+  ) !important;
+}
+.xu-hit--huge {
+  box-shadow:
+    0 0 0 2px rgba(244, 63, 94, 0.9),
+    0 0 0 5px rgba(244, 63, 94, 0.22);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 241, 242, 0.98) 0%,
+    rgba(254, 226, 226, 0.85) 100%
+  ) !important;
+  font-weight: 700;
+}
+.xu-hit--huge .xu-hit__amt,
+.xu-hit--large .xu-hit__amt {
+  font-variant-numeric: tabular-nums;
+}
+.xu-hit--huge .xu-hit__amt {
+  color: #be123c;
+}
+.xu-hit--large .xu-hit__amt {
+  color: #b45309;
+}

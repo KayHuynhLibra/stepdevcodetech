@@ -14,6 +14,12 @@ export interface LeaderboardFlags {
   balance: boolean;
   /** Sao bài Tarot */
   tarotStars: boolean;
+  /** Chuỗi thắng */
+  streak: boolean;
+  /** Top ván vừa */
+  roundWinners: boolean;
+  /** Cấp độ (playLevel / roundsPlayed) */
+  level: boolean;
 }
 
 export interface LeaderboardConfig extends LeaderboardFlags {
@@ -26,6 +32,9 @@ const DEFAULT_FLAGS: LeaderboardFlags = {
   winToday: true,
   balance: true,
   tarotStars: true,
+  streak: true,
+  roundWinners: true,
+  level: true,
 };
 
 function asBool(v: unknown, fallback: boolean): boolean {
@@ -39,6 +48,9 @@ class LeaderboardConfigStore {
   private winToday = true;
   private balance = true;
   private tarotStars = true;
+  private streak = true;
+  private roundWinners = true;
+  private level = true;
   private updatedAt = 0;
   private updatedBy = "";
 
@@ -54,6 +66,10 @@ class LeaderboardConfigStore {
       this.winToday = asBool(parsed.winToday, true);
       this.balance = asBool(parsed.balance, true);
       this.tarotStars = asBool(parsed.tarotStars, true);
+      // Flag mới: thiếu file cũ → mặc định hiện
+      this.streak = asBool(parsed.streak, true);
+      this.roundWinners = asBool(parsed.roundWinners, true);
+      this.level = asBool(parsed.level, true);
       this.updatedAt = Number(parsed.updatedAt) || 0;
       this.updatedBy = String(parsed.updatedBy ?? "");
     } catch (err) {
@@ -68,6 +84,9 @@ class LeaderboardConfigStore {
       winToday: this.winToday,
       balance: this.balance,
       tarotStars: this.tarotStars,
+      streak: this.streak,
+      roundWinners: this.roundWinners,
+      level: this.level,
       updatedAt: this.updatedAt,
       updatedBy: this.updatedBy || undefined,
     };
@@ -81,6 +100,9 @@ class LeaderboardConfigStore {
       winToday: this.winToday,
       balance: this.balance,
       tarotStars: this.tarotStars,
+      streak: this.streak,
+      roundWinners: this.roundWinners,
+      level: this.level,
       updatedAt: this.updatedAt,
       updatedBy: this.updatedBy || undefined,
     };
@@ -91,11 +113,21 @@ class LeaderboardConfigStore {
       winToday: this.winToday,
       balance: this.balance,
       tarotStars: this.tarotStars,
+      streak: this.streak,
+      roundWinners: this.roundWinners,
+      level: this.level,
     };
   }
 
   set(
-    patch: { winToday?: unknown; balance?: unknown; tarotStars?: unknown },
+    patch: {
+      winToday?: unknown;
+      balance?: unknown;
+      tarotStars?: unknown;
+      streak?: unknown;
+      roundWinners?: unknown;
+      level?: unknown;
+    },
     byUsername: string,
   ): { ok: true; config: LeaderboardConfig } {
     if (patch.winToday !== undefined) {
@@ -106,6 +138,15 @@ class LeaderboardConfigStore {
     }
     if (patch.tarotStars !== undefined) {
       this.tarotStars = asBool(patch.tarotStars, this.tarotStars);
+    }
+    if (patch.streak !== undefined) {
+      this.streak = asBool(patch.streak, this.streak);
+    }
+    if (patch.roundWinners !== undefined) {
+      this.roundWinners = asBool(patch.roundWinners, this.roundWinners);
+    }
+    if (patch.level !== undefined) {
+      this.level = asBool(patch.level, this.level);
     }
     this.updatedAt = Date.now();
     this.updatedBy = String(byUsername ?? "").trim();

@@ -23,7 +23,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, "..", "data");
 const PATH = join(DATA_DIR, "audit.json");
 const TMP = join(DATA_DIR, "audit.json.tmp");
-const CAP = 500;
+const CAP = 2000;
 
 export class AuditStore {
   private entries: AuditEntry[] = [];
@@ -80,7 +80,28 @@ export class AuditStore {
   }
 
   list(limit = 80): AuditEntry[] {
-    return this.entries.slice(0, Math.max(1, Math.min(200, limit)));
+    return this.entries.slice(0, Math.max(1, Math.min(500, limit)));
+  }
+
+  /** Lọc theo target user (cộng/trừ xu, ban, …). */
+  listForTarget(
+    targetId: string,
+    opts?: { actions?: string[]; limit?: number },
+  ): AuditEntry[] {
+    const id = String(targetId ?? "").trim();
+    if (!id) return [];
+    const limit = Math.max(1, Math.min(500, opts?.limit ?? 80));
+    const actions = opts?.actions?.length
+      ? new Set(opts.actions.map((a) => String(a)))
+      : null;
+    const out: AuditEntry[] = [];
+    for (const e of this.entries) {
+      if (e.targetId !== id) continue;
+      if (actions && !actions.has(e.action)) continue;
+      out.push(e);
+      if (out.length >= limit) break;
+    }
+    return out;
   }
 }
 
