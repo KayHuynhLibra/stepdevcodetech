@@ -212,6 +212,7 @@ class InterObserveStore {
       phase: opts.phase,
       roundNumber: opts.roundNumber,
       storedMode: snap.mode,
+      primaryTier: snap.primaryTier ?? "mode1",
       effectiveMode: effective,
       winBiasPct: snap.winBiasPct,
       vaultNet: Math.round(vaultNet),

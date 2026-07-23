@@ -437,6 +437,14 @@ function resolveWeights(
   );
 }
 
+/** Lớp MODE cấp cao (MODE2 ×½ / MODE3 ×¼ lá 4–8) — áp sau thuật toán slot. */
+function withPackOverlay(weights: number[]): number[] {
+  return interStore.applyPackOverlayToWeights(
+    weights,
+    CARDS.map((c) => c.id),
+  );
+}
+
 function weightedPick(weights: number[]): number {
   const total = weights.reduce((sum, w) => sum + w, 0);
   if (total <= 0) return CARDS[CARDS.length - 1]!.id;
@@ -460,7 +468,9 @@ export function pickWinningCard(
   engagement?: PickEngagement,
   history?: RoundResult[],
 ): number {
-  let weights = resolveWeights(mode, realStakes, recentWins, history);
+  let weights = withPackOverlay(
+    resolveWeights(mode, realStakes, recentWins, history),
+  );
   if (engagement) {
     weights = applyEngagementToWeights(weights, engagement);
   }
@@ -549,7 +559,9 @@ export function pickWinningCardWithUserBias(
         loseStake[i]! += b.stakes[i] ?? 0;
       }
     }
-    const base = resolveWeights(mode, policyStakes, recentWins, history);
+    const base = withPackOverlay(
+      resolveWeights(mode, policyStakes, recentWins, history),
+    );
     let safeWeights = base.map((w, i) => (loseStake[i]! <= 0 ? w : 0));
     if (engagement) {
       safeWeights = applyEngagementToWeights(safeWeights, engagement);
@@ -587,6 +599,7 @@ export function cardProbabilities(
   mode: InterMode = "auto",
   realStakes?: number[],
   recentWins?: number[],
+  opts?: { applyPackOverlay?: boolean },
 ): {
   cardId: number;
   nameVi: string;
@@ -597,7 +610,10 @@ export function cardProbabilities(
   houseProfit: number;
 }[] {
   const stakes = realStakes ?? [];
-  const weights = resolveWeights(mode, stakes, recentWins);
+  let weights = resolveWeights(mode, stakes, recentWins);
+  if (opts?.applyPackOverlay) {
+    weights = withPackOverlay(weights);
+  }
   const liab = cardLiabilities(stakes);
   const profits = houseProfitByCard(stakes);
   const total = weights.reduce((sum, w) => sum + w, 0) || 1;

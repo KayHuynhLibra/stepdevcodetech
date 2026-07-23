@@ -5,8 +5,12 @@ import {
   QUICK_ADDS,
   formatXu,
 } from "../cards";
+import {
+  DEFAULT_MAX_CARDS_PER_ROUND,
+  MAX_CARDS_PER_ROUND_MAX,
+  normalizeMaxCardsPerRound,
+} from "../tableConfig";
 
-const MAX_AUTO_CARDS = 5;
 const MIN_STAKE = 10;
 const STAKE_STEP = 10;
 
@@ -28,7 +32,40 @@ export const DEFAULT_AUTO_STAKE: AutoStakeConfig = {
   slots: [],
 };
 
-export function loadAutoStake(): AutoStakeConfig {
+/** Cắt preset Auto theo trần số lá / ván của bàn. */
+export function clampAutoStake(
+  cfg: AutoStakeConfig,
+  maxCardsPerRound: number = DEFAULT_MAX_CARDS_PER_ROUND,
+): AutoStakeConfig {
+  const lim = normalizeMaxCardsPerRound(maxCardsPerRound);
+  const map = new Map<number, number>();
+  for (const s of cfg.slots ?? []) {
+    if (!s || !Number.isFinite(s.cardId) || !Number.isFinite(s.amount)) continue;
+    const cardId = Math.floor(s.cardId);
+    if (cardId < 1 || cardId > 8) continue;
+    map.set(
+      cardId,
+      Math.max(
+        MIN_STAKE,
+        Math.min(
+          MAX_STAKE_PER_CARD,
+          Math.floor(s.amount / STAKE_STEP) * STAKE_STEP,
+        ),
+      ),
+    );
+  }
+  const slots = [...map.entries()]
+    .map(([cardId, amount]) => ({ cardId, amount }))
+    .slice(0, lim);
+  return {
+    enabled: !!cfg.enabled && slots.length > 0,
+    slots,
+  };
+}
+
+export function loadAutoStake(
+  maxCardsPerRound: number = MAX_CARDS_PER_ROUND_MAX,
+): AutoStakeConfig {
   try {
     const raw =
       localStorage.getItem(AUTO_STAKE_KEY) ??
@@ -36,38 +73,13 @@ export function loadAutoStake(): AutoStakeConfig {
     if (!raw) return { ...DEFAULT_AUTO_STAKE };
     const parsed = JSON.parse(raw) as AutoStakeConfig;
     if (!parsed || typeof parsed !== "object") return { ...DEFAULT_AUTO_STAKE };
-    const slots = Array.isArray(parsed.slots)
-      ? parsed.slots
-          .filter(
-            (s) =>
-              s &&
-              Number.isFinite(s.cardId) &&
-              s.cardId >= 1 &&
-              s.cardId <= 8 &&
-              Number.isFinite(s.amount),
-          )
-          .map((s) => ({
-            cardId: Math.floor(s.cardId),
-            amount: Math.max(
-              MIN_STAKE,
-              Math.min(
-                MAX_STAKE_PER_CARD,
-                Math.floor(s.amount / STAKE_STEP) * STAKE_STEP,
-              ),
-            ),
-          }))
-          .slice(0, MAX_AUTO_CARDS)
-      : [];
-    // unique by cardId
-    const map = new Map<number, number>();
-    for (const s of slots) map.set(s.cardId, s.amount);
-    return {
-      enabled: !!parsed.enabled && map.size > 0,
-      slots: [...map.entries()].map(([cardId, amount]) => ({
-        cardId,
-        amount,
-      })),
-    };
+    return clampAutoStake(
+      {
+        enabled: !!parsed.enabled,
+        slots: Array.isArray(parsed.slots) ? parsed.slots : [],
+      },
+      maxCardsPerRound,
+    );
   } catch {
     return { ...DEFAULT_AUTO_STAKE };
   }
@@ -84,6 +96,8 @@ export function saveAutoStake(cfg: AutoStakeConfig) {
 interface AutoStakeSheetProps {
   open: boolean;
   initial: AutoStakeConfig;
+  /** Trần số lá / ván từ table-config — Auto không vượt quá. */
+  maxCardsPerRound?: number;
   maxStakePerCard?: number;
   quickAdds?: number[];
   onClose: () => void;
@@ -93,23 +107,28 @@ interface AutoStakeSheetProps {
 export function AutoStakeSheet({
   open,
   initial,
+  maxCardsPerRound = DEFAULT_MAX_CARDS_PER_ROUND,
   maxStakePerCard = MAX_STAKE_PER_CARD,
   quickAdds = [...QUICK_ADDS],
   onClose,
   onSave,
 }: AutoStakeSheetProps) {
+  const cardLimit = normalizeMaxCardsPerRound(maxCardsPerRound);
   const [enabled, setEnabled] = useState(initial.enabled);
-  const [slots, setSlots] = useState<AutoStakeSlot[]>(initial.slots);
+  const [slots, setSlots] = useState<AutoStakeSlot[]>(() =>
+    clampAutoStake(initial, cardLimit).slots,
+  );
   const [formError, setFormError] = useState<string | null>(null);
   const cap = Math.max(MAX_STAKE_PER_CARD, maxStakePerCard);
   const adds = quickAdds.length ? quickAdds : [...QUICK_ADDS];
 
   useEffect(() => {
     if (!open) return;
-    setEnabled(initial.enabled);
-    setSlots(initial.slots);
+    const next = clampAutoStake(initial, cardLimit);
+    setEnabled(next.enabled);
+    setSlots(next.slots);
     setFormError(null);
-  }, [open, initial]);
+  }, [open, initial, cardLimit]);
 
   if (!open) return null;
 
@@ -121,7 +140,7 @@ export function AutoStakeSheet({
       setSlots((prev) => prev.filter((s) => s.cardId !== cardId));
       return;
     }
-    if (slots.length >= MAX_AUTO_CARDS) return;
+    if (slots.length >= cardLimit) return;
     setSlots((prev) => [...prev, { cardId, amount: MIN_STAKE }]);
   };
 
@@ -158,16 +177,16 @@ export function AutoStakeSheet({
   };
 
   const save = () => {
-    const clean = slots.filter((s) => s.amount >= MIN_STAKE);
-    if (enabled && clean.length === 0) {
+    const clean = clampAutoStake(
+      { enabled, slots: slots.filter((s) => s.amount >= MIN_STAKE) },
+      cardLimit,
+    );
+    if (enabled && clean.slots.length === 0) {
       setFormError("Chọn ít nhất 1 lá trước khi bật Auto");
       return;
     }
     setFormError(null);
-    onSave({
-      enabled: enabled && clean.length > 0,
-      slots: clean,
-    });
+    onSave(clean);
     onClose();
   };
 
@@ -186,7 +205,8 @@ export function AutoStakeSheet({
               Auto đặt lá
             </p>
             <p className="text-[11px] text-white/50">
-              Tối đa {MAX_AUTO_CARDS} lá · tự đặt đầu mỗi ván
+              Tối đa {cardLimit} lá / ván (theo cấu hình bàn) · tự đặt đầu mỗi
+              ván
             </p>
           </div>
           <button
@@ -225,12 +245,12 @@ export function AutoStakeSheet({
 
           <div>
             <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-[var(--jade-soft)]/80">
-              Chọn lá ({slots.length}/{MAX_AUTO_CARDS})
+              Chọn lá ({slots.length}/{cardLimit})
             </p>
             <div className="grid grid-cols-4 gap-2">
               {CARDS.map((card) => {
                 const on = selected.has(card.id);
-                const locked = !on && slots.length >= MAX_AUTO_CARDS;
+                const locked = !on && slots.length >= cardLimit;
                 return (
                   <button
                     key={card.id}
@@ -318,7 +338,7 @@ export function AutoStakeSheet({
                 <span className="font-play font-bold text-amber-200 tabular-nums">
                   {formatXu(total)}
                 </span>{" "}
-                xu
+                xu · tối đa {cardLimit} lá
               </p>
             </div>
           )}

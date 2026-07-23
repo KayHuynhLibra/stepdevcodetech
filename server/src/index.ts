@@ -323,7 +323,9 @@ function buildInterPayload() {
     realStakesRound: engine.getRealStakes(),
     authStakesRound: authStakes,
     recentWins,
-    probabilities: cardProbabilities(effective, authStakes, recentWins),
+    probabilities: cardProbabilities(effective, authStakes, recentWins, {
+      applyPackOverlay: true,
+    }),
     probabilitiesByMode: Object.fromEntries(
       (
         inter.rotateCatalog?.map((e) => e.id) ?? [
@@ -1182,6 +1184,17 @@ app.post("/api/mainadmin/inter", (req, res) => {
     }
     interStore.setMode(mode, me.username);
     audit(me, "inter_set", { detail: String(mode) });
+  }
+  if (req.body?.primaryTier != null && req.body?.primaryTier !== "") {
+    const tier = String(req.body.primaryTier);
+    if (tier !== "mode1" && tier !== "mode2" && tier !== "mode3") {
+      return res.status(400).json({
+        ok: false,
+        reason: "primaryTier phải là mode1 | mode2 | mode3",
+      });
+    }
+    const result = interStore.setPrimaryTier(tier, me.username);
+    audit(me, "inter_primary_tier", { detail: result.primaryTier });
   }
   if (req.body?.allSlotMinutes != null && req.body?.allSlotMinutes !== "") {
     const result = interStore.setAllSlotMinutes(

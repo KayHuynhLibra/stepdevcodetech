@@ -28,10 +28,12 @@ import {
 } from "../components/VipTopupSheet";
 import {
   AutoStakeSheet,
+  clampAutoStake,
   loadAutoStake,
   saveAutoStake,
   type AutoStakeConfig,
 } from "../components/AutoStakeSheet";
+import { DEFAULT_MAX_CARDS_PER_ROUND } from "../tableConfig";
 import { GiftHubSheet, type GiftHubTarget } from "../components/GiftHubSheet";
 import {
   RingHubSheet,
@@ -755,6 +757,29 @@ export default function GamePage() {
     prevPhase.current = state.phase;
   }, [state]);
 
+  const tableMaxCards =
+    state?.tableTiming?.maxCardsPerRound ?? DEFAULT_MAX_CARDS_PER_ROUND;
+
+  // Trần bàn đổi → cắt preset Auto cho khớp (tính tổng / đặt luôn đúng trần)
+  useEffect(() => {
+    setAutoStake((prev) => {
+      const next = clampAutoStake(prev, tableMaxCards);
+      if (
+        next.slots.length === prev.slots.length &&
+        next.enabled === prev.enabled &&
+        next.slots.every(
+          (s, i) =>
+            s.cardId === prev.slots[i]?.cardId &&
+            s.amount === prev.slots[i]?.amount,
+        )
+      ) {
+        return prev;
+      }
+      saveAutoStake(next);
+      return next;
+    });
+  }, [tableMaxCards]);
+
   const runAutoPlace = useCallback(
     async (cfg: AutoStakeConfig, roundId: number) => {
       if (!socket || !connected || !state) return;
@@ -768,16 +793,26 @@ export default function GamePage() {
       // Khóa ngay để tránh double-fire khi state cập nhật
       autoRoundRef.current = roundId;
 
+      const lim =
+        state.tableTiming?.maxCardsPerRound ?? DEFAULT_MAX_CARDS_PER_ROUND;
+      const slots = clampAutoStake(cfg, lim).slots;
       const stakes = [...(state.yourStakes ?? [])];
       let balance = state.yourBalance;
       let placed = 0;
       let lastError: string | null = null;
 
-      for (const slot of cfg.slots) {
+      for (const slot of slots) {
         const idx = slot.cardId - 1;
         const current = stakes[idx] ?? 0;
         const need = Math.max(0, slot.amount - current);
         if (need <= 0) continue;
+        if (current <= 0) {
+          const distinct = stakes.filter((v) => v > 0).length;
+          if (distinct >= lim) {
+            lastError = `Mỗi lượt tối đa ${lim} lá`;
+            continue;
+          }
+        }
         if (balance < need) {
           lastError = "Số dư không đủ cho Auto — nạp xu hoặc giảm preset";
           continue;
@@ -835,7 +870,8 @@ export default function GamePage() {
     const alreadyOnCard = (stakes[cardId - 1] ?? 0) > 0;
     if (!alreadyOnCard) {
       const distinct = stakes.filter((v) => v > 0).length;
-      const lim = state.tableTiming?.maxCardsPerRound ?? 4;
+      const lim =
+        state.tableTiming?.maxCardsPerRound ?? DEFAULT_MAX_CARDS_PER_ROUND;
       if (distinct >= lim) {
         showToast(`Mỗi lượt chỉ được đặt tối đa ${lim} lá`);
         return;
@@ -1718,10 +1754,14 @@ export default function GamePage() {
       pending: false as boolean,
     }));
 
+    const cardLim =
+      state?.tableTiming?.maxCardsPerRound ?? DEFAULT_MAX_CARDS_PER_ROUND;
+    const autoSlots = clampAutoStake(autoStake, cardLim).slots;
+
     // Auto ON: hiện preset nếu chưa có đặt xu live (hoặc bổ sung slot pending)
-    if (autoStake.enabled && autoStake.slots.length > 0) {
+    if (autoStake.enabled && autoSlots.length > 0) {
       if (live.length === 0) {
-        return autoStake.slots
+        return autoSlots
           .map((s) => {
             const card = CARDS.find((c) => c.id === s.cardId);
             return card
@@ -1731,7 +1771,7 @@ export default function GamePage() {
           .filter((x): x is Exclude<typeof x, null> => x != null);
       }
       const liveIds = new Set(live.map((r) => r.card.id));
-      const pending = autoStake.slots
+      const pending = autoSlots
         .filter((s) => !liveIds.has(s.cardId))
         .map((s) => {
           const card = CARDS.find((c) => c.id === s.cardId);
@@ -1740,13 +1780,14 @@ export default function GamePage() {
             : null;
         })
         .filter((x): x is Exclude<typeof x, null> => x != null);
-      return [...live, ...pending].slice(0, 5);
+      return [...live, ...pending].slice(0, cardLim);
     }
 
     return live;
   }, [
     state?.phase,
     state?.yourStakes,
+    state?.tableTiming?.maxCardsPerRound,
     pickedSnapshot,
     autoStake.enabled,
     autoStake.slots,
@@ -2735,21 +2776,23 @@ export default function GamePage() {
       <AutoStakeSheet
         open={sheet === "autoStake"}
         initial={autoStake}
+        maxCardsPerRound={tableMaxCards}
         maxStakePerCard={stakeLimits.maxStakePerCard}
         quickAdds={stakeLimits.quickAdds}
         onClose={() => setSheet(null)}
         onSave={(cfg) => {
+          const next = clampAutoStake(cfg, tableMaxCards);
           // Cho phép đặt lại ngay trong ván đặt xu hiện tại khi bật/đổi preset
-          if (cfg.enabled && state?.phase === "placing") {
+          if (next.enabled && state?.phase === "placing") {
             autoRoundRef.current = null;
           }
-          setAutoStake(cfg);
-          saveAutoStake(cfg);
+          setAutoStake(next);
+          saveAutoStake(next);
           showToast(
-            cfg.enabled
+            next.enabled
               ? state?.phase === "placing"
-                ? `Auto ON · đang đặt ${cfg.slots.length} lá…`
-                : `Auto ON · ${cfg.slots.length} lá (ván sau)`
+                ? `Auto ON · đang đặt ${next.slots.length}/${tableMaxCards} lá…`
+                : `Auto ON · ${next.slots.length}/${tableMaxCards} lá (ván sau)`
               : "Đã tắt Auto",
           );
         }}

@@ -5,23 +5,42 @@ import { adaptAllEffectiveMode } from "./tarotEngagement.js";
 import {
   ALL_ROTATION_DEFAULT,
   isPackMode,
+  isPrimaryModePack,
+  isPrimaryTier,
   isRotateMode,
   MODE_PACK_LABELS,
   MODE_PACK_ROTATIONS,
+  packHighCardWeightMul,
   packRotation,
   PACK_MODES,
+  PRIMARY_MODE_PACKS,
+  PRIMARY_TIERS,
+  primaryTierHighCardMul,
   ROTATE_LABELS,
   ROTATE_MODE_IDS,
+  scaleHighCardWeights,
   type PackMode,
+  type PrimaryTier,
   type RotateMode,
 } from "./interAlgorithms.js";
 
-export type { PackMode, RotateMode } from "./interAlgorithms.js";
+export type { PackMode, PrimaryTier, RotateMode } from "./interAlgorithms.js";
 export {
+  dampenHighCardWeights,
+  isPrimaryModePack,
+  isPrimaryTier,
+  MODE_PACK_HIGH_CARD_DAMP_PCT,
+  MODE_PACK_HIGH_CARD_WEIGHT_MUL,
   MODE_PACK_LABELS,
   MODE_PACK_ROTATIONS,
+  packHighCardDampPct,
+  packHighCardWeightMul,
+  PRIMARY_MODE_PACKS,
+  PRIMARY_TIERS,
+  primaryTierHighCardMul,
   ROTATE_LABELS,
   ROTATE_MODE_IDS,
+  scaleHighCardWeights,
 } from "./interAlgorithms.js";
 
 /** Mode can thiệp xác suất lá thắng (mainadmin). */
@@ -256,7 +275,7 @@ export interface VaultSignalInput {
 }
 
 interface InterFile {
-  version: 1 | 2 | 3 | 4 | 5;
+  version: 1 | 2 | 3 | 4 | 5 | 6;
   mode: InterMode;
   updatedAt: number;
   updatedBy: string;
@@ -267,6 +286,8 @@ interface InterFile {
   /** Bias Big(+)/Small(−) % — v4 */
   winBiasPct?: number;
   vaultInterLink?: Partial<VaultInterLink>;
+  /** MODE1/MODE2 — lớp phủ toàn cục (v6) */
+  primaryTier?: PrimaryTier;
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -400,6 +421,8 @@ const FORCE_LABELS: Record<ForceCardMode, string> = {
 
 export class InterStore {
   private mode: InterMode = "auto";
+  /** Cấp MODE1/MODE2 — áp lên ALL, mode đơn, mọi pack */
+  private primaryTier: PrimaryTier = "mode1";
   private updatedAt = 0;
   private updatedBy = "";
   private allSlotMinutes = DEFAULT_ALL_SLOT_MINUTES;
@@ -450,11 +473,20 @@ export class InterStore {
         parsed?.version !== 2 &&
         parsed?.version !== 3 &&
         parsed?.version !== 4 &&
-        parsed?.version !== 5
+        parsed?.version !== 5 &&
+        parsed?.version !== 6
       ) {
         return;
       }
       if (isInterMode(parsed.mode)) this.mode = parsed.mode;
+      if (isPrimaryTier(parsed.primaryTier)) {
+        this.primaryTier = parsed.primaryTier;
+      } else if (parsed.mode === "pack2") {
+        // Migrate: pack2 cũ = MODE2
+        this.primaryTier = "mode2";
+      } else {
+        this.primaryTier = "mode1";
+      }
       if (typeof parsed.updatedAt === "number") this.updatedAt = parsed.updatedAt;
       if (typeof parsed.updatedBy === "string") this.updatedBy = parsed.updatedBy;
       if (parsed.allSlotMinutes != null) {
@@ -472,7 +504,7 @@ export class InterStore {
       }
       const rot = this.getAllRotation();
       console.log(
-        `[inter] Loaded mode=${this.mode} allSlot=${this.allSlotMinutes}m rotation=${rot.length} steps bias=${this.winBiasPct} vaultLink=${this.vaultInterLink.enabled}`,
+        `[inter] Loaded tier=${this.primaryTier} mode=${this.mode} allSlot=${this.allSlotMinutes}m rotation=${rot.length} steps bias=${this.winBiasPct} vaultLink=${this.vaultInterLink.enabled}`,
       );
     } catch (err) {
       console.warn("[inter] Failed to load inter.json:", err);
@@ -482,8 +514,9 @@ export class InterStore {
   private save() {
     if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
     const body: InterFile = {
-      version: 5,
+      version: 6,
       mode: this.mode,
+      primaryTier: this.primaryTier,
       updatedAt: this.updatedAt,
       updatedBy: this.updatedBy,
       allSlotMinutes: this.allSlotMinutes,
@@ -565,12 +598,33 @@ export class InterStore {
 
   setMode(mode: InterMode, byUsername: string): { ok: true; mode: InterMode } {
     this.mode = mode;
+    // Chọn pack1/pack2 vẫn sync tier cho tiện, nhưng tier độc lập với ALL/mode đơn
+    if (mode === "pack2") this.primaryTier = "mode2";
+    if (mode === "pack1") this.primaryTier = "mode1";
     this.updatedAt = Date.now();
     this.updatedBy = byUsername;
     this.lastLoggedEffective = null;
     this.save();
-    console.log(`[inter] Mode → ${mode} by ${byUsername}`);
+    console.log(
+      `[inter] Mode → ${mode} · tier=${this.primaryTier} by ${byUsername}`,
+    );
     return { ok: true, mode: this.mode };
+  }
+
+  getPrimaryTier(): PrimaryTier {
+    return this.primaryTier;
+  }
+
+  setPrimaryTier(
+    tier: PrimaryTier,
+    byUsername: string,
+  ): { ok: true; primaryTier: PrimaryTier } {
+    this.primaryTier = tier;
+    this.updatedAt = Date.now();
+    this.updatedBy = byUsername;
+    this.save();
+    console.log(`[inter] PrimaryTier → ${tier} by ${byUsername}`);
+    return { ok: true, primaryTier: this.primaryTier };
   }
 
   setAllSlotMinutes(
@@ -614,6 +668,25 @@ export class InterStore {
 
   getWinBiasPct(): number {
     return this.winBiasPct;
+  }
+
+  /**
+   * Lớp MODE1/MODE2/MODE3 toàn cục — sau thuật toán (ALL / mode đơn / pack).
+   * MODE2 ×0.5 · MODE3 ×0.25 lá 4–8 (chống Auto chồng cao).
+   */
+  applyPackOverlayToWeights(weights: number[], cardIds: number[]): number[] {
+    const mul = primaryTierHighCardMul(this.primaryTier);
+    if (mul === 1) return weights;
+    return scaleHighCardWeights(weights, cardIds, mul);
+  }
+
+  /** Overlay cấp cao đang siết lá cao, hoặc đang chạy pack1/2. */
+  getModeTier(): "primary" | "algorithm" {
+    return this.primaryTier === "mode2" ||
+      this.primaryTier === "mode3" ||
+      isPrimaryModePack(this.mode)
+      ? "primary"
+      : "algorithm";
   }
 
   setWinBiasPct(pct: number, byUsername: string) {
@@ -889,6 +962,9 @@ export class InterStore {
 
     return {
       mode: this.mode,
+      primaryTier: this.primaryTier,
+      primaryTierHighCardMul: primaryTierHighCardMul(this.primaryTier),
+      modeTier: this.getModeTier(),
       effectiveMode,
       allSlotMinutes: this.allSlotMinutes,
       allRotation: [...chain],
@@ -903,6 +979,24 @@ export class InterStore {
         id: p,
         label: MODE_PACK_LABELS[p],
         rotation: [...MODE_PACK_ROTATIONS[p]],
+        tier: isPrimaryModePack(p) ? ("primary" as const) : ("secondary" as const),
+        highCardWeightMul: packHighCardWeightMul(p),
+      })),
+      primaryModePacks: PRIMARY_MODE_PACKS.map((p) => ({
+        id: p,
+        label: MODE_PACK_LABELS[p],
+        rotation: [...MODE_PACK_ROTATIONS[p]],
+        highCardWeightMul: packHighCardWeightMul(p),
+      })),
+      primaryTiers: PRIMARY_TIERS.map((t) => ({
+        id: t,
+        label:
+          t === "mode1"
+            ? "MODE1 — bình thường (không siết lá cao)"
+            : t === "mode2"
+              ? "MODE2 — % lá 4–8 ×1/2 (áp ALL + mode đơn)"
+              : "MODE3 — % lá 4–8 ×1/4 (áp ALL + mode đơn · siết mạnh)",
+        highCardWeightMul: primaryTierHighCardMul(t),
       })),
       updatedAt: this.updatedAt,
       updatedBy: this.updatedBy,

@@ -529,6 +529,9 @@ interface InterAllRotation {
 
 interface InterSnapshot {
   mode: InterMode;
+  primaryTier?: "mode1" | "mode2" | "mode3";
+  primaryTierHighCardMul?: number;
+  modeTier?: "primary" | "algorithm";
   effectiveMode?: string;
   allSlotMinutes?: number;
   allRotation?: string[];
@@ -544,7 +547,24 @@ interface InterSnapshot {
     idleMode?: string | null;
   };
   rotateCatalog?: { id: RotateStep; label: string }[];
-  modePacks?: { id: PackMode; label: string; rotation: string[] }[];
+  modePacks?: {
+    id: PackMode;
+    label: string;
+    rotation: string[];
+    tier?: "primary" | "secondary";
+    highCardWeightMul?: number;
+  }[];
+  primaryModePacks?: {
+    id: PackMode;
+    label: string;
+    rotation: string[];
+    highCardWeightMul?: number;
+  }[];
+  primaryTiers?: {
+    id: "mode1" | "mode2" | "mode3";
+    label: string;
+    highCardWeightMul: number;
+  }[];
   updatedAt: number;
   updatedBy: string;
   labels: Record<string, string>;
@@ -1080,6 +1100,7 @@ export default function AdminDashboard() {
     phase: string;
     roundNumber: number;
     storedMode: string;
+    primaryTier?: string;
     effectiveMode: string;
     winBiasPct: number;
     vaultNet: number;
@@ -1609,18 +1630,6 @@ export default function AdminDashboard() {
         ? data.inter.rotateCatalog
         : FALLBACK_ROTATE_CATALOG,
     [data?.inter?.rotateCatalog],
-  );
-
-  const interModePacks = useMemo(
-    () =>
-      data?.inter?.modePacks?.length
-        ? data.inter.modePacks
-        : PACK_MODES.map((id, i) => ({
-            id,
-            label: `Bộ ${i + 1}`,
-            rotation: [] as string[],
-          })),
-    [data?.inter?.modePacks],
   );
 
   // ALL / Bộ mode: refresh countdown / effective slot
@@ -2846,6 +2855,29 @@ export default function AdminDashboard() {
     }
   };
 
+  const setInterPrimaryTier = async (tier: "mode1" | "mode2" | "mode3") => {
+    if (interBusy) return;
+    setInterBusy(true);
+    try {
+      await api("/api/mainadmin/inter", {
+        method: "POST",
+        body: JSON.stringify({ primaryTier: tier }),
+      });
+      setMsg(
+        tier === "mode3"
+          ? "MODE3 — % lá 4–8 ×1/4 (áp ALL + mode đơn)"
+          : tier === "mode2"
+            ? "MODE2 — % lá 4–8 ×1/2 (áp ALL + mode đơn)"
+            : "MODE1 — bình thường",
+      );
+      await load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi MODE tier");
+    } finally {
+      setInterBusy(false);
+    }
+  };
+
   const applyAllSlotMinutes = async () => {
     if (interBusy) return;
     const m = Math.floor(Number(allSlotMinutes));
@@ -4061,6 +4093,7 @@ export default function AdminDashboard() {
                       Mặc định 4 · khoảng{" "}
                       {data.tableConfigLimits?.maxCardsPerRound.min ?? 1}–
                       {data.tableConfigLimits?.maxCardsPerRound.max ?? 8}
+                      {" · "}Auto / đặt tay / bot đều theo trần này
                     </span>
                   </label>
                 </div>
@@ -8787,7 +8820,7 @@ export default function AdminDashboard() {
                         ["Ván", `#${interLive.roundNumber}`],
                         [
                           "Mode",
-                          `${interLive.storedMode}→${interLive.effectiveMode}`,
+                          `${(interLive.primaryTier ?? "mode1").toUpperCase()}·${interLive.storedMode}→${interLive.effectiveMode}`,
                         ],
                         ["Kho net", formatXu(interLive.vaultNet)],
                         ["Auth stake", formatXu(interLive.authStake)],
@@ -9101,17 +9134,104 @@ export default function AdminDashboard() {
               <div>
                 <p className="play-heading text-sm">Inter — thuật toán lá thắng</p>
                 <p className="mt-1 text-[11px] text-[var(--play-muted)]">
-                  ALL xoay chuỗi mode — chọn 1–9 phút/slot (&lt; 10 phút).
-                  Policy đọc cầu user đăng nhập. Cool cắt mạnh cầu gần đây.
-                  FogBreak bẻ cầu mềm + nhiễu (không lộ).
+                  <strong>MODE1/2/3</strong> phủ toàn cục (ALL + mode đơn) →
+                  thuật toán phía sau → bias / vault.
                 </p>
               </div>
               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-900 ring-1 ring-amber-300/60">
-                Mode:{" "}
+                {(data.inter.primaryTier ?? "mode1").toUpperCase()}
+                {data.inter.primaryTier === "mode3"
+                  ? " · ÷4#4–8"
+                  : data.inter.primaryTier === "mode2"
+                    ? " · ÷2#4–8"
+                    : ""}
+                {" · "}
                 {isInterRotating(data.inter.mode)
                   ? `${data.inter.mode === "all" ? "ALL" : data.inter.mode.toUpperCase()}→${(data.inter.effectiveMode ?? data.inter.all?.effectiveMode ?? "?").toUpperCase()}`
                   : interModeLabel(data.inter.mode)}
               </span>
+            </div>
+
+            {/* ===== Cấp cao: MODE1/2/3 — phủ ALL + mode đơn ===== */}
+            <div className="space-y-1.5 rounded-xl bg-indigo-50/90 p-3 ring-1 ring-indigo-200/70">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-950">
+                1 · Cấp cao — MODE1 / MODE2 / MODE3 (áp mọi thuật toán)
+              </p>
+              <p className="text-[10px] text-indigo-900/75">
+                Độc lập với ALL / mode đơn / Bộ 3–4. MODE2{" "}
+                <strong>×1/2</strong>, MODE3 <strong>×1/4</strong> % lá 4–8 sau
+                mọi thuật toán — phần % đẩy về 1–3.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {(
+                  data.inter.primaryTiers ?? [
+                    {
+                      id: "mode1" as const,
+                      label: "MODE1 — bình thường",
+                      highCardWeightMul: 1,
+                    },
+                    {
+                      id: "mode2" as const,
+                      label: "MODE2 — % lá 4–8 ×1/2",
+                      highCardWeightMul: 0.5,
+                    },
+                    {
+                      id: "mode3" as const,
+                      label: "MODE3 — % lá 4–8 ×1/4",
+                      highCardWeightMul: 0.25,
+                    },
+                  ]
+                ).map((tier) => {
+                  const active =
+                    (data.inter!.primaryTier ?? "mode1") === tier.id;
+                  const tone =
+                    tier.id === "mode3"
+                      ? "active-mode3"
+                      : tier.id === "mode2"
+                        ? "active-mode2"
+                        : "active-mode1";
+                  return (
+                    <button
+                      key={tier.id}
+                      type="button"
+                      disabled={interBusy}
+                      onClick={() => void setInterPrimaryTier(tier.id)}
+                      className={`rounded-xl px-3 py-3.5 text-left transition ring-2 ${
+                        active
+                          ? tone === "active-mode3"
+                            ? "bg-fuchsia-800 text-white ring-fuchsia-950 shadow-md"
+                            : tone === "active-mode2"
+                              ? "bg-rose-700 text-white ring-rose-800 shadow-md"
+                              : "bg-indigo-700 text-white ring-indigo-800 shadow-md"
+                          : "bg-white text-[var(--play-ink)] ring-indigo-200/80 hover:bg-indigo-50"
+                      } ${interBusy ? "opacity-60" : ""}`}
+                    >
+                      <p className="text-sm font-bold">
+                        {tier.id === "mode1"
+                          ? "MODE1"
+                          : tier.id === "mode2"
+                            ? "MODE2"
+                            : "MODE3"}
+                      </p>
+                      <p
+                        className={`mt-1 text-[10px] leading-snug ${
+                          active ? "text-white/85" : "text-[var(--play-muted)]"
+                        }`}
+                      >
+                        {tier.label}
+                      </p>
+                      <p
+                        className={`mt-1.5 font-mono text-[9px] ${
+                          active ? "text-white/70" : "text-[var(--play-muted)]"
+                        }`}
+                      >
+                        lá 4–8 ×{tier.highCardWeightMul}
+                        {" · phủ ALL / đơn / pack"}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="rounded-xl bg-white/80 px-3 py-2.5 ring-1 ring-[var(--wood-deep)]/15">
@@ -9467,6 +9587,15 @@ export default function AdminDashboard() {
               </p>
             </div>
 
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-semibold text-[var(--play-ink)]">
+                2 · Tầng thuật toán — ALL / Bộ 3–4 / chuỗi bias
+              </p>
+              <p className="text-[10px] text-[var(--play-muted)]">
+                Chạy dưới MODE1/MODE2. Pack1/2 = chuỗi bias; Bộ 3–4 = chuỗi khác.
+              </p>
+            </div>
+
             <button
               type="button"
               disabled={interBusy}
@@ -9479,6 +9608,11 @@ export default function AdminDashboard() {
             >
               <p className="text-sm font-bold">
                 ALL — xoay mode ({data.inter.allSlotMinutes ?? 5} phút/slot)
+                {data.inter.primaryTier === "mode3"
+                  ? " · +MODE3 ÷4#4–8"
+                  : data.inter.primaryTier === "mode2"
+                    ? " · +MODE2 ÷2#4–8"
+                    : ""}
               </p>
               <p
                 className={`mt-1 text-[10px] leading-snug ${
@@ -9491,12 +9625,16 @@ export default function AdminDashboard() {
               </p>
             </button>
 
-            <div className="space-y-1.5">
-              <p className="text-[11px] font-semibold text-[var(--play-ink)]">
-                Bộ mode 1–4 — xoay chuỗi cố định (cùng phút/slot như ALL)
-              </p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {interModePacks.map((pack) => {
+            <div className="grid gap-2 sm:grid-cols-2">
+              {(data.inter.modePacks ?? [])
+                .filter(
+                  (p) =>
+                    p.id === "pack1" ||
+                    p.id === "pack2" ||
+                    p.id === "pack3" ||
+                    p.id === "pack4",
+                )
+                .map((pack) => {
                   const active = data.inter!.mode === pack.id;
                   return (
                     <button
@@ -9506,11 +9644,17 @@ export default function AdminDashboard() {
                       onClick={() => setInterMode(pack.id)}
                       className={`rounded-xl px-3 py-3 text-left transition ring-1 ${
                         active
-                          ? "bg-indigo-700 text-white ring-indigo-800 shadow-sm"
-                          : "bg-white/90 text-[var(--play-ink)] ring-indigo-200/60 hover:bg-indigo-50"
+                          ? "bg-slate-700 text-white ring-slate-800 shadow-sm"
+                          : "bg-white/90 text-[var(--play-ink)] ring-slate-200/60 hover:bg-slate-50"
                       } ${interBusy ? "opacity-60" : ""}`}
                     >
-                      <p className="text-sm font-bold">{pack.label}</p>
+                      <p className="text-sm font-bold">
+                        {pack.id === "pack1"
+                          ? "Pack1 · chuỗi bias"
+                          : pack.id === "pack2"
+                            ? "Pack2 · chuỗi bias"
+                            : pack.label}
+                      </p>
                       <p
                         className={`mt-1 text-[10px] leading-snug ${
                           active ? "text-white/80" : "text-[var(--play-muted)]"
@@ -9523,12 +9667,16 @@ export default function AdminDashboard() {
                     </button>
                   );
                 })}
-              </div>
             </div>
 
             <div className="space-y-1.5">
               <p className="text-[11px] font-semibold text-[var(--play-ink)]">
-                20 thuật toán — chọn một mode cố định
+                3 · Thuật toán đơn — cố định một mode
+                {data.inter.primaryTier === "mode3"
+                  ? " (vẫn ÷4 lá 4–8)"
+                  : data.inter.primaryTier === "mode2"
+                    ? " (vẫn ÷2 lá 4–8)"
+                    : ""}
               </p>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {interRotateOptions.map((m) => {
