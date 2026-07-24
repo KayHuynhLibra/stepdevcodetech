@@ -1155,9 +1155,25 @@ export default function AdminDashboard() {
   );
   const [roleDisplayBusy, setRoleDisplayBusy] = useState(false);
   const [cultivationBusy, setCultivationBusy] = useState(false);
-  const [rankDraftUserId, setRankDraftUserId] = useState("");
-  const [rankDraftValue, setRankDraftValue] = useState<string>("");
+  const [tutienSub, setTutienSub] = useState<
+    "players" | "caps" | "colors" | "benefits"
+  >("players");
+  const [rankPick, setRankPick] = useState<Record<string, string>>({});
   const [rankFilter, setRankFilter] = useState("");
+  const [tutienMaxDraft, setTutienMaxDraft] = useState<
+    Record<CultivationRank, number>
+  >(() => ({
+    luyen_khi: 2_000_000,
+    truc_co: 3_000_000,
+    kim_dan: 5_000_000,
+    nguyen_anh: 8_000_000,
+    hoa_than: 12_000_000,
+    luyen_hu: 20_000_000,
+    hop_the: 30_000_000,
+    dai_thua: 40_000_000,
+    do_kiep: 50_000_000,
+  }));
+  const [tutienMaxBusy, setTutienMaxBusy] = useState(false);
   const [adjust, setAdjust] = useState<{ userId: string; delta: string }>({
     userId: "",
     delta: "100",
@@ -1299,7 +1315,8 @@ export default function AdminDashboard() {
     kind: "gift" | "ring";
     itemKey: string;
   } | null>(null);
-  const [extraStakeDraft, setExtraStakeDraft] = useState("");
+  const [extraStakeTiers, setExtraStakeTiers] = useState<number[]>([]);
+  const [extraStakeAdd, setExtraStakeAdd] = useState("");
   const [extraStakeBusy, setExtraStakeBusy] = useState(false);
   const [codeDrafts, setCodeDrafts] = useState<Record<string, string>>({});
   const [codeBusyId, setCodeBusyId] = useState<string | null>(null);
@@ -1459,8 +1476,19 @@ export default function AdminDashboard() {
     setData(overview);
     setBotCount(overview.stats.botTarget);
     if (overview.extraStakeTiers) {
-      setExtraStakeDraft(overview.extraStakeTiers.join(", "));
+      setExtraStakeTiers(overview.extraStakeTiers);
     }
+    if (overview.tutienMaxByRank) {
+      setTutienMaxDraft((prev) => {
+        const next = { ...prev };
+        for (const r of CULTIVATION_RANKS) {
+          const n = overview.tutienMaxByRank![r];
+          if (typeof n === "number" && Number.isFinite(n)) next[r] = n;
+        }
+        return next;
+      });
+    }
+    setRankPick({});
     if (overview.cultivation?.colors) {
       setCultivationColorsCache(overview.cultivation.colors);
       setCultivationColors(structuredClone(overview.cultivation.colors));
@@ -1756,6 +1784,10 @@ export default function AdminDashboard() {
     }, 2500);
     return () => window.clearInterval(id);
   }, [tab, interSubTab, me, loadInterLive]);
+
+  useEffect(() => {
+    if (!isMainAdmin(me) && tutienSub === "benefits") setTutienSub("players");
+  }, [me, tutienSub]);
 
   const logout = () => {
     clearSession();
@@ -3183,34 +3215,39 @@ export default function AdminDashboard() {
     }
   };
 
-  const saveArcanaTutienMax = async () => {
-    if (!data?.arcanaConfig) return;
+  const saveTutienMaxByRank = async () => {
     const tutienMaxByRank: Record<string, number> = {};
     for (const rank of CULTIVATION_RANKS) {
-      const el = document.getElementById(
-        `arcana-tutien-max-${rank}`,
-      ) as HTMLInputElement | null;
-      const n = Math.floor(Number(el?.value));
+      const n = Math.floor(Number(tutienMaxDraft[rank]));
       if (!Number.isFinite(n) || n < 1_000_000 || n > 100_000_000) {
-        setMsg(
-          `Max ${CULTIVATION_LABELS[rank]} phải từ 1M đến 100M`,
-        );
+        setMsg(`Max ${CULTIVATION_LABELS[rank]} phải từ 1M đến 100M`);
         return;
       }
       tutienMaxByRank[rank] = n;
     }
-    setArcanaBusy(true);
+    setTutienMaxBusy(true);
     try {
-      await api("/api/mainadmin/arcana/config", {
-        method: "PATCH",
-        body: JSON.stringify({ tutienMaxByRank }),
+      const r = await api<{ ok: true; tutienMaxByRank: Record<string, number> }>(
+        "/api/tutien/max-by-rank",
+        {
+          method: "POST",
+          body: JSON.stringify({ tutienMaxByRank }),
+        },
+      );
+      setTutienMaxDraft((prev) => {
+        const next = { ...prev };
+        for (const rank of CULTIVATION_RANKS) {
+          const n = r.tutienMaxByRank[rank];
+          if (typeof n === "number") next[rank] = n;
+        }
+        return next;
       });
       setMsg("Đã lưu max xu Tu Tiên (9 bậc)");
       await load();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Lỗi");
     } finally {
-      setArcanaBusy(false);
+      setTutienMaxBusy(false);
     }
   };
 
@@ -3560,10 +3597,10 @@ export default function AdminDashboard() {
   };
 
   const saveExtraStakeTiers = async () => {
-    const parts = extraStakeDraft
-      .split(/[,;\s]+/)
-      .map((s) => Math.floor(Number(s.replace(/_/g, ""))))
-      .filter((n) => Number.isFinite(n) && n > 0);
+    const parts = [...new Set(extraStakeTiers)]
+      .map((n) => Math.floor(n))
+      .filter((n) => Number.isFinite(n) && n > 1_000_000 && n <= 100_000_000)
+      .sort((a, b) => a - b);
     setExtraStakeBusy(true);
     try {
       const r = await api<{ ok: true; extraStakeTiers: number[] }>(
@@ -3573,7 +3610,7 @@ export default function AdminDashboard() {
           body: JSON.stringify({ extraStakeTiers: parts }),
         },
       );
-      setExtraStakeDraft(r.extraStakeTiers.join(", "));
+      setExtraStakeTiers(r.extraStakeTiers);
       setMsg("Đã lưu mức đặt xu thêm (Tu Tiên)");
       await load();
     } catch (e) {
@@ -3581,6 +3618,18 @@ export default function AdminDashboard() {
     } finally {
       setExtraStakeBusy(false);
     }
+  };
+
+  const addExtraStakeTier = () => {
+    const n = Math.floor(Number(String(extraStakeAdd).replace(/_/g, "")));
+    if (!Number.isFinite(n) || n <= 1_000_000 || n > 100_000_000) {
+      setMsg("Mức thêm phải > 1M và ≤ 100M");
+      return;
+    }
+    setExtraStakeTiers((prev) =>
+      [...new Set([...prev, n])].sort((a, b) => a - b),
+    );
+    setExtraStakeAdd("");
   };
 
   const saveArcanaStreakBonus = async () => {
@@ -6153,214 +6202,334 @@ export default function AdminDashboard() {
 
       {tab === "tutien" && canCultivation && (
         <>
-          <section className="app-panel mt-4 p-3 sm:p-4">
-            <p className="play-heading text-sm">Gán cảnh giới</p>
-            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-              9 bậc công khai — hiện chip màu trên badge / profile người chơi.
-            </p>
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
-              <label className="min-w-0 flex-1 text-[11px] font-semibold text-[var(--play-muted)]">
-                Người chơi
-                <select
-                  value={rankDraftUserId}
-                  onChange={(e) => setRankDraftUserId(e.target.value)}
-                  className="app-input mt-1 w-full !py-1.5 text-sm"
-                >
-                  <option value="">Chọn user…</option>
-                  {tutienRankUsers.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.username} · {u.code}
-                      {u.cultivationRank
-                        ? ` · ${CULTIVATION_LABELS[u.cultivationRank as CultivationRank] ?? u.cultivationRank}`
-                        : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="sm:w-44 text-[11px] font-semibold text-[var(--play-muted)]">
-                Cảnh giới
-                <select
-                  value={rankDraftValue}
-                  onChange={(e) => setRankDraftValue(e.target.value)}
-                  className="app-input mt-1 w-full !py-1.5 text-sm"
-                >
-                  <option value="">— Xóa —</option>
-                  {CULTIVATION_RANKS.map((r) => (
-                    <option key={r} value={r}>
-                      {CULTIVATION_LABELS[r]}
-                    </option>
-                  ))}
-                </select>
-              </label>
+          <div className="sticky top-0 z-10 mt-4 -mx-1 flex flex-wrap gap-1.5 bg-[var(--cream)]/95 px-1 py-2 backdrop-blur-sm">
+            {(
+              [
+                ["players", "Người chơi"],
+                ["caps", "Trần xu"],
+                ["colors", "Màu"],
+                ...(main ? ([["benefits", "Lợi ích"]] as const) : []),
+              ] as const
+            ).map(([id, label]) => (
               <button
+                key={id}
                 type="button"
-                disabled={cultivationBusy || !rankDraftUserId}
-                onClick={() =>
-                  void setCultivationRank(
-                    rankDraftUserId,
-                    rankDraftValue
-                      ? (rankDraftValue as CultivationRank)
-                      : null,
-                  )
-                }
-                className="rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
+                onClick={() => setTutienSub(id)}
+                className={`rounded-full px-3 py-1.5 text-[11px] font-bold ${
+                  tutienSub === id
+                    ? "bg-[var(--wood-deep)] text-white"
+                    : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                }`}
               >
-                Lưu rank
+                {label}
               </button>
-            </div>
-            <input
-              value={rankFilter}
-              onChange={(e) => setRankFilter(e.target.value)}
-              placeholder="Lọc danh sách…"
-              className="app-input mt-3 w-full !py-1.5 text-sm"
-            />
-            <ul className="mt-2 max-h-64 space-y-1.5 overflow-y-auto sm:max-h-80">
-              {tutienRankUsers.map((u) => (
-                <li
-                  key={u.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-[var(--play-ink)]">
-                      {u.username}{" "}
-                      <span className="font-mono text-[var(--play-muted)]">
-                        · {u.code}
-                      </span>
-                    </p>
-                    <div className="mt-0.5">
-                      <CultivationChip rank={u.cultivationRank} />
-                      {!u.cultivationRank && (
-                        <span className="text-[10px] text-[var(--play-muted)]">
-                          Chưa có cảnh giới
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {CULTIVATION_RANKS.map((r) => (
-                      <button
-                        key={r}
-                        type="button"
-                        disabled={cultivationBusy}
-                        onClick={() => void setCultivationRank(u.id, r)}
-                        className={`rounded-full px-2 py-0.5 text-[9px] font-bold ring-1 ${
-                          u.cultivationRank === r
-                            ? "bg-[var(--wood-deep)] text-[var(--cream)] ring-[var(--wood-deep)]"
-                            : "bg-white text-[var(--play-ink)] ring-[var(--wood-deep)]/20"
-                        }`}
-                        title={CULTIVATION_LABELS[r]}
-                      >
-                        {CULTIVATION_LABELS[r].split(" ")[0]}
-                      </button>
-                    ))}
-                    {u.cultivationRank && (
-                      <button
-                        type="button"
-                        disabled={cultivationBusy}
-                        onClick={() => void setCultivationRank(u.id, null)}
-                        className="rounded-full bg-white px-2 py-0.5 text-[9px] font-bold text-red-800 ring-1 ring-red-300/60"
-                      >
-                        Xóa
-                      </button>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
+            ))}
+          </div>
 
-          <section className="app-panel mt-4 p-3 sm:p-4">
-            <p className="play-heading text-sm">Màu cảnh giới</p>
-            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-              bg / text / border (hex) — lưu trên server, chip cập nhật sau khi
-              lưu.
-              {data.cultivation?.updatedBy
-                ? ` · Sửa gần nhất: ${data.cultivation.updatedBy}`
-                : ""}
-            </p>
-            <ul className="mt-3 space-y-2">
-              {CULTIVATION_RANKS.map((r) => {
-                const row = cultivationColors[r];
-                return (
-                  <li
-                    key={r}
-                    className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2 py-2 ring-1 ring-[var(--wood-deep)]/10"
-                  >
-                    <CultivationChip rank={r} colors={row} />
-                    <span className="w-20 shrink-0 text-[11px] font-semibold text-[var(--play-ink)]">
-                      {CULTIVATION_LABELS[r]}
-                    </span>
-                    {(
-                      [
-                        ["bg", "Nền"],
-                        ["text", "Chữ"],
-                        ["border", "Viền"],
-                      ] as const
-                    ).map(([key, label]) => (
-                      <label
-                        key={key}
-                        className="flex items-center gap-1 text-[10px] text-[var(--play-muted)]"
+          {tutienSub === "players" && (
+            <section className="app-panel mt-3 p-3 sm:p-4">
+              <p className="play-heading text-sm">Gán cảnh giới</p>
+              <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+                Chọn bậc trên từng user → Lưu. Chip màu hiện trên badge / profile.
+              </p>
+              <input
+                value={rankFilter}
+                onChange={(e) => setRankFilter(e.target.value)}
+                placeholder="Lọc username / mã / ID / bậc…"
+                className="app-input mt-3 w-full !py-1.5 text-sm"
+              />
+              <ul className="mt-2 max-h-[28rem] space-y-1.5 overflow-y-auto sm:max-h-[32rem]">
+                {tutienRankUsers.map((u) => {
+                  const current = u.cultivationRank ?? "";
+                  const pick = rankPick[u.id] ?? current;
+                  const dirty = pick !== current;
+                  return (
+                    <li
+                      key={u.id}
+                      className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2.5 py-2 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
+                    >
+                      <div className="min-w-0 flex-1 basis-[10rem]">
+                        <p className="truncate font-semibold text-[var(--play-ink)]">
+                          {u.username}{" "}
+                          <span className="font-mono text-[var(--play-muted)]">
+                            · {u.code}
+                          </span>
+                        </p>
+                        <div className="mt-0.5">
+                          <CultivationChip rank={u.cultivationRank} />
+                          {!u.cultivationRank && (
+                            <span className="text-[10px] text-[var(--play-muted)]">
+                              Chưa có cảnh giới
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <select
+                        value={pick}
+                        onChange={(e) =>
+                          setRankPick((prev) => ({
+                            ...prev,
+                            [u.id]: e.target.value,
+                          }))
+                        }
+                        className="app-input !w-36 !py-1.5 text-xs"
                       >
-                        {label}
-                        <input
-                          type="color"
-                          value={row[key]}
-                          onChange={(e) =>
-                            setCultivationColors((prev) => ({
-                              ...prev,
-                              [r]: { ...prev[r], [key]: e.target.value },
-                            }))
-                          }
-                          className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent p-0"
-                        />
-                        <input
-                          value={row[key]}
-                          onChange={(e) =>
-                            setCultivationColors((prev) => ({
-                              ...prev,
-                              [r]: { ...prev[r], [key]: e.target.value },
-                            }))
-                          }
-                          className="app-input !w-[5.5rem] !py-1 font-mono text-[10px]"
-                        />
-                      </label>
-                    ))}
+                        <option value="">— Không —</option>
+                        {CULTIVATION_RANKS.map((r) => (
+                          <option key={r} value={r}>
+                            {CULTIVATION_LABELS[r]}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        disabled={cultivationBusy || !dirty}
+                        onClick={() =>
+                          void setCultivationRank(
+                            u.id,
+                            pick ? (pick as CultivationRank) : null,
+                          )
+                        }
+                        className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-[10px] font-bold text-[var(--cream)] disabled:opacity-40"
+                      >
+                        Lưu
+                      </button>
+                      {u.cultivationRank ? (
+                        <button
+                          type="button"
+                          disabled={cultivationBusy}
+                          onClick={() => void setCultivationRank(u.id, null)}
+                          className="rounded-full bg-white px-2.5 py-1.5 text-[10px] font-bold text-red-800 ring-1 ring-red-300/60 disabled:opacity-40"
+                        >
+                          Xóa
+                        </button>
+                      ) : null}
+                    </li>
+                  );
+                })}
+                {tutienRankUsers.length === 0 && (
+                  <li className="px-1 py-3 text-[11px] text-[var(--play-muted)]">
+                    Không có user khớp bộ lọc.
                   </li>
-                );
-              })}
-            </ul>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={cultivationBusy}
-                onClick={() => void saveCultivationColors()}
-                className="rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
-              >
-                Lưu màu
-              </button>
-              <button
-                type="button"
-                disabled={cultivationBusy}
-                onClick={() =>
-                  setCultivationColors(
-                    structuredClone(DEFAULT_CULTIVATION_COLORS),
-                  )
-                }
-                className="rounded-full bg-white px-4 py-2 text-xs font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
-              >
-                Reset mặc định (chưa lưu)
-              </button>
-            </div>
-          </section>
+                )}
+              </ul>
+            </section>
+          )}
 
-          {main && (
-            <section className="app-panel mt-4 p-3 sm:p-4">
+          {tutienSub === "caps" && (
+            <section className="app-panel mt-3 space-y-4 p-3 sm:p-4">
+              <div>
+                <p className="play-heading text-sm">Trần xu theo bậc</p>
+                <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+                  Áp dụng Tarot (lá) và Arcana. Công khai ≤1M; trên 1M cần role
+                  tutien hoặc đã gán cảnh giới.
+                </p>
+                <ul className="mt-3 space-y-1.5">
+                  {CULTIVATION_RANKS.map((rank) => (
+                    <li
+                      key={rank}
+                      className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2.5 py-2 ring-1 ring-[var(--wood-deep)]/10"
+                    >
+                      <CultivationChip rank={rank} />
+                      <span className="w-24 shrink-0 text-[11px] font-semibold text-[var(--play-ink)]">
+                        {CULTIVATION_LABELS[rank]}
+                      </span>
+                      <input
+                        type="number"
+                        min={1_000_000}
+                        max={100_000_000}
+                        step={100_000}
+                        value={tutienMaxDraft[rank]}
+                        onChange={(e) => {
+                          const n = Math.floor(Number(e.target.value));
+                          setTutienMaxDraft((prev) => ({
+                            ...prev,
+                            [rank]: Number.isFinite(n) ? n : prev[rank],
+                          }));
+                        }}
+                        className="app-input w-32 text-right tabular-nums"
+                      />
+                      <span className="text-[10px] font-bold tabular-nums text-[var(--play-muted)]">
+                        {formatXu(tutienMaxDraft[rank])}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  disabled={tutienMaxBusy}
+                  onClick={() => void saveTutienMaxByRank()}
+                  className="mt-3 rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
+                >
+                  Lưu max Tu Tiên
+                </button>
+              </div>
+
+              <div className="border-t border-[var(--wood-deep)]/10 pt-4">
+                <p className="play-heading text-sm">Mức đặt xu thêm</p>
+                <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+                  Chip nhanh giữa 1M và trần cá nhân (Auto / Stake sheet).
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {extraStakeTiers.map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      title="Bấm để gỡ"
+                      onClick={() =>
+                        setExtraStakeTiers((prev) => prev.filter((x) => x !== n))
+                      }
+                      className="rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-bold tabular-nums text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20 hover:bg-red-50 hover:text-red-800"
+                    >
+                      {formatXu(n)} ×
+                    </button>
+                  ))}
+                  {extraStakeTiers.length === 0 && (
+                    <span className="text-[10px] text-[var(--play-muted)]">
+                      Chưa có mức thêm
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {[
+                    2_000_000, 3_000_000, 5_000_000, 8_000_000, 10_000_000,
+                    12_000_000, 20_000_000, 30_000_000, 50_000_000,
+                  ].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      disabled={extraStakeTiers.includes(n)}
+                      onClick={() =>
+                        setExtraStakeTiers((prev) =>
+                          [...new Set([...prev, n])].sort((a, b) => a - b),
+                        )
+                      }
+                      className="rounded-full bg-[var(--wood-deep)]/10 px-2 py-0.5 text-[9px] font-bold tabular-nums text-[var(--play-ink)] disabled:opacity-35"
+                    >
+                      +{formatXu(n)}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <input
+                    value={extraStakeAdd}
+                    onChange={(e) => setExtraStakeAdd(e.target.value)}
+                    placeholder="VD 5000000"
+                    className="app-input !w-36 font-mono text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={addExtraStakeTier}
+                    className="rounded-full bg-white px-3 py-1.5 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                  >
+                    Thêm
+                  </button>
+                  <button
+                    type="button"
+                    disabled={extraStakeBusy}
+                    onClick={() => void saveExtraStakeTiers()}
+                    className="rounded-full bg-[var(--wood-deep)] px-4 py-1.5 text-[10px] font-bold text-[var(--cream)] disabled:opacity-50"
+                  >
+                    Lưu mức đặt thêm
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {tutienSub === "colors" && (
+            <section className="app-panel mt-3 p-3 sm:p-4">
+              <p className="play-heading text-sm">Màu cảnh giới</p>
+              <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+                bg / text / border (hex) — chip cập nhật sau khi lưu.
+                {data.cultivation?.updatedBy
+                  ? ` · Sửa gần nhất: ${data.cultivation.updatedBy}`
+                  : ""}
+              </p>
+              <ul className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-2">
+                {CULTIVATION_RANKS.map((r) => {
+                  const row = cultivationColors[r];
+                  return (
+                    <li
+                      key={r}
+                      className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2 py-2 ring-1 ring-[var(--wood-deep)]/10"
+                    >
+                      <CultivationChip rank={r} colors={row} />
+                      <span className="w-20 shrink-0 text-[11px] font-semibold text-[var(--play-ink)]">
+                        {CULTIVATION_LABELS[r]}
+                      </span>
+                      {(
+                        [
+                          ["bg", "Nền"],
+                          ["text", "Chữ"],
+                          ["border", "Viền"],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <label
+                          key={key}
+                          className="flex items-center gap-1 text-[10px] text-[var(--play-muted)]"
+                        >
+                          {label}
+                          <input
+                            type="color"
+                            value={row[key]}
+                            onChange={(e) =>
+                              setCultivationColors((prev) => ({
+                                ...prev,
+                                [r]: { ...prev[r], [key]: e.target.value },
+                              }))
+                            }
+                            className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent p-0"
+                          />
+                          <input
+                            value={row[key]}
+                            onChange={(e) =>
+                              setCultivationColors((prev) => ({
+                                ...prev,
+                                [r]: { ...prev[r], [key]: e.target.value },
+                              }))
+                            }
+                            className="app-input !w-[5.5rem] !py-1 font-mono text-[10px]"
+                          />
+                        </label>
+                      ))}
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="sticky bottom-2 mt-3 flex flex-wrap gap-2 rounded-xl bg-[var(--cream)]/95 p-2 ring-1 ring-[var(--wood-deep)]/10 backdrop-blur-sm">
+                <button
+                  type="button"
+                  disabled={cultivationBusy}
+                  onClick={() => void saveCultivationColors()}
+                  className="rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
+                >
+                  Lưu màu
+                </button>
+                <button
+                  type="button"
+                  disabled={cultivationBusy}
+                  onClick={() =>
+                    setCultivationColors(
+                      structuredClone(DEFAULT_CULTIVATION_COLORS),
+                    )
+                  }
+                  className="rounded-full bg-white px-4 py-2 text-xs font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                >
+                  Reset mặc định (chưa lưu)
+                </button>
+              </div>
+            </section>
+          )}
+
+          {tutienSub === "benefits" && main && (
+            <section className="app-panel mt-3 p-3 sm:p-4">
               <p className="play-heading text-sm">Lợi ích + phí duy trì</p>
               <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
                 Giảm phí chat %, ưu tiên ghế voice, phí ngày/tuần. Không trả → tụt
                 bậc.
               </p>
-              <ul className="mt-3 space-y-2">
+              <ul className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-2">
                 {CULTIVATION_RANKS.map((r) => (
                   <li
                     key={r}
@@ -6441,53 +6610,18 @@ export default function AdminDashboard() {
                   </li>
                 ))}
               </ul>
-              <button
-                type="button"
-                disabled={cultivationBusy}
-                onClick={() => void saveCultivationConfig()}
-                className="mt-3 rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
-              >
-                Lưu lợi ích + phí
-              </button>
+              <div className="sticky bottom-2 mt-3 rounded-xl bg-[var(--cream)]/95 p-2 ring-1 ring-[var(--wood-deep)]/10 backdrop-blur-sm">
+                <button
+                  type="button"
+                  disabled={cultivationBusy}
+                  onClick={() => void saveCultivationConfig()}
+                  className="rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
+                >
+                  Lưu lợi ích + phí
+                </button>
+              </div>
             </section>
           )}
-
-          <section className="app-panel mt-4 p-3 sm:p-4">
-            <p className="play-heading text-sm">Mức đặt xu thêm (Tu Tiên)</p>
-            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-              Chip nhanh giữa 1M (công khai) và trần cá nhân — nhập số cách nhau
-              bằng dấu phẩy.
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1">
-              {extraStakeDraft
-                .split(/[,;\s]+/)
-                .map((s) => Math.floor(Number(s.replace(/_/g, ""))))
-                .filter((n) => Number.isFinite(n) && n > 0)
-                .map((n) => (
-                  <span
-                    key={n}
-                    className="rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold tabular-nums text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
-                  >
-                    {formatXu(n)}
-                  </span>
-                ))}
-            </div>
-            <textarea
-              value={extraStakeDraft}
-              onChange={(e) => setExtraStakeDraft(e.target.value)}
-              rows={2}
-              placeholder="2000000, 3000000, 5000000, …"
-              className="app-input mt-2 w-full font-mono text-xs"
-            />
-            <button
-              type="button"
-              disabled={extraStakeBusy}
-              onClick={() => void saveExtraStakeTiers()}
-              className="mt-2 rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
-            >
-              Lưu mức đặt thêm
-            </button>
-          </section>
         </>
       )}
 
@@ -11046,58 +11180,24 @@ export default function AdminDashboard() {
             </div>
             <div className="mt-3 rounded-lg bg-white/60 p-2.5 ring-1 ring-[var(--wood-deep)]/10">
               <p className="text-xs font-bold text-[var(--play-ink)]">
-                Max xu Tu Tiên — Tarot & Arcana (role tutien · 9 bậc)
+                Max xu Tu Tiên
               </p>
               <p className="mt-1 text-[10px] text-[var(--play-muted)]">
-                Áp dụng trần / lá Tarot và chip Arcana. Mức công khai vẫn ≤1M.
-                Xu &gt;1M khi có <strong>role tutien</strong> (mặc định Luyện
-                Khí) hoặc đã gán <strong>cảnh giới</strong>.
+                Trần / lá Tarot và chip Arcana theo 9 bậc chỉnh ở tab{" "}
+                <strong>Tu Tiên → Trần xu</strong> (tránh hai form lệch nhau).
               </p>
-              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {CULTIVATION_RANKS.map((rank: CultivationRank) => {
-                  const def =
-                    data.arcanaConfig?.tutienMaxByRank?.[rank] ??
-                    ({
-                      luyen_khi: 2_000_000,
-                      truc_co: 3_000_000,
-                      kim_dan: 5_000_000,
-                      nguyen_anh: 8_000_000,
-                      hoa_than: 12_000_000,
-                      luyen_hu: 20_000_000,
-                      hop_the: 30_000_000,
-                      dai_thua: 40_000_000,
-                      do_kiep: 50_000_000,
-                    } as Record<CultivationRank, number>)[rank];
-                  return (
-                    <label
-                      key={rank}
-                      className="flex items-center justify-between gap-2 text-[10px] font-semibold text-[var(--play-muted)]"
-                    >
-                      <span className="min-w-0 truncate">
-                        {CULTIVATION_LABELS[rank]}
-                      </span>
-                      <input
-                        id={`arcana-tutien-max-${rank}`}
-                        type="number"
-                        min={1_000_000}
-                        max={100_000_000}
-                        step={100_000}
-                        defaultValue={def}
-                        key={`${rank}-${def}`}
-                        className="app-input w-28 text-right tabular-nums"
-                      />
-                    </label>
-                  );
-                })}
-              </div>
-              <button
-                type="button"
-                disabled={arcanaBusy}
-                onClick={() => void saveArcanaTutienMax()}
-                className="mt-2 rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white"
-              >
-                Lưu max Tu Tiên
-              </button>
+              {canCultivation && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab("tutien");
+                    setTutienSub("caps");
+                  }}
+                  className="mt-2 rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-[10px] font-bold text-white"
+                >
+                  Mở Tu Tiên · Trần xu
+                </button>
+              )}
             </div>
             <div className="mt-3 rounded-lg bg-white/60 p-2.5 ring-1 ring-[var(--wood-deep)]/10">
               <p className="text-xs font-bold text-[var(--play-ink)]">

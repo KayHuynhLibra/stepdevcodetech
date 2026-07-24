@@ -762,10 +762,14 @@ export default function GamePage() {
   const tableMaxCards =
     state?.tableTiming?.maxCardsPerRound ?? DEFAULT_MAX_CARDS_PER_ROUND;
 
-  // Trần bàn đổi → cắt preset Auto cho khớp (tính tổng / đặt luôn đúng trần)
+  // Trần bàn / tu tiên đổi → cắt preset Auto cho khớp
   useEffect(() => {
     setAutoStake((prev) => {
-      const next = clampAutoStake(prev, tableMaxCards);
+      const next = clampAutoStake(
+        prev,
+        tableMaxCards,
+        stakeLimits.maxStakePerCard,
+      );
       if (
         next.slots.length === prev.slots.length &&
         next.enabled === prev.enabled &&
@@ -780,7 +784,7 @@ export default function GamePage() {
       saveAutoStake(next);
       return next;
     });
-  }, [tableMaxCards]);
+  }, [tableMaxCards, stakeLimits.maxStakePerCard]);
 
   const runAutoPlace = useCallback(
     async (cfg: AutoStakeConfig, roundId: number) => {
@@ -797,7 +801,11 @@ export default function GamePage() {
 
       const lim =
         state.tableTiming?.maxCardsPerRound ?? DEFAULT_MAX_CARDS_PER_ROUND;
-      const slots = clampAutoStake(cfg, lim).slots;
+      const slots = clampAutoStake(
+        cfg,
+        lim,
+        stakeLimits.maxStakePerCard,
+      ).slots;
       const stakes = [...(state.yourStakes ?? [])];
       let balance = state.yourBalance;
       let placed = 0;
@@ -851,7 +859,7 @@ export default function GamePage() {
         // Không clear ref — tránh spam toast; bật lại Auto (Lưu) để thử lại
       }
     },
-    [socket, connected, state, showToast],
+    [socket, connected, state, showToast, stakeLimits.maxStakePerCard],
   );
 
   // Auto đặt khi vào pha đặt xu / khi bật Auto giữa ván
@@ -1758,7 +1766,11 @@ export default function GamePage() {
 
     const cardLim =
       state?.tableTiming?.maxCardsPerRound ?? DEFAULT_MAX_CARDS_PER_ROUND;
-    const autoSlots = clampAutoStake(autoStake, cardLim).slots;
+    const autoSlots = clampAutoStake(
+      autoStake,
+      cardLim,
+      stakeLimits.maxStakePerCard,
+    ).slots;
 
     // Auto ON: hiện preset nếu chưa có đặt xu live (hoặc bổ sung slot pending)
     if (autoStake.enabled && autoSlots.length > 0) {
@@ -1793,6 +1805,7 @@ export default function GamePage() {
     pickedSnapshot,
     autoStake.enabled,
     autoStake.slots,
+    stakeLimits.maxStakePerCard,
   ]);
 
   return (
@@ -2773,7 +2786,11 @@ export default function GamePage() {
         quickAdds={stakeLimits.quickAdds}
         onClose={() => setSheet(null)}
         onSave={(cfg) => {
-          const next = clampAutoStake(cfg, tableMaxCards);
+          const next = clampAutoStake(
+            cfg,
+            tableMaxCards,
+            stakeLimits.maxStakePerCard,
+          );
           // Cho phép đặt lại ngay trong ván đặt xu hiện tại khi bật/đổi preset
           if (next.enabled && state?.phase === "placing") {
             autoRoundRef.current = null;

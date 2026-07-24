@@ -13,6 +13,8 @@ import {
 
 const MIN_STAKE = 10;
 const STAKE_STEP = 10;
+/** Trần tuyệt đối — khớp server ABSOLUTE_MAX_STAKE (tu tiên / VIP). */
+export const ABSOLUTE_MAX_STAKE_PER_CARD = 100_000_000;
 
 export interface AutoStakeSlot {
   cardId: number;
@@ -32,12 +34,20 @@ export const DEFAULT_AUTO_STAKE: AutoStakeConfig = {
   slots: [],
 };
 
-/** Cắt preset Auto theo trần số lá / ván của bàn. */
+function normalizeStakeCap(maxStakePerCard: number): number {
+  const n = Math.floor(maxStakePerCard);
+  if (!Number.isFinite(n) || n < MIN_STAKE) return MAX_STAKE_PER_CARD;
+  return Math.min(ABSOLUTE_MAX_STAKE_PER_CARD, Math.max(MIN_STAKE, n));
+}
+
+/** Cắt preset Auto theo trần số lá / ván + trần xu / lá (tu tiên). */
 export function clampAutoStake(
   cfg: AutoStakeConfig,
   maxCardsPerRound: number = DEFAULT_MAX_CARDS_PER_ROUND,
+  maxStakePerCard: number = MAX_STAKE_PER_CARD,
 ): AutoStakeConfig {
   const lim = normalizeMaxCardsPerRound(maxCardsPerRound);
+  const stakeCap = normalizeStakeCap(maxStakePerCard);
   const map = new Map<number, number>();
   for (const s of cfg.slots ?? []) {
     if (!s || !Number.isFinite(s.cardId) || !Number.isFinite(s.amount)) continue;
@@ -48,7 +58,7 @@ export function clampAutoStake(
       Math.max(
         MIN_STAKE,
         Math.min(
-          MAX_STAKE_PER_CARD,
+          stakeCap,
           Math.floor(s.amount / STAKE_STEP) * STAKE_STEP,
         ),
       ),
@@ -65,6 +75,8 @@ export function clampAutoStake(
 
 export function loadAutoStake(
   maxCardsPerRound: number = MAX_CARDS_PER_ROUND_MAX,
+  /** Mặc định trần tuyệt đối để không phá preset tu tiên trước khi /auth/me trả stakeLimits. */
+  maxStakePerCard: number = ABSOLUTE_MAX_STAKE_PER_CARD,
 ): AutoStakeConfig {
   try {
     const raw =
@@ -79,6 +91,7 @@ export function loadAutoStake(
         slots: Array.isArray(parsed.slots) ? parsed.slots : [],
       },
       maxCardsPerRound,
+      maxStakePerCard,
     );
   } catch {
     return { ...DEFAULT_AUTO_STAKE };
@@ -114,21 +127,22 @@ export function AutoStakeSheet({
   onSave,
 }: AutoStakeSheetProps) {
   const cardLimit = normalizeMaxCardsPerRound(maxCardsPerRound);
+  const stakeCap = normalizeStakeCap(maxStakePerCard);
   const [enabled, setEnabled] = useState(initial.enabled);
   const [slots, setSlots] = useState<AutoStakeSlot[]>(() =>
-    clampAutoStake(initial, cardLimit).slots,
+    clampAutoStake(initial, cardLimit, stakeCap).slots,
   );
   const [formError, setFormError] = useState<string | null>(null);
-  const cap = Math.max(MAX_STAKE_PER_CARD, maxStakePerCard);
+  const cap = stakeCap;
   const adds = quickAdds.length ? quickAdds : [...QUICK_ADDS];
 
   useEffect(() => {
     if (!open) return;
-    const next = clampAutoStake(initial, cardLimit);
+    const next = clampAutoStake(initial, cardLimit, stakeCap);
     setEnabled(next.enabled);
     setSlots(next.slots);
     setFormError(null);
-  }, [open, initial, cardLimit]);
+  }, [open, initial, cardLimit, stakeCap]);
 
   if (!open) return null;
 
@@ -180,6 +194,7 @@ export function AutoStakeSheet({
     const clean = clampAutoStake(
       { enabled, slots: slots.filter((s) => s.amount >= MIN_STAKE) },
       cardLimit,
+      stakeCap,
     );
     if (enabled && clean.slots.length === 0) {
       setFormError("Chọn ít nhất 1 lá trước khi bật Auto");

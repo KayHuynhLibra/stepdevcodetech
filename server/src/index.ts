@@ -3548,6 +3548,27 @@ app.post("/api/tutien/extra-stake-tiers", (req, res) => {
   res.json({ ok: true, extraStakeTiers: result.extraStakeTiers });
 });
 
+/** Trần xu / lá theo 9 bậc — Tu Tiên + main (không cần quyền Arcana). */
+app.post("/api/tutien/max-by-rank", (req, res) => {
+  const me = requireCapability(
+    req,
+    res,
+    "cultivation_manage",
+    "Cần quyền Tu Tiên",
+  );
+  if (!me) return;
+  const result = tutienStakeLimitsStore.setMap(
+    req.body?.tutienMaxByRank ?? req.body,
+  );
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "tutien_max_by_rank", {
+    detail: Object.entries(result.map)
+      .map(([r, n]) => `${r}=${n}`)
+      .join(","),
+  });
+  res.json({ ok: true, tutienMaxByRank: result.map });
+});
+
 app.get("/api/tutien/cultivation/colors", (req, res) => {
   const me = requireCultivationManager(req, res);
   if (!me) return;
