@@ -126,7 +126,7 @@ export function attachVoiceSocket(io: Server) {
         }
 
         if (result.fee > 0) {
-          feePocketStore.deposit({
+          feePocketStore.collectFee({
             source: "lixi",
             amount: result.fee,
             userId: auth.user.id,

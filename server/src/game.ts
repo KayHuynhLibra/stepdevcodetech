@@ -1179,7 +1179,7 @@ export class GameEngine {
 
     player.balance -= cost;
     if (cost > 0 && player.userId) {
-      feePocketStore.deposit({
+      feePocketStore.collectFee({
         source: "chat",
         amount: cost,
         userId: player.userId,

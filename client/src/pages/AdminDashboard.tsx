@@ -56,6 +56,7 @@ import {
   type CultivationRank,
 } from "../cultivation";
 import { CultivationChip } from "../components/CultivationChip";
+import { LevelPartPopup, type LevelPartAdmin } from "../components/LevelPartPopup";
 import { TrafficPanel, type TrafficPayload } from "../components/TrafficPanel";
 import { onArcanaImgError } from "../lib/arcanaImages";
 import {
@@ -716,16 +717,14 @@ interface XuFlowOverview {
 }
 
 interface FeePocketOverview {
+  schemaVersion?: number;
   balance: number;
   totalIn: number;
   totalRefunded: number;
   totalToVault: number;
-  bySource: {
-    ring: number;
-    chat: number;
-    cultivation: number;
-    lixi: number;
-  };
+  bySource: Record<string, number>;
+  sources?: { id: string; label: string; total: number }[];
+  knownSources?: { id: string; label: string }[];
   ledger: {
     id: string;
     at: number;
@@ -1137,6 +1136,9 @@ export default function AdminDashboard() {
     rewards: { level: number; xu: number; gem?: number }[];
   }>({ enabled: true, rewards: [] });
   const [levelRewardsBusy, setLevelRewardsBusy] = useState(false);
+  const [levelPartsRows, setLevelPartsRows] = useState<LevelPartAdmin[]>([]);
+  const [levelPartEdit, setLevelPartEdit] = useState<LevelPartAdmin | null>(null);
+  const [levelPartsBusy, setLevelPartsBusy] = useState(false);
   const [levelUserId, setLevelUserId] = useState("");
   const [levelSetValue, setLevelSetValue] = useState("10");
   const [levelSetMode, setLevelSetMode] = useState<"level" | "rounds">("level");
@@ -1586,6 +1588,14 @@ export default function AdminDashboard() {
           roundWinners: lb.config.roundWinners !== false,
           level: lb.config.level !== false,
         });
+      } catch {
+        /* ignore */
+      }
+      try {
+        const lp = await api<{ ok: true; parts: LevelPartAdmin[] }>(
+          "/api/level-parts",
+        );
+        setLevelPartsRows(lp.parts ?? []);
       } catch {
         /* ignore */
       }
@@ -4524,9 +4534,11 @@ export default function AdminDashboard() {
               <div>
                 <p className="play-heading text-sm">Fee Pocket</p>
                 <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-                  Nhẫn · phí chat · Tu Tiên · % lì xì — chờ{" "}
-                  <strong>Add vào Vault</strong> mới vào Kho Tarot / Cashflow
-                  phí.
+                  Lớp trung chuyển phí độc lập — feature mới chỉ{" "}
+                  <code className="text-[10px]">collectFee</code>; chỉ{" "}
+                  <strong>Add vào Vault</strong> mới vào Kho Tarot (
+                  <code className="text-[10px]">pocket_fee</code>
+                  ).
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -4552,30 +4564,20 @@ export default function AdminDashboard() {
                 ))}
               </div>
               <ul className="grid grid-cols-2 gap-1 text-[11px] text-[var(--play-muted)] sm:grid-cols-4">
-                <li>
-                  Nhẫn:{" "}
-                  <span className="font-play font-bold text-[var(--play-ink)]">
-                    {formatXu(data.feePocket.bySource.ring)}
-                  </span>
-                </li>
-                <li>
-                  Chat:{" "}
-                  <span className="font-play font-bold text-[var(--play-ink)]">
-                    {formatXu(data.feePocket.bySource.chat)}
-                  </span>
-                </li>
-                <li>
-                  Tu Tiên:{" "}
-                  <span className="font-play font-bold text-[var(--play-ink)]">
-                    {formatXu(data.feePocket.bySource.cultivation)}
-                  </span>
-                </li>
-                <li>
-                  Lì xì %:{" "}
-                  <span className="font-play font-bold text-[var(--play-ink)]">
-                    {formatXu(data.feePocket.bySource.lixi)}
-                  </span>
-                </li>
+                {(
+                  data.feePocket.sources?.length
+                    ? data.feePocket.sources
+                    : Object.entries(data.feePocket.bySource ?? {}).map(
+                        ([id, total]) => ({ id, label: id, total }),
+                      )
+                ).map((row) => (
+                  <li key={row.id}>
+                    {row.label}:{" "}
+                    <span className="font-play font-bold text-[var(--play-ink)]">
+                      {formatXu(row.total)}
+                    </span>
+                  </li>
+                ))}
               </ul>
               <div className="flex flex-wrap items-end gap-2">
                 <label className="min-w-[8rem] flex-1 text-[10px] text-[var(--play-muted)]">
@@ -6492,6 +6494,54 @@ export default function AdminDashboard() {
       {tab === "level" && main && data && (
         <>
           <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+            <p className="play-heading text-sm">Tab Level · Parts</p>
+            <p className="text-[11px] text-[var(--play-muted)]">
+              Mỗi part (play / couple / …) có công thức riêng: max LV, coef, power.
+              Couple LV = xu mua nhẫn. Bấm part để mở popup chỉnh.
+            </p>
+            <ul className="space-y-2">
+              {levelPartsRows.map((part) => (
+                <li
+                  key={part.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/75 px-2.5 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
+                >
+                  <div className="min-w-0">
+                    <p className="font-bold text-[var(--play-ink)]">
+                      {part.label}{" "}
+                      <span className="font-mono text-[10px] text-[var(--play-muted)]">
+                        {part.id}
+                      </span>
+                      {!part.enabled ? (
+                        <span className="ml-1 rounded bg-slate-200 px-1 text-[9px]">
+                          OFF
+                        </span>
+                      ) : null}
+                    </p>
+                    <p className="text-[10px] text-[var(--play-muted)]">
+                      {part.metric} · max {part.formula.maxLevel} · coef{" "}
+                      {part.formula.coef} · power {part.formula.power}
+                      {part.blurb ? " · " + part.blurb : ""}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={levelPartsBusy}
+                    onClick={() => setLevelPartEdit(part)}
+                    className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-[10px] font-bold text-[var(--cream)] disabled:opacity-45"
+                  >
+                    Chỉnh
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {levelPartsRows.length === 0 && (
+              <p className="text-[11px] text-[var(--play-muted)]">
+                Chưa tải được parts — thử làm mới trang.
+              </p>
+            )}
+          </section>
+
+          <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
             <p className="play-heading text-sm">Công thức cấp</p>
             <p className="text-[11px] text-[var(--play-muted)]">
               Lv.1–{PLAY_LEVEL_MAX} · ván để đạt L = 5×(L−1)² · VIP ≈{" "}
@@ -7197,7 +7247,12 @@ export default function AdminDashboard() {
                           <span className="font-mono">({row.ringKey})</span> ·{" "}
                           <span className="font-bold text-amber-900">
                             {formatXu(row.ringPrice)} xu
-                          </span>{" "}
+                          </span>
+                          {typeof row.coupleLevel === "number" ? (
+                            <span className="ml-1 font-bold text-rose-800">
+                              · Couple Lv.{row.coupleLevel}
+                            </span>
+                          ) : null}{" "}
                           · {when}
                           {row.note ? ` · “${row.note}”` : ""}
                         </p>
@@ -11659,6 +11714,34 @@ export default function AdminDashboard() {
             )}
           </div>
         </div>
+      )}
+
+      {levelPartEdit && (
+        <LevelPartPopup
+          open={!!levelPartEdit}
+          part={levelPartEdit}
+          busy={levelPartsBusy}
+          onClose={() => setLevelPartEdit(null)}
+          onSave={async (part) => {
+            setLevelPartsBusy(true);
+            try {
+              const r = await api<{ ok: true; parts: LevelPartAdmin[] }>(
+                "/api/level-parts/upsert",
+                {
+                  method: "POST",
+                  body: JSON.stringify({ part }),
+                },
+              );
+              setLevelPartsRows(r.parts ?? []);
+              setLevelPartEdit(null);
+              setMsg("Đã lưu part " + part.id);
+            } catch (e) {
+              setMsg(e instanceof Error ? e.message : "Lỗi lưu level part");
+            } finally {
+              setLevelPartsBusy(false);
+            }
+          }}
+        />
       )}
 
       {cashflowPopup && data?.xuFlow && (

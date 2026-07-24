@@ -811,30 +811,23 @@ export class VaultStore {
     );
   }
 
-  /** Chat trả phí → xu vào Kho Tarot */
+  /**
+   * @deprecated Phí phải qua feePocketStore.collectFee.
+   * Không ghi vault — tránh lệch khi feature cũ còn gọi.
+   */
   recordChatFee(
-    amount: number,
-    userId: string,
-    username: string,
-    mode: string,
-    rank?: string | null,
+    _amount: number,
+    _userId: string,
+    _username: string,
+    _mode: string,
+    _rank?: string | null,
   ) {
-    const amt = Math.floor(amount);
-    if (amt <= 0) return;
-    this.balance += amt;
-    this.totalMinted += amt;
-    this.totalFeesIn += amt;
-    const rankNote = rank ? ` · ${rank}` : "";
-    this.push(
-      "chat_fee",
-      amt,
-      "system",
-      `Chat ${mode}${rankNote}`,
-      { userId, username },
+    console.warn(
+      "[vault] recordChatFee deprecated — dùng feePocketStore.collectFee",
     );
   }
 
-  /** Chuyển từ Fee Pocket → Kho Tarot (admin Add vào vault) */
+  /** Chỉ gọi từ feePocketStore.releaseToVault */
   recordFeeFromPocket(amount: number, byUsername: string, note?: string) {
     const amt = Math.floor(amount);
     if (amt <= 0) return;
@@ -849,60 +842,41 @@ export class VaultStore {
     );
   }
 
-  /** Phí duy trì cảnh giới → Kho Tarot */
+  /** @deprecated Dùng feePocketStore.collectFee({ source: "cultivation" }) */
   recordCultivationFee(
-    amount: number,
-    userId: string,
-    username: string,
-    rank: string,
+    _amount: number,
+    _userId: string,
+    _username: string,
+    _rank: string,
   ) {
-    const amt = Math.floor(amount);
-    if (amt <= 0) return;
-    this.balance += amt;
-    this.totalMinted += amt;
-    this.totalFeesIn += amt;
-    this.push("cultivation_fee", amt, "system", `Phí duy trì ${rank}`, {
-      userId,
-      username,
-    });
+    console.warn(
+      "[vault] recordCultivationFee deprecated — dùng feePocketStore.collectFee",
+    );
   }
 
-  /** Mua / cầu hôn nhẫn → Kho Tarot (xu đốt từ user vào phí) */
+  /** @deprecated Dùng feePocketStore.collectFee({ source: "ring" }) */
   recordRingFee(
-    amount: number,
-    userId: string,
-    username: string,
-    ringKey: string,
-    ringNameVi?: string,
+    _amount: number,
+    _userId: string,
+    _username: string,
+    _ringKey: string,
+    _ringNameVi?: string,
   ) {
-    const amt = Math.floor(amount);
-    if (amt <= 0) return;
-    this.balance += amt;
-    this.totalMinted += amt;
-    this.totalFeesIn += amt;
-    const label = ringNameVi?.trim() || ringKey;
-    this.push("ring_fee", amt, "system", `Nhẫn ${label} (${ringKey})`, {
-      userId,
-      username,
-    });
+    console.warn(
+      "[vault] recordRingFee deprecated — dùng feePocketStore.collectFee",
+    );
   }
 
-  /** Hoàn lời cầu hôn pending → trừ lại phí nhẫn khỏi kho */
+  /** @deprecated Dùng feePocketStore.refundFee({ source: "ring" }) */
   refundRingFee(
-    amount: number,
-    userId: string,
-    username: string,
-    ringKey: string,
+    _amount: number,
+    _userId: string,
+    _username: string,
+    _ringKey: string,
   ) {
-    const amt = Math.floor(amount);
-    if (amt <= 0) return;
-    this.balance -= amt;
-    this.totalFeesIn = Math.max(0, this.totalFeesIn - amt);
-    this.totalBurned += amt;
-    this.push("ring_fee", -amt, "system", `Hoàn nhẫn pending (${ringKey})`, {
-      userId,
-      username,
-    });
+    console.warn(
+      "[vault] refundRingFee deprecated — dùng feePocketStore.refundFee",
+    );
   }
 }
 

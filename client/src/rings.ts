@@ -270,6 +270,8 @@ export interface BondAdminRow {
   acceptedAt?: number;
   note?: string;
   coupleCode?: string;
+  coupleXu?: number;
+  coupleLevel?: number;
   a: BondPartnerPublic;
   b: BondPartnerPublic;
 }
@@ -296,6 +298,10 @@ export interface UserBondSnippet {
   couplePhrase?: string;
   /** Mã cặp đôi (sau lên nhẫn) */
   coupleCode?: string;
+  /** Xu nhẫn — metric Couple LV */
+  coupleXu?: number;
+  /** Couple LV */
+  coupleLevel?: number;
   since: number;
   status: BondStatus;
 }

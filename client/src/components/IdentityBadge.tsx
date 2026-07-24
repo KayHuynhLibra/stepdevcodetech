@@ -249,7 +249,12 @@ export function IdentityBadge({
               <span className="role-pill__glyph" aria-hidden>
                 {resolveRoleGlyph("couple")}
               </span>
-              <span className="role-pill__text">{coupleLabel}</span>
+              <span className="role-pill__text">
+                {coupleLabel}
+                {typeof user?.bond?.coupleLevel === "number"
+                  ? ` · Lv.${user.bond.coupleLevel}`
+                  : ""}
+              </span>
             </span>
           ) : null,
           level:

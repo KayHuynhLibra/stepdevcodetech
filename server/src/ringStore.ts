@@ -3,6 +3,7 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { randomBytes } from "crypto";
 import { ITEM_XU_MAX, MIN_STAKE } from "./types.js";
+import { levelPartsStore } from "./levelPartsStore.js";
 
 /** Trần giá nhẫn — tối đa 12 chữ số. */
 export const RING_XU_MAX = ITEM_XU_MAX;
@@ -206,6 +207,8 @@ export interface Bond {
   couplePhrase?: string;
   /** Mã cặp đôi công khai (sau khi lên nhẫn) */
   coupleCode?: string;
+  /** Xu đã trả cho nhẫn (metric Couple LV) */
+  coupleXu?: number;
 }
 
 export interface RingStoreSnapshot {
@@ -264,6 +267,10 @@ export interface UserBondSnippet {
   couplePhrase?: string;
   /** Mã cặp đôi (active) */
   coupleCode?: string;
+  /** Xu nhẫn (metric Couple LV) */
+  coupleXu?: number;
+  /** Couple LV từ công thức part couple */
+  coupleLevel?: number;
   since: number;
   status: BondStatus;
 }
@@ -281,6 +288,8 @@ export interface BondAdminRow {
   acceptedAt?: number;
   note?: string;
   coupleCode?: string;
+  coupleXu?: number;
+  coupleLevel?: number;
   a: BondPartnerPublic;
   b: BondPartnerPublic;
 }
@@ -601,6 +610,9 @@ function normalizeBond(raw: unknown): Bond | null {
     typeof b.note === "string" ? b.note.trim().slice(0, 80) : undefined;
   const couplePhrase = normalizeCouplePhrase(b.couplePhrase);
   const coupleCode = normalizeCoupleCode(b.coupleCode);
+  const coupleXuRaw = Math.floor(Number(b.coupleXu));
+  const coupleXu =
+    Number.isFinite(coupleXuRaw) && coupleXuRaw > 0 ? coupleXuRaw : undefined;
   return {
     id,
     aUserId,
@@ -613,6 +625,7 @@ function normalizeBond(raw: unknown): Bond | null {
     note: note || undefined,
     couplePhrase: couplePhrase || undefined,
     coupleCode: status === "active" ? coupleCode : undefined,
+    coupleXu,
   };
 }
 
@@ -872,6 +885,18 @@ class RingStore {
         ringFrameScale: active.ring.ringFrameScale,
         couplePhrase: phrase || undefined,
         coupleCode: raw?.coupleCode,
+        coupleXu: (() => {
+          const fromBond = Math.floor(Number(raw?.coupleXu) || 0);
+          if (fromBond > 0) return fromBond;
+          const price = Math.floor(
+            Number(this.getByKey(active.ring.key)?.price) || 0,
+          );
+          return price > 0 ? price : undefined;
+        })(),
+        coupleLevel: levelPartsStore.coupleLevelFromXu(
+          Math.floor(Number(raw?.coupleXu) || 0) ||
+            Math.floor(Number(this.getByKey(active.ring.key)?.price) || 0),
+        ),
         since: active.since,
         status: "active",
       };
@@ -963,6 +988,7 @@ class RingStore {
       proposedBy: fromId,
       proposedAt: Date.now(),
       note,
+      coupleXu: Math.max(0, Math.floor(ring.price) || 0) || undefined,
     };
     this.bonds.push(bond);
     this.save();
@@ -1258,6 +1284,10 @@ class RingStore {
         acceptedAt: bond.acceptedAt,
         note: bond.note,
         coupleCode: bond.coupleCode,
+        coupleXu: bond.coupleXu ?? ring?.price,
+        coupleLevel: levelPartsStore.coupleLevelFromXu(
+          bond.coupleXu ?? ring?.price,
+        ),
         a: a ?? { id: bond.aUserId, code: "—", username: "?", displayName: "?", avatar: "" },
         b: b ?? { id: bond.bUserId, code: "—", username: "?", displayName: "?", avatar: "" },
       };

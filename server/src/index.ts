@@ -75,6 +75,7 @@ import { leaderboardConfigStore } from "./leaderboardConfigStore.js";
 import { playLevelRewardsStore } from "./playLevelRewardsStore.js";
 import { vaultArcana, vaultGem, vaultStore } from "./vaultStore.js";
 import { feePocketStore } from "./feePocketStore.js";
+import { levelPartsStore } from "./levelPartsStore.js";
 import { ACCOUNT_GEM_MAX, ITEM_GEM_MAX } from "./gem.js";
 import {
   cultivationStore,
@@ -2372,7 +2373,7 @@ function refundPendingRingPropose(bond: {
   const price = ring?.price ?? 0;
   if (price <= 0) return 0;
   const proposer = authStore.getById(bond.proposedBy);
-  const pocket = feePocketStore.refund({
+  const pocket = feePocketStore.refundFee({
     source: "ring",
     amount: price,
     userId: bond.proposedBy,
@@ -2401,23 +2402,45 @@ app.get("/api/fee-pocket", (req, res) => {
   res.json({ ok: true, pocket: feePocketStore.snapshot() });
 });
 
+app.get("/api/level-parts/public", (_req, res) => {
+  res.json({ ok: true, ...levelPartsStore.getPublic() });
+});
+
+app.get("/api/level-parts", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  if (!isMainAdmin(me) && !hasCapability(me, "vault_ops")) {
+    return res.status(403).json({ ok: false, reason: "Cần quyền Level" });
+  }
+  res.json({ ok: true, ...levelPartsStore.snapshot() });
+});
+
+app.post("/api/level-parts/upsert", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  if (!isMainAdmin(me) && !hasCapability(me, "vault_ops")) {
+    return res.status(403).json({ ok: false, reason: "Cần quyền Level" });
+  }
+  const result = levelPartsStore.upsertPart(req.body?.part ?? req.body, me.username);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "level_part_upsert", {
+    detail: `${result.part.id} max=${result.part.formula.maxLevel} coef=${result.part.formula.coef} power=${result.part.formula.power}`,
+  });
+  res.json({ ok: true, part: result.part, ...levelPartsStore.snapshot() });
+});
+
 app.post("/api/fee-pocket/to-vault", (req, res) => {
   const me = requireCapability(req, res, "vault_ops", "Cần quyền kho");
   if (!me) return;
-  const moved = feePocketStore.transferToVault(req.body?.amount, me.username);
+  const moved = feePocketStore.releaseToVault(req.body?.amount, me.username);
   if (!moved.ok) return res.status(400).json(moved);
-  vaultStore.recordFeeFromPocket(
-    moved.amount,
-    me.username,
-    `Fee Pocket → Kho · ${moved.amount.toLocaleString("vi-VN")} xu`,
-  );
   audit(me, "fee_pocket_to_vault", {
     detail: `amount=${moved.amount} left=${moved.balance}`,
   });
   res.json({
     ok: true,
     transferred: moved.amount,
-    pocket: feePocketStore.snapshot(),
+    pocket: moved.pocket,
     vault: vaultStore.getSnapshot(),
   });
 });
@@ -2746,7 +2769,7 @@ app.post("/api/auth/ring-propose", (req, res) => {
     return res.status(400).json(proposed);
   }
 
-  feePocketStore.deposit({
+  feePocketStore.collectFee({
     source: "ring",
     amount: spend.amount,
     userId: me.id,

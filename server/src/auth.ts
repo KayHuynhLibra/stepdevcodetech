@@ -299,8 +299,9 @@ export interface PublicUser {
     ringFrame?: string;
     ringFrameScale?: string;
     couplePhrase?: string;
-    /** Mã cặp công khai khi đã lên nhẫn (vd. CP1A2B3C) */
     coupleCode?: string;
+    coupleXu?: number;
+    coupleLevel?: number;
     since: number;
     status: "pending" | "active";
   };
@@ -1319,7 +1320,7 @@ export class AuthStore {
         user.balance -= fee;
         user.cultivationPaidUntil = now + period;
         user.cultivationLastChargeAt = now;
-        feePocketStore.deposit({
+        feePocketStore.collectFee({
           source: "cultivation",
           amount: fee,
           userId: user.id,

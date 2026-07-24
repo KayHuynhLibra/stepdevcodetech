@@ -363,7 +363,12 @@ export function PlayerInfoSheet({
                     <span className="role-pill__glyph" aria-hidden>
                       {resolveRoleGlyph("couple")}
                     </span>
-                    <span className="role-pill__text">{coupleLabel}</span>
+                    <span className="role-pill__text">
+                      {coupleLabel}
+                      {typeof player.bond?.coupleLevel === "number"
+                        ? ` · Lv.${player.bond.coupleLevel}`
+                        : ""}
+                    </span>
                   </span>
                 ) : null,
                 vip: showVip ? (
