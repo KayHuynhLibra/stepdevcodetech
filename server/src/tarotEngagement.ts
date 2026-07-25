@@ -16,8 +16,7 @@ export const JACKPOT_MIN_POOL = 5_000;
 export const JACKPOT_TRIGGER_CHANCE = 0.08;
 export const JACKPOT_MIN_STAKE = 500;
 export const JACKPOT_PAYOUT_SHARE = 0.18;
-export const JACKPOT_MAX_PAYOUT = 50_000;
-export const JACKPOT_CAP = 500_000;
+/** Không trần quỹ / thưởng — chỉ giới hạn bởi số dư hũ hiện có. */
 export const JACKPOT_START = 12_000;
 
 export const PUBLIC_WIN_STREAK_MIN = 3;
@@ -137,7 +136,7 @@ export function feedJackpotFromStake(authStake: number, pool: number): number {
   if (authStake <= 0) return pool;
   const add = Math.floor(authStake * JACKPOT_FEED_RATE);
   if (add <= 0) return pool;
-  return Math.min(JACKPOT_CAP, pool + add);
+  return Math.max(0, pool + add);
 }
 
 export type JackpotCandidate = {
@@ -165,10 +164,12 @@ export function rollJackpotPayout(
       break;
     }
   }
+  // ~18% quỹ, tối thiểu 500, không vượt quá pool (không trần cứng)
   const amount = Math.min(
-    JACKPOT_MAX_PAYOUT,
+    pool,
     Math.max(500, Math.floor(pool * JACKPOT_PAYOUT_SHARE)),
   );
+  if (amount <= 0) return null;
   return { winner, amount };
 }
 

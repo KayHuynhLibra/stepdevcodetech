@@ -66,7 +66,9 @@ interface StaffNotiPopupProps {
 
 export function StaffNotiPopup({ user }: StaffNotiPopupProps) {
   const staffUser = user ?? getStoredUser();
-  const canSee = isStaff(staffUser);
+  /** Mọi user đăng nhập đọc Noti; guest không hiện. */
+  const canSee = !!staffUser;
+  const canAudit = isStaff(staffUser);
   const canCompose = isMainAdmin(staffUser);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"noti" | "audit">("noti");
@@ -98,7 +100,7 @@ export function StaffNotiPopup({ user }: StaffNotiPopupProps) {
   }, [canSee]);
 
   const loadAudit = useCallback(async () => {
-    if (!canSee) return;
+    if (!canAudit) return;
     try {
       const r = await api<{
         ok: true;
@@ -108,7 +110,7 @@ export function StaffNotiPopup({ user }: StaffNotiPopupProps) {
     } catch {
       /* keep previous */
     }
-  }, [canSee]);
+  }, [canAudit]);
 
   useEffect(() => {
     if (!canSee) return;
@@ -116,10 +118,14 @@ export function StaffNotiPopup({ user }: StaffNotiPopupProps) {
   }, [canSee, loadNoti]);
 
   useEffect(() => {
+    if (!canAudit && tab === "audit") setTab("noti");
+  }, [canAudit, tab]);
+
+  useEffect(() => {
     if (!open) return;
     void loadNoti();
-    if (tab === "audit") void loadAudit();
-  }, [open, tab, loadNoti, loadAudit]);
+    if (tab === "audit" && canAudit) void loadAudit();
+  }, [open, tab, loadNoti, loadAudit, canAudit]);
 
   useEffect(() => {
     if (!open || notis.length === 0) return;
@@ -206,7 +212,7 @@ export function StaffNotiPopup({ user }: StaffNotiPopupProps) {
         className={`staff-noti__trigger ${open ? "is-open" : ""}`}
         aria-expanded={open}
         aria-haspopup="dialog"
-        title="Thông báo staff"
+        title="Thông báo"
         onClick={() => setOpen((v) => !v)}
       >
         <span className="staff-noti__trigger-label">Noti</span>
@@ -221,7 +227,7 @@ export function StaffNotiPopup({ user }: StaffNotiPopupProps) {
         <div
           className="staff-noti__panel"
           role="dialog"
-          aria-label="Thông báo staff"
+          aria-label="Thông báo"
         >
           <div className="staff-noti__head">
             <p className="staff-noti__title">Thông báo</p>
@@ -234,29 +240,31 @@ export function StaffNotiPopup({ user }: StaffNotiPopupProps) {
             </button>
           </div>
 
-          <div className="staff-noti__tabs" role="tablist">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "noti"}
-              className={`staff-noti__tab ${tab === "noti" ? "is-active" : ""}`}
-              onClick={() => setTab("noti")}
-            >
-              Noti
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "audit"}
-              className={`staff-noti__tab ${tab === "audit" ? "is-active" : ""}`}
-              onClick={() => {
-                setTab("audit");
-                void loadAudit();
-              }}
-            >
-              Nhật ký
-            </button>
-          </div>
+          {canAudit && (
+            <div className="staff-noti__tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "noti"}
+                className={`staff-noti__tab ${tab === "noti" ? "is-active" : ""}`}
+                onClick={() => setTab("noti")}
+              >
+                Noti
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "audit"}
+                className={`staff-noti__tab ${tab === "audit" ? "is-active" : ""}`}
+                onClick={() => {
+                  setTab("audit");
+                  void loadAudit();
+                }}
+              >
+                Nhật ký
+              </button>
+            </div>
+          )}
 
           <div className="staff-noti__body">
             {tab === "noti" && (
@@ -264,7 +272,7 @@ export function StaffNotiPopup({ user }: StaffNotiPopupProps) {
                 {canCompose && (
                   <form className="staff-noti__compose" onSubmit={post}>
                     <p className="staff-noti__compose-label">
-                      Đăng thông báo (mainadmin)
+                      Đăng thông báo cho mọi người chơi
                     </p>
                     <input
                       className="staff-noti__input"
@@ -276,7 +284,7 @@ export function StaffNotiPopup({ user }: StaffNotiPopupProps) {
                     />
                     <textarea
                       className="staff-noti__textarea"
-                      placeholder="Nội dung cho admin đọc…"
+                      placeholder="Nội dung người chơi sẽ thấy…"
                       value={body}
                       maxLength={2000}
                       rows={3}

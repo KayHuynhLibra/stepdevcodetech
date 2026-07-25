@@ -197,7 +197,7 @@ export interface PublicState {
   roleDisplay?: RoleDisplayPublic;
   /** Quỹ VIP hiển thị (cosmetic, dao động) */
   vipPool: number;
-  /** Quỹ hũ Tarot thật (cộng dồn từ xu đặt, trả bonus ngẫu nhiên) */
+  /** Quỹ hũ Tarot (cộng dồn từ xu đặt, không trần; trả bonus ngẫu nhiên) */
   jackpotPool: number;
   lastJackpotWin?: { name: string; amount: number; round: number } | null;
   cardHeat: {

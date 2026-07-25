@@ -25,6 +25,13 @@ import {
 import { auditStore } from "./auditStore.js";
 import { staffNotiStore } from "./staffNotiStore.js";
 import {
+  feedbackStore,
+  isFeedbackKind,
+  isFeedbackStatus,
+  type FeedbackKind,
+  type FeedbackStatus,
+} from "./feedbackStore.js";
+import {
   AVATARS,
   normalizeAvatar,
   saveUploadedAvatar,
@@ -248,7 +255,7 @@ function requireAdmin(
   return user;
 }
 
-/** Chỉ admin | mainadmin (nút Noti trên bàn). */
+/** Chỉ admin | mainadmin (audit feed / staff tools). */
 function requireStaffAdmin(
   req: express.Request,
   res: express.Response,
@@ -973,8 +980,9 @@ app.post("/api/admin/coupons/toggle", (req, res) => {
   });
 });
 
+/** Đọc Noti: mọi user đăng nhập. Đăng/xóa: chỉ mainadmin. */
 app.get("/api/staff/noti", (req, res) => {
-  const me = requireStaffAdmin(req, res);
+  const me = requireAuth(req, res);
   if (!me) return;
   res.json({
     ok: true,
@@ -984,7 +992,7 @@ app.get("/api/staff/noti", (req, res) => {
 });
 
 app.post("/api/staff/noti", (req, res) => {
-  const me = requireStaffAdmin(req, res);
+  const me = requireAuth(req, res);
   if (!me) return;
   if (!isMainAdmin(me)) {
     return res.status(403).json({ ok: false, reason: "Chỉ mainadmin đăng thông báo" });
@@ -1002,7 +1010,7 @@ app.post("/api/staff/noti", (req, res) => {
 });
 
 app.delete("/api/staff/noti/:id", (req, res) => {
-  const me = requireStaffAdmin(req, res);
+  const me = requireAuth(req, res);
   if (!me) return;
   if (!isMainAdmin(me)) {
     return res.status(403).json({ ok: false, reason: "Chỉ mainadmin xóa thông báo" });
@@ -1018,6 +1026,126 @@ app.get("/api/staff/audit-feed", (req, res) => {
   const me = requireStaffAdmin(req, res);
   if (!me) return;
   res.json({ ok: true, entries: auditStore.list(50) });
+});
+
+/** User: tạo góp ý / báo cáo / liên hệ → mainadmin. */
+app.post("/api/feedback", (req, res) => {
+  const user = requireAuth(req, res);
+  if (!user) return;
+  if (!rateLimit(`feedback-create:${user.id}`, 5, 10 * 60_000)) {
+    return res
+      .status(429)
+      .json({ ok: false, reason: "Quá nhiều góp ý — thử lại sau 10 phút" });
+  }
+  const result = feedbackStore.create({
+    kind: req.body?.kind,
+    subject: req.body?.subject,
+    body: req.body?.body,
+    userId: user.id,
+    userName: userDisplayName(user) || user.username,
+    userCode: user.code,
+  });
+  if (!result.ok) return res.status(400).json(result);
+  audit(user, "feedback_create", {
+    detail: `${result.ticket.kind}:${result.ticket.subject}`,
+  });
+  res.json({ ok: true, ticket: result.ticket });
+});
+
+app.get("/api/feedback/mine", (req, res) => {
+  const user = requireAuth(req, res);
+  if (!user) return;
+  res.json({ ok: true, tickets: feedbackStore.listForUser(user.id, 50) });
+});
+
+app.get("/api/feedback/mine/:id", (req, res) => {
+  const user = requireAuth(req, res);
+  if (!user) return;
+  const id = String(req.params.id ?? "");
+  const ticket = feedbackStore.getById(id);
+  if (!ticket || ticket.userId !== user.id) {
+    return res.status(404).json({ ok: false, reason: "Không tìm thấy góp ý" });
+  }
+  res.json({ ok: true, ticket });
+});
+
+/** User owner hoặc mainadmin thêm tin vào thread. */
+app.post("/api/feedback/:id/message", (req, res) => {
+  const user = requireAuth(req, res);
+  if (!user) return;
+  if (!rateLimit(`feedback-msg:${user.id}`, 20, 60_000)) {
+    return res
+      .status(429)
+      .json({ ok: false, reason: "Gửi tin quá nhanh — thử lại sau" });
+  }
+  const id = String(req.params.id ?? "");
+  const ticket = feedbackStore.getById(id);
+  if (!ticket) {
+    return res.status(404).json({ ok: false, reason: "Không tìm thấy góp ý" });
+  }
+  const isOwner = ticket.userId === user.id;
+  const isStaff = isMainAdmin(user);
+  if (!isOwner && !isStaff) {
+    return res.status(403).json({ ok: false, reason: "Không có quyền" });
+  }
+  const result = feedbackStore.addMessage({
+    id,
+    body: req.body?.body,
+    by: isStaff ? "staff" : "user",
+    byUserId: user.id,
+    byName: userDisplayName(user) || user.username,
+  });
+  if (!result.ok) return res.status(400).json(result);
+  audit(user, "feedback_reply", {
+    detail: `${id} · ${isStaff ? "staff" : "user"}`,
+  });
+  res.json({ ok: true, ticket: result.ticket });
+});
+
+app.get("/api/mainadmin/feedback", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const statusRaw = String(req.query.status ?? "all");
+  const kindRaw = String(req.query.kind ?? "all");
+  const status =
+    statusRaw === "all" || isFeedbackStatus(statusRaw) ? statusRaw : "all";
+  const kind = kindRaw === "all" || isFeedbackKind(kindRaw) ? kindRaw : "all";
+  const q = String(req.query.q ?? "")
+    .trim()
+    .toLowerCase();
+  let tickets = feedbackStore.listAll({
+    status: status as "all" | FeedbackStatus,
+    kind: kind as "all" | FeedbackKind,
+    limit: 120,
+  });
+  if (q) {
+    tickets = tickets.filter(
+      (t) =>
+        t.userName.toLowerCase().includes(q) ||
+        (t.userCode ?? "").toLowerCase().includes(q) ||
+        t.subject.toLowerCase().includes(q) ||
+        t.userId.toLowerCase().includes(q),
+    );
+  }
+  res.json({
+    ok: true,
+    openCount: feedbackStore.openCount(),
+    tickets,
+  });
+});
+
+app.post("/api/mainadmin/feedback/:id/status", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const id = String(req.params.id ?? "");
+  const status = req.body?.status;
+  if (!isFeedbackStatus(status)) {
+    return res.status(400).json({ ok: false, reason: "Trạng thái không hợp lệ" });
+  }
+  const result = feedbackStore.setStatus(id, status);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "feedback_status", { detail: `${id} → ${status}` });
+  res.json({ ok: true, ticket: result.ticket });
 });
 
 app.get("/api/admin/overview", (req, res) => {
@@ -1057,6 +1185,9 @@ app.get("/api/admin/overview", (req, res) => {
   payload.audit = auditStore.list(200);
   payload.reports = reportStore.list(60);
   payload.liveGuests = engine.listLiveGuestsForAdmin();
+  if (isMainAdmin(me)) {
+    payload.feedbackOpenCount = feedbackStore.openCount();
+  }
 
   const canVault = hasCapability(me, "vault_ops");
   const canTraffic = hasCapability(me, "traffic_view");

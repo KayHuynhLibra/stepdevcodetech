@@ -94,6 +94,7 @@ import { AvatarPickerSheet } from "../components/AvatarPickerSheet";
 import { IdentityBadge } from "../components/IdentityBadge";
 import { PlayToolsBar } from "../components/PlayToolsBar";
 import { StaffNotiPopup } from "../components/StaffNotiPopup";
+import { FeedbackPopup } from "../components/FeedbackPopup";
 import { PlayRecentBar } from "../components/PlayRecentBar";
 import { uploadAvatarFromFile } from "../uploadAvatar";
 import { getDevicePayload } from "../device";
@@ -2043,7 +2044,10 @@ export default function GamePage() {
                 </div>
               )}
               <div className="flex flex-col items-end gap-0.5">
-                <StaffNotiPopup user={me ?? getStoredUser()} />
+                <div className="flex items-center gap-1">
+                  <FeedbackPopup user={me ?? getStoredUser()} />
+                  <StaffNotiPopup user={me ?? getStoredUser()} />
+                </div>
                 <button
                   type="button"
                   onClick={openCoupon}

@@ -57,6 +57,11 @@ import {
 } from "../cultivation";
 import { CultivationChip } from "../components/CultivationChip";
 import { LevelPartPopup, type LevelPartAdmin } from "../components/LevelPartPopup";
+import type {
+  FeedbackKind,
+  FeedbackStatus,
+  FeedbackTicket,
+} from "../components/FeedbackPopup";
 import { TrafficPanel, type TrafficPayload } from "../components/TrafficPanel";
 import { onArcanaImgError } from "../lib/arcanaImages";
 import {
@@ -227,6 +232,7 @@ type TabId =
   | "gifts"
   | "rings"
   | "room"
+  | "feedback"
   | "deleteAcc";
 
 interface VoiceRoomSeatAdmin {
@@ -976,6 +982,8 @@ interface Overview {
     text: string;
     status: "open" | "done";
   }[];
+  /** Mainadmin — số ticket Feedback đang open */
+  feedbackOpenCount?: number;
   liveGuests?: {
     socketId: string;
     guestCode?: string;
@@ -1318,6 +1326,18 @@ export default function AdminDashboard() {
   const [extraStakeTiers, setExtraStakeTiers] = useState<number[]>([]);
   const [extraStakeAdd, setExtraStakeAdd] = useState("");
   const [extraStakeBusy, setExtraStakeBusy] = useState(false);
+  const [feedbackTickets, setFeedbackTickets] = useState<FeedbackTicket[]>([]);
+  const [feedbackOpenCount, setFeedbackOpenCount] = useState(0);
+  const [feedbackStatusFilter, setFeedbackStatusFilter] = useState<
+    FeedbackStatus | "all"
+  >("open");
+  const [feedbackKindFilter, setFeedbackKindFilter] = useState<
+    FeedbackKind | "all"
+  >("all");
+  const [feedbackQuery, setFeedbackQuery] = useState("");
+  const [feedbackActiveId, setFeedbackActiveId] = useState<string | null>(null);
+  const [feedbackReply, setFeedbackReply] = useState("");
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [codeDrafts, setCodeDrafts] = useState<Record<string, string>>({});
   const [codeBusyId, setCodeBusyId] = useState<string | null>(null);
   const [selfNickDraft, setSelfNickDraft] = useState<string | null>(null);
@@ -1475,6 +1495,9 @@ export default function AdminDashboard() {
         : await api<Overview>("/api/admin/overview");
     setData(overview);
     setBotCount(overview.stats.botTarget);
+    if (typeof overview.feedbackOpenCount === "number") {
+      setFeedbackOpenCount(overview.feedbackOpenCount);
+    }
     if (overview.extraStakeTiers) {
       setExtraStakeTiers(overview.extraStakeTiers);
     }
@@ -2661,6 +2684,96 @@ export default function AdminDashboard() {
     }
   };
 
+  const FEEDBACK_KIND_LABEL: Record<FeedbackKind, string> = {
+    report: "Báo cáo",
+    suggest: "Đề xuất",
+    contact: "Liên hệ",
+  };
+  const FEEDBACK_STATUS_LABEL: Record<FeedbackStatus, string> = {
+    open: "Mở",
+    replied: "Đã trả lời",
+    closed: "Đóng",
+  };
+
+  const loadFeedbackInbox = useCallback(async () => {
+    if (!isMainAdmin(me)) return;
+    setFeedbackBusy(true);
+    try {
+      const qs = new URLSearchParams({
+        status: feedbackStatusFilter,
+        kind: feedbackKindFilter,
+        q: feedbackQuery.trim(),
+      });
+      const r = await api<{
+        ok: true;
+        openCount: number;
+        tickets: FeedbackTicket[];
+      }>(`/api/mainadmin/feedback?${qs.toString()}`);
+      setFeedbackTickets(r.tickets ?? []);
+      setFeedbackOpenCount(r.openCount ?? 0);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi tải Feedback");
+    } finally {
+      setFeedbackBusy(false);
+    }
+  }, [me, feedbackStatusFilter, feedbackKindFilter, feedbackQuery]);
+
+  const replyFeedback = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!feedbackActiveId || feedbackBusy) return;
+    setFeedbackBusy(true);
+    try {
+      const r = await api<{ ok: true; ticket: FeedbackTicket }>(
+        `/api/feedback/${encodeURIComponent(feedbackActiveId)}/message`,
+        {
+          method: "POST",
+          body: JSON.stringify({ body: feedbackReply }),
+        },
+      );
+      setFeedbackTickets((prev) =>
+        prev.map((t) => (t.id === r.ticket.id ? r.ticket : t)),
+      );
+      setFeedbackReply("");
+      setMsg("Đã trả lời góp ý");
+      await loadFeedbackInbox();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi trả lời");
+    } finally {
+      setFeedbackBusy(false);
+    }
+  };
+
+  const setFeedbackTicketStatus = async (
+    id: string,
+    status: FeedbackStatus,
+  ) => {
+    setFeedbackBusy(true);
+    try {
+      const r = await api<{ ok: true; ticket: FeedbackTicket }>(
+        `/api/mainadmin/feedback/${encodeURIComponent(id)}/status`,
+        {
+          method: "POST",
+          body: JSON.stringify({ status }),
+        },
+      );
+      setFeedbackTickets((prev) =>
+        prev.map((t) => (t.id === r.ticket.id ? r.ticket : t)),
+      );
+      setMsg(`Đã đặt trạng thái: ${FEEDBACK_STATUS_LABEL[status]}`);
+      await loadFeedbackInbox();
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi cập nhật trạng thái");
+    } finally {
+      setFeedbackBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tab !== "feedback" || !isMainAdmin(me)) return;
+    void loadFeedbackInbox();
+  }, [tab, me, loadFeedbackInbox]);
+
   const runIpAction = async (
     path: string,
     body: Record<string, unknown>,
@@ -3779,6 +3892,14 @@ export default function AdminDashboard() {
       id: "rings",
       label: "Nhẫn",
       show: main || canRingManage,
+    },
+    {
+      id: "feedback",
+      label:
+        feedbackOpenCount > 0
+          ? `Feedback (${feedbackOpenCount})`
+          : "Feedback",
+      show: main,
     },
   ];
 
@@ -5494,6 +5615,196 @@ export default function AdminDashboard() {
             </ul>
           </section>
         </>
+      )}
+
+      {tab === "feedback" && main && (
+        <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="play-heading text-sm">Feedback / Liên hệ</p>
+              <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+                Inbox góp ý từ người chơi · trả lời trong thread · đóng ticket
+                khi xong. Open: {feedbackOpenCount}.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={feedbackBusy}
+              onClick={() => void loadFeedbackInbox()}
+              className="rounded-full bg-white px-3 py-1.5 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20 disabled:opacity-45"
+            >
+              Làm mới
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <select
+              value={feedbackStatusFilter}
+              onChange={(e) =>
+                setFeedbackStatusFilter(
+                  e.target.value as FeedbackStatus | "all",
+                )
+              }
+              className="app-input !w-auto !py-1.5 text-xs"
+            >
+              <option value="all">Mọi trạng thái</option>
+              <option value="open">Mở</option>
+              <option value="replied">Đã trả lời</option>
+              <option value="closed">Đóng</option>
+            </select>
+            <select
+              value={feedbackKindFilter}
+              onChange={(e) =>
+                setFeedbackKindFilter(e.target.value as FeedbackKind | "all")
+              }
+              className="app-input !w-auto !py-1.5 text-xs"
+            >
+              <option value="all">Mọi loại</option>
+              <option value="report">Báo cáo</option>
+              <option value="suggest">Đề xuất</option>
+              <option value="contact">Liên hệ</option>
+            </select>
+            <input
+              value={feedbackQuery}
+              onChange={(e) => setFeedbackQuery(e.target.value)}
+              placeholder="Lọc user / mã / tiêu đề…"
+              className="app-input min-w-[10rem] flex-1 !py-1.5 text-xs"
+            />
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <ul className="max-h-[28rem] space-y-1.5 overflow-y-auto">
+              {feedbackTickets.length === 0 && (
+                <li className="rounded-lg bg-white/70 px-2.5 py-3 text-[11px] text-[var(--play-muted)] ring-1 ring-[var(--wood-deep)]/10">
+                  {feedbackBusy ? "Đang tải…" : "Không có ticket khớp bộ lọc."}
+                </li>
+              )}
+              {feedbackTickets.map((t) => (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFeedbackActiveId(t.id);
+                      setFeedbackReply("");
+                    }}
+                    className={`w-full rounded-lg px-2.5 py-2 text-left text-[11px] ring-1 ${
+                      feedbackActiveId === t.id
+                        ? "bg-[var(--wood-deep)] text-[var(--cream)] ring-[var(--wood-deep)]"
+                        : "bg-white/75 text-[var(--play-ink)] ring-[var(--wood-deep)]/10"
+                    }`}
+                  >
+                    <p className="font-bold">
+                      {t.subject}{" "}
+                      <span className="font-normal opacity-80">
+                        · {FEEDBACK_KIND_LABEL[t.kind]} ·{" "}
+                        {FEEDBACK_STATUS_LABEL[t.status]}
+                      </span>
+                    </p>
+                    <p className="mt-0.5 opacity-80">
+                      {t.userName}
+                      {t.userCode ? ` · ${t.userCode}` : ""} ·{" "}
+                      {new Date(t.updatedAt).toLocaleString("vi-VN")}
+                    </p>
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            <div className="rounded-lg bg-white/75 p-3 ring-1 ring-[var(--wood-deep)]/10">
+              {!feedbackActiveId ||
+              !feedbackTickets.some((t) => t.id === feedbackActiveId) ? (
+                <p className="text-[11px] text-[var(--play-muted)]">
+                  Chọn một ticket để xem thread và trả lời.
+                </p>
+              ) : (
+                (() => {
+                  const active = feedbackTickets.find(
+                    (t) => t.id === feedbackActiveId,
+                  )!;
+                  return (
+                    <div className="space-y-2">
+                      <div>
+                        <p className="play-heading text-sm">{active.subject}</p>
+                        <p className="text-[10px] text-[var(--play-muted)]">
+                          {FEEDBACK_KIND_LABEL[active.kind]} ·{" "}
+                          {FEEDBACK_STATUS_LABEL[active.status]} ·{" "}
+                          {active.userName}
+                          {active.userCode ? ` · ${active.userCode}` : ""}
+                        </p>
+                      </div>
+                      <ul className="max-h-56 space-y-1.5 overflow-y-auto">
+                        {active.messages.map((m) => (
+                          <li
+                            key={m.id}
+                            className={`rounded-lg px-2 py-1.5 text-[11px] ring-1 ${
+                              m.by === "staff"
+                                ? "bg-sky-50 ring-sky-200/80"
+                                : "bg-white ring-[var(--wood-deep)]/10"
+                            }`}
+                          >
+                            <p className="text-[10px] font-bold text-[var(--play-muted)]">
+                              {m.by === "staff" ? "Mainadmin" : m.byName} ·{" "}
+                              {new Date(m.at).toLocaleString("vi-VN")}
+                            </p>
+                            <p className="mt-0.5 whitespace-pre-wrap text-[var(--play-ink)]">
+                              {m.body}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="flex flex-wrap gap-1.5">
+                        {active.status !== "closed" && (
+                          <button
+                            type="button"
+                            disabled={feedbackBusy}
+                            onClick={() =>
+                              void setFeedbackTicketStatus(active.id, "closed")
+                            }
+                            className="rounded-full bg-rose-800 px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-45"
+                          >
+                            Đóng ticket
+                          </button>
+                        )}
+                        {active.status === "closed" && (
+                          <button
+                            type="button"
+                            disabled={feedbackBusy}
+                            onClick={() =>
+                              void setFeedbackTicketStatus(active.id, "open")
+                            }
+                            className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-[10px] font-bold text-[var(--cream)] disabled:opacity-45"
+                          >
+                            Mở lại
+                          </button>
+                        )}
+                      </div>
+                      {active.status !== "closed" && (
+                        <form onSubmit={replyFeedback} className="space-y-1.5">
+                          <textarea
+                            value={feedbackReply}
+                            onChange={(e) => setFeedbackReply(e.target.value)}
+                            rows={3}
+                            maxLength={2000}
+                            required
+                            placeholder="Trả lời người chơi…"
+                            className="app-input w-full text-xs"
+                          />
+                          <button
+                            type="submit"
+                            disabled={feedbackBusy}
+                            className="rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-45"
+                          >
+                            {feedbackBusy ? "Đang gửi…" : "Gửi trả lời"}
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  );
+                })()
+              )}
+            </div>
+          </div>
+        </section>
       )}
 
       {tab === "deleteAcc" && main && data && (
