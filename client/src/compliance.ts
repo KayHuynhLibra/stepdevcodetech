@@ -3,8 +3,8 @@
  * Not a substitute for operator legal review.
  */
 
-const AGE_KEY = "sofiaore_age_ok_v1";
-const TERMS_KEY = "sofiaore_terms_ok_v1";
+const AGE_KEY = "sofiaore_age_ok_v2";
+const TERMS_KEY = "sofiaore_terms_ok_v2";
 
 export function hasAgeAck(): boolean {
   try {

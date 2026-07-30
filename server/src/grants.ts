@@ -40,7 +40,8 @@ export type GrantCapability =
   | "chat_config"
   | "inter_control"
   | "gift_manage"
-  | "ring_manage";
+  | "ring_manage"
+  | "oracle_manage";
 
 export const STAFF_GRANT_LEVEL_MIN = 0;
 export const STAFF_GRANT_LEVEL_MAX = 6;
@@ -219,6 +220,8 @@ export function hasCapability(
       return userHasRole(user, "sgift") || isMainish;
     case "ring_manage":
       return userHasRole(user, "ring") || isMainish;
+    case "oracle_manage":
+      return isMainish || userHasAnyRole(user, ["admin"]);
     case "inter_control":
       return isMainish;
     case "inter_vault_ip":

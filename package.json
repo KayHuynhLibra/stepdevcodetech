@@ -11,6 +11,8 @@
     "start": "npm run start -w server",
     "migrate:scale10": "node server/scripts/migrate-scale-div10.mjs",
     "backup:data": "node server/scripts/backup-data.mjs",
+    "baseline:100x": "node server/scripts/baseline-100x.mjs",
+    "db:migrate": "node server/scripts/db-migrate.mjs",
     "install:all": "npm install",
     "redeploy": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/redeploy.ps1",
     "redeploy:help": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/redeploy.ps1 -Action help",
@@ -20,7 +22,7 @@
     "redeploy:full": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/redeploy.ps1 -Action full",
     "redeploy:sh": "bash ./scripts/redeploy.sh",
     "hackmyapp:live": "powershell -NoProfile -ExecutionPolicy Bypass -File ./hackmyapp/scripts/safe-check.ps1 -Target live",
-    "hackmyapp:local": "powershell -NoProfile -ExecutionPolicy Bypass -File ./hackmyapp/scripts/safe-check.ps1 -Target local"
+    "hackmyapp:local": "powershell -NoProfile -ExecutionPolicy Bypass -File ./hackmyapp/scripts/safe-check.ps1 -Target local -LocalPort 3001"
   },
   "workspaces": [
     "server",

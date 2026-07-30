@@ -5867,3 +5867,51 @@ input {
 .xu-hit--large .xu-hit__amt {
   color: #b45309;
 }
+
+/* ——— 100x Phase 5: tokens + motion + a11y ——— */
+:root {
+  --brand-wood: var(--wood-deep, #3d2a1f);
+  --brand-cream: var(--cream, #f3ebe0);
+  --brand-ink: var(--play-ink, #2a1f18);
+  --brand-muted: var(--play-muted, #7a6a5c);
+  --motion-fast: 180ms;
+  --motion-med: 320ms;
+}
+
+.table-nav a:focus-visible {
+  outline: 2px solid var(--brand-wood);
+  outline-offset: 2px;
+}
+
+.oracle-card-flip {
+  animation: oracle-in var(--motion-med) ease-out both;
+}
+
+@keyframes oracle-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.oracle-draw-btn:active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oracle-card-flip,
+  .oracle-draw-btn,
+  .animate-shout-marquee,
+  .arcana-aura,
+  .arcana-sparkle,
+  .vip-fantasy-avatar__aura,
+  .vip-fantasy-avatar__sparkle {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+

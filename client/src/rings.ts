@@ -265,13 +265,17 @@ export interface BondAdminRow {
   ringNameVi: string;
   ringPrice: number;
   ringImage: string;
+  ringEffect?: RingEffect | string;
   proposedBy: string;
   proposedAt: number;
   acceptedAt?: number;
   note?: string;
+  couplePhrase?: string;
   coupleCode?: string;
   coupleXu?: number;
   coupleLevel?: number;
+  designLocked?: boolean;
+  ringHistory?: string[];
   a: BondPartnerPublic;
   b: BondPartnerPublic;
 }

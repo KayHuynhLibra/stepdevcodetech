@@ -4,6 +4,8 @@ interface PlayToolsBarProps {
   muted: boolean;
   showBalance?: boolean;
   jackpotLabel?: string;
+  /** Giải thích minh bạch cơ chế hũ */
+  jackpotHint?: string;
   voiceLabel?: string;
   voiceLive?: boolean;
   onRules: () => void;
@@ -19,6 +21,7 @@ export function PlayToolsBar({
   muted,
   showBalance = false,
   jackpotLabel,
+  jackpotHint,
   voiceLabel,
   voiceLive = false,
   onRules,
@@ -126,7 +129,7 @@ export function PlayToolsBar({
             {jackpotLabel && (
               <span
                 className="play-tools-bar__pill play-tools-bar__pill--pot"
-                title="Quỹ hũ Tarot"
+                title={jackpotHint || "Quỹ hũ Tarot"}
               >
                 {jackpotLabel}
               </span>

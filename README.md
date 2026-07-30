@@ -1,21 +1,26 @@
-# SOFIAORE — Tarot entertainment demo
+# SOFIAORE — Tarot educational / research demo
 
-Realtime tarot / wheel **entertainment demo** (Vite + React client, Express + Socket.io server).
+Realtime tarot / wheel **web demo** (Vite + React client, Express + Socket.io server) built for **học tập và nghiên cứu (learning & research)**: full-stack practice, realtime game loops, admin tooling, and compliance-copy patterns.
 
-> This is a purely fictional educational demo project. No real-money entertainment, financial transactions, or actual currency conversion are involved.
+> **Educational / research only.** This is a fictional study project—not a real casino, bank, or licensed gambling service. **No real-money** deposits, withdrawals, or currency conversion. In-app **xu** are virtual points with **no cash value**.
+>
+> **Do not steal this codebase for illicit use.** Learning forks with attribution are fine; copying the repo to run illegal gambling, scams, or to strip authorship is **forbidden** — see [`NOTICE.md`](./NOTICE.md) and [`TERMS.md`](./TERMS.md) §§0.6, 5, 7.
 
-## Important (GitHub / operators)
+## Important (GitHub / learners / operators)
 
 | | |
 |--|--|
+| **Purpose** | Learning, study, research, portfolio / code review — **not** commercial real-money gambling |
+| **Source code** | View/learn OK · **No theft** for illicit deployment, fraud, or stripping authorship ([`NOTICE.md`](./NOTICE.md)) |
 | **Currency** | In-app **xu** = virtual points only — **no cash value**, no real-money deposit/withdraw in this codebase |
 | **Age** | **18+** (see in-app gate + [`TERMS.md`](./TERMS.md)) |
-| **Not** | Licensed US real-money entertainment, money transmitter, or crypto cashout |
-| **Compliance pack** | [`LEGAL.md`](./LEGAL.md) · [`TERMS.md`](./TERMS.md) · [`PRIVACY.md`](./PRIVACY.md) · routes `/terms` `/privacy` |
+| **Not** | Licensed US / Iowa real-money gambling, money transmitter, or crypto cashout |
+| **Governing law (ToS default)** | State of Iowa, USA — see [`TERMS.md`](./TERMS.md) §0 (educational purpose) + later sections |
+| **Compliance pack** | [`NOTICE.md`](./NOTICE.md) · [`LEGAL.md`](./LEGAL.md) · [`TERMS.md`](./TERMS.md) · [`PRIVACY.md`](./PRIVACY.md) · routes `/terms` `/privacy` |
 
-This is **not legal advice**. If you add real-money payments or cash prizes, get counsel and licensing review before offering the service.
+This is **not legal advice**. Forks that add real-money payments or cash prizes must get Iowa/U.S. counsel and licensing review before offering the service.
 
-**Do not commit** `server/data/*.json`, `.env`, or player dumps (GitHub AUP / privacy).
+**Do not commit** `server/data/*.json`, `.env`, or player dumps (GitHub AUP / privacy / classroom ethics).
 
 ## Local development
 

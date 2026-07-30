@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
-export type CatalogKind = "gift" | "ring";
+export type CatalogKind = "gift" | "ring" | "oracle";
 
 const MAX_UPLOAD_BYTES = 800_000;
 
@@ -34,7 +34,7 @@ export function saveCatalogImage(
   itemKey: string,
   dataUrl: string,
 ): { ok: true; url: string } | { ok: false; reason: string } {
-  if (kind !== "gift" && kind !== "ring") {
+  if (kind !== "gift" && kind !== "ring" && kind !== "oracle") {
     return { ok: false, reason: "Loại catalog không hợp lệ" };
   }
   const key = safeKey(itemKey);

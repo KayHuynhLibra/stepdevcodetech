@@ -34,9 +34,13 @@ export function ComplianceGate({
       >
         <p className="play-heading text-base text-[var(--play-ink)]">{title}</p>
         <p className="mt-2 text-[11px] leading-relaxed text-[var(--play-muted)]">
-          Game dùng <strong className="text-[var(--play-ink)]">xu ảo</strong> —
-          điểm giải trí, không phải tiền thật, không rút tiền mặt. Không dành
-          cho người dưới 18 tuổi.
+          Đây là dự án <strong className="text-[var(--play-ink)]">học tập &amp;
+          nghiên cứu</strong> (demo trên GitHub) — dùng{" "}
+          <strong className="text-[var(--play-ink)]">xu ảo</strong>, không phải
+          tiền thật, không rút tiền mặt, không phải đánh bạc có giấy phép (Iowa
+          / Mỹ). <strong className="text-[var(--play-ink)]">Cấm ăn cắp mã
+          nguồn</strong> để triển khai hành vi bất hợp pháp. Không dành cho
+          người dưới 18 tuổi. Luật mặc định: Iowa, Hoa Kỳ.
         </p>
 
         <label className="mt-4 flex cursor-pointer items-start gap-2 text-xs text-[var(--play-ink)]">
@@ -46,7 +50,10 @@ export function ComplianceGate({
             onChange={(e) => setAge(e.target.checked)}
             className="mt-0.5"
           />
-          <span>Tôi xác nhận đã đủ 18 tuổi (hoặc tuổi trưởng thành tại nơi tôi sống).</span>
+          <span>
+            Tôi xác nhận đã đủ 18 tuổi (hoặc tuổi trưởng thành tại nơi tôi sống)
+            và việc sử dụng là hợp pháp nơi tôi đang ở.
+          </span>
         </label>
 
         <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs text-[var(--play-ink)]">
@@ -61,7 +68,7 @@ export function ComplianceGate({
             <Link to="/terms" className="font-bold text-[var(--wood-deep)] underline">
               Điều khoản
             </Link>{" "}
-            và{" "}
+            (Iowa/Mỹ · học tập · cấm ăn cắp mã nguồn · xu không đổi tiền) và{" "}
             <Link
               to="/privacy"
               className="font-bold text-[var(--wood-deep)] underline"

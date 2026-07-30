@@ -209,6 +209,10 @@ export interface Bond {
   coupleCode?: string;
   /** Xu đã trả cho nhẫn (metric Couple LV) */
   coupleXu?: number;
+  /** Khóa đổi thiết kế — chỉ mainadmin mới sửa được */
+  designLocked?: boolean;
+  /** Lịch sử ringKey đã đeo (mới nhất trước) */
+  ringHistory?: string[];
 }
 
 export interface RingStoreSnapshot {
@@ -283,13 +287,17 @@ export interface BondAdminRow {
   ringNameVi: string;
   ringPrice: number;
   ringImage: string;
+  ringEffect?: RingEffect;
   proposedBy: string;
   proposedAt: number;
   acceptedAt?: number;
   note?: string;
+  couplePhrase?: string;
   coupleCode?: string;
   coupleXu?: number;
   coupleLevel?: number;
+  designLocked?: boolean;
+  ringHistory?: string[];
   a: BondPartnerPublic;
   b: BondPartnerPublic;
 }
@@ -613,6 +621,14 @@ function normalizeBond(raw: unknown): Bond | null {
   const coupleXuRaw = Math.floor(Number(b.coupleXu));
   const coupleXu =
     Number.isFinite(coupleXuRaw) && coupleXuRaw > 0 ? coupleXuRaw : undefined;
+  const designLocked = b.designLocked === true;
+  const ringHistory = Array.isArray(b.ringHistory)
+    ? b.ringHistory
+        .map((k) => normalizeKey(k))
+        .filter((k): k is string => !!k)
+        .filter((k, i, arr) => arr.indexOf(k) === i)
+        .slice(0, 12)
+    : undefined;
   return {
     id,
     aUserId,
@@ -626,7 +642,23 @@ function normalizeBond(raw: unknown): Bond | null {
     couplePhrase: couplePhrase || undefined,
     coupleCode: status === "active" ? coupleCode : undefined,
     coupleXu,
+    designLocked: designLocked || undefined,
+    ringHistory: ringHistory?.length ? ringHistory : undefined,
   };
+}
+
+function pushRingHistory(bond: Bond, prevKey: string) {
+  const k = normalizeKey(prevKey);
+  if (!k) return;
+  const next = [k, ...(bond.ringHistory ?? []).filter((x) => x !== k)];
+  bond.ringHistory = next.slice(0, 12);
+}
+
+function assignBondRingKey(bond: Bond, nextKey: string) {
+  const k = normalizeKey(nextKey);
+  if (!k || bond.ringKey === k) return;
+  pushRingHistory(bond, bond.ringKey);
+  bond.ringKey = k;
 }
 
 function atomicWrite(path: string, data: unknown) {
@@ -1146,6 +1178,9 @@ class RingStore {
       (b) => b.status === "active" && bondInvolves(b, uid),
     );
     if (!bond) return { ok: false, reason: "Bạn chưa kết đôi" };
+    if (bond.designLocked) {
+      return { ok: false, reason: "Thiết kế nhẫn đang bị khóa (admin)" };
+    }
     const ring = this.getByKey(String(ringKeyRaw ?? ""));
     if (!ring || !ring.enabled) {
       return { ok: false, reason: "Nhẫn không tồn tại hoặc đã tắt" };
@@ -1154,7 +1189,7 @@ class RingStore {
     if (kind === "custom" && ring.ownerBondId !== bond.id) {
       return { ok: false, reason: "Nhẫn riêng không thuộc cặp này" };
     }
-    bond.ringKey = ring.key;
+    assignBondRingKey(bond, ring.key);
     this.save();
     return { ok: true, bond: { ...bond }, ring: { ...ring } };
   }
@@ -1163,6 +1198,7 @@ class RingStore {
   adminSetBondRing(
     bondId: string,
     ringKeyRaw: unknown,
+    opts?: { bypassLock?: boolean },
   ):
     | { ok: true; bond: Bond; ring: RingItem }
     | { ok: false; reason: string } {
@@ -1172,13 +1208,16 @@ class RingStore {
     if (bond.status !== "active") {
       return { ok: false, reason: "Chỉ đổi nhẫn khi đã lên nhẫn" };
     }
+    if (bond.designLocked && !opts?.bypassLock) {
+      return { ok: false, reason: "Thiết kế đang khóa — cần mainadmin" };
+    }
     const ring = this.getByKey(String(ringKeyRaw ?? ""));
     if (!ring) return { ok: false, reason: "Không tìm thấy nhẫn" };
     const kind = ring.kind ?? "catalog";
     if (kind === "custom" && ring.ownerBondId && ring.ownerBondId !== bond.id) {
       return { ok: false, reason: "Nhẫn riêng thuộc cặp khác" };
     }
-    bond.ringKey = ring.key;
+    assignBondRingKey(bond, ring.key);
     this.save();
     return { ok: true, bond: { ...bond }, ring: { ...ring } };
   }
@@ -1190,7 +1229,7 @@ class RingStore {
   upsertCustomForBond(
     bondId: string,
     patch: unknown,
-    opts?: { equip?: boolean },
+    opts?: { equip?: boolean; bypassLock?: boolean },
   ):
     | { ok: true; ring: RingItem; bond: Bond }
     | { ok: false; reason: string } {
@@ -1199,6 +1238,9 @@ class RingStore {
     if (!bond) return { ok: false, reason: "Không tìm thấy cặp" };
     if (bond.status !== "active" || !bond.coupleCode) {
       return { ok: false, reason: "Cặp chưa có mã cặp đôi" };
+    }
+    if (bond.designLocked && !opts?.bypassLock) {
+      return { ok: false, reason: "Thiết kế đang khóa — cần mainadmin" };
     }
     const baseKey = `c_${bond.coupleCode.toLowerCase()}`;
     const existing = this.getByKey(baseKey);
@@ -1221,10 +1263,40 @@ class RingStore {
     if (idx >= 0) this.rings[idx] = merged;
     else this.rings.push(merged);
     if (opts?.equip !== false) {
-      bond.ringKey = merged.key;
+      assignBondRingKey(bond, merged.key);
     }
     this.save();
     return { ok: true, ring: { ...merged }, bond: { ...bond } };
+  }
+
+  /** Staff: ghi chú / chữ cặp / khóa thiết kế. */
+  adminUpdateBondMeta(
+    bondId: string,
+    patch: {
+      note?: string | null;
+      couplePhrase?: string | null;
+      designLocked?: boolean;
+    },
+  ): { ok: true; bond: Bond } | { ok: false; reason: string } {
+    const id = String(bondId ?? "").trim();
+    const bond = this.bonds.find((b) => b.id === id);
+    if (!bond) return { ok: false, reason: "Không tìm thấy cặp" };
+    if (patch.note !== undefined) {
+      const note =
+        patch.note == null
+          ? undefined
+          : String(patch.note).trim().slice(0, 80) || undefined;
+      bond.note = note;
+    }
+    if (patch.couplePhrase !== undefined) {
+      const phrase = normalizeCouplePhrase(patch.couplePhrase);
+      bond.couplePhrase = phrase || undefined;
+    }
+    if (typeof patch.designLocked === "boolean") {
+      bond.designLocked = patch.designLocked || undefined;
+    }
+    this.save();
+    return { ok: true, bond: { ...bond } };
   }
 
   listCustomForBond(bondId: string): RingItem[] {
@@ -1279,15 +1351,21 @@ class RingStore {
         ringNameVi: ring?.nameVi ?? bond.ringKey,
         ringPrice: ring?.price ?? 0,
         ringImage: ring?.image ?? "💍",
+        ringEffect: ring?.effect,
         proposedBy: bond.proposedBy,
         proposedAt: bond.proposedAt,
         acceptedAt: bond.acceptedAt,
         note: bond.note,
+        couplePhrase: bond.couplePhrase,
         coupleCode: bond.coupleCode,
         coupleXu: bond.coupleXu ?? ring?.price,
         coupleLevel: levelPartsStore.coupleLevelFromXu(
           bond.coupleXu ?? ring?.price,
         ),
+        designLocked: bond.designLocked,
+        ringHistory: bond.ringHistory?.length
+          ? [...bond.ringHistory]
+          : undefined,
         a: a ?? { id: bond.aUserId, code: "—", username: "?", displayName: "?", avatar: "" },
         b: b ?? { id: bond.bUserId, code: "—", username: "?", displayName: "?", avatar: "" },
       };

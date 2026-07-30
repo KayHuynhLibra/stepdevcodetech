@@ -22,6 +22,7 @@ hackmyapp/*
 # Bản chụp Version — chỉ local, không push GitHub
 version 1/
 version 2/
+version 3/
 
 .asset-backup/
 

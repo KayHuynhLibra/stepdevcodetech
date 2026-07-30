@@ -1,8 +1,9 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   api,
   arcanaPath,
+  boiBaiPath,
   canAccessRoomAdmin,
   canAccessStaffDashboard,
   canManageCultivation,
@@ -46,6 +47,22 @@ import { CelestialProfilePreview } from "../components/CelestialProfilePreview";
 import { ImageUploadPopup } from "../components/ImageUploadPopup";
 import { CoupleAvatar } from "../components/CoupleAvatar";
 import { uploadAvatarFromFile } from "../uploadAvatar";
+
+const LazyOracleAdminPanel = lazy(() =>
+  import("../components/OracleAdminPanel").then((m) => ({
+    default: m.OracleAdminPanel,
+  })),
+);
+const LazyAdminRingsPanel = lazy(() =>
+  import("../components/AdminRingsPanel").then((m) => ({
+    default: m.AdminRingsPanel,
+  })),
+);
+const LazyPlatformGamesAdminPanel = lazy(() =>
+  import("../components/PlatformGamesAdminPanel").then((m) => ({
+    default: m.PlatformGamesAdminPanel,
+  })),
+);
 import {
   CULTIVATION_LABELS,
   CULTIVATION_RANKS,
@@ -231,6 +248,8 @@ type TabId =
   | "level"
   | "gifts"
   | "rings"
+  | "oracle"
+  | "games"
   | "room"
   | "feedback"
   | "deleteAcc";
@@ -996,48 +1015,300 @@ interface Overview {
 function AdminBondCustomForm({
   row,
   busy,
-  onSave,
+  catalogPresets,
+  canUnlock,
+  uploadedImage,
+  onConsumeUpload,
+  onRequestUpload,
+  onSaveCustom,
+  onEquipCatalog,
+  onSaveMeta,
 }: {
   row: BondAdminRow;
   busy?: boolean;
-  onSave: (opts: { nameVi: string; image: string }) => void;
+  catalogPresets: RingItem[];
+  canUnlock?: boolean;
+  uploadedImage?: { bondId: string; url: string } | null;
+  onConsumeUpload?: () => void;
+  onRequestUpload: (itemKey: string) => void;
+  onSaveCustom: (opts: {
+    nameVi: string;
+    image: string;
+    effect: RingEffect;
+  }) => void;
+  onEquipCatalog: (ringKey: string) => void;
+  onSaveMeta: (opts: {
+    note: string;
+    couplePhrase: string;
+    designLocked?: boolean;
+  }) => void;
 }) {
   const [nameVi, setNameVi] = useState(row.ringNameVi);
   const [image, setImage] = useState(row.ringImage);
+  const [effect, setEffect] = useState<RingEffect>(
+    (RING_EFFECTS.includes(row.ringEffect as RingEffect)
+      ? row.ringEffect
+      : "glow") as RingEffect,
+  );
+  const [note, setNote] = useState(row.note ?? "");
+  const [phrase, setPhrase] = useState(row.couplePhrase ?? "");
+  const locked = !!row.designLocked;
+  const editBlocked = locked && !canUnlock;
+
   useEffect(() => {
     setNameVi(row.ringNameVi);
     setImage(row.ringImage);
-  }, [row.id, row.ringKey, row.ringNameVi, row.ringImage]);
+    setEffect(
+      (RING_EFFECTS.includes(row.ringEffect as RingEffect)
+        ? row.ringEffect
+        : "glow") as RingEffect,
+    );
+    setNote(row.note ?? "");
+    setPhrase(row.couplePhrase ?? "");
+  }, [
+    row.id,
+    row.ringKey,
+    row.ringNameVi,
+    row.ringImage,
+    row.ringEffect,
+    row.note,
+    row.couplePhrase,
+  ]);
+
+  useEffect(() => {
+    if (!uploadedImage || uploadedImage.bondId !== row.id) return;
+    setImage(uploadedImage.url);
+    onConsumeUpload?.();
+  }, [uploadedImage, row.id, onConsumeUpload]);
+
+  const customKey = row.coupleCode
+    ? `c_${row.coupleCode.toLowerCase()}`
+    : row.ringKey.startsWith("c_")
+      ? row.ringKey
+      : `b_${row.id.replace(/[^a-z0-9_-]/gi, "").toLowerCase().slice(0, 36)}`;
+
+  const historyKeys = (row.ringHistory ?? []).filter((k) => k && k !== row.ringKey);
+
   return (
-    <div className="flex flex-wrap items-end gap-1.5">
-      <label className="min-w-[8rem] flex-1 text-[10px] text-[var(--play-muted)]">
-        Tên nhẫn riêng
-        <input
-          className="app-input !px-2 !py-1 mt-0.5 w-full text-[11px]"
-          value={nameVi}
-          maxLength={40}
+    <div className="space-y-2">
+      {locked ? (
+        <p className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-900 ring-1 ring-amber-200/80">
+          Thiết kế đang khóa
+          {canUnlock ? " — mainadmin vẫn sửa được" : " — chỉ mainadmin mở khóa"}
+        </p>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-2 rounded-xl bg-white/80 p-2 ring-1 ring-[var(--wood-deep)]/12">
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[var(--cream)] ring-1 ring-[var(--wood-deep)]/10">
+          {isRingEmoji(image) ? (
+            <span className="text-3xl leading-none">{image || "💍"}</span>
+          ) : (
+            <img src={image} alt="" className="h-14 w-14 object-contain" />
+          )}
+        </div>
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="text-[10px] font-bold text-[var(--play-ink)]">
+            Ảnh nhẫn · {nameVi || row.ringNameVi}
+          </p>
+          <p className="font-mono text-[9px] text-[var(--play-muted)]">
+            {row.ringKey}
+            {effect !== "none" ? ` · ${RING_EFFECT_LABELS[effect] ?? effect}` : ""}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              disabled={busy || editBlocked}
+              onClick={() => onRequestUpload(customKey)}
+              className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-[11px] font-bold text-[var(--cream)] disabled:opacity-45"
+            >
+              Tải ảnh lên
+            </button>
+            <button
+              type="button"
+              disabled={busy || editBlocked}
+              onClick={() => setImage("💍")}
+              className="rounded-full bg-white px-2.5 py-1.5 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15 disabled:opacity-45"
+            >
+              Dùng emoji 💍
+            </button>
+          </div>
+          <p className="text-[9px] text-[var(--play-muted)]">
+            Máy tính / web / điện thoại — chọn ảnh hoặc chụp camera
+          </p>
+        </div>
+      </div>
+
+      {catalogPresets.length > 0 ? (
+        <div>
+          <p className="mb-1 text-[10px] text-[var(--play-muted)]">
+            Mẫu nhanh (catalog)
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {catalogPresets.slice(0, 8).map((r) => (
+              <button
+                key={r.key}
+                type="button"
+                disabled={busy || editBlocked || r.key === row.ringKey}
+                title={r.nameVi}
+                onClick={() => onEquipCatalog(r.key)}
+                className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/12 disabled:opacity-40"
+              >
+                {isRingEmoji(r.image) ? (
+                  <span>{r.image}</span>
+                ) : (
+                  <img src={r.image} alt="" className="h-4 w-4 object-contain" />
+                )}
+                {r.nameVi}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-end gap-1.5">
+        <label className="min-w-[8rem] flex-1 text-[10px] text-[var(--play-muted)]">
+          Tên nhẫn riêng
+          <input
+            className="app-input !px-2 !py-1 mt-0.5 w-full text-[11px]"
+            value={nameVi}
+            maxLength={40}
+            disabled={busy || editBlocked}
+            onChange={(e) => setNameVi(e.target.value)}
+          />
+        </label>
+        <label className="min-w-[12rem] flex-[1.6] text-[10px] text-[var(--play-muted)]">
+          Ảnh / emoji / URL
+          <div className="mt-0.5 flex gap-1">
+            <input
+              className="app-input !px-2 !py-1 w-full text-[11px]"
+              value={image}
+              maxLength={200}
+              disabled={busy || editBlocked}
+              onChange={(e) => setImage(e.target.value)}
+              placeholder="💍 hoặc /uploads/…"
+            />
+            <button
+              type="button"
+              disabled={busy || editBlocked}
+              title="Tải ảnh từ máy / điện thoại / web"
+              onClick={() => onRequestUpload(customKey)}
+              className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20 disabled:opacity-45"
+            >
+              Tải ảnh
+            </button>
+          </div>
+        </label>
+        <label className="min-w-[6.5rem] text-[10px] text-[var(--play-muted)]">
+          Hiệu ứng
+          <select
+            className="app-input !px-2 !py-1 mt-0.5 w-full text-[11px]"
+            value={effect}
+            disabled={busy || editBlocked}
+            onChange={(e) => setEffect(e.target.value as RingEffect)}
+          >
+            {RING_EFFECTS.map((fx) => (
+              <option key={fx} value={fx}>
+                {RING_EFFECT_LABELS[fx] ?? fx}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={busy || editBlocked || !nameVi.trim()}
+          onClick={() => onSaveCustom({ nameVi, image, effect })}
+          className="rounded-full bg-[var(--wood-deep)] px-2.5 py-1.5 text-[10px] font-bold text-[var(--cream)] disabled:opacity-45"
+        >
+          Lưu riêng & đeo
+        </button>
+        <button
+          type="button"
+          disabled={busy || editBlocked}
+          onClick={() => onEquipCatalog("silver")}
+          className="rounded-full bg-white px-2.5 py-1.5 text-[10px] font-bold text-rose-900 ring-1 ring-rose-300/50 disabled:opacity-45"
+        >
+          Reset bạc
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-1.5">
+        <label className="min-w-[8rem] flex-1 text-[10px] text-[var(--play-muted)]">
+          Ghi chú admin
+          <input
+            className="app-input !px-2 !py-1 mt-0.5 w-full text-[11px]"
+            value={note}
+            maxLength={80}
+            disabled={busy}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Ghi chú nội bộ…"
+          />
+        </label>
+        <label className="min-w-[7rem] flex-1 text-[10px] text-[var(--play-muted)]">
+          Chữ giữa tên cặp
+          <input
+            className="app-input !px-2 !py-1 mt-0.5 w-full text-[11px]"
+            value={phrase}
+            maxLength={20}
+            disabled={busy}
+            onChange={(e) => setPhrase(e.target.value)}
+            placeholder="Với"
+          />
+        </label>
+        <button
+          type="button"
           disabled={busy}
-          onChange={(e) => setNameVi(e.target.value)}
-        />
-      </label>
-      <label className="min-w-[10rem] flex-[1.4] text-[10px] text-[var(--play-muted)]">
-        Ảnh / emoji
-        <input
-          className="app-input !px-2 !py-1 mt-0.5 w-full text-[11px]"
-          value={image}
-          maxLength={200}
-          disabled={busy}
-          onChange={(e) => setImage(e.target.value)}
-        />
-      </label>
-      <button
-        type="button"
-        disabled={busy || !nameVi.trim()}
-        onClick={() => onSave({ nameVi, image })}
-        className="rounded-full bg-[var(--wood-deep)] px-2.5 py-1.5 text-[10px] font-bold text-[var(--cream)] disabled:opacity-45"
-      >
-        Lưu riêng & đeo
-      </button>
+          onClick={() =>
+            onSaveMeta({
+              note,
+              couplePhrase: phrase,
+            })
+          }
+          className="rounded-full bg-white px-2.5 py-1.5 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15 disabled:opacity-45"
+        >
+          Lưu ghi chú / chữ
+        </button>
+        {canUnlock ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              onSaveMeta({
+                note,
+                couplePhrase: phrase,
+                designLocked: !locked,
+              })
+            }
+            className={`rounded-full px-2.5 py-1.5 text-[10px] font-bold disabled:opacity-45 ${
+              locked
+                ? "bg-amber-100 text-amber-950 ring-1 ring-amber-300"
+                : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
+            }`}
+          >
+            {locked ? "Mở khóa thiết kế" : "Khóa thiết kế"}
+          </button>
+        ) : null}
+      </div>
+
+      {historyKeys.length > 0 ? (
+        <div>
+          <p className="mb-1 text-[10px] text-[var(--play-muted)]">
+            Lịch sử thiết kế
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {historyKeys.slice(0, 8).map((k) => (
+              <button
+                key={k}
+                type="button"
+                disabled={busy || editBlocked}
+                onClick={() => onEquipCatalog(k)}
+                className="rounded-full bg-[var(--wood-deep)]/5 px-2 py-1 font-mono text-[9px] font-semibold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/10 disabled:opacity-40"
+              >
+                Đeo lại · {k}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1182,9 +1453,14 @@ export default function AdminDashboard() {
     do_kiep: 50_000_000,
   }));
   const [tutienMaxBusy, setTutienMaxBusy] = useState(false);
-  const [adjust, setAdjust] = useState<{ userId: string; delta: string }>({
+  const [adjust, setAdjust] = useState<{
+    userId: string;
+    delta: string;
+    lane: "play" | "social";
+  }>({
     userId: "",
     delta: "100",
+    lane: "play",
   });
   const [guestAdjust, setGuestAdjust] = useState<{ key: string; delta: string }>(
     { key: "", delta: "" },
@@ -1322,6 +1598,11 @@ export default function AdminDashboard() {
   const [catalogUpload, setCatalogUpload] = useState<{
     kind: "gift" | "ring";
     itemKey: string;
+    bondId?: string;
+  } | null>(null);
+  const [bondUploadedImage, setBondUploadedImage] = useState<{
+    bondId: string;
+    url: string;
   } | null>(null);
   const [extraStakeTiers, setExtraStakeTiers] = useState<number[]>([]);
   const [extraStakeAdd, setExtraStakeAdd] = useState("");
@@ -1869,9 +2150,12 @@ export default function AdminDashboard() {
         body: JSON.stringify({
           userId: adjust.userId,
           delta: Number(adjust.delta),
+          lane: adjust.lane,
         }),
       });
-      setMsg("Đã cập nhật số dư user");
+      setMsg(
+        `Đã cập nhật ${adjust.lane === "social" ? "xu quà" : "xu chơi"} user`,
+      );
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Lỗi");
@@ -3669,7 +3953,7 @@ export default function AdminDashboard() {
 
   const adminUpsertBondCustom = async (
     row: BondAdminRow,
-    opts: { nameVi: string; image: string },
+    opts: { nameVi: string; image: string; effect?: RingEffect },
   ) => {
     const nameVi = opts.nameVi.trim();
     if (!nameVi) {
@@ -3691,6 +3975,7 @@ export default function AdminDashboard() {
           ring: {
             nameVi,
             image: opts.image.trim() || "💍",
+            effect: opts.effect ?? "glow",
           },
         }),
       });
@@ -3704,6 +3989,47 @@ export default function AdminDashboard() {
       );
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Lỗi nhẫn riêng");
+    } finally {
+      setRingBusy(false);
+    }
+  };
+
+  const adminUpdateBondMeta = async (
+    row: BondAdminRow,
+    opts: {
+      note: string;
+      couplePhrase: string;
+      designLocked?: boolean;
+    },
+  ) => {
+    setRingBusy(true);
+    try {
+      const body: Record<string, unknown> = {
+        bondId: row.id,
+        note: opts.note,
+        couplePhrase: opts.couplePhrase,
+      };
+      if (typeof opts.designLocked === "boolean") {
+        body.designLocked = opts.designLocked;
+      }
+      const r = await api<{
+        ok: true;
+        bondRows?: BondAdminRow[];
+      }>("/api/ring/bond-meta", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      if (r.bondRows) setBondRows(r.bondRows);
+      else await loadRingConfig();
+      setMsg(
+        typeof opts.designLocked === "boolean"
+          ? opts.designLocked
+            ? "Đã khóa thiết kế nhẫn"
+            : "Đã mở khóa thiết kế nhẫn"
+          : "Đã lưu ghi chú / chữ cặp",
+      );
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Lỗi cập nhật meta cặp");
     } finally {
       setRingBusy(false);
     }
@@ -3892,6 +4218,16 @@ export default function AdminDashboard() {
       id: "rings",
       label: "Nhẫn",
       show: main || canRingManage,
+    },
+    {
+      id: "oracle",
+      label: "Bói bài",
+      show: main || isStaff(me),
+    },
+    {
+      id: "games",
+      label: "Games",
+      show: main || isStaff(me),
     },
     {
       id: "feedback",
@@ -5195,7 +5531,9 @@ export default function AdminDashboard() {
           </section>
 
           <section className="app-panel mt-4 p-3">
-            <p className="play-heading text-sm">Cộng / trừ xu user</p>
+            <p className="play-heading text-sm">
+              Cộng / trừ xu user (chọn làn chơi / quà)
+            </p>
             <form onSubmit={applyAdjust} className="mt-2 space-y-2">
               <select
                 value={adjust.userId}
@@ -5208,10 +5546,25 @@ export default function AdminDashboard() {
                 <option value="">Chọn user…</option>
                 {data.users.map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.username} · ID {u.code || "—"} ({formatXu(u.balance)} xu)
-                    — {u.role}
+                    {u.username} · ID {u.code || "—"} (chơi{" "}
+                    {formatXu(u.balances?.play ?? u.balance)}
+                    {" · quà "}
+                    {formatXu(u.balances?.social ?? 0)}) — {u.role}
                   </option>
                 ))}
+              </select>
+              <select
+                value={adjust.lane}
+                onChange={(e) =>
+                  setAdjust((a) => ({
+                    ...a,
+                    lane: e.target.value === "social" ? "social" : "play",
+                  }))
+                }
+                className="app-input"
+              >
+                <option value="play">Xu chơi (cược/game)</option>
+                <option value="social">Xu quà (MXH)</option>
               </select>
               <div className="flex gap-2">
                 <input
@@ -5615,6 +5968,44 @@ export default function AdminDashboard() {
             </ul>
           </section>
         </>
+      )}
+
+      {tab === "oracle" && (main || isStaff(me)) && (
+        <Suspense
+          fallback={
+            <p className="mt-4 text-[11px] text-[var(--play-muted)]">
+              Đang tải module Bói bài…
+            </p>
+          }
+        >
+          <LazyOracleAdminPanel main={main} onMsg={setMsg} />
+        </Suspense>
+      )}
+
+      {tab === "games" && (main || isStaff(me)) && (
+        <Suspense
+          fallback={
+            <p className="mt-4 text-[11px] text-[var(--play-muted)]">
+              Đang tải module Games…
+            </p>
+          }
+        >
+          <div className="mt-4">
+            <LazyPlatformGamesAdminPanel main={main} onMsg={setMsg} />
+          </div>
+        </Suspense>
+      )}
+
+      {tab === "rings" && (main || canRingManage) && (
+        <Suspense
+          fallback={
+            <p className="mt-4 text-[11px] text-[var(--play-muted)]">
+              Đang tải module Nhẫn…
+            </p>
+          }
+        >
+          <LazyAdminRingsPanel main={main} onMsg={setMsg} />
+        </Suspense>
       )}
 
       {tab === "feedback" && main && (
@@ -7643,7 +8034,7 @@ export default function AdminDashboard() {
         </>
       )}
 
-      {tab === "rings" && (main || canRingManage) && (
+      {tab === "rings" && (main || canRingManage) && false && (
         <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
           <p className="play-heading text-sm">Cặp đôi & lời cầu hôn</p>
           <p className="text-[11px] text-[var(--play-muted)]">
@@ -7697,6 +8088,11 @@ export default function AdminDashboard() {
                             <span className="ml-1 font-bold text-rose-800">
                               · Couple Lv.{row.coupleLevel}
                             </span>
+                          ) : null}
+                          {row.designLocked ? (
+                            <span className="ml-1 font-bold text-amber-800">
+                              · khóa TK
+                            </span>
                           ) : null}{" "}
                           · {when}
                           {row.note ? ` · “${row.note}”` : ""}
@@ -7748,7 +8144,26 @@ export default function AdminDashboard() {
                         <AdminBondCustomForm
                           row={row}
                           busy={ringBusy}
-                          onSave={(opts) => void adminUpsertBondCustom(row, opts)}
+                          catalogPresets={catalogOpts.filter((r) => r.enabled)}
+                          canUnlock={main}
+                          uploadedImage={bondUploadedImage}
+                          onConsumeUpload={() => setBondUploadedImage(null)}
+                          onRequestUpload={(itemKey) =>
+                            setCatalogUpload({
+                              kind: "ring",
+                              itemKey,
+                              bondId: row.id,
+                            })
+                          }
+                          onSaveCustom={(opts) =>
+                            void adminUpsertBondCustom(row, opts)
+                          }
+                          onEquipCatalog={(key) =>
+                            void adminSetBondRing(row, key)
+                          }
+                          onSaveMeta={(opts) =>
+                            void adminUpdateBondMeta(row, opts)
+                          }
                         />
                       </div>
                     )}
@@ -11748,6 +12163,12 @@ export default function AdminDashboard() {
         >
           Vào Bánh xe Arcana
         </Link>
+        <Link
+          to={boiBaiPath(me)}
+          className="flex-1 rounded-xl bg-white px-4 py-3 text-center text-sm font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+        >
+          Vào bàn Bói bài
+        </Link>
         <button
           type="button"
           onClick={() => load().then(() => setMsg("Đã làm mới"))}
@@ -12365,6 +12786,13 @@ export default function AdminDashboard() {
         onClose={() => setCatalogUpload(null)}
         onUploaded={(url) => {
           const kind = catalogUpload?.kind ?? "gift";
+          const bondId = catalogUpload?.bondId;
+          if (bondId) {
+            setBondUploadedImage({ bondId, url });
+            setCatalogUpload(null);
+            setMsg("Đã tải ảnh — nhấn «Lưu riêng & đeo» để áp dụng");
+            return;
+          }
           if (kind === "ring") {
             const next = { ...ringDraft, image: url };
             setRingDraft(next);

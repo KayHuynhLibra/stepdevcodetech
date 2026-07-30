@@ -20,7 +20,9 @@ import {
   isUserOutcomeMode,
   userDisplayName,
   VIP_ROUNDS_REQUIRED,
+  walletUpdatePayload,
   type GrantCapability,
+  type WalletLane,
 } from "./auth.js";
 import { auditStore } from "./auditStore.js";
 import { staffNotiStore } from "./staffNotiStore.js";
@@ -64,6 +66,8 @@ import { arcanaMissionStore } from "./arcanaMissionStore.js";
 import { tutienStakeLimitsStore } from "./tutienStakeLimitsStore.js";
 import { giftStore } from "./giftStore.js";
 import { ringStore } from "./ringStore.js";
+import { oracleStore } from "./oracleStore.js";
+import { platformGamesStore } from "./platformGamesStore.js";
 import { chatConfigStore } from "./chatConfigStore.js";
 import {
   tableConfigStore,
@@ -104,6 +108,9 @@ import {
   trackSocketDisconnect,
 } from "./rateLimit.js";
 import { securityHeaders, warnOpenCorsIfProd, resolveAllowedOrigins, corsOriginOk } from "./securityHeaders.js";
+import { dbHealth, isDbEnabled } from "./db/pool.js";
+import { redisHealth, isRedisEnabled, getRedis } from "./db/redis.js";
+import { randomBytes } from "crypto";
 
 const PORT = Number(process.env.PORT) || 3001;
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -119,6 +126,22 @@ app.disable("x-powered-by");
 /** Railway / reverse proxy — req.ip + rate-limit theo client thật */
 app.set("trust proxy", 1);
 warnOpenCorsIfProd(ALLOWED_ORIGINS_RAW);
+app.use((req, res, next) => {
+  const id =
+    String(req.headers["x-request-id"] ?? "").trim() ||
+    randomBytes(8).toString("hex");
+  res.setHeader("X-Request-Id", id);
+  (req as express.Request & { requestId?: string }).requestId = id;
+  const t0 = Date.now();
+  res.on("finish", () => {
+    if (res.statusCode >= 500) {
+      console.warn(
+        `[http] ${req.method} ${req.path} ${res.statusCode} ${Date.now() - t0}ms id=${id}`,
+      );
+    }
+  });
+  next();
+});
 app.use(
   cors({
     origin: (origin, cb) => {
@@ -375,18 +398,22 @@ function buildInterPayload() {
   };
 }
 
-app.get("/health", (req, res) => {
+app.get("/health", async (req, res) => {
   const stats = engine.getOnlineStats();
   const dataDir = join(__dirname, "..", "data");
+  const [db, redis] = await Promise.all([dbHealth(), redisHealth()]);
   const checks = {
     cards: CARDS.length === 8,
     clientDist: existsSync(CLIENT_DIST),
     dataDir: existsSync(dataDir),
     engine: typeof stats?.phase === "string",
+    db: db.ok,
+    redis: redis.ok,
   };
   // Liveness luôn 200 khi process sống — tránh Railway fail deploy vì check phụ.
-  // `ready` = đủ điều kiện phục vụ (dist + data + cards).
-  const ready = Object.values(checks).every(Boolean);
+  // `ready` = đủ điều kiện phục vụ (dist + data + cards). DB/Redis optional.
+  const ready =
+    checks.cards && checks.clientDist && checks.dataDir && checks.engine;
   res.setHeader("Cache-Control", "no-store");
 
   const detailEnv = String(process.env.HEALTH_DETAIL || "").trim();
@@ -402,6 +429,8 @@ app.get("/health", (req, res) => {
       ok: true,
       ready,
       ts: Date.now(),
+      db: { configured: db.configured, ok: db.ok },
+      redis: { configured: redis.configured, ok: redis.ok },
     });
   }
 
@@ -419,7 +448,18 @@ app.get("/health", (req, res) => {
     displayOnline: stats.displayOnline,
     requireInvite: inviteStore.isInviteRequired(),
     checks,
+    db,
+    redis,
+    scale: {
+      databaseUrl: isDbEnabled(),
+      redisUrl: isRedisEnabled(),
+      dualWrite: String(process.env.SCALE_DUAL_WRITE ?? "1") !== "0",
+    },
   });
+});
+
+app.get("/api/health", (_req, res) => {
+  res.redirect(307, "/health");
 });
 app.get("/api/cards", (_req, res) => {
   res.json(CARDS);
@@ -492,14 +532,16 @@ app.post("/api/auth/gift-xu", (req, res) => {
   const fly = giftStore.resolveFlyTier(result.amount);
   const fromLive = engine.applyAuthBalance(result.from.id, result.from.balance);
   const toLive = engine.applyAuthBalance(result.to.id, result.to.balance);
+  const fromWallet = walletUpdatePayload(result.from);
+  const toWallet = walletUpdatePayload(result.to);
   for (const sid of fromLive.socketIds) {
-    io.to(sid).emit("balanceUpdate", { balance: fromLive.balance });
+    io.to(sid).emit("balanceUpdate", fromWallet);
   }
   const fromLabel =
     result.from.displayName?.trim() || result.from.username;
   const toLabel = result.to.displayName?.trim() || result.to.username;
   for (const sid of toLive.socketIds) {
-    io.to(sid).emit("balanceUpdate", { balance: toLive.balance });
+    io.to(sid).emit("balanceUpdate", toWallet);
     io.to(sid).emit("giftReceived", {
       amount: result.amount,
       fromName: fromLabel,
@@ -1831,25 +1873,33 @@ app.post("/api/admin/adjust-balance", (req, res) => {
   if (!me) return;
   const userId = String(req.body?.userId ?? "");
   const delta = Number(req.body?.delta);
+  const laneRaw = String(req.body?.lane ?? "play").trim().toLowerCase();
+  const lane: WalletLane = laneRaw === "social" ? "social" : "play";
   if (!userId || !Number.isFinite(delta)) {
     return res.status(400).json({ ok: false, reason: "Thiếu userId/delta" });
   }
-  const result = authStore.adjustBalance(userId, delta);
+  const result = authStore.adjustBalance(userId, delta, {
+    lane,
+    reason: "admin_adjust",
+  });
   if (!result.ok) return res.status(400).json(result);
-  vaultStore.recordAdminAdjust(
-    Math.floor(delta),
-    me.username,
-    userId,
-    result.user.username,
-  );
+  if (lane === "play") {
+    vaultStore.recordAdminAdjust(
+      Math.floor(delta),
+      me.username,
+      userId,
+      result.user.username,
+    );
+  }
   audit(me, "adjust_balance", {
     targetId: result.user.id,
     targetName: result.user.username,
-    detail: String(Math.floor(delta)),
+    detail: `${Math.floor(delta)} lane=${lane}`,
   });
   const live = engine.applyAuthBalance(userId, result.user.balance);
+  const wallet = walletUpdatePayload(result.user);
   for (const sid of live.socketIds) {
-    io.to(sid).emit("balanceUpdate", { balance: live.balance });
+    io.to(sid).emit("balanceUpdate", wallet);
   }
   res.json(result);
 });
@@ -2458,17 +2508,30 @@ app.post("/api/sgift/fly-tiers", (req, res) => {
   res.json({ ok: true, ...giftStore.snapshot() });
 });
 
-/** Admin: upload ảnh catalog quà / nhẫn → /uploads/catalog/{kind}/... */
+/** Admin: upload ảnh catalog quà / nhẫn / oracle → /uploads/catalog/{kind}/... */
 app.post("/api/admin/catalog-upload", (req, res) => {
   const me = requireAuth(req, res);
   if (!me) return;
-  if (
-    !hasCapability(me, "gift_manage") &&
-    !hasCapability(me, "ring_manage")
-  ) {
+  const kindRaw = String(req.body?.kind ?? "").trim().toLowerCase();
+  const kind: CatalogKind | null =
+    kindRaw === "gift" || kindRaw === "ring" || kindRaw === "oracle"
+      ? (kindRaw as CatalogKind)
+      : null;
+  if (!kind) {
+    return res
+      .status(400)
+      .json({ ok: false, reason: "kind phải là gift, ring hoặc oracle" });
+  }
+  const allowed =
+    (kind === "gift" && hasCapability(me, "gift_manage")) ||
+    (kind === "ring" && hasCapability(me, "ring_manage")) ||
+    (kind === "oracle" &&
+      (hasCapability(me, "oracle_manage") || isMainAdmin(me))) ||
+    isMainAdmin(me);
+  if (!allowed) {
     return res
       .status(403)
-      .json({ ok: false, reason: "Cần quyền SGift hoặc Ring" });
+      .json({ ok: false, reason: "Không đủ quyền upload loại này" });
   }
   const ip = clientIp(req);
   if (
@@ -2476,14 +2539,6 @@ app.post("/api/admin/catalog-upload", (req, res) => {
     !rateLimit(`catalog-up-ip:${ip}`, 40, 60_000)
   ) {
     return res.status(429).json({ ok: false, reason: "Quá nhiều lần upload" });
-  }
-  const kindRaw = String(req.body?.kind ?? "").trim().toLowerCase();
-  const kind: CatalogKind | null =
-    kindRaw === "gift" || kindRaw === "ring" ? kindRaw : null;
-  if (!kind) {
-    return res
-      .status(400)
-      .json({ ok: false, reason: "kind phải là gift hoặc ring" });
   }
   const key = String(req.body?.key ?? "");
   const dataUrl = String(req.body?.dataUrl ?? "");
@@ -2515,11 +2570,15 @@ function refundPendingRingPropose(bond: {
   if (!pocket.ok) {
     console.warn("[ring] pocket refund failed:", pocket.reason);
   }
-  const adj = authStore.adjustBalance(bond.proposedBy, price);
+  const adj = authStore.adjustBalance(bond.proposedBy, price, {
+    lane: "social",
+    reason: "ring_pending_refund",
+  });
   if (!adj.ok) return 0;
   const live = engine.applyAuthBalance(adj.user.id, adj.user.balance);
+  const wallet = walletUpdatePayload(adj.user);
   for (const sid of live.socketIds) {
-    io.to(sid).emit("balanceUpdate", { balance: live.balance });
+    io.to(sid).emit("balanceUpdate", wallet);
   }
   return price;
 }
@@ -2612,10 +2671,17 @@ app.post("/api/ring/items", (req, res) => {
 app.post("/api/ring/bond-set-ring", (req, res) => {
   const me = requireCapability(req, res, "ring_manage", "Cần quyền Ring");
   if (!me) return;
-  const result = ringStore.adminSetBondRing(
-    String(req.body?.bondId ?? ""),
-    req.body?.ringKey,
-  );
+  const bondId = String(req.body?.bondId ?? "");
+  const existing = ringStore.getBondById(bondId);
+  if (existing?.designLocked && !isMainAdmin(me)) {
+    return res.status(403).json({
+      ok: false,
+      reason: "Thiết kế đang khóa — cần mainadmin",
+    });
+  }
+  const result = ringStore.adminSetBondRing(bondId, req.body?.ringKey, {
+    bypassLock: isMainAdmin(me),
+  });
   if (!result.ok) return res.status(400).json(result);
   audit(me, "ring_bond_set", {
     detail: `${result.bond.id} → ${result.ring.key}`,
@@ -2640,13 +2706,67 @@ app.post("/api/ring/bond-set-ring", (req, res) => {
   });
 });
 
+app.post("/api/ring/bond-meta", (req, res) => {
+  const me = requireCapability(req, res, "ring_manage", "Cần quyền Ring");
+  if (!me) return;
+  const bondId = String(req.body?.bondId ?? "");
+  if (typeof req.body?.designLocked === "boolean" && !isMainAdmin(me)) {
+    return res.status(403).json({
+      ok: false,
+      reason: "Chỉ mainadmin khóa / mở khóa thiết kế",
+    });
+  }
+  const result = ringStore.adminUpdateBondMeta(bondId, {
+    note: req.body?.note,
+    couplePhrase: req.body?.couplePhrase,
+    designLocked:
+      typeof req.body?.designLocked === "boolean"
+        ? req.body.designLocked
+        : undefined,
+  });
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "ring_bond_meta", {
+    detail: `${result.bond.id}${
+      result.bond.designLocked ? " · locked" : ""
+    }`,
+  });
+  const resolvePartner = (id: string) => {
+    const u = authStore.getById(id);
+    if (!u) return null;
+    return {
+      id: u.id,
+      code: u.code,
+      username: u.username,
+      displayName: userDisplayName(u),
+      avatar: normalizeAvatar(u.avatar),
+    };
+  };
+  res.json({
+    ok: true,
+    bond: result.bond,
+    bondRows: ringStore.listBondsAdmin(resolvePartner),
+    ...ringStore.snapshot(),
+  });
+});
+
 app.post("/api/ring/custom-upsert", (req, res) => {
   const me = requireCapability(req, res, "ring_manage", "Cần quyền Ring");
   if (!me) return;
+  const bondId = String(req.body?.bondId ?? "");
+  const existing = ringStore.getBondById(bondId);
+  if (existing?.designLocked && !isMainAdmin(me)) {
+    return res.status(403).json({
+      ok: false,
+      reason: "Thiết kế đang khóa — cần mainadmin",
+    });
+  }
   const result = ringStore.upsertCustomForBond(
-    String(req.body?.bondId ?? ""),
+    bondId,
     req.body?.ring ?? req.body,
-    { equip: req.body?.equip !== false },
+    {
+      equip: req.body?.equip !== false,
+      bypassLock: isMainAdmin(me),
+    },
   );
   if (!result.ok) return res.status(400).json(result);
   audit(me, "ring_custom_upsert", {
@@ -2747,6 +2867,167 @@ app.post("/api/ring/bonds/break", (req, res) => {
     ...ringStore.snapshot(),
     bondRows: ringStore.listBondsAdmin(resolvePartner),
   });
+});
+
+/** ——— Platform game registry ——— */
+app.get("/api/platform/games", (_req, res) => {
+  res.json({
+    ok: true,
+    games: platformGamesStore.listPublic(),
+    updatedAt: platformGamesStore.snapshot().updatedAt,
+  });
+});
+
+app.get("/api/admin/platform/games", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  if (!isStaff(me) && !isMainAdmin(me)) {
+    return res.status(403).json({ ok: false, reason: "Không có quyền" });
+  }
+  res.json({ ok: true, ...platformGamesStore.snapshot() });
+});
+
+app.post("/api/admin/platform/games", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  if (!isMainAdmin(me)) {
+    return res.status(403).json({ ok: false, reason: "Chỉ mainadmin" });
+  }
+  const id = String(req.body?.id ?? "").trim();
+  if (!id) {
+    return res.status(400).json({ ok: false, reason: "Thiếu id" });
+  }
+  const patch: Parameters<typeof platformGamesStore.patch>[1] = {};
+  if (req.body?.nameVi !== undefined) patch.nameVi = String(req.body.nameVi);
+  if (req.body?.blurb !== undefined) patch.blurb = String(req.body.blurb);
+  if (req.body?.status !== undefined) patch.status = req.body.status;
+  if (req.body?.pathSuffix !== undefined) {
+    patch.pathSuffix = String(req.body.pathSuffix);
+  }
+  if (req.body?.kind !== undefined) patch.kind = req.body.kind;
+  if (req.body?.vaultKey !== undefined) {
+    patch.vaultKey =
+      req.body.vaultKey === null || req.body.vaultKey === ""
+        ? null
+        : String(req.body.vaultKey);
+  }
+  if (req.body?.sort !== undefined) patch.sort = Number(req.body.sort);
+  if (req.body?.enabled !== undefined) patch.enabled = !!req.body.enabled;
+  const result = platformGamesStore.patch(id, patch);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "platform_game_patch", {
+    detail: `${result.game.id}:${result.game.status}:${result.game.enabled}`,
+  });
+  res.json({ ok: true, ...platformGamesStore.snapshot() });
+});
+
+app.post("/api/admin/platform/games/upsert", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  if (!isMainAdmin(me)) {
+    return res.status(403).json({ ok: false, reason: "Chỉ mainadmin" });
+  }
+  const result = platformGamesStore.upsert(req.body?.game ?? req.body);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "platform_game_upsert", { detail: result.game.id });
+  res.json({ ok: true, game: result.game, ...platformGamesStore.snapshot() });
+});
+
+/** ——— Bói bài / Oracle decks ——— */
+app.get("/api/oracle/catalog", (_req, res) => {
+  res.json({ ok: true, ...oracleStore.publicCatalog() });
+});
+
+app.post("/api/oracle/draw", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  const result = oracleStore.draw(req.body?.deckId, req.body?.count);
+  if (!result.ok) return res.status(400).json(result);
+  const drawId = `od_${Date.now().toString(36)}_${randomBytes(3).toString("hex")}`;
+  void import("./db/dualWrite.js").then(({ dualWriteOracleDraw }) =>
+    dualWriteOracleDraw({
+      id: drawId,
+      userId: me.id,
+      deckId: result.deckId,
+      spread: String(result.cards.length),
+      cards: result.cards,
+    }),
+  );
+  // Persist last draws in memory+file via oracle store helper
+  oracleStore.recordDrawHistory(me.id, {
+    id: drawId,
+    at: Date.now(),
+    deckId: result.deckId,
+    cards: result.cards,
+  });
+  res.json({ ...result, drawId });
+});
+
+app.get("/api/oracle/history", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  const limit = Math.min(30, Math.max(1, Number(req.query.limit) || 10));
+  res.json({ ok: true, rows: oracleStore.listDrawHistory(me.id, limit) });
+});
+
+app.get("/api/admin/oracle", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  if (!isMainAdmin(me) && !isStaff(me)) {
+    return res.status(403).json({ ok: false, reason: "Chỉ admin" });
+  }
+  res.json({ ok: true, ...oracleStore.adminCatalog() });
+});
+
+app.post("/api/admin/oracle/deck", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const result = oracleStore.upsertDeck(req.body?.deck ?? req.body);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "oracle_deck_upsert", { detail: result.deck.id });
+  res.json({ ok: true, deck: result.deck, ...oracleStore.adminCatalog() });
+});
+
+app.post("/api/admin/oracle/card", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const result = oracleStore.upsertCard(req.body?.card ?? req.body);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "oracle_card_upsert", {
+    detail: `${result.card.deckId}:${result.card.key}`,
+  });
+  res.json({ ok: true, card: result.card, ...oracleStore.adminCatalog() });
+});
+
+app.post("/api/admin/oracle/batch", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const rows = req.body?.cards ?? req.body;
+  const result = oracleStore.batchUpsertCards(rows);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "oracle_batch", {
+    detail: `upserted=${result.upserted} failed=${result.failed}`,
+  });
+  res.json({ ...result, ...oracleStore.adminCatalog() });
+});
+
+app.post("/api/admin/oracle/card/toggle", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const result = oracleStore.setCardEnabled(req.body?.key, !!req.body?.enabled);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "oracle_card_toggle", {
+    detail: `${result.card.key} → ${result.card.enabled ? "on" : "off"}`,
+  });
+  res.json({ ok: true, card: result.card, ...oracleStore.adminCatalog() });
+});
+
+app.post("/api/admin/oracle/reset-seed", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const result = oracleStore.resetToSeed();
+  audit(me, "oracle_reset_seed", { detail: `cards=${result.count}` });
+  res.json({ ...result, ...oracleStore.adminCatalog() });
 });
 
 app.get("/api/auth/ring-status", (req, res) => {
@@ -2896,7 +3177,10 @@ app.post("/api/auth/ring-propose", (req, res) => {
     note: note || undefined,
   });
   if (!proposed.ok) {
-    authStore.adjustBalance(me.id, ring.price);
+    authStore.adjustBalance(me.id, ring.price, {
+      lane: "social",
+      reason: "ring_propose_rollback",
+    });
     return res.status(400).json(proposed);
   }
 
@@ -4371,5 +4655,21 @@ httpServer.listen(PORT, () => {
   console.log(`[server] Tarot demo listening on http://localhost:${PORT}`);
   if (existsSync(CLIENT_DIST)) {
     console.log(`[server] Serving client from ${CLIENT_DIST}`);
+  }
+  console.log(
+    `[scale] db=${isDbEnabled() ? "on" : "off"} redis=${isRedisEnabled() ? "on" : "off"}`,
+  );
+  if (isRedisEnabled()) getRedis();
+  if (isDbEnabled()) {
+    void import("node:child_process").then(({ spawn }) => {
+      const script = join(__dirname, "..", "scripts", "db-migrate.mjs");
+      const child = spawn(process.execPath, [script], {
+        env: process.env,
+        stdio: "inherit",
+      });
+      child.on("exit", (code) => {
+        if (code !== 0) console.warn("[db:migrate] exit", code);
+      });
+    });
   }
 });

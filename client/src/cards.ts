@@ -8,6 +8,8 @@ export interface CardDef {
   multiplier: number;
   weight: number;
   image: string;
+  /** Lore ngắn (bàn cược) — không ảnh hưởng odds */
+  lore?: string;
 }
 
 export type Phase = "placing" | "revealing" | "payout";
@@ -240,6 +242,7 @@ export const CARDS: CardDef[] = [
     multiplier: 5,
     weight: 18,
     image: "/assets/cards/card-01-magician.webp?v=6",
+    lore: "Ý chí biến ý tưởng thành hiện thực — tập trung nguồn lực đang có.",
   },
   {
     id: 2,
@@ -249,6 +252,7 @@ export const CARDS: CardDef[] = [
     multiplier: 5,
     weight: 18,
     image: "/assets/cards/card-02-priestess.webp?v=6",
+    lore: "Trực giác và tri thức ẩn — lắng nghe trước khi hành động.",
   },
   {
     id: 3,

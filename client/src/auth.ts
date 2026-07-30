@@ -30,7 +30,12 @@ export interface AuthUser {
   /** Roles phụ — cộng dồn capability */
   extraRoles?: UserRole[];
   avatar: string;
+  /** Xu chơi (play lane) */
   balance: number;
+  /** Hai làn: play = cược · social = quà/MXH */
+  balances?: { play: number; social: number };
+  /** Tổng tạm play + social */
+  displayTotal?: number;
   /** Ví Gem (Kim Cương) — tách xu */
   gemBalance?: number;
   winToday: number;
@@ -345,6 +350,14 @@ export function arcanaPath(
 ): string {
   if (!user) return "/login";
   return `${homePath(user)}/arcana`;
+}
+
+/** Bàn Bói bài (Tarot / chiêm tinh) theo role + mã user. */
+export function boiBaiPath(
+  user: { role: UserRole; code?: string; id: string } | null | undefined,
+): string {
+  if (!user) return "/login";
+  return `${homePath(user)}/boi-bai`;
 }
 
 export function getToken(): string | null {

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { randomBytes } from "crypto";
+import { dualWriteVaultLedgerEntry } from "./db/dualWrite.js";
 
 export type VaultLedgerType =
   | "stake_in"
@@ -263,6 +264,7 @@ export class VaultStore {
   private readonly filePath: string;
   private readonly tmpPath: string;
   private readonly label: string;
+  private readonly vaultKey: string;
 
   constructor(
     fileName = "vault.json",
@@ -272,6 +274,7 @@ export class VaultStore {
     this.filePath = join(DATA_DIR, fileName);
     this.tmpPath = join(DATA_DIR, `${fileName}.tmp`);
     this.label = label;
+    this.vaultKey = fileName.replace(/\.json$/i, "") || "tarot";
     this.defaultFlags = defaultFlags;
     this.interFlags = { ...defaultFlags };
     this.load();
@@ -392,8 +395,9 @@ export class VaultStore {
     note: string,
     extra?: { userId?: string; username?: string },
   ) {
+    const id = randomBytes(6).toString("hex");
     this.ledger.unshift({
-      id: randomBytes(6).toString("hex"),
+      id,
       at: Date.now(),
       type,
       amount,
@@ -405,6 +409,17 @@ export class VaultStore {
     });
     if (this.ledger.length > LEDGER_CAP) this.ledger.length = LEDGER_CAP;
     this.save();
+    dualWriteVaultLedgerEntry({
+      id,
+      vaultKey: this.vaultKey,
+      at: Date.now(),
+      kind: type,
+      amount,
+      balanceAfter: this.balance,
+      userId: extra?.userId,
+      byUsername,
+      note,
+    });
   }
 
   /**

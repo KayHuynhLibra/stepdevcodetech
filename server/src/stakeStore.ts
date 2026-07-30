@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import { randomBytes } from "crypto";
 import { todayKey, weekKey } from "./types.js";
 import { trafficRollupStore } from "./trafficRollupStore.js";
+import { dualWriteStake } from "./db/dualWrite.js";
 
 export interface StakeEntry {
   id: string;
@@ -122,11 +123,13 @@ export class StakeStore {
   recordRoundStakes(rows: Omit<StakeEntry, "id" | "at">[]) {
     const at = Date.now();
     for (const row of rows) {
-      this.entries.unshift({
+      const entry: StakeEntry = {
         ...row,
         id: randomBytes(6).toString("hex"),
         at,
-      });
+      };
+      this.entries.unshift(entry);
+      dualWriteStake(entry);
     }
     if (this.entries.length > GLOBAL_CAP) {
       this.entries.length = GLOBAL_CAP;

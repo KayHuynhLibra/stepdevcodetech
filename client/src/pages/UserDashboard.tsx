@@ -9,8 +9,6 @@ import {
   getToken,
   homePath,
   isStaff,
-  playPath,
-  arcanaPath,
   saveSession,
   userShowsVip,
   VIP_ROUNDS_REQUIRED,
@@ -27,6 +25,16 @@ import {
 import { CARDS, formatXu, type StakeEntry } from "../cards";
 import { AppShell } from "../components/AppShell";
 import { IdentityBadge } from "../components/IdentityBadge";
+import { PlatformShell } from "../components/PlatformShell";
+import { TableNav } from "../components/TableNav";
+import {
+  fetchPlatformGames,
+  gamePath,
+  getCachedPlatformGames,
+  isGameOpen,
+  lobbyCtaLabel,
+  type GameManifest,
+} from "../platform/games";
 import { uploadAvatarFromFile } from "../uploadAvatar";
 import { ensureCultivationColors } from "../cultivation";
 
@@ -89,6 +97,9 @@ export default function UserDashboard() {
   const [renameBusy, setRenameBusy] = useState(false);
   const [nicknameDraft, setNicknameDraft] = useState("");
   const [nicknameBusy, setNicknameBusy] = useState(false);
+  const [lobbyGames, setLobbyGames] = useState<GameManifest[]>(() =>
+    getCachedPlatformGames(),
+  );
 
   useEffect(() => {
     if (!getToken()) {
@@ -96,6 +107,7 @@ export default function UserDashboard() {
       return;
     }
     void ensureCultivationColors();
+    void fetchPlatformGames().then(setLobbyGames);
     api<{ ok: true; user: AuthUser }>("/api/auth/me")
       .then((r) => {
         setUser(r.user);
@@ -271,7 +283,27 @@ export default function UserDashboard() {
   const currentAvatar = normalizeAvatar(user.avatar) || DEFAULT_AVATAR;
 
   return (
-    <AppShell maxWidth="md">
+    <PlatformShell
+      user={user}
+      subtitle="Lobby · xu chơi cho bàn · xu quà cho MXH"
+      onSocial={(a) => {
+        if (a === "profile") {
+          document
+            .getElementById("avatar-picker")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          return;
+        }
+        setMsg(
+          a === "gift"
+            ? "Mở bàn Tarot để tặng quà (dùng xu quà)."
+            : a === "ring"
+              ? "Mở bàn Tarot để quản lý nhẫn (xu quà)."
+              : a === "voice"
+                ? "Mở bàn Tarot để vào phòng voice."
+                : "Thông báo staff hiện trên bàn chơi.",
+        );
+      }}
+    >
       <header className="admin-header">
         <div className="admin-header__bar">
           <p className="admin-header__title">Hồ sơ</p>
@@ -563,19 +595,56 @@ export default function UserDashboard() {
       </section>
 
       <div className="app-frame mt-6 px-4 py-5">
-        <p className="play-heading text-center text-base">Chọn bàn chơi</p>
+        <p className="play-heading text-center text-base">Lobby SOFIAORE</p>
         <p className="mt-1 text-center text-xs text-[var(--play-muted)]">
-          Hai bàn độc lập — số dư xu dùng chung.
+          Xu chơi cho bàn · Xu quà cho tặng/MXH · Bói bài tra nghĩa.
         </p>
-        <Link to={playPath(user)} className="app-btn-primary mt-4 block text-center">
-          Vào bàn Tarot
-        </Link>
-        <Link
-          to={arcanaPath(user)}
-          className="mt-2 block rounded-xl bg-[var(--wood-deep)] px-4 py-3 text-center text-sm font-bold text-[var(--gold-soft)] ring-1 ring-[var(--gold)]/40"
-        >
-          Vào Bánh xe Arcana
-        </Link>
+        <div className="mt-3 flex justify-center">
+          <TableNav user={user} />
+        </div>
+        <ul className="mt-4 space-y-2">
+          {lobbyGames.map((g) => {
+            const open = isGameOpen(g);
+            const inner = (
+              <>
+                <span className="block text-sm font-bold">{g.nameVi}</span>
+                <span className="mt-0.5 block text-[11px] font-normal opacity-80">
+                  {g.blurb}
+                </span>
+                <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide opacity-70">
+                  {lobbyCtaLabel(g)}
+                  {g.status === "coming_soon" ? " · sắp ra mắt" : ""}
+                </span>
+              </>
+            );
+            if (!open) {
+              return (
+                <li key={g.id}>
+                  <div className="rounded-xl bg-white/50 px-4 py-3 text-[var(--play-muted)] ring-1 ring-[var(--wood-deep)]/10">
+                    {inner}
+                  </div>
+                </li>
+              );
+            }
+            const primary = g.id === "tarot";
+            return (
+              <li key={g.id}>
+                <Link
+                  to={gamePath(user, g)}
+                  className={
+                    primary
+                      ? "app-btn-primary block text-left"
+                      : g.id === "arcana"
+                        ? "block rounded-xl bg-[var(--wood-deep)] px-4 py-3 text-left text-[var(--gold-soft)] ring-1 ring-[var(--gold)]/40"
+                        : "block rounded-xl bg-white px-4 py-3 text-left text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
+                  }
+                >
+                  {inner}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
       </div>
 
       <section className="app-panel mt-5 p-3">
@@ -650,6 +719,6 @@ export default function UserDashboard() {
           </ul>
         )}
       </section>
-    </AppShell>
+    </PlatformShell>
   );
 }

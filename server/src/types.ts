@@ -10,6 +10,8 @@ export interface CardDef {
   multiplier: number;
   weight: number;
   image: string;
+  /** Lore ngắn — không ảnh hưởng odds */
+  lore?: string;
 }
 
 export interface PlayerSession {

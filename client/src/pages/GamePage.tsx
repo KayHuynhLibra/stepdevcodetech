@@ -93,6 +93,7 @@ import { normalizeAvatar } from "../avatars";
 import { AvatarPickerSheet } from "../components/AvatarPickerSheet";
 import { IdentityBadge } from "../components/IdentityBadge";
 import { PlayToolsBar } from "../components/PlayToolsBar";
+import { TableNav } from "../components/TableNav";
 import { StaffNotiPopup } from "../components/StaffNotiPopup";
 import { FeedbackPopup } from "../components/FeedbackPopup";
 import { PlayRecentBar } from "../components/PlayRecentBar";
@@ -406,11 +407,33 @@ export default function GamePage() {
       showToast(payload.reason);
     };
 
-    const onBalanceUpdate = (payload: { balance: number }) => {
+    const onBalanceUpdate = (payload: {
+      balance: number;
+      play?: number;
+      social?: number;
+      displayTotal?: number;
+      balances?: { play: number; social: number };
+    }) => {
+      const play = payload.play ?? payload.balances?.play ?? payload.balance;
       setState((prev) =>
-        prev ? { ...prev, yourBalance: payload.balance } : prev,
+        prev ? { ...prev, yourBalance: play } : prev,
       );
-      if (!getStoredUser()) setGuestBalanceHint(payload.balance);
+      const stored = getStoredUser();
+      if (!stored) {
+        setGuestBalanceHint(play);
+        return;
+      }
+      const social =
+        payload.social ?? payload.balances?.social ?? stored.balances?.social ?? 0;
+      const next = {
+        ...stored,
+        balance: play,
+        balances: { play, social },
+        displayTotal: payload.displayTotal ?? play + social,
+      };
+      const token = getToken();
+      if (token) saveSession(token, next);
+      setMe(next);
     };
 
     const onHistoryData = (rows: RoundResult[]) => {
@@ -1851,6 +1874,7 @@ export default function GamePage() {
                 muted={muted}
                 showBalance={showLbBalance}
                 jackpotLabel={`Hũ ${formatXu(state?.jackpotPool ?? 0)}`}
+                jackpotHint="Hũ tăng theo cược · nổ khi đủ điều kiện (pool ≥5k, stake thắng ≥500, ~8%) · trả ~18% pool"
                 voiceLabel={
                   voiceStatus.inRoom && voiceStatus.roomId
                     ? `Room ${voiceStatus.roomId}${voiceStatus.isHost ? " · H" : ""}`
@@ -1866,6 +1890,11 @@ export default function GamePage() {
               />
             </div>
           </div>
+          {getStoredUser() ? (
+            <div className="mt-2 flex justify-center px-1">
+              <TableNav user={getStoredUser()} active="tarot" compact />
+            </div>
+          ) : null}
           {!!(getToken() && getStoredUser() && !sessionAuthed) && (
             <div className="mb-2 flex items-center justify-between gap-2 rounded-xl bg-rose-500/15 px-2.5 py-2 ring-1 ring-rose-400/40">
               <p className="text-[11px] font-semibold text-rose-100">

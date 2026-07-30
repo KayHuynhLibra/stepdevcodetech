@@ -22,6 +22,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import DealDashboard from "./pages/DealDashboard";
 import GamePage from "./pages/GamePage";
 import ArcanaWheelPage from "./pages/ArcanaWheelPage";
+import BoiBaiPage from "./pages/BoiBaiPage";
 
 type DashRole =
   | "user"
@@ -97,14 +98,18 @@ function RequireOwnCode({
   const mine = String(user.code || user.id).toUpperCase();
   const param = String(userCode || "").toUpperCase();
   const onPlay =
-    loc.pathname.endsWith("/play") || loc.pathname.endsWith("/arcana");
+    loc.pathname.endsWith("/play") ||
+    loc.pathname.endsWith("/arcana") ||
+    loc.pathname.endsWith("/boi-bai");
   const ownHome = homePath(user);
   const ownPlay = playPath(user);
   const ownDest = loc.pathname.endsWith("/arcana")
     ? `${ownHome}/arcana`
-    : onPlay
-      ? ownPlay
-      : ownHome;
+    : loc.pathname.endsWith("/boi-bai")
+      ? `${ownHome}/boi-bai`
+      : onPlay
+        ? ownPlay
+        : ownHome;
 
   if (role && role !== "user" && user.role !== role) {
     return <Navigate to={ownDest} replace />;
@@ -195,6 +200,14 @@ export default function App() {
           </RequireOwnCode>
         }
       />
+      <Route
+        path="/player/:userCode/boi-bai"
+        element={
+          <RequireOwnCode role="user">
+            <BoiBaiPage />
+          </RequireOwnCode>
+        }
+      />
 
       <Route
         path="/admin/:userCode"
@@ -217,6 +230,14 @@ export default function App() {
         element={
           <RequireOwnCode role="admin">
             <ArcanaWheelPage />
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/admin/:userCode/boi-bai"
+        element={
+          <RequireOwnCode role="admin">
+            <BoiBaiPage />
           </RequireOwnCode>
         }
       />
@@ -245,6 +266,14 @@ export default function App() {
           </RequireOwnCode>
         }
       />
+      <Route
+        path="/mainadmin/:userCode/boi-bai"
+        element={
+          <RequireOwnCode role="mainadmin">
+            <BoiBaiPage />
+          </RequireOwnCode>
+        }
+      />
 
       <Route
         path="/eco/:userCode"
@@ -267,6 +296,14 @@ export default function App() {
         element={
           <RequireOwnCode role="eco">
             <ArcanaWheelPage />
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/eco/:userCode/boi-bai"
+        element={
+          <RequireOwnCode role="eco">
+            <BoiBaiPage />
           </RequireOwnCode>
         }
       />
@@ -295,6 +332,14 @@ export default function App() {
           </RequireOwnCode>
         }
       />
+      <Route
+        path="/audit/:userCode/boi-bai"
+        element={
+          <RequireOwnCode role="audit">
+            <BoiBaiPage />
+          </RequireOwnCode>
+        }
+      />
 
       <Route
         path="/sgift/:userCode"
@@ -317,6 +362,14 @@ export default function App() {
         element={
           <RequireOwnCode role="sgift">
             <ArcanaWheelPage />
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/sgift/:userCode/boi-bai"
+        element={
+          <RequireOwnCode role="sgift">
+            <BoiBaiPage />
           </RequireOwnCode>
         }
       />
@@ -345,6 +398,14 @@ export default function App() {
           </RequireOwnCode>
         }
       />
+      <Route
+        path="/ring/:userCode/boi-bai"
+        element={
+          <RequireOwnCode role="ring">
+            <BoiBaiPage />
+          </RequireOwnCode>
+        }
+      />
 
       <Route
         path="/deal/:userCode"
@@ -367,6 +428,14 @@ export default function App() {
         element={
           <RequireOwnCode role="deal">
             <ArcanaWheelPage />
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/deal/:userCode/boi-bai"
+        element={
+          <RequireOwnCode role="deal">
+            <BoiBaiPage />
           </RequireOwnCode>
         }
       />
@@ -395,6 +464,14 @@ export default function App() {
           </RequireOwnCode>
         }
       />
+      <Route
+        path="/tutien/:userCode/boi-bai"
+        element={
+          <RequireOwnCode role="tutien">
+            <BoiBaiPage />
+          </RequireOwnCode>
+        }
+      />
 
       <Route
         path="/mod/:userCode"
@@ -417,6 +494,14 @@ export default function App() {
         element={
           <RequireOwnCode role="mod">
             <ArcanaWheelPage />
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/mod/:userCode/boi-bai"
+        element={
+          <RequireOwnCode role="mod">
+            <BoiBaiPage />
           </RequireOwnCode>
         }
       />

@@ -49,6 +49,7 @@ import {
 } from "./displayBadges.js";
 import { playLevelFromRounds, roundsToReachLevel, PLAY_LEVEL_MAX, PLAY_LEVEL_MIN } from "./playLevel.js";
 import { playLevelRewardsStore } from "./playLevelRewardsStore.js";
+import { dualWriteUserSnapshot } from "./db/dualWrite.js";
 import {
   canControlVoiceRoomLock as grantsCanControlVoiceRoomLock,
   clampStaffGrantLevel,
@@ -115,7 +116,16 @@ export interface UserRecord {
    */
   extraRoles?: UserRole[];
   avatar: string;
+  /**
+   * Xu chơi (play lane) — stake / spin / vault game.
+   * Không dùng cho gift / ring / lixi (xem socialBalance).
+   */
   balance: number;
+  /**
+   * Xu quà (social lane) — gift, gift-xu, ring, lixi voice.
+   * Thiếu khi load → migrate `0` (toàn bộ balance cũ = play).
+   */
+  socialBalance?: number;
   /** Ví Gem (Kim Cương) — tách xu; bàn Gem để sau */
   gemBalance?: number;
   winToday: number;
@@ -206,6 +216,20 @@ const IP_HISTORY_CAP = 20;
 
 export type UserOutcomeMode = "normal" | "win" | "lose";
 
+/** Làn ví: play = cược/game · social = quà/MXH — không auto-đổi. */
+export type WalletLane = "play" | "social";
+
+export interface WalletBalances {
+  play: number;
+  social: number;
+}
+
+export interface WalletAdjustMeta {
+  lane?: WalletLane;
+  reason?: string;
+  gameId?: string;
+}
+
 export const OUTCOME_WIN_PCT_MIN = 80;
 export const OUTCOME_WIN_PCT_MAX = 100;
 export const OUTCOME_WIN_PCT_DEFAULT = 100;
@@ -227,7 +251,12 @@ export interface PublicUser {
   /** Roles phụ cộng dồn capability */
   extraRoles?: UserRole[];
   avatar: string;
+  /** Xu chơi (play) — deprecated alias of balances.play */
   balance: number;
+  /** Hai làn xu: play = cược/chơi · social = quà/MXH */
+  balances: WalletBalances;
+  /** Tổng hiển thị tạm (play + social) */
+  displayTotal: number;
   /** Ví Gem (Kim Cương) */
   gemBalance: number;
   winToday: number;
@@ -461,11 +490,55 @@ function makeRecoveryCode(): string {
   return out;
 }
 
+function ensureWallet(u: UserRecord) {
+  if (typeof u.socialBalance !== "number" || !Number.isFinite(u.socialBalance)) {
+    u.socialBalance = 0;
+  } else {
+    u.socialBalance = Math.max(
+      0,
+      Math.min(ACCOUNT_BALANCE_MAX, Math.floor(u.socialBalance)),
+    );
+  }
+  if (typeof u.balance !== "number" || !Number.isFinite(u.balance)) {
+    u.balance = 0;
+  } else {
+    u.balance = Math.max(
+      0,
+      Math.min(ACCOUNT_BALANCE_MAX, Math.floor(u.balance)),
+    );
+  }
+}
+
+function walletBalancesOf(u: UserRecord): WalletBalances {
+  ensureWallet(u);
+  return { play: u.balance, social: u.socialBalance ?? 0 };
+}
+
+/** Payload socket / API cho client Shell (2 làn xu). */
+export function walletUpdatePayload(u: PublicUser | UserRecord) {
+  const play =
+    "balances" in u && u.balances
+      ? u.balances.play
+      : (u as UserRecord).balance;
+  const social =
+    "balances" in u && u.balances
+      ? u.balances.social
+      : Math.max(0, Math.floor((u as UserRecord).socialBalance ?? 0));
+  return {
+    balance: play,
+    play,
+    social,
+    displayTotal: play + social,
+    balances: { play, social } satisfies WalletBalances,
+  };
+}
+
 function toPublic(
   u: UserRecord,
   opts?: { includeRecovery?: boolean; includePendingBond?: boolean },
 ): PublicUser {
   ensureDay(u);
+  ensureWallet(u);
   u.avatar = normalizeAvatar(u.avatar);
   const roundsPlayed = Math.max(0, Math.floor(u.roundsPlayed ?? 0));
   const vipGranted = !!u.vipGranted;
@@ -475,6 +548,7 @@ function toPublic(
     0,
     Math.min(USERNAME_RENAME_MAX, Math.floor(u.usernameRenames ?? 0)),
   );
+  const balances = walletBalancesOf(u);
   const pub: PublicUser = {
     id: u.id,
     code: u.code,
@@ -485,7 +559,9 @@ function toPublic(
     role: u.role,
     extraRoles: normalizeExtraRoles(u.extraRoles, u.role),
     avatar: u.avatar,
-    balance: u.balance,
+    balance: balances.play,
+    balances,
+    displayTotal: balances.play + balances.social,
     gemBalance: clampGem(u.gemBalance),
     winToday: u.winToday,
     guessesToday: u.guessesToday,
@@ -804,6 +880,7 @@ export class AuthStore {
         } else {
           rec.gemBalance = clampGem(rec.gemBalance);
         }
+        ensureWallet(rec);
         if (rec.isVip && !rec.vipGranted) {
           rec.vipGranted = true;
         }
@@ -877,6 +954,7 @@ export class AuthStore {
       role,
       avatar: DEFAULT_AVATAR,
       balance: isStaffRole(role) ? 100_000 : STARTING_BALANCE,
+      socialBalance: isStaffRole(role) ? 50_000 : 0,
       gemBalance: STARTING_GEM,
       winToday: 0,
       guessesToday: 0,
@@ -986,6 +1064,7 @@ export class AuthStore {
       role: "user",
       avatar: DEFAULT_AVATAR,
       balance: STARTING_BALANCE,
+      socialBalance: 0,
       gemBalance: STARTING_GEM,
       winToday: 0,
       guessesToday: 0,
@@ -2110,20 +2189,53 @@ export class AuthStore {
   adjustBalance(
     userId: string,
     delta: number,
-  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    meta?: WalletAdjustMeta,
+  ): { ok: true; user: PublicUser; lane: WalletLane } | { ok: false; reason: string } {
     const user = this.byId.get(userId);
     if (!user) return { ok: false, reason: "Không tìm thấy user" };
-    const next = user.balance + Math.floor(delta);
-    if (next < 0) return { ok: false, reason: "Số dư không đủ để trừ" };
-    if (next > ACCOUNT_BALANCE_MAX) {
-      return {
-        ok: false,
-        reason: `Số dư tối đa ${ACCOUNT_BALANCE_MAX.toLocaleString("vi-VN")} xu`,
-      };
+    ensureWallet(user);
+    const lane: WalletLane = meta?.lane === "social" ? "social" : "play";
+    const d = Math.floor(delta);
+    if (lane === "social") {
+      const next = (user.socialBalance ?? 0) + d;
+      if (next < 0) {
+        return { ok: false, reason: "Xu quà không đủ để trừ" };
+      }
+      if (next > ACCOUNT_BALANCE_MAX) {
+        return {
+          ok: false,
+          reason: `Xu quà tối đa ${ACCOUNT_BALANCE_MAX.toLocaleString("vi-VN")}`,
+        };
+      }
+      user.socialBalance = next;
+    } else {
+      const next = user.balance + d;
+      if (next < 0) return { ok: false, reason: "Xu chơi không đủ để trừ" };
+      if (next > ACCOUNT_BALANCE_MAX) {
+        return {
+          ok: false,
+          reason: `Xu chơi tối đa ${ACCOUNT_BALANCE_MAX.toLocaleString("vi-VN")}`,
+        };
+      }
+      user.balance = next;
     }
-    user.balance = next;
     this.scheduleSave();
-    return { ok: true, user: toPublic(user) };
+    dualWriteUserSnapshot({
+      id: user.id,
+      username: user.username,
+      code: user.code,
+      role: user.role,
+      balance: user.balance,
+      gem: user.gemBalance,
+    });
+    if (meta?.reason) {
+      console.log(
+        `[wallet] ${user.username} lane=${lane} delta=${d} reason=${meta.reason}${
+          meta.gameId ? ` game=${meta.gameId}` : ""
+        }`,
+      );
+    }
+    return { ok: true, user: toPublic(user), lane };
   }
 
   /** Cộng/trừ Gem (Kim Cương) — không đụng xu. */
@@ -2156,7 +2268,7 @@ export class AuthStore {
   }
 
   /**
-   * Trừ xu giải trí (nhẫn…) — không chuyển cho ai.
+   * Trừ xu quà (social) — nhẫn / MXH — không chuyển cho ai, không đụng xu chơi.
    */
   spendXu(
     userId: string,
@@ -2166,21 +2278,22 @@ export class AuthStore {
     | { ok: false; reason: string } {
     const amount = Math.floor(Number(amountRaw));
     if (!Number.isFinite(amount) || amount < MIN_STAKE) {
-      return { ok: false, reason: `Tối thiểu ${MIN_STAKE} xu` };
+      return { ok: false, reason: `Tối thiểu ${MIN_STAKE} xu quà` };
     }
     if (amount > GIFT_XU_MAX) {
       return {
         ok: false,
-        reason: `Tối đa ${GIFT_XU_MAX.toLocaleString("vi-VN")} xu / lần`,
+        reason: `Tối đa ${GIFT_XU_MAX.toLocaleString("vi-VN")} xu quà / lần`,
       };
     }
     const user = this.byId.get(userId);
     if (!user) return { ok: false, reason: "Không tìm thấy user" };
     if (user.banned) return { ok: false, reason: "Tài khoản bị khóa" };
-    if (user.balance < amount) {
-      return { ok: false, reason: "Số dư không đủ" };
+    ensureWallet(user);
+    if ((user.socialBalance ?? 0) < amount) {
+      return { ok: false, reason: "Xu quà không đủ" };
     }
-    user.balance -= amount;
+    user.socialBalance = (user.socialBalance ?? 0) - amount;
     this.scheduleSave();
     return { ok: true, user: toPublic(user, { includePendingBond: true }), amount };
   }
@@ -2240,8 +2353,9 @@ export class AuthStore {
     const from = this.byId.get(fromId);
     if (!from) return { ok: false, reason: "Không tìm thấy người gửi" };
     if (from.banned) return { ok: false, reason: "Tài khoản bị khóa" };
-    if (from.balance < amount) {
-      return { ok: false, reason: "Số dư không đủ" };
+    ensureWallet(from);
+    if ((from.socialBalance ?? 0) < amount) {
+      return { ok: false, reason: "Xu quà không đủ" };
     }
 
     const uniq = [...new Set(recipientIds.map((id) => String(id).trim()).filter(Boolean))];
@@ -2257,7 +2371,7 @@ export class AuthStore {
     if (pool < recipients.length) {
       return {
         ok: false,
-        reason: "Số xu phát quá nhỏ sau % — tăng số lì xì hoặc % phát",
+        reason: "Số xu quà phát quá nhỏ sau % — tăng số lì xì hoặc % phát",
       };
     }
 
@@ -2265,25 +2379,26 @@ export class AuthStore {
     let rem = pool - base * recipients.length;
     const planned: { user: UserRecord; amount: number }[] = [];
     for (const u of recipients) {
+      ensureWallet(u);
       let share = base + (rem > 0 ? 1 : 0);
       if (rem > 0) rem -= 1;
-      const room = ACCOUNT_BALANCE_MAX - u.balance;
+      const room = ACCOUNT_BALANCE_MAX - (u.socialBalance ?? 0);
       if (room <= 0) continue;
       if (share > room) share = room;
       if (share <= 0) continue;
       planned.push({ user: u, amount: share });
     }
     if (planned.length === 0) {
-      return { ok: false, reason: "Người nhận đã gần trần xu" };
+      return { ok: false, reason: "Người nhận đã gần trần xu quà" };
     }
 
     const paidOut = planned.reduce((s, p) => s + p.amount, 0);
     const feeExtra = pool - paidOut;
     const totalFee = fee + feeExtra;
 
-    from.balance -= amount;
+    from.socialBalance = (from.socialBalance ?? 0) - amount;
     for (const p of planned) {
-      p.user.balance += p.amount;
+      p.user.socialBalance = (p.user.socialBalance ?? 0) + p.amount;
     }
     this.scheduleSave();
 
@@ -2344,18 +2459,20 @@ export class AuthStore {
     if (to.id === from.id) {
       return { ok: false, reason: "Không thể tự tặng xu" };
     }
-    if (from.balance < amount) {
-      return { ok: false, reason: "Số dư không đủ" };
+    ensureWallet(from);
+    ensureWallet(to);
+    if ((from.socialBalance ?? 0) < amount) {
+      return { ok: false, reason: "Xu quà không đủ" };
     }
-    if (to.balance + amount > ACCOUNT_BALANCE_MAX) {
+    if ((to.socialBalance ?? 0) + amount > ACCOUNT_BALANCE_MAX) {
       return {
         ok: false,
-        reason: `Người nhận đã gần trần ${ACCOUNT_BALANCE_MAX.toLocaleString("vi-VN")} xu`,
+        reason: `Người nhận đã gần trần ${ACCOUNT_BALANCE_MAX.toLocaleString("vi-VN")} xu quà`,
       };
     }
 
-    from.balance -= amount;
-    to.balance += amount;
+    from.socialBalance = (from.socialBalance ?? 0) - amount;
+    to.socialBalance = (to.socialBalance ?? 0) + amount;
     this.scheduleSave();
     return {
       ok: true,
@@ -2481,6 +2598,14 @@ export class AuthStore {
       Math.min(ACCOUNT_BALANCE_MAX, Math.floor(balance)),
     );
     this.scheduleSave();
+    dualWriteUserSnapshot({
+      id: user.id,
+      username: user.username,
+      code: user.code,
+      role: user.role,
+      balance: user.balance,
+      gem: user.gemBalance,
+    });
   }
 
   syncPlayStats(

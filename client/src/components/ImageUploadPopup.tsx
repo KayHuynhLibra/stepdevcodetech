@@ -5,7 +5,7 @@ import {
   formatCatalogBytes,
 } from "../catalogImage";
 
-export type CatalogUploadKind = "gift" | "ring";
+export type CatalogUploadKind = "gift" | "ring" | "oracle";
 
 interface ImageUploadPopupProps {
   open: boolean;
@@ -43,7 +43,8 @@ export function ImageUploadPopup({
   if (!open) return null;
 
   const keyOk = itemKey.trim().length >= 2;
-  const kindLabel = kind === "gift" ? "quà" : "nhẫn";
+  const kindLabel =
+    kind === "gift" ? "quà" : kind === "oracle" ? "bói bài" : "nhẫn";
 
   const onPick = async (file: File | null) => {
     setError(null);
@@ -131,10 +132,21 @@ export function ImageUploadPopup({
         )}
 
         <label className="block text-[10px] font-semibold text-[var(--play-muted)]">
-          Chọn ảnh
+          Chọn ảnh (máy / web / điện thoại)
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp,image/*"
+            disabled={busy || !keyOk}
+            onChange={(e) => void onPick(e.target.files?.[0] ?? null)}
+            className="app-input mt-0.5 w-full !py-1.5 text-xs file:mr-2 file:rounded-full file:border-0 file:bg-[var(--wood-deep)] file:px-2.5 file:py-1 file:text-[10px] file:font-bold file:text-[var(--cream)]"
+          />
+        </label>
+        <label className="block text-[10px] font-semibold text-[var(--play-muted)] sm:hidden">
+          Chụp từ camera điện thoại
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
             disabled={busy || !keyOk}
             onChange={(e) => void onPick(e.target.files?.[0] ?? null)}
             className="app-input mt-0.5 w-full !py-1.5 text-xs file:mr-2 file:rounded-full file:border-0 file:bg-[var(--wood-deep)] file:px-2.5 file:py-1 file:text-[10px] file:font-bold file:text-[var(--cream)]"
