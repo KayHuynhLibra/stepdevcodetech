@@ -82,7 +82,11 @@ function Invoke-Deploy {
   Write-Title "Deploy Railway (upload local)"
   Write-Host "Lenh: npx --yes @railway/cli@latest up -c -y" -ForegroundColor DarkGray
   Write-Host "Doi build... (co the 1-3 phut)" -ForegroundColor Yellow
-  & npx --yes "@railway/cli@latest" up -c -y
+  # Quote package so npm/npx resolves @railway/cli (bare `up` alone can fail on Windows).
+  & npx --yes "@railway/cli@latest" -- up -c -y
+  if ($LASTEXITCODE -ne 0) {
+    & npx --yes "@railway/cli@latest" up -c -y
+  }
   if ($LASTEXITCODE -ne 0) { throw "railway up failed (exit $LASTEXITCODE)" }
   Write-Host "Deploy CLI xong - kiem tra SUCCESS ben duoi / dashboard." -ForegroundColor Green
 }
