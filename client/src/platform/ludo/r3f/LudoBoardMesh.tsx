@@ -138,10 +138,10 @@ function CenterHome({ woodDark }: { woodDark: string }) {
   const half = size / 2;
   const tipY = 0.42;
   const wedges = [
-    { color: PLAYER_COLORS.red, rotY: Math.PI / 2 },
-    { color: PLAYER_COLORS.green, rotY: 0 },
-    { color: PLAYER_COLORS.yellow, rotY: -Math.PI / 2 },
-    { color: PLAYER_COLORS.blue, rotY: Math.PI },
+    { color: PLAYER_COLORS.red, rotY: 0 }, // +Z bottom
+    { color: PLAYER_COLORS.green, rotY: -Math.PI / 2 }, // −X left
+    { color: PLAYER_COLORS.yellow, rotY: Math.PI }, // −Z top
+    { color: PLAYER_COLORS.blue, rotY: Math.PI / 2 }, // +X right
   ];
   return (
     <group position={[x, 0.12, z]}>

@@ -14,68 +14,67 @@ export const PAWN_Y = 0.55;
 
 export type LudoColor = "red" | "green" | "yellow" | "blue";
 
-/** Bijanrai-style ring, clockwise from red start so green sits on the right arm. */
-const TRACK_CR: [number, number][] = (() => {
-  const ccw: [number, number][] = [
-    [6, 13],
-    [6, 12],
-    [6, 11],
-    [6, 10],
-    [6, 9],
-    [5, 8],
-    [4, 8],
-    [3, 8],
-    [2, 8],
-    [1, 8],
-    [0, 8],
-    [0, 7],
-    [0, 6],
-    [1, 6],
-    [2, 6],
-    [3, 6],
-    [4, 6],
-    [5, 6],
-    [6, 5],
-    [6, 4],
-    [6, 3],
-    [6, 2],
-    [6, 1],
-    [6, 0],
-    [7, 0],
-    [8, 0],
-    [8, 1],
-    [8, 2],
-    [8, 3],
-    [8, 4],
-    [8, 5],
-    [9, 6],
-    [10, 6],
-    [11, 6],
-    [12, 6],
-    [13, 6],
-    [14, 6],
-    [14, 7],
-    [14, 8],
-    [13, 8],
-    [12, 8],
-    [11, 8],
-    [10, 8],
-    [9, 8],
-    [8, 9],
-    [8, 10],
-    [8, 11],
-    [8, 12],
-    [8, 13],
-    [8, 14],
-    [7, 14],
-    [6, 14],
-  ];
-  const out: [number, number][] = [ccw[0]!];
-  for (let i = 51; i >= 1; i--) out.push(ccw[i]!);
-  return out;
-})();
+/**
+ * Classic 52-cell ring (Bijanrai): from red start go up/left then around.
+ * Matches engine START 0/13/26/39 and TURN 50/11/24/37.
+ * Red BL → Green left/TL → Yellow top/TR → Blue right/BR.
+ */
+const TRACK_CR: [number, number][] = [
+  [6, 13],
+  [6, 12],
+  [6, 11],
+  [6, 10],
+  [6, 9],
+  [5, 8],
+  [4, 8],
+  [3, 8],
+  [2, 8],
+  [1, 8],
+  [0, 8],
+  [0, 7],
+  [0, 6],
+  [1, 6],
+  [2, 6],
+  [3, 6],
+  [4, 6],
+  [5, 6],
+  [6, 5],
+  [6, 4],
+  [6, 3],
+  [6, 2],
+  [6, 1],
+  [6, 0],
+  [7, 0],
+  [8, 0],
+  [8, 1],
+  [8, 2],
+  [8, 3],
+  [8, 4],
+  [8, 5],
+  [9, 6],
+  [10, 6],
+  [11, 6],
+  [12, 6],
+  [13, 6],
+  [14, 6],
+  [14, 7],
+  [14, 8],
+  [13, 8],
+  [12, 8],
+  [11, 8],
+  [10, 8],
+  [9, 8],
+  [8, 9],
+  [8, 10],
+  [8, 11],
+  [8, 12],
+  [8, 13],
+  [8, 14],
+  [7, 14],
+  [6, 14],
+];
 
-/** Home stretch into center (engine 100..104). */
+/** Home stretch into center (engine 100..104) — mouth next to TURN cells. */
 const HOME_CR: Record<LudoColor, [number, number][]> = {
   red: [
     [7, 13],
@@ -85,11 +84,11 @@ const HOME_CR: Record<LudoColor, [number, number][]> = {
     [7, 9],
   ],
   green: [
-    [13, 7],
-    [12, 7],
-    [11, 7],
-    [10, 7],
-    [9, 7],
+    [1, 7],
+    [2, 7],
+    [3, 7],
+    [4, 7],
+    [5, 7],
   ],
   yellow: [
     [7, 1],
@@ -99,17 +98,17 @@ const HOME_CR: Record<LudoColor, [number, number][]> = {
     [7, 5],
   ],
   blue: [
-    [1, 7],
-    [2, 7],
-    [3, 7],
-    [4, 7],
-    [5, 7],
+    [13, 7],
+    [12, 7],
+    [11, 7],
+    [10, 7],
+    [9, 7],
   ],
 };
 
 const HOME_CENTER_CR: [number, number] = [7, 7];
 
-/** Yard pads — Red BL, Green TR/right, Yellow TR-top, Blue TL (near starts). */
+/** Yard pads — Red BL, Green TL, Yellow TR, Blue BR (near starts). */
 const BASE_CR: Record<LudoColor, [number, number][]> = {
   red: [
     [1.5, 10.5],
@@ -118,10 +117,10 @@ const BASE_CR: Record<LudoColor, [number, number][]> = {
     [3.5, 12.5],
   ],
   green: [
-    [10.5, 10.5],
-    [12.5, 10.5],
-    [10.5, 12.5],
-    [12.5, 12.5],
+    [1.5, 1.5],
+    [3.5, 1.5],
+    [1.5, 3.5],
+    [3.5, 3.5],
   ],
   yellow: [
     [10.5, 1.5],
@@ -130,10 +129,10 @@ const BASE_CR: Record<LudoColor, [number, number][]> = {
     [12.5, 3.5],
   ],
   blue: [
-    [1.5, 1.5],
-    [3.5, 1.5],
-    [1.5, 3.5],
-    [3.5, 3.5],
+    [10.5, 10.5],
+    [12.5, 10.5],
+    [10.5, 12.5],
+    [12.5, 12.5],
   ],
 };
 
@@ -142,9 +141,9 @@ export const BASE_PLATFORMS: Record<
   { col0: number; row0: number }
 > = {
   red: { col0: 0, row0: 9 },
-  green: { col0: 9, row0: 9 },
+  green: { col0: 0, row0: 0 },
   yellow: { col0: 9, row0: 0 },
-  blue: { col0: 0, row0: 0 },
+  blue: { col0: 9, row0: 9 },
 };
 
 export const PLAYER_COLORS: Record<LudoColor, string> = {
@@ -162,14 +161,14 @@ export const SUIT_MARKS: {
   symbol: string;
   color: string;
 }[] = [
-  { col: 6, row: 13, symbol: "♥", color: "#ffffff" },
-  { col: 13, row: 8, symbol: "♣", color: "#ffffff" },
-  { col: 8, row: 1, symbol: "♦", color: "#333333" },
-  { col: 1, row: 6, symbol: "♠", color: "#ffffff" },
-  { col: 8, row: 9, symbol: "♥", color: "#c62828" },
-  { col: 9, row: 6, symbol: "♣", color: "#1b5e20" },
-  { col: 6, row: 5, symbol: "♦", color: "#f9a825" },
-  { col: 5, row: 8, symbol: "♠", color: "#0d47a1" },
+  { col: 6, row: 13, symbol: "♥", color: "#ffffff" }, // red start
+  { col: 1, row: 6, symbol: "♣", color: "#ffffff" }, // green start
+  { col: 8, row: 1, symbol: "♦", color: "#333333" }, // yellow start
+  { col: 13, row: 8, symbol: "♠", color: "#ffffff" }, // blue start
+  { col: 2, row: 8, symbol: "♥", color: "#c62828" },
+  { col: 6, row: 2, symbol: "♣", color: "#1b5e20" },
+  { col: 12, row: 6, symbol: "♦", color: "#f9a825" },
+  { col: 8, row: 12, symbol: "♠", color: "#0d47a1" },
 ];
 
 function crToXy(c: number, r: number): BoardXY {
@@ -229,10 +228,10 @@ export function homeColumnColor(
   col: number,
   row: number,
 ): LudoColor | null {
-  if (col === 7 && row >= 9 && row <= 13) return "red";
-  if (row === 7 && col >= 9 && col <= 13) return "green";
-  if (col === 7 && row >= 1 && row <= 5) return "yellow";
-  if (row === 7 && col >= 1 && col <= 5) return "blue";
+  if (col === 7 && row >= 9 && row <= 13) return "red"; // bottom
+  if (row === 7 && col >= 1 && col <= 5) return "green"; // left
+  if (col === 7 && row >= 1 && row <= 5) return "yellow"; // top
+  if (row === 7 && col >= 9 && col <= 13) return "blue"; // right
   return null;
 }
 
