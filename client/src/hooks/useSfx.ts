@@ -1,9 +1,12 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   channelGain,
   usePlayPrefs,
   type AudioChannel,
 } from "./usePlayPrefs";
+import { api } from "../auth";
+import type { SfxStyleId } from "../sfxCatalog";
+import { isSfxStyleId } from "../sfxCatalog";
 
 export type SfxName =
   | "tick"
@@ -35,6 +38,64 @@ const SFX_CHANNEL: Record<SfxName, SfxChannel> = {
   oly_win: "olympus",
   ui: "ui",
 };
+
+type SfxRuntime = {
+  styles: Partial<Record<string, SfxStyleId>>;
+  paths: Partial<Record<string, string>>;
+};
+
+let runtime: SfxRuntime = { styles: {}, paths: {} };
+let runtimeAt = 0;
+const RUNTIME_CACHE_MS = 45_000;
+
+export function invalidateSfxRuntimeCache() {
+  runtimeAt = 0;
+}
+
+async function loadSfxRuntime(gameId: string): Promise<SfxRuntime> {
+  if (Date.now() - runtimeAt < RUNTIME_CACHE_MS && runtimeAt > 0) {
+    return runtime;
+  }
+  try {
+    const r = await api<{
+      ok: true;
+      games: Partial<
+        Record<
+          string,
+          {
+            sfx?: {
+              styles?: Partial<Record<string, string>>;
+              paths?: Partial<Record<string, string>>;
+            };
+          }
+        >
+      >;
+    }>("/api/play-media-presets");
+    const styles: SfxRuntime["styles"] = {};
+    const paths: SfxRuntime["paths"] = {};
+    // Merge all games — slots are unique enough; prefer requested game last
+    const order = ["tarot", "olympus", "boi", "arcana", gameId];
+    for (const id of order) {
+      const g = r.games?.[id]?.sfx;
+      if (!g) continue;
+      if (g.styles) {
+        for (const [k, v] of Object.entries(g.styles)) {
+          if (isSfxStyleId(v)) styles[k] = v;
+        }
+      }
+      if (g.paths) {
+        for (const [k, v] of Object.entries(g.paths)) {
+          if (typeof v === "string" && v.trim()) paths[k] = v.trim();
+        }
+      }
+    }
+    runtime = { styles, paths };
+    runtimeAt = Date.now();
+    return runtime;
+  } catch {
+    return runtime;
+  }
+}
 
 function playTone(
   ctx: AudioContext,
@@ -98,10 +159,131 @@ function playNoiseBurst(
   src.stop(t0 + duration + 0.02);
 }
 
-export function useSfx(defaultChannel: SfxChannel = "tarot") {
+type StyleMul = { gain: number; pitch: number; dens: number };
+
+function styleMul(style: SfxStyleId): StyleMul {
+  switch (style) {
+    case "soft":
+      return { gain: 0.72, pitch: 0.92, dens: 0.7 };
+    case "crisp":
+      return { gain: 1.05, pitch: 1.12, dens: 1.15 };
+    case "bright":
+      return { gain: 1.1, pitch: 1.28, dens: 1.05 };
+    default:
+      return { gain: 1, pitch: 1, dens: 1 };
+  }
+}
+
+function playSynth(
+  ctx: AudioContext,
+  dest: AudioNode,
+  name: SfxName,
+  style: SfxStyleId,
+) {
+  const m = styleMul(style);
+  const g = (n: number) => n * m.gain;
+  const p = (n: number) => n * m.pitch;
+  const dens = m.dens;
+
+  if (name === "tick" || name === "ui") {
+    playTone(ctx, dest, p(880), 0.08, "square", g(0.08));
+  } else if (name === "gather") {
+    const n = Math.max(4, Math.round(8 * dens));
+    for (let i = 0; i < n; i++) {
+      playNoiseBurst(ctx, dest, 0.05, g(0.05), i * 0.035, p(1800 + i * 120));
+      playTone(
+        ctx,
+        dest,
+        p(320 + i * 40),
+        0.05,
+        "triangle",
+        g(0.04),
+        i * 0.035,
+      );
+    }
+  } else if (name === "shuffle") {
+    const n = Math.max(6, Math.round(10 * dens));
+    for (let i = 0; i < n; i++) {
+      playNoiseBurst(
+        ctx,
+        dest,
+        0.045,
+        g(0.07),
+        i * 0.055,
+        p(900 + Math.random() * 1800),
+      );
+      playTone(
+        ctx,
+        dest,
+        p(180 + Math.random() * 420),
+        0.05,
+        "triangle",
+        g(0.05),
+        i * 0.055,
+      );
+    }
+  } else if (name === "suspense") {
+    playTone(ctx, dest, p(220), 0.35, "sine", g(0.08), 0, p(440));
+    playNoiseBurst(ctx, dest, 0.12, g(0.06), 0.05, p(1400));
+  } else if (name === "flip") {
+    playNoiseBurst(ctx, dest, 0.14, g(0.14), 0, p(1600));
+    playTone(ctx, dest, p(180), 0.16, "triangle", g(0.1), 0, p(720));
+    playTone(ctx, dest, p(90), 0.1, "sine", g(0.08), 0.02, p(280));
+    playNoiseBurst(ctx, dest, 0.08, g(0.1), 0.1, p(3200));
+    playTone(ctx, dest, p(660), 0.1, "sine", g(0.09), 0.12);
+  } else if (name === "win" || name === "oly_win") {
+    playTone(ctx, dest, p(523), 0.12, "sine", g(0.14), 0);
+    playTone(ctx, dest, p(659), 0.14, "sine", g(0.12), 0.1);
+    playTone(ctx, dest, p(784), 0.22, "sine", g(0.12), 0.2);
+    playTone(ctx, dest, p(1046), 0.28, "sine", g(0.08), 0.32);
+  } else if (name === "lose") {
+    playTone(ctx, dest, p(320), 0.18, "triangle", g(0.1), 0, p(160));
+    playNoiseBurst(ctx, dest, 0.1, g(0.05), 0.05, p(800));
+  } else if (name === "spin") {
+    const n = Math.max(4, Math.round(6 * dens));
+    for (let i = 0; i < n; i++) {
+      playTone(
+        ctx,
+        dest,
+        p(140 + i * 28),
+        0.06,
+        "sawtooth",
+        g(0.04),
+        i * 0.04,
+        p(90 + i * 10),
+      );
+    }
+    playNoiseBurst(ctx, dest, 0.18, g(0.06), 0, p(900));
+  } else if (name === "land") {
+    playTone(ctx, dest, p(220), 0.08, "triangle", g(0.1));
+    playNoiseBurst(ctx, dest, 0.06, g(0.08), 0.02, p(1400));
+  } else if (name === "thunder") {
+    playNoiseBurst(ctx, dest, 0.35, g(0.22), 0, p(280));
+    playNoiseBurst(ctx, dest, 0.25, g(0.16), 0.08, p(600));
+    playTone(ctx, dest, p(80), 0.4, "sawtooth", g(0.12), 0, p(40));
+    playTone(ctx, dest, p(1200), 0.08, "square", g(0.06), 0.05, p(200));
+  }
+}
+
+function playFile(url: string, volume: number) {
+  const a = new Audio(url);
+  a.volume = Math.max(0, Math.min(1, volume));
+  void a.play().catch(() => {
+    /* autoplay blocked */
+  });
+}
+
+export function useSfx(
+  defaultChannel: SfxChannel = "tarot",
+  gameId: "tarot" | "olympus" | "arcana" | "boi" = "tarot",
+) {
   const ctxRef = useRef<AudioContext | null>(null);
   const { prefs, toggleChannelMute, toggleMasterMute, anyMuted } =
     usePlayPrefs();
+
+  useEffect(() => {
+    void loadSfxRuntime(gameId);
+  }, [gameId]);
 
   const ensureCtx = () => {
     if (!ctxRef.current) {
@@ -137,87 +319,20 @@ export function useSfx(defaultChannel: SfxChannel = "tarot") {
       const ch = SFX_CHANNEL[name] ?? defaultChannel;
       const gainMul = channelGain(prefs, ch);
       if (gainMul <= 0.001) return;
+
+      const path = runtime.paths[name];
+      if (path) {
+        playFile(path, Math.min(1, gainMul));
+        return;
+      }
+
+      const style = runtime.styles[name] ?? "classic";
       try {
         const ctx = ensureCtx();
         const dest = ctx.createGain();
         dest.gain.value = gainMul;
         dest.connect(ctx.destination);
-
-        if (name === "tick" || name === "ui") {
-          playTone(ctx, dest, 880, 0.08, "square", 0.08);
-        } else if (name === "gather") {
-          for (let i = 0; i < 8; i++) {
-            playNoiseBurst(ctx, dest, 0.05, 0.05, i * 0.035, 1800 + i * 120);
-            playTone(
-              ctx,
-              dest,
-              320 + i * 40,
-              0.05,
-              "triangle",
-              0.04,
-              i * 0.035,
-            );
-          }
-        } else if (name === "shuffle") {
-          for (let i = 0; i < 10; i++) {
-            playNoiseBurst(
-              ctx,
-              dest,
-              0.045,
-              0.07,
-              i * 0.055,
-              900 + Math.random() * 1800,
-            );
-            playTone(
-              ctx,
-              dest,
-              180 + Math.random() * 420,
-              0.05,
-              "triangle",
-              0.05,
-              i * 0.055,
-            );
-          }
-        } else if (name === "suspense") {
-          playTone(ctx, dest, 220, 0.35, "sine", 0.08, 0, 440);
-          playNoiseBurst(ctx, dest, 0.12, 0.06, 0.05, 1400);
-        } else if (name === "flip") {
-          playNoiseBurst(ctx, dest, 0.14, 0.14, 0, 1600);
-          playTone(ctx, dest, 180, 0.16, "triangle", 0.1, 0, 720);
-          playTone(ctx, dest, 90, 0.1, "sine", 0.08, 0.02, 280);
-          playNoiseBurst(ctx, dest, 0.08, 0.1, 0.1, 3200);
-          playTone(ctx, dest, 660, 0.1, "sine", 0.09, 0.12);
-        } else if (name === "win" || name === "oly_win") {
-          playTone(ctx, dest, 523, 0.12, "sine", 0.14, 0);
-          playTone(ctx, dest, 659, 0.14, "sine", 0.12, 0.1);
-          playTone(ctx, dest, 784, 0.22, "sine", 0.12, 0.2);
-          playTone(ctx, dest, 1046, 0.28, "sine", 0.08, 0.32);
-        } else if (name === "lose") {
-          playTone(ctx, dest, 320, 0.18, "triangle", 0.1, 0, 160);
-          playNoiseBurst(ctx, dest, 0.1, 0.05, 0.05, 800);
-        } else if (name === "spin") {
-          for (let i = 0; i < 6; i++) {
-            playTone(
-              ctx,
-              dest,
-              140 + i * 28,
-              0.06,
-              "sawtooth",
-              0.04,
-              i * 0.04,
-              90 + i * 10,
-            );
-          }
-          playNoiseBurst(ctx, dest, 0.18, 0.06, 0, 900);
-        } else if (name === "land") {
-          playTone(ctx, dest, 220, 0.08, "triangle", 0.1);
-          playNoiseBurst(ctx, dest, 0.06, 0.08, 0.02, 1400);
-        } else if (name === "thunder") {
-          playNoiseBurst(ctx, dest, 0.35, 0.22, 0, 280);
-          playNoiseBurst(ctx, dest, 0.25, 0.16, 0.08, 600);
-          playTone(ctx, dest, 80, 0.4, "sawtooth", 0.12, 0, 40);
-          playTone(ctx, dest, 1200, 0.08, "square", 0.06, 0.05, 200);
-        }
+        playSynth(ctx, dest, name, style);
       } catch {
         /* autoplay / audio blocked */
       }

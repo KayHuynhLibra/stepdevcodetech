@@ -34,6 +34,7 @@ import {
   type FeedbackStatus,
 } from "./feedbackStore.js";
 import { messStore, saveMessImage } from "./messStore.js";
+import { saveSfxAudio } from "./sfxUpload.js";
 import {
   AVATARS,
   normalizeAvatar,
@@ -3100,6 +3101,37 @@ app.post("/api/admin/pm/presets", (req, res) => {
     return res.json({ ok: true, ...snap });
   }
   return res.status(400).json({ ok: false, reason: "Thiếu gameId hoặc games" });
+});
+
+/** Upload file âm SFX (mainadmin / P+M) → gắn vào preset game.slot */
+app.post("/api/admin/sfx-upload", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  if (!isMainAdmin(me) && !hasCapability(me, "pm_assets")) {
+    return res.status(403).json({ ok: false, reason: "Cần quyền P+M / mainadmin" });
+  }
+  const ip = clientIp(req);
+  if (
+    !rateLimit(`sfx-up:${me.id}`, 20, 60_000) ||
+    !rateLimit(`sfx-up-ip:${ip}`, 30, 60_000)
+  ) {
+    return res.status(429).json({ ok: false, reason: "Quá nhiều lần upload âm" });
+  }
+  const gameId = String(req.body?.gameId ?? "").trim();
+  const slot = String(req.body?.slot ?? "").trim();
+  const dataUrl = String(req.body?.dataUrl ?? "");
+  const saved = saveSfxAudio(gameId, slot, dataUrl);
+  if (!saved.ok) return res.status(400).json(saved);
+  const patch = playMediaPresetsStore.patchGame(gameId, {
+    sfx: { paths: { [slot]: saved.url } },
+  });
+  if (!patch.ok) return res.status(400).json(patch);
+  audit(me, "sfx_upload", { detail: `${gameId}/${slot}` });
+  res.json({
+    ok: true,
+    url: saved.url,
+    games: playMediaPresetsStore.snapshot().games,
+  });
 });
 
 /** Cosmetics Bói — card back / nền / FX (oracle_manage hoặc P+M) */

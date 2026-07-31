@@ -60,6 +60,9 @@ export type GameMediaPreset = {
     muted?: Partial<Record<"ui" | "tarot" | "olympus", boolean>>;
     /** Optional named synth / file path hooks */
     presetName?: string;
+    /** Per-slot style: classic | soft | crisp | bright */
+    styles?: Partial<Record<string, "classic" | "soft" | "crisp" | "bright">>;
+    /** Custom uploaded audio URL per slot — overrides synth */
     paths?: Partial<Record<string, string>>;
   };
 };
@@ -150,6 +153,24 @@ function normalizeGamePreset(raw: unknown): GameMediaPreset {
     if (typeof s.masterMuted === "boolean") sfx.masterMuted = s.masterMuted;
     if (typeof s.presetName === "string") {
       sfx.presetName = s.presetName.trim().slice(0, 40);
+    }
+    if (s.styles && typeof s.styles === "object") {
+      const styles: NonNullable<
+        NonNullable<GameMediaPreset["sfx"]>["styles"]
+      > = {};
+      for (const [k, val] of Object.entries(
+        s.styles as Record<string, unknown>,
+      )) {
+        if (
+          val === "classic" ||
+          val === "soft" ||
+          val === "crisp" ||
+          val === "bright"
+        ) {
+          styles[k.slice(0, 24)] = val;
+        }
+      }
+      if (Object.keys(styles).length) sfx.styles = styles;
     }
     if (s.volumes && typeof s.volumes === "object") {
       const v = s.volumes as Record<string, unknown>;
@@ -246,11 +267,31 @@ class PlayMediaPresetsStore {
         if (v === "") delete (mergedSymbolUrls as Record<string, string>)[k];
       }
     }
+    const mergedStyles = {
+      ...(cur.sfx?.styles ?? {}),
+      ...(patch.sfx?.styles ?? {}),
+    };
+    const mergedPaths = {
+      ...(cur.sfx?.paths ?? {}),
+      ...(patch.sfx?.paths ?? {}),
+    };
+    if (patch.sfx?.paths) {
+      for (const [k, v] of Object.entries(patch.sfx.paths)) {
+        if (v === "") delete (mergedPaths as Record<string, string>)[k];
+      }
+    }
     const next = normalizeGamePreset({
       ...cur,
       ...patch,
       symbolUrls: mergedSymbolUrls,
-      sfx: { ...cur.sfx, ...patch.sfx },
+      sfx: {
+        ...cur.sfx,
+        ...patch.sfx,
+        styles: mergedStyles,
+        paths: mergedPaths,
+        volumes: { ...cur.sfx?.volumes, ...patch.sfx?.volumes },
+        muted: { ...cur.sfx?.muted, ...patch.sfx?.muted },
+      },
     });
     this.games[id] = next;
     this.save();

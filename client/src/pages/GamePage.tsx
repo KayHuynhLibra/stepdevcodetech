@@ -196,7 +196,7 @@ export default function GamePage() {
   const autoRoundRef = useRef<number | null>(null);
   const [profile, setProfile] = useState<PlayerInfoView | null>(null);
   const [adminBusy, setAdminBusy] = useState(false);
-  const { play, muted, toggleMute } = useSfx("tarot");
+  const { play, muted, toggleMute } = useSfx("tarot", "tarot");
   const [audioPrefsOpen, setAudioPrefsOpen] = useState(false);
   const {
     sessionMs,

@@ -150,7 +150,7 @@ export function BoiRitualOverlay({
     null,
   );
   const [saved, setSaved] = useState(false);
-  const { play: playSfx } = useSfx();
+  const { play: playSfx } = useSfx("tarot", "boi");
 
   const q = (question ?? "").trim().slice(0, 120);
   const poolSize = filterDeckPool(catalog, pool).length;

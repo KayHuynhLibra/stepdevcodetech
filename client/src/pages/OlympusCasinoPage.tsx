@@ -409,7 +409,7 @@ export default function OlympusCasinoPage() {
   const zeusFigRef = useRef<HTMLDivElement | null>(null);
   const skyTierRef = useRef<SkyTier>("calm");
   const rayIdRef = useRef(0);
-  const { play: playSfx, muted: sfxMuted } = useSfx("olympus");
+  const { play: playSfx, muted: sfxMuted } = useSfx("olympus", "olympus");
   const { prefs } = usePlayPrefs();
   useApplyPlayMediaPresets("olympus");
 

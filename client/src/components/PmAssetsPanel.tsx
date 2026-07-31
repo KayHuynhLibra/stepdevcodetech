@@ -4,6 +4,7 @@ import type { GameManifest } from "../platform/games";
 import { ImageUploadPopup, type CatalogUploadKind } from "./ImageUploadPopup";
 import { BottomSheet } from "./BottomSheet";
 import { OracleAdminPanel } from "./OracleAdminPanel";
+import { SfxAdminPanel } from "./SfxAdminPanel";
 
 type GameId = "tarot" | "olympus" | "arcana" | "boi";
 
@@ -34,6 +35,10 @@ type GameMediaPreset = {
     volumes?: Partial<Record<"master" | "ui" | "tarot" | "olympus", number>>;
     muted?: Partial<Record<"ui" | "tarot" | "olympus", boolean>>;
     presetName?: string;
+    styles?: Partial<
+      Record<string, "classic" | "soft" | "crisp" | "bright">
+    >;
+    paths?: Partial<Record<string, string>>;
   };
 };
 
@@ -187,6 +192,15 @@ export function PmAssetsPanel({
           </button>
         </div>
       </div>
+
+      <SfxAdminPanel
+        canEdit={main || !!me}
+        onMsg={onMsg}
+        presets={presets}
+        setPresets={setPresets}
+        busy={busy}
+        setBusy={setBusy}
+      />
 
       <div className="app-panel p-3">
         <p className="play-heading text-sm">Ảnh cover lobby</p>
