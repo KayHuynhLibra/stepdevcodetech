@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getStoredUser, getToken } from "../auth";
 import { AppShell } from "../components/AppShell";
 import { GameChrome } from "../components/GameChrome";
 import { ensureGuestCode, getGuestCode } from "../guest";
+import { useApplyPlayMediaPresets } from "../hooks/useApplyPlayMediaPresets";
+import { useLudoCosmetics } from "../hooks/useLudoCosmetics";
+import { useSfx } from "../hooks/useSfx";
 import { LudoBoard } from "../platform/ludo/LudoBoard";
 import { prefetchLudo3D } from "../platform/ludo/preferLiteBoard";
 import {
@@ -60,6 +63,9 @@ function headers(): Record<string, string> {
 }
 
 export default function LudoPage() {
+  useApplyPlayMediaPresets("ludo");
+  const cosmetics = useLudoCosmetics();
+  const { play: playSfx, muted: sfxMuted, toggleMute } = useSfx("tarot", "ludo");
   const me = getStoredUser();
   const guestCode = !me ? getGuestCode() || ensureGuestCode() : null;
   const [room, setRoom] = useState<LudoRoom | null>(null);
@@ -68,10 +74,58 @@ export default function LudoPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+  const prevSnap = useRef<{
+    tokens: Record<string, number>;
+    dice: number | null;
+    lastEvent: string | null;
+    status: string | null;
+    tickedAt: number;
+  }>({ tokens: {}, dice: null, lastEvent: null, status: null, tickedAt: 0 });
 
   useEffect(() => {
     prefetchLudo3D();
   }, []);
+
+  useEffect(() => {
+    if (!room) return;
+    const prev = prevSnap.current;
+    const nextTokens: Record<string, number> = {};
+    let moved = false;
+    let captured = false;
+    let home = false;
+    for (const t of room.tokens) {
+      nextTokens[t.id] = t.pos;
+      const p = prev.tokens[t.id];
+      if (p === undefined) continue;
+      if (p !== t.pos) {
+        moved = true;
+        if (t.pos === 105 || (t.pos >= 100 && t.pos <= 104 && p < 100)) {
+          home = true;
+        }
+      }
+      if (p >= 0 && p <= 51 && t.pos === -1) captured = true;
+    }
+    if (moved) playSfx("move");
+    if (captured || /ăn|bắt|capture/i.test(room.lastEvent || "")) {
+      playSfx("capture");
+    }
+    if (home || /về đích|home|105/i.test(room.lastEvent || "")) {
+      playSfx("home");
+    }
+    if (
+      room.status === "finished" &&
+      prev.status !== "finished"
+    ) {
+      playSfx("win");
+    }
+    prevSnap.current = {
+      tokens: nextTokens,
+      dice: room.dice,
+      lastEvent: room.lastEvent,
+      status: room.status,
+      tickedAt: prev.tickedAt,
+    };
+  }, [room, playSfx]);
 
   const activeTheme = room
     ? normalizeThemeId(room.themeId)
@@ -168,6 +222,7 @@ export default function LudoPage() {
       else {
         setErr(null);
         setRoom(j.room);
+        playSfx("roll");
       }
     } finally {
       setBusy(false);
@@ -200,6 +255,15 @@ export default function LudoPage() {
 
   const showHand =
     isMyTurn && room?.phase === "wait_roll" && room.status === "playing";
+
+  useEffect(() => {
+    if (!isMyTurn || !room || room.status !== "playing") return;
+    if (leftSec > 5 || leftSec <= 0) return;
+    const nowMs = Date.now();
+    if (nowMs - prevSnap.current.tickedAt < 900) return;
+    prevSnap.current.tickedAt = nowMs;
+    playSfx("tick");
+  }, [isMyTurn, leftSec, room, playSfx]);
 
   return (
     <AppShell maxWidth="md">
@@ -273,9 +337,13 @@ export default function LudoPage() {
                   ? room.validTokenIds
                   : []
               }
-              onPick={(id) => void pick(id)}
+              onPick={(id) => {
+                playSfx("ui");
+                void pick(id);
+              }}
               myColor={mySeat?.color}
               themeId={activeTheme}
+              cosmetics={cosmetics}
             />
             <div className="ludo-panel">
               <div className="ludo-panel__row">
@@ -293,7 +361,18 @@ export default function LudoPage() {
                 <div className="ludo-dice-wrap">
                   <button
                     type="button"
-                    className={`ludo-dice ${showHand ? "is-ready" : ""}`}
+                    className={`ludo-dice ${showHand ? "is-ready" : ""} ${
+                      cosmetics.diceUrl ? "has-art" : ""
+                    }`}
+                    style={
+                      cosmetics.diceUrl
+                        ? {
+                            backgroundImage: `url(${cosmetics.diceUrl})`,
+                            backgroundSize: "cover",
+                            backgroundPosition: "center",
+                          }
+                        : undefined
+                    }
                     disabled={
                       busy ||
                       !isMyTurn ||
@@ -304,6 +383,14 @@ export default function LudoPage() {
                     title="Tung xúc xắc"
                   >
                     {room.dice ?? "?"}
+                  </button>
+                  <button
+                    type="button"
+                    className="ludo-mute"
+                    onClick={() => toggleMute()}
+                    title={sfxMuted ? "Bật âm" : "Tắt âm"}
+                  >
+                    {sfxMuted ? "🔇" : "🔊"}
                   </button>
                   {showHand ? (
                     <span className="ludo-hand" aria-hidden />

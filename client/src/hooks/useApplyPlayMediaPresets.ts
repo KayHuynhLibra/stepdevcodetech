@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { api } from "../auth";
 import { usePlayPrefs, type PlayPrefs } from "./usePlayPrefs";
 
-export type PlayMediaGameId = "tarot" | "olympus" | "arcana" | "boi";
+export type PlayMediaGameId = "tarot" | "olympus" | "arcana" | "boi" | "ludo";
 
 export type OlympusSymbolId =
   | "ruby"

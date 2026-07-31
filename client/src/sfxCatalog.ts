@@ -113,9 +113,36 @@ export const ARCANA_SFX_SLOT_META: Record<
   ui: { label: "UI", hint: "Click / nút" },
 };
 
+/** Slot Ludo */
+export const LUDO_SFX_SLOTS = [
+  "roll",
+  "move",
+  "capture",
+  "home",
+  "win",
+  "tick",
+  "ui",
+] as const;
+
+export type LudoSfxSlot = (typeof LUDO_SFX_SLOTS)[number];
+
+export const LUDO_SFX_SLOT_META: Record<
+  LudoSfxSlot,
+  { label: string; hint: string }
+> = {
+  roll: { label: "Xúc xắc", hint: "Tung xúc xắc" },
+  move: { label: "Đi quân", hint: "Quân nhảy ô" },
+  capture: { label: "Ăn quân", hint: "Đá đối thủ về chuồng" },
+  home: { label: "Về đích", hint: "Vào cột / về nhà" },
+  win: { label: "Thắng", hint: "Ván kết thúc" },
+  tick: { label: "Đếm giây", hint: "Tick 5s cuối" },
+  ui: { label: "UI", hint: "Click / nút" },
+};
+
 export type SfxSlotName =
   | TarotSfxSlot
   | OlympusSfxSlot
   | BoiSfxSlot
   | ArcanaSfxSlot
+  | LudoSfxSlot
   | "ui";

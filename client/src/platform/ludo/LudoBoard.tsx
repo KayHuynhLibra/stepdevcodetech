@@ -1,4 +1,5 @@
 import { lazy, Suspense, useMemo } from "react";
+import type { LudoCosmetics } from "../../hooks/useLudoCosmetics";
 import { LudoBoardLite, type LudoTokenView } from "./LudoBoardLite";
 import { preferLiteBoard } from "./preferLiteBoard";
 import type { LudoThemeId } from "./themes";
@@ -13,12 +14,14 @@ export function LudoBoard({
   onPick,
   myColor,
   themeId = "classic",
+  cosmetics,
 }: {
   tokens: LudoTokenView[];
   validTokenIds: string[];
   onPick: (tokenId: string) => void;
   myColor?: string | null;
   themeId?: LudoThemeId;
+  cosmetics?: LudoCosmetics;
 }) {
   const lite = useMemo(() => preferLiteBoard(), []);
 
@@ -29,6 +32,7 @@ export function LudoBoard({
         validTokenIds={validTokenIds}
         onPick={onPick}
         myColor={myColor}
+        cosmetics={cosmetics}
       />
     );
   }
@@ -45,6 +49,7 @@ export function LudoBoard({
         onPick={onPick}
         myColor={myColor}
         themeId={themeId}
+        cosmetics={cosmetics}
       />
     </Suspense>
   );

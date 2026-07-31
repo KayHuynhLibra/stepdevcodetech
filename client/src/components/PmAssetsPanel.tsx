@@ -3,10 +3,19 @@ import { api, type AuthUser } from "../auth";
 import type { GameManifest } from "../platform/games";
 import { ImageUploadPopup, type CatalogUploadKind } from "./ImageUploadPopup";
 import { BottomSheet } from "./BottomSheet";
+import { invalidateLudoCosmeticsCache } from "../hooks/useLudoCosmetics";
+import { invalidatePlayMediaPresetsCache } from "../hooks/useApplyPlayMediaPresets";
 import { SfxAdminPanel } from "./SfxAdminPanel";
 import { BoiCosmeticsAdmin } from "./BoiCosmeticsAdmin";
 
-type GameId = "tarot" | "olympus" | "arcana" | "boi";
+type GameId = "tarot" | "olympus" | "arcana" | "boi" | "ludo";
+
+const LUDO_PAWN_SLOTS = [
+  { id: "red", label: "Đỏ" },
+  { id: "green", label: "Xanh lá" },
+  { id: "yellow", label: "Vàng" },
+  { id: "blue", label: "Xanh dương" },
+] as const;
 
 const OLY_SYM_SLOTS = [
   { id: "ruby", label: "Ruby" },
@@ -30,6 +39,9 @@ type GameMediaPreset = {
   symbolUrls?: Partial<Record<(typeof OLY_SYM_SLOTS)[number]["id"], string>>;
   boltStyle?: "straight" | "zigzag" | "wave";
   boltThickness?: number;
+  boardUrl?: string;
+  pawnUrls?: Partial<Record<(typeof LUDO_PAWN_SLOTS)[number]["id"], string>>;
+  diceUrl?: string;
   sfx?: {
     masterMuted?: boolean;
     volumes?: Partial<Record<"master" | "ui" | "tarot" | "olympus", number>>;
@@ -45,6 +57,7 @@ const GAME_OPTS: { id: GameId; label: string }[] = [
   { id: "olympus", label: "Olympus" },
   { id: "arcana", label: "Arcana" },
   { id: "boi", label: "Bói bài" },
+  { id: "ludo", label: "Ludo" },
 ];
 
 export function PmAssetsPanel({
@@ -68,8 +81,9 @@ export function PmAssetsPanel({
     kind: CatalogUploadKind;
     key: string;
     gameId?: string;
-    field?: "cover" | "hero" | "zeus" | "symbol";
+    field?: "cover" | "hero" | "zeus" | "symbol" | "board" | "pawn" | "dice";
     symbolId?: (typeof OLY_SYM_SLOTS)[number]["id"];
+    pawnColor?: (typeof LUDO_PAWN_SLOTS)[number]["id"];
   } | null>(null);
   const [optGame, setOptGame] = useState<GameId | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -139,6 +153,8 @@ export function PmAssetsPanel({
         body: JSON.stringify({ gameId, preset: patch }),
       });
       setPresets(r.games ?? {});
+      invalidatePlayMediaPresetsCache();
+      if (gameId === "ludo") invalidateLudoCosmeticsCache();
       onMsg(`Đã lưu preset ${gameId}`);
     } catch (e) {
       onMsg(e instanceof Error ? e.message : "Lỗi lưu preset");
@@ -203,6 +219,184 @@ export function PmAssetsPanel({
       <BoiCosmeticsAdmin canEdit={main || !!me} onMsg={onMsg} />
 
       <div className="app-panel p-3">
+        <p className="play-heading text-sm">Ludo · Bàn / quân / xúc xắc</p>
+        <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+          Ảnh mặt bàn CSS+3D · 4 màu quân · mặt xúc xắc (tuỳ chọn). Cover lobby
+          vẫn dùng mục bên dưới.
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-white/70 px-2.5 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10">
+          <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-[var(--cream)]">
+            {presets.ludo?.boardUrl ? (
+              <img
+                src={presets.ludo.boardUrl}
+                alt=""
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <span className="flex h-full items-center justify-center text-[9px] text-[var(--play-muted)]">
+                bàn
+              </span>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="font-bold">Ảnh bàn</p>
+            <input
+              className="app-input mt-1 w-full !py-1 font-mono !text-[10px]"
+              value={presets.ludo?.boardUrl ?? ""}
+              onChange={(e) =>
+                setPresets((prev) => ({
+                  ...prev,
+                  ludo: { ...prev.ludo, boardUrl: e.target.value },
+                }))
+              }
+              placeholder="/uploads/… hoặc URL"
+            />
+          </div>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              setUpload({
+                kind: "lobby",
+                key: "ludo-board",
+                gameId: "ludo",
+                field: "board",
+              })
+            }
+            className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15"
+          >
+            Upload
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              void savePreset("ludo", { ...(presets.ludo ?? {}) })
+            }
+            className="rounded-full bg-[var(--wood-deep)] px-2.5 py-1 text-[10px] font-bold text-white"
+          >
+            Lưu bàn
+          </button>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {LUDO_PAWN_SLOTS.map(({ id, label }) => {
+            const url = presets.ludo?.pawnUrls?.[id];
+            return (
+              <div
+                key={id}
+                className="rounded-xl bg-white/70 px-2 py-2 text-center text-[10px] ring-1 ring-[var(--wood-deep)]/10"
+              >
+                <div className="mx-auto mb-1 flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-[var(--cream)]">
+                  {url ? (
+                    <img
+                      src={url}
+                      alt={label}
+                      className="max-h-full max-w-full object-contain"
+                    />
+                  ) : (
+                    <span className="text-[9px] text-[var(--play-muted)]">
+                      {label}
+                    </span>
+                  )}
+                </div>
+                <p className="font-bold">{label}</p>
+                <div className="mt-1 flex flex-wrap justify-center gap-1">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      setUpload({
+                        kind: "lobby",
+                        key: `ludo-pawn-${id}`,
+                        gameId: "ludo",
+                        field: "pawn",
+                        pawnColor: id,
+                      })
+                    }
+                    className="rounded-full bg-white px-2 py-0.5 text-[9px] font-bold ring-1 ring-[var(--wood-deep)]/15"
+                  >
+                    Upload
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || !url}
+                    onClick={() => {
+                      const next: GameMediaPreset = {
+                        ...(presets.ludo ?? {}),
+                        pawnUrls: {
+                          ...(presets.ludo?.pawnUrls ?? {}),
+                          [id]: "",
+                        },
+                      };
+                      setPresets((prev) => ({ ...prev, ludo: next }));
+                      void savePreset("ludo", next);
+                    }}
+                    className="rounded-full bg-white px-2 py-0.5 text-[9px] font-bold text-red-700 ring-1 ring-red-200 disabled:opacity-40"
+                  >
+                    Xóa
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-white/70 px-2.5 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10">
+          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-[var(--cream)]">
+            {presets.ludo?.diceUrl ? (
+              <img
+                src={presets.ludo.diceUrl}
+                alt=""
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <span className="flex h-full items-center justify-center text-[9px] text-[var(--play-muted)]">
+                🎲
+              </span>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="font-bold">Mặt xúc xắc</p>
+            <input
+              className="app-input mt-1 w-full !py-1 font-mono !text-[10px]"
+              value={presets.ludo?.diceUrl ?? ""}
+              onChange={(e) =>
+                setPresets((prev) => ({
+                  ...prev,
+                  ludo: { ...prev.ludo, diceUrl: e.target.value },
+                }))
+              }
+              placeholder="tuỳ chọn"
+            />
+          </div>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              setUpload({
+                kind: "lobby",
+                key: "ludo-dice",
+                gameId: "ludo",
+                field: "dice",
+              })
+            }
+            className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15"
+          >
+            Upload
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              void savePreset("ludo", { ...(presets.ludo ?? {}) })
+            }
+            className="rounded-full bg-[var(--wood-deep)] px-2.5 py-1 text-[10px] font-bold text-white"
+          >
+            Lưu xúc xắc
+          </button>
+        </div>
+      </div>
+
+      <div className="app-panel p-3">
         <p className="play-heading text-sm">Ảnh cover lobby</p>
         {busy && !games.length ? (
           <p className="mt-2 text-xs text-[var(--play-muted)]">Đang tải…</p>
@@ -265,9 +459,9 @@ export function PmAssetsPanel({
                   type="button"
                   onClick={() =>
                     setOptGame(
-                      (["tarot", "olympus", "arcana", "boi"] as GameId[]).includes(
-                        g.id as GameId,
-                      )
+                      (
+                        ["tarot", "olympus", "arcana", "boi", "ludo"] as GameId[]
+                      ).includes(g.id as GameId)
                         ? (g.id as GameId)
                         : "tarot",
                     )
@@ -543,6 +737,34 @@ export function PmAssetsPanel({
             };
             setPresets((prev) => ({ ...prev, olympus: next }));
             void savePreset("olympus", next);
+          } else if (upload.field === "board" && upload.gameId === "ludo") {
+            const next: GameMediaPreset = {
+              ...(presets.ludo ?? {}),
+              boardUrl: url,
+            };
+            setPresets((prev) => ({ ...prev, ludo: next }));
+            void savePreset("ludo", next);
+          } else if (
+            upload.field === "pawn" &&
+            upload.pawnColor &&
+            upload.gameId === "ludo"
+          ) {
+            const next: GameMediaPreset = {
+              ...(presets.ludo ?? {}),
+              pawnUrls: {
+                ...(presets.ludo?.pawnUrls ?? {}),
+                [upload.pawnColor]: url,
+              },
+            };
+            setPresets((prev) => ({ ...prev, ludo: next }));
+            void savePreset("ludo", next);
+          } else if (upload.field === "dice" && upload.gameId === "ludo") {
+            const next: GameMediaPreset = {
+              ...(presets.ludo ?? {}),
+              diceUrl: url,
+            };
+            setPresets((prev) => ({ ...prev, ludo: next }));
+            void savePreset("ludo", next);
           }
           setUpload(null);
         }}

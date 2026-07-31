@@ -11,7 +11,10 @@ const DATA_DIR = join(__dirname, "..", "data");
 const PATH = join(DATA_DIR, "play-media-presets.json");
 const TMP = join(DATA_DIR, "play-media-presets.json.tmp");
 
-export type PlayGameId = "tarot" | "olympus" | "arcana" | "boi";
+export type PlayGameId = "tarot" | "olympus" | "arcana" | "boi" | "ludo";
+
+export const LUDO_PAWN_COLORS = ["red", "green", "yellow", "blue"] as const;
+export type LudoPawnColor = (typeof LUDO_PAWN_COLORS)[number];
 
 export const OLYMPUS_SYMBOL_IDS = [
   "ruby",
@@ -54,6 +57,12 @@ export type GameMediaPreset = {
   bgFx?: BoiBgFx;
   /** Bói: kiểu flip VFX mặc định */
   flipFx?: BoiFlipFx;
+  /** Ludo: ảnh mặt bàn */
+  boardUrl?: string;
+  /** Ludo: ảnh quân theo màu */
+  pawnUrls?: Partial<Record<LudoPawnColor, string>>;
+  /** Ludo: mặt xúc xắc (optional) */
+  diceUrl?: string;
   sfx?: {
     masterMuted?: boolean;
     volumes?: Partial<Record<"master" | "ui" | "tarot" | "olympus", number>>;
@@ -84,7 +93,7 @@ export type PlayMediaPresetsSnap = {
   updatedAt: number;
 };
 
-const GAME_IDS: PlayGameId[] = ["tarot", "olympus", "arcana", "boi"];
+const GAME_IDS: PlayGameId[] = ["tarot", "olympus", "arcana", "boi", "ludo"];
 
 function atomicWrite(path: string, data: unknown) {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
@@ -157,6 +166,24 @@ function normalizeGamePreset(raw: unknown): GameMediaPreset {
     o.flipFx === "alchemy"
   ) {
     out.flipFx = o.flipFx;
+  }
+  if (typeof o.boardUrl === "string") {
+    out.boardUrl = o.boardUrl.trim().slice(0, 200);
+  }
+  if (typeof o.diceUrl === "string") {
+    out.diceUrl = o.diceUrl.trim().slice(0, 200);
+  }
+  if (o.pawnUrls && typeof o.pawnUrls === "object") {
+    const urls: NonNullable<GameMediaPreset["pawnUrls"]> = {};
+    const raw = o.pawnUrls as Record<string, unknown>;
+    for (const id of LUDO_PAWN_COLORS) {
+      const v = raw[id];
+      if (typeof v === "string") {
+        const t = v.trim().slice(0, 200);
+        if (t) urls[id] = t;
+      }
+    }
+    if (Object.keys(urls).length) out.pawnUrls = urls;
   }
   if (o.sfx && typeof o.sfx === "object") {
     const s = o.sfx as Record<string, unknown>;
@@ -268,7 +295,10 @@ class PlayMediaPresetsStore {
   ): { ok: true; games: PlayMediaPresetsSnap["games"] } | { ok: false; reason: string } {
     const id = String(gameId ?? "").trim().toLowerCase() as PlayGameId;
     if (!GAME_IDS.includes(id)) {
-      return { ok: false, reason: "gameId phải là tarot|olympus|arcana|boi" };
+      return {
+        ok: false,
+        reason: "gameId phải là tarot|olympus|arcana|boi|ludo",
+      };
     }
     const cur = this.games[id] ?? {};
     const mergedSymbolUrls = {
@@ -279,6 +309,15 @@ class PlayMediaPresetsStore {
     if (patch.symbolUrls) {
       for (const [k, v] of Object.entries(patch.symbolUrls)) {
         if (v === "") delete (mergedSymbolUrls as Record<string, string>)[k];
+      }
+    }
+    const mergedPawnUrls = {
+      ...(cur.pawnUrls ?? {}),
+      ...(patch.pawnUrls ?? {}),
+    };
+    if (patch.pawnUrls) {
+      for (const [k, v] of Object.entries(patch.pawnUrls)) {
+        if (v === "") delete (mergedPawnUrls as Record<string, string>)[k];
       }
     }
     const mergedStyles = {
@@ -298,6 +337,7 @@ class PlayMediaPresetsStore {
       ...cur,
       ...patch,
       symbolUrls: mergedSymbolUrls,
+      pawnUrls: mergedPawnUrls,
       sfx: {
         ...cur.sfx,
         ...patch.sfx,

@@ -5,6 +5,8 @@ import {
   ARCANA_SFX_SLOTS,
   BOI_SFX_SLOT_META,
   BOI_SFX_SLOTS,
+  LUDO_SFX_SLOT_META,
+  LUDO_SFX_SLOTS,
   OLYMPUS_SFX_SLOT_META,
   OLYMPUS_SFX_SLOTS,
   normalizeSfxStyleId,
@@ -19,7 +21,7 @@ import {
 } from "../hooks/useSfx";
 import { invalidatePlayMediaPresetsCache } from "../hooks/useApplyPlayMediaPresets";
 
-type GameId = "tarot" | "olympus" | "arcana" | "boi";
+type GameId = "tarot" | "olympus" | "arcana" | "boi" | "ludo";
 
 type GameSfx = {
   /** May include legacy soft/crisp/bright — normalized when playing / highlighting */
@@ -272,7 +274,9 @@ export function SfxAdminPanel({
           ? OLYMPUS_SFX_SLOTS
           : tab === "arcana"
             ? ARCANA_SFX_SLOTS
-            : BOI_SFX_SLOTS;
+            : tab === "ludo"
+              ? LUDO_SFX_SLOTS
+              : BOI_SFX_SLOTS;
     const styles: Record<string, SfxStyleId> = {};
     for (const s of slots) styles[s] = style;
     void patchSfx(tab, { styles });
@@ -285,8 +289,8 @@ export function SfxAdminPanel({
       <div>
         <p className="play-heading text-sm">SFX · Tuỳ chọn âm thanh</p>
         <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-          Đủ 4 bàn: Tarot · Olympus · Arcana · Bói. Gói âm khác chất liệu (không
-          phải chỉnh êm·sắc). Nghe thử = synth thật / file upload.
+          Đủ 5 bàn: Tarot · Olympus · Arcana · Bói · Ludo. Gói âm khác chất liệu
+          (không phải chỉnh êm·sắc). Nghe thử = synth thật / file upload.
         </p>
       </div>
       <div className="flex flex-wrap gap-1.5">
@@ -296,6 +300,7 @@ export function SfxAdminPanel({
             ["olympus", "Olympus"],
             ["arcana", "Arcana"],
             ["boi", "Bói bài"],
+            ["ludo", "Ludo"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -377,6 +382,20 @@ export function SfxAdminPanel({
           gameId="boi"
           slots={BOI_SFX_SLOTS}
           meta={BOI_SFX_SLOT_META}
+          sfx={sfx}
+          busy={busy}
+          canEdit={canEdit}
+          onStyle={onStyle}
+          onUpload={(s, f) => void onUpload(s, f)}
+          onClearPath={onClearPath}
+          onPreview={onPreview}
+        />
+      ) : null}
+      {tab === "ludo" ? (
+        <SlotRows
+          gameId="ludo"
+          slots={LUDO_SFX_SLOTS}
+          meta={LUDO_SFX_SLOT_META}
           sfx={sfx}
           busy={busy}
           canEdit={canEdit}

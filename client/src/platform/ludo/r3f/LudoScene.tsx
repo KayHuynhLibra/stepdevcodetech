@@ -1,9 +1,10 @@
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { LudoBoardMesh } from "./LudoBoardMesh";
-import { LudoPawn } from "./LudoPawn";
+import type { LudoCosmetics } from "../../../hooks/useLudoCosmetics";
 import { PLAYER_COLORS, posToWorld, type LudoColor } from "../boardMap";
 import type { LudoThemeId } from "../themes";
+import { LudoBoardMesh } from "./LudoBoardMesh";
+import { LudoPawn } from "./LudoPawn";
 import { themeMaterials } from "./themeMaterials";
 
 export type LudoTokenView = {
@@ -19,12 +20,14 @@ type Props = {
   onPick: (tokenId: string) => void;
   myColor?: string | null;
   themeId: LudoThemeId;
+  cosmetics?: LudoCosmetics;
 };
 
 function Lights({ themeId }: { themeId: LudoThemeId }) {
   const mats = themeMaterials(themeId);
   const mobile =
-    typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches;
+    typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 720px)").matches;
   const mapSize = mobile ? 1024 : 2048;
   return (
     <>
@@ -55,6 +58,7 @@ export function LudoScene({
   onPick,
   myColor,
   themeId,
+  cosmetics,
 }: Props) {
   const mats = themeMaterials(themeId);
   const valid = new Set(validTokenIds);
@@ -70,7 +74,7 @@ export function LudoScene({
       <color attach="background" args={[mats.fog]} />
       <fog attach="fog" args={[mats.fog, 28, 55]} />
       <Lights themeId={themeId} />
-      <LudoBoardMesh themeId={themeId} />
+      <LudoBoardMesh themeId={themeId} boardUrl={cosmetics?.boardUrl} />
       {tokens.map((t) => (
         <LudoPawn
           key={t.id}
@@ -80,6 +84,10 @@ export function LudoScene({
           valid={valid.has(t.id)}
           mine={myColor === t.color}
           onPick={onPick}
+          imageUrl={
+            cosmetics?.pawnUrls?.[t.color as keyof typeof cosmetics.pawnUrls]
+          }
+          reduceFx={cosmetics?.reduceFx}
         />
       ))}
       <OrbitControls

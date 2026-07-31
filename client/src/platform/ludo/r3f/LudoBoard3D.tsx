@@ -1,5 +1,6 @@
-import { LudoScene, type LudoTokenView } from "./LudoScene";
+import type { LudoCosmetics } from "../../../hooks/useLudoCosmetics";
 import type { LudoThemeId } from "../themes";
+import { LudoScene, type LudoTokenView } from "./LudoScene";
 
 export type { LudoTokenView };
 
@@ -9,12 +10,14 @@ export default function LudoBoard3D({
   onPick,
   myColor,
   themeId = "classic",
+  cosmetics,
 }: {
   tokens: LudoTokenView[];
   validTokenIds: string[];
   onPick: (tokenId: string) => void;
   myColor?: string | null;
   themeId?: LudoThemeId;
+  cosmetics?: LudoCosmetics;
 }) {
   return (
     <div className="ludo-board3d" aria-label="Bàn Ludo 3D">
@@ -24,6 +27,7 @@ export default function LudoBoard3D({
         onPick={onPick}
         myColor={myColor}
         themeId={themeId}
+        cosmetics={cosmetics}
       />
     </div>
   );

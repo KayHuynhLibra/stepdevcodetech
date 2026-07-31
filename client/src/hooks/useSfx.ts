@@ -22,9 +22,15 @@ export type SfxName =
   | "land"
   | "thunder"
   | "oly_win"
-  | "ui";
+  | "ui"
+  | "roll"
+  | "move"
+  | "capture"
+  | "home";
 
 type SfxChannel = Exclude<AudioChannel, "master">;
+
+export type SfxGameId = "tarot" | "olympus" | "arcana" | "boi" | "ludo";
 
 const ALL_SFX_NAMES = new Set<string>([
   "tick",
@@ -39,6 +45,10 @@ const ALL_SFX_NAMES = new Set<string>([
   "thunder",
   "oly_win",
   "ui",
+  "roll",
+  "move",
+  "capture",
+  "home",
 ]);
 
 type SfxRuntime = {
@@ -46,9 +56,7 @@ type SfxRuntime = {
   paths: Partial<Record<string, string>>;
 };
 
-let runtimeByGame: Partial<
-  Record<"tarot" | "olympus" | "arcana" | "boi", SfxRuntime>
-> = {};
+let runtimeByGame: Partial<Record<SfxGameId, SfxRuntime>> = {};
 let runtimeAt = 0;
 const RUNTIME_CACHE_MS = 45_000;
 
@@ -57,9 +65,7 @@ export function invalidateSfxRuntimeCache() {
   runtimeByGame = {};
 }
 
-async function loadSfxRuntime(
-  gameId: "tarot" | "olympus" | "arcana" | "boi",
-): Promise<SfxRuntime> {
+async function loadSfxRuntime(gameId: SfxGameId): Promise<SfxRuntime> {
   if (
     Date.now() - runtimeAt < RUNTIME_CACHE_MS &&
     runtimeAt > 0 &&
@@ -83,7 +89,7 @@ async function loadSfxRuntime(
       >;
     }>("/api/play-media-presets");
     const next: typeof runtimeByGame = {};
-    for (const id of ["tarot", "olympus", "arcana", "boi"] as const) {
+    for (const id of ["tarot", "olympus", "arcana", "boi", "ludo"] as const) {
       const g = r.games?.[id]?.sfx;
       const styles: SfxRuntime["styles"] = {};
       const paths: SfxRuntime["paths"] = {};
@@ -521,6 +527,40 @@ function playSynth(
       playTone(ctx, dest, 75, 0.42, "sawtooth", 0.13, 0, 38);
       playTone(ctx, dest, 1400, 0.09, "square", 0.07, 0.05, 180);
     }
+    return;
+  }
+
+  if (name === "roll") {
+    playNoiseBurst(ctx, dest, 0.08, 0.12, 0, 1800, 1.2);
+    playTone(ctx, dest, 220, 0.06, "square", 0.08, 0.02);
+    playTone(ctx, dest, 340, 0.05, "square", 0.07, 0.07);
+    playNoiseBurst(ctx, dest, 0.05, 0.1, 0.1, 2400, 1.4);
+    if (style === "fortune") {
+      playTone(ctx, dest, 880, 0.08, "sine", 0.05, 0.14);
+    }
+    return;
+  }
+
+  if (name === "move") {
+    playTone(ctx, dest, 520, 0.07, "triangle", 0.09, 0, 380);
+    playTone(ctx, dest, 660, 0.06, "sine", 0.06, 0.05);
+    if (style === "casino") {
+      playNoiseBurst(ctx, dest, 0.04, 0.06, 0.02, 2000, 1.5);
+    }
+    return;
+  }
+
+  if (name === "capture") {
+    playNoiseBurst(ctx, dest, 0.12, 0.14, 0, 900, 1.1);
+    playTone(ctx, dest, 180, 0.12, "sawtooth", 0.1, 0, 90);
+    playTone(ctx, dest, 90, 0.16, "triangle", 0.08, 0.06);
+    return;
+  }
+
+  if (name === "home") {
+    playChord(ctx, dest, [523, 659, 784], 0.22, "sine", 0.07, 0, 0.05);
+    playTone(ctx, dest, 1046, 0.14, "triangle", 0.05, 0.12);
+    return;
   }
 }
 
@@ -561,7 +601,7 @@ export function previewSfxSlot(
 
 export function useSfx(
   defaultChannel: SfxChannel = "tarot",
-  gameId: "tarot" | "olympus" | "arcana" | "boi" = "tarot",
+  gameId: SfxGameId = "tarot",
 ) {
   const ctxRef = useRef<AudioContext | null>(null);
   const runtimeRef = useRef<SfxRuntime>({ styles: {}, paths: {} });

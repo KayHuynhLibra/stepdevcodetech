@@ -21,7 +21,7 @@ const MIME_EXT: Record<string, string> = {
   "audio/x-m4a": "m4a",
 };
 
-const GAMES = new Set(["tarot", "olympus", "arcana", "boi"]);
+const GAMES = new Set(["tarot", "olympus", "arcana", "boi", "ludo"]);
 
 function safeSlot(raw: string): string | null {
   const key = raw
@@ -41,7 +41,10 @@ export function saveSfxAudio(
     .trim()
     .toLowerCase();
   if (!GAMES.has(game)) {
-    return { ok: false, reason: "gameId phải là tarot|olympus|arcana|boi" };
+    return {
+      ok: false,
+      reason: "gameId phải là tarot|olympus|arcana|boi|ludo",
+    };
   }
   const key = safeSlot(slot);
   if (!key) return { ok: false, reason: "Slot SFX không hợp lệ" };

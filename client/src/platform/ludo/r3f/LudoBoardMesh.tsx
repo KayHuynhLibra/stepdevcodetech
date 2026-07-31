@@ -1,6 +1,6 @@
-import { useMemo } from "react";
-import { Text } from "@react-three/drei";
-import { BufferAttribute, BufferGeometry, DoubleSide } from "three";
+import { Suspense, useMemo } from "react";
+import { Text, useTexture } from "@react-three/drei";
+import { BufferAttribute, BufferGeometry, DoubleSide, SRGBColorSpace } from "three";
 import {
   BASE_PLATFORMS,
   CELL,
@@ -170,7 +170,24 @@ function CenterHome({ woodDark }: { woodDark: string }) {
   );
 }
 
-export function LudoBoardMesh({ themeId }: { themeId: LudoThemeId }) {
+function BoardArtPlane({ url, size }: { url: string; size: number }) {
+  const tex = useTexture(url);
+  tex.colorSpace = SRGBColorSpace;
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.22, 0]} receiveShadow>
+      <planeGeometry args={[size * 0.98, size * 0.98]} />
+      <meshStandardMaterial map={tex} roughness={0.65} metalness={0.05} />
+    </mesh>
+  );
+}
+
+export function LudoBoardMesh({
+  themeId,
+  boardUrl,
+}: {
+  themeId: LudoThemeId;
+  boardUrl?: string;
+}) {
   const mats = themeMaterials(themeId);
   const tiles = useMemo(() => {
     const list: { col: number; row: number }[] = [];
@@ -184,6 +201,7 @@ export function LudoBoardMesh({ themeId }: { themeId: LudoThemeId }) {
 
   const boardSize = GRID * CELL + 0.6;
   const colors = Object.keys(BASE_PLATFORMS) as LudoColor[];
+  const art = (boardUrl || "").trim();
 
   return (
     <group>
@@ -196,39 +214,47 @@ export function LudoBoardMesh({ themeId }: { themeId: LudoThemeId }) {
         <meshStandardMaterial color={mats.woodDark} roughness={0.8} />
       </mesh>
 
-      {colors.map((c) => (
-        <BasePlatform key={c} color={c} />
-      ))}
+      {art ? (
+        <Suspense fallback={null}>
+          <BoardArtPlane url={art} size={boardSize} />
+        </Suspense>
+      ) : (
+        <>
+          {colors.map((c) => (
+            <BasePlatform key={c} color={c} />
+          ))}
 
-      {tiles.map(({ col, row }) => (
-        <TrackTile
-          key={`${col}-${row}`}
-          col={col}
-          row={row}
-          trackColor={mats.track}
-        />
-      ))}
+          {tiles.map(({ col, row }) => (
+            <TrackTile
+              key={`${col}-${row}`}
+              col={col}
+              row={row}
+              trackColor={mats.track}
+            />
+          ))}
 
-      <CenterHome woodDark={mats.woodDark} />
+          <CenterHome woodDark={mats.woodDark} />
 
-      {SUIT_MARKS.map((m, i) => {
-        const [x, , z] = gridToWorld(m.col, m.row, TILE_Y + TILE_H / 2 + 0.06);
-        return (
-          <Text
-            key={i}
-            position={[x, TILE_Y + TILE_H / 2 + 0.06, z]}
-            rotation={[-Math.PI / 2, 0, 0]}
-            fontSize={0.4}
-            color={m.color}
-            anchorX="center"
-            anchorY="middle"
-            outlineWidth={0.02}
-            outlineColor="#00000055"
-          >
-            {m.symbol}
-          </Text>
-        );
-      })}
+          {SUIT_MARKS.map((m, i) => {
+            const [x, , z] = gridToWorld(m.col, m.row, TILE_Y + TILE_H / 2 + 0.06);
+            return (
+              <Text
+                key={i}
+                position={[x, TILE_Y + TILE_H / 2 + 0.06, z]}
+                rotation={[-Math.PI / 2, 0, 0]}
+                fontSize={0.4}
+                color={m.color}
+                anchorX="center"
+                anchorY="middle"
+                outlineWidth={0.02}
+                outlineColor="#00000055"
+              >
+                {m.symbol}
+              </Text>
+            );
+          })}
+        </>
+      )}
     </group>
   );
 }

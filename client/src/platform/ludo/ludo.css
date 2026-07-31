@@ -309,9 +309,52 @@
   opacity: 0.92;
 }
 
+.ludo-token.has-art {
+  color: transparent;
+  border-color: rgba(255, 255, 255, 0.75);
+  background-color: transparent;
+}
+
+.ludo-token.is-hop {
+  animation: ludo-hop 0.4s ease-out;
+}
+
+.ludo-board__face.has-art .ludo-board__quad,
+.ludo-board__face.has-art .ludo-board__cross {
+  display: none;
+}
+
+.ludo-dice.has-art {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+}
+
+.ludo-mute {
+  margin-left: 0.35rem;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  border-radius: 0.35rem;
+  border: 2px solid var(--ludo-panel-border);
+  background: var(--ludo-panel-bg);
+  cursor: pointer;
+  font-size: 1rem;
+}
+
 @keyframes ludo-pulse {
   50% {
     transform: translate(-50%, -50%) scale(1.12);
+  }
+}
+
+@keyframes ludo-hop {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  40% {
+    transform: translate(-50%, calc(-50% - 10px)) scale(1.12);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
   }
 }
 
@@ -441,7 +484,8 @@
 @media (prefers-reduced-motion: reduce) {
   .ludo-dice.is-ready,
   .ludo-hand,
-  .ludo-token.is-valid {
+  .ludo-token.is-valid,
+  .ludo-token.is-hop {
     animation: none;
   }
 }
