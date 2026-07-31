@@ -32,6 +32,7 @@ import {
 } from "../lib/arcanaPayout";
 import { onArcanaImgError } from "../lib/arcanaImages";
 import { useApplyPlayMediaPresets } from "../hooks/useApplyPlayMediaPresets";
+import { useSfx } from "../hooks/useSfx";
 import {
   EU_WHEEL_ORDER,
   outerPickLabelVi,
@@ -310,6 +311,7 @@ function DoubleArcanaRoulette({
 
 export default function ArcanaWheelPage() {
   useApplyPlayMediaPresets("arcana");
+  const { play: playSfx } = useSfx("tarot", "arcana");
   const playSock = usePlaySocket();
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
   const [balance, setBalance] = useState(user?.balance ?? 0);
@@ -570,6 +572,7 @@ export default function ArcanaWheelPage() {
     spinningRef.current = true;
     setSpinning(true);
     setLastResult(null);
+    playSfx("spin");
 
     try {
       const r = await api<{
@@ -621,6 +624,9 @@ export default function ArcanaWheelPage() {
       setDisplayWinId(r.spin.winId);
       setDisplayOuter(outerNum);
       setLastResult(r.spin);
+      playSfx("land");
+      if ((r.spin.payout ?? 0) > 0) playSfx("win");
+      else playSfx("lose");
       setRecent(r.recent);
       syncUserBalance(r.balance);
       setLuckStreak(r.luckStreak);
@@ -638,7 +644,7 @@ export default function ArcanaWheelPage() {
       spinningRef.current = false;
       setSpinning(false);
     }
-  }, [slots, pickMin, pickMax]);
+  }, [slots, pickMin, pickMax, playSfx]);
 
   // Auto loop
   useEffect(() => {

@@ -337,6 +337,23 @@ function requireMainAdmin(
   return user;
 }
 
+/** Mess / Feedback inbox — mainadmin hoặc staff_dashboard (ops 24/7). */
+function requireInboxOps(
+  req: express.Request,
+  res: express.Response,
+): ReturnType<typeof authStore.resolveToken> {
+  const user = requireAuth(req, res);
+  if (!user) return null;
+  if (!isMainAdmin(user) && !hasCapability(user, "staff_dashboard")) {
+    res.status(403).json({
+      ok: false,
+      reason: "Cần mainadmin hoặc quyền staff dashboard",
+    });
+    return null;
+  }
+  return user;
+}
+
 /** Tab Room + REST điều hành voice — mainadmin / mod (admin staff cũng được). */
 function requireRoomModerator(
   req: express.Request,
@@ -1130,7 +1147,8 @@ app.post("/api/feedback/:id/message", (req, res) => {
     return res.status(404).json({ ok: false, reason: "Không tìm thấy góp ý" });
   }
   const isOwner = ticket.userId === user.id;
-  const isStaff = isMainAdmin(user);
+  const isStaff =
+    isMainAdmin(user) || hasCapability(user, "staff_dashboard");
   if (!isOwner && !isStaff) {
     return res.status(403).json({ ok: false, reason: "Không có quyền" });
   }
@@ -1149,7 +1167,7 @@ app.post("/api/feedback/:id/message", (req, res) => {
 });
 
 app.get("/api/mainadmin/feedback", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireInboxOps(req, res);
   if (!me) return;
   const statusRaw = String(req.query.status ?? "all");
   const kindRaw = String(req.query.kind ?? "all");
@@ -1181,7 +1199,7 @@ app.get("/api/mainadmin/feedback", (req, res) => {
 });
 
 app.post("/api/mainadmin/feedback/:id/status", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireInboxOps(req, res);
   if (!me) return;
   const id = String(req.params.id ?? "");
   const status = req.body?.status;
@@ -1257,7 +1275,7 @@ app.post("/api/mess/mine/message", (req, res) => {
 });
 
 app.get("/api/mainadmin/mess", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireInboxOps(req, res);
   if (!me) return;
   const q = String(req.query.q ?? "")
     .trim()
@@ -1279,7 +1297,7 @@ app.get("/api/mainadmin/mess", (req, res) => {
 });
 
 app.get("/api/mainadmin/mess/:id", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireInboxOps(req, res);
   if (!me) return;
   const id = String(req.params.id ?? "");
   const thread = messStore.getById(id);
@@ -1291,7 +1309,7 @@ app.get("/api/mainadmin/mess/:id", (req, res) => {
 });
 
 app.post("/api/mainadmin/mess/:id/message", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireInboxOps(req, res);
   if (!me) return;
   if (!rateLimit(`mess-staff:${me.id}`, 40, 60_000)) {
     return res.status(429).json({ ok: false, reason: "Thử lại sau" });
@@ -1360,7 +1378,7 @@ app.get("/api/admin/overview", (req, res) => {
   payload.audit = auditStore.list(200);
   payload.reports = reportStore.list(60);
   payload.liveGuests = engine.listLiveGuestsForAdmin();
-  if (isMainAdmin(me)) {
+  if (isMainAdmin(me) || hasCapability(me, "staff_dashboard")) {
     payload.feedbackOpenCount = feedbackStore.openCount();
     payload.messUnreadCount = messStore.unreadForStaff();
   }

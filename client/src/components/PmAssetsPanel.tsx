@@ -3,8 +3,8 @@ import { api, type AuthUser } from "../auth";
 import type { GameManifest } from "../platform/games";
 import { ImageUploadPopup, type CatalogUploadKind } from "./ImageUploadPopup";
 import { BottomSheet } from "./BottomSheet";
-import { OracleAdminPanel } from "./OracleAdminPanel";
 import { SfxAdminPanel } from "./SfxAdminPanel";
+import { BoiCosmeticsAdmin } from "./BoiCosmeticsAdmin";
 
 type GameId = "tarot" | "olympus" | "arcana" | "boi";
 
@@ -201,6 +201,8 @@ export function PmAssetsPanel({
         busy={busy}
         setBusy={setBusy}
       />
+
+      <BoiCosmeticsAdmin canEdit={main || !!me} onMsg={onMsg} />
 
       <div className="app-panel p-3">
         <p className="play-heading text-sm">Ảnh cover lobby</p>
@@ -729,13 +731,6 @@ export function PmAssetsPanel({
           ))}
         </div>
       </BottomSheet>
-
-      <OracleAdminPanel
-        main={main}
-        canEdit
-        compact
-        onMsg={onMsg}
-      />
     </section>
   );
 }

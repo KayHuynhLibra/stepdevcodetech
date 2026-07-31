@@ -74,10 +74,33 @@ export const BOI_SFX_SLOT_META: Record<
   ui: { label: "UI", hint: "Click / nút" },
 };
 
+/** Slot Arcana wheel */
+export const ARCANA_SFX_SLOTS = [
+  "spin",
+  "land",
+  "win",
+  "lose",
+  "ui",
+] as const;
+
+export type ArcanaSfxSlot = (typeof ARCANA_SFX_SLOTS)[number];
+
+export const ARCANA_SFX_SLOT_META: Record<
+  ArcanaSfxSlot,
+  { label: string; hint: string }
+> = {
+  spin: { label: "Quay", hint: "Bắt đầu spin bánh" },
+  land: { label: "Dừng", hint: "Kim dừng ô" },
+  win: { label: "Thắng", hint: "Kết quả thắng" },
+  lose: { label: "Thua", hint: "Kết quả thua" },
+  ui: { label: "UI", hint: "Click / nút" },
+};
+
 export type SfxSlotName =
   | TarotSfxSlot
   | OlympusSfxSlot
   | BoiSfxSlot
+  | ArcanaSfxSlot
   | "ui";
 
 export function isSfxStyleId(v: unknown): v is SfxStyleId {

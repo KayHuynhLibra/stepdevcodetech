@@ -1,6 +1,8 @@
 import { useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { api } from "../auth";
 import {
+  ARCANA_SFX_SLOT_META,
+  ARCANA_SFX_SLOTS,
   BOI_SFX_SLOT_META,
   BOI_SFX_SLOTS,
   OLYMPUS_SFX_SLOT_META,
@@ -301,6 +303,7 @@ export function SfxAdminPanel({
           [
             ["tarot", "Tarot 8 lá"],
             ["olympus", "Olympus"],
+            ["arcana", "Arcana"],
             ["boi", "Bói bài"],
           ] as const
         ).map(([id, label]) => (
@@ -338,6 +341,20 @@ export function SfxAdminPanel({
           gameId="olympus"
           slots={OLYMPUS_SFX_SLOTS}
           meta={OLYMPUS_SFX_SLOT_META}
+          sfx={sfx}
+          busy={busy}
+          canEdit={canEdit}
+          onStyle={onStyle}
+          onUpload={(s, f) => void onUpload(s, f)}
+          onClearPath={onClearPath}
+          onPreview={onPreview}
+        />
+      ) : null}
+      {tab === "arcana" ? (
+        <SlotRows
+          gameId="arcana"
+          slots={ARCANA_SFX_SLOTS}
+          meta={ARCANA_SFX_SLOT_META}
           sfx={sfx}
           busy={busy}
           canEdit={canEdit}

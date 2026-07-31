@@ -44,17 +44,26 @@ type SfxRuntime = {
   paths: Partial<Record<string, string>>;
 };
 
-let runtime: SfxRuntime = { styles: {}, paths: {} };
+let runtimeByGame: Partial<
+  Record<"tarot" | "olympus" | "arcana" | "boi", SfxRuntime>
+> = {};
 let runtimeAt = 0;
 const RUNTIME_CACHE_MS = 45_000;
 
 export function invalidateSfxRuntimeCache() {
   runtimeAt = 0;
+  runtimeByGame = {};
 }
 
-async function loadSfxRuntime(gameId: string): Promise<SfxRuntime> {
-  if (Date.now() - runtimeAt < RUNTIME_CACHE_MS && runtimeAt > 0) {
-    return runtime;
+async function loadSfxRuntime(
+  gameId: "tarot" | "olympus" | "arcana" | "boi",
+): Promise<SfxRuntime> {
+  if (
+    Date.now() - runtimeAt < RUNTIME_CACHE_MS &&
+    runtimeAt > 0 &&
+    runtimeByGame[gameId]
+  ) {
+    return runtimeByGame[gameId]!;
   }
   try {
     const r = await api<{
@@ -71,29 +80,28 @@ async function loadSfxRuntime(gameId: string): Promise<SfxRuntime> {
         >
       >;
     }>("/api/play-media-presets");
-    const styles: SfxRuntime["styles"] = {};
-    const paths: SfxRuntime["paths"] = {};
-    // Merge all games — slots are unique enough; prefer requested game last
-    const order = ["tarot", "olympus", "boi", "arcana", gameId];
-    for (const id of order) {
+    const next: typeof runtimeByGame = {};
+    for (const id of ["tarot", "olympus", "arcana", "boi"] as const) {
       const g = r.games?.[id]?.sfx;
-      if (!g) continue;
-      if (g.styles) {
+      const styles: SfxRuntime["styles"] = {};
+      const paths: SfxRuntime["paths"] = {};
+      if (g?.styles) {
         for (const [k, v] of Object.entries(g.styles)) {
           if (isSfxStyleId(v)) styles[k] = v;
         }
       }
-      if (g.paths) {
+      if (g?.paths) {
         for (const [k, v] of Object.entries(g.paths)) {
           if (typeof v === "string" && v.trim()) paths[k] = v.trim();
         }
       }
+      next[id] = { styles, paths };
     }
-    runtime = { styles, paths };
+    runtimeByGame = next;
     runtimeAt = Date.now();
-    return runtime;
+    return runtimeByGame[gameId] ?? { styles: {}, paths: {} };
   } catch {
-    return runtime;
+    return runtimeByGame[gameId] ?? { styles: {}, paths: {} };
   }
 }
 
@@ -278,11 +286,18 @@ export function useSfx(
   gameId: "tarot" | "olympus" | "arcana" | "boi" = "tarot",
 ) {
   const ctxRef = useRef<AudioContext | null>(null);
+  const runtimeRef = useRef<SfxRuntime>({ styles: {}, paths: {} });
   const { prefs, toggleChannelMute, toggleMasterMute, anyMuted } =
     usePlayPrefs();
 
   useEffect(() => {
-    void loadSfxRuntime(gameId);
+    let cancelled = false;
+    void loadSfxRuntime(gameId).then((r) => {
+      if (!cancelled) runtimeRef.current = r;
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [gameId]);
 
   const ensureCtx = () => {
@@ -320,13 +335,14 @@ export function useSfx(
       const gainMul = channelGain(prefs, ch);
       if (gainMul <= 0.001) return;
 
-      const path = runtime.paths[name];
+      const rt = runtimeRef.current;
+      const path = rt.paths[name];
       if (path) {
         playFile(path, Math.min(1, gainMul));
         return;
       }
 
-      const style = runtime.styles[name] ?? "classic";
+      const style = rt.styles[name] ?? "classic";
       try {
         const ctx = ensureCtx();
         const dest = ctx.createGain();

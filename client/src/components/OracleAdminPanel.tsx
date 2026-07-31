@@ -11,7 +11,6 @@ import {
   type OracleTradition,
 } from "../oracle";
 import { ImageUploadPopup } from "./ImageUploadPopup";
-import { BoiCosmeticsAdmin } from "./BoiCosmeticsAdmin";
 
 type Catalog = {
   decks: OracleDeckMeta[];
@@ -258,10 +257,8 @@ export function OracleAdminPanel({
   };
 
   return (
-    <div className={`space-y-3 ${compact ? "mt-0" : "mt-4"}`}>
-      <BoiCosmeticsAdmin canEdit={edit} onMsg={onMsg} />
     <section
-      className="app-panel space-y-3 p-3 sm:p-4"
+      className={`app-panel space-y-3 p-3 sm:p-4 ${compact ? "mt-0" : "mt-4"}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
@@ -931,6 +928,5 @@ export function OracleAdminPanel({
         }}
       />
     </section>
-    </div>
   );
 }
