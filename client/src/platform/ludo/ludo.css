@@ -4,8 +4,94 @@
   --ludo-green: #2d8a4e;
   --ludo-yellow: #d4a017;
   --ludo-blue: #2b6cb0;
+  --ludo-board-bg: linear-gradient(135deg, #f7efe0, #e8d4b0);
+  --ludo-board-border: #5c3a1a;
+  --ludo-cross: #f0e6d2;
+  --ludo-safe-bg: radial-gradient(circle, #fff8e8, #e8c56a);
+  --ludo-panel-bg: rgba(255, 252, 245, 0.92);
+  --ludo-panel-border: rgba(138, 90, 43, 0.2);
+  --ludo-dice-bg: linear-gradient(160deg, #fff8e8, #f2ab27 55%, #c45a12);
+  --ludo-dice-border: #5c3a1a;
+  --ludo-dice-color: #1a1208;
+  --ludo-block-shadow: 3px 3px 0 rgba(40, 20, 8, 0.35);
   max-width: 28rem;
   margin: 0 auto;
+}
+
+/* —— Soccer —— */
+.ludo-page[data-theme="soccer"] {
+  --ludo-red: #c62828;
+  --ludo-green: #2e7d32;
+  --ludo-yellow: #f9a825;
+  --ludo-blue: #1565c0;
+  --ludo-board-bg: linear-gradient(160deg, #8fd48a, #3d9e4a 40%, #2e7d32);
+  --ludo-board-border: #1b5e20;
+  --ludo-cross: #eceff1;
+  --ludo-safe-bg: url("/assets/ludo/soccer/safe-ball.svg") center / contain no-repeat;
+  --ludo-panel-bg: rgba(232, 245, 233, 0.95);
+  --ludo-panel-border: rgba(27, 94, 32, 0.35);
+  --ludo-dice-bg: linear-gradient(160deg, #fff, #cfd8dc 40%, #90a4ae);
+  --ludo-dice-border: #263238;
+  --ludo-dice-color: #0d47a1;
+  --ludo-block-shadow: 3px 3px 0 rgba(27, 94, 32, 0.4);
+}
+
+.ludo-page[data-theme="soccer"] .ludo-board__quad {
+  opacity: 0.72;
+  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.35);
+}
+
+.ludo-page[data-theme="soccer"] .ludo-board__quad--red,
+.ludo-page[data-theme="soccer"] .ludo-board__quad--green,
+.ludo-page[data-theme="soccer"] .ludo-board__quad--yellow,
+.ludo-page[data-theme="soccer"] .ludo-board__quad--blue {
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 6px,
+    rgba(255, 255, 255, 0.12) 6px,
+    rgba(255, 255, 255, 0.12) 7px
+  );
+}
+
+.ludo-page[data-theme="soccer"] .ludo-safe {
+  border: none;
+  background: var(--ludo-safe-bg);
+  border-radius: 0;
+  width: 5.5%;
+  height: 5.5%;
+  margin: -2.75%;
+}
+
+/* —— Arena —— */
+.ludo-page[data-theme="arena"] {
+  --ludo-ink: #f5e6c8;
+  --ludo-red: #ff5a3c;
+  --ludo-green: #3dd68c;
+  --ludo-yellow: #ffc14a;
+  --ludo-blue: #5b8cff;
+  --ludo-board-bg: linear-gradient(160deg, #2a2035, #1a1218 55%, #12101a);
+  --ludo-board-border: #f2ab27;
+  --ludo-cross: #3a3048;
+  --ludo-safe-bg: radial-gradient(circle, #ffe08a, #c4891a);
+  --ludo-panel-bg: rgba(26, 18, 36, 0.92);
+  --ludo-panel-border: rgba(245, 197, 66, 0.4);
+  --ludo-dice-bg: linear-gradient(160deg, #ffeb99, #ff6b1a 45%, #b32a00);
+  --ludo-dice-border: #ffd27a;
+  --ludo-dice-color: #1a0a00;
+  --ludo-block-shadow: 3px 3px 0 rgba(255, 107, 26, 0.45);
+}
+
+.ludo-page[data-theme="arena"] .ludo-msg,
+.ludo-page[data-theme="arena"] .ludo-panel,
+.ludo-page[data-theme="arena"] .ludo-seat {
+  color: #fff4e6;
+}
+
+.ludo-page[data-theme="arena"] .ludo-hub input {
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff4e6;
+  border-color: rgba(245, 197, 66, 0.4);
 }
 
 .ludo-hub {
@@ -23,11 +109,93 @@
 .ludo-hub input {
   flex: 1;
   min-width: 7rem;
-  border-radius: 0.65rem;
-  border: 1.5px solid rgba(138, 90, 43, 0.25);
+  border-radius: 0.35rem;
+  border: 2px solid rgba(138, 90, 43, 0.35);
   padding: 0.55rem 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
+  box-shadow: var(--ludo-block-shadow);
+}
+
+.ludo-theme-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.45rem;
+}
+
+@media (min-width: 380px) {
+  .ludo-theme-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}
+
+.ludo-theme-card {
+  display: grid;
+  gap: 0.35rem;
+  text-align: left;
+  padding: 0.45rem;
+  border-radius: 0.35rem;
+  border: 2px solid rgba(92, 58, 26, 0.35);
+  background: #fffaf0;
+  box-shadow: var(--ludo-block-shadow);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.ludo-theme-card.is-on {
+  border-color: var(--wood-deep, #5c3a1a);
+  outline: 2px solid rgba(242, 171, 39, 0.75);
+}
+
+.ludo-theme-card__swatch {
+  height: 2.25rem;
+  border-radius: 0.25rem;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.ludo-theme-card__name {
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.ludo-theme-card__blurb {
+  font-size: 0.58rem;
+  line-height: 1.3;
+  color: var(--play-muted, #6b5344);
+}
+
+.ludo-btn-block {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 2.5rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 0.35rem;
+  border: 2px solid var(--ludo-board-border);
+  background: linear-gradient(180deg, #fff8e8, #e8c56a);
+  color: var(--ludo-ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-family: inherit;
+  box-shadow: var(--ludo-block-shadow);
+  cursor: pointer;
+}
+
+.ludo-btn-block:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ludo-btn-block--primary {
+  background: linear-gradient(180deg, #5c3a1a, #3a2410);
+  color: #fff4e6;
+  border-color: #f2ab27;
+}
+
+.ludo-btn-block--ghost {
+  background: #fff;
 }
 
 .ludo-board {
@@ -46,13 +214,12 @@
   position: relative;
   width: 100%;
   aspect-ratio: 1;
-  border-radius: 0.75rem;
-  background:
-    linear-gradient(135deg, #f7efe0, #e8d4b0);
-  border: 3px solid #5c3a1a;
+  border-radius: 0.55rem;
+  background: var(--ludo-board-bg);
+  border: 3px solid var(--ludo-board-border);
   box-shadow:
     0 12px 28px rgba(40, 20, 8, 0.35),
-    inset 0 0 0 2px rgba(255, 255, 255, 0.25);
+    inset 0 0 0 2px rgba(255, 255, 255, 0.2);
   overflow: hidden;
 }
 
@@ -91,8 +258,8 @@
   position: absolute;
   inset: 20%;
   background:
-    linear-gradient(#f0e6d2, #f0e6d2) center/20% 100% no-repeat,
-    linear-gradient(#f0e6d2, #f0e6d2) center/100% 20% no-repeat;
+    linear-gradient(var(--ludo-cross), var(--ludo-cross)) center/20% 100% no-repeat,
+    linear-gradient(var(--ludo-cross), var(--ludo-cross)) center/100% 20% no-repeat;
   opacity: 0.95;
 }
 
@@ -102,7 +269,7 @@
   height: 4.5%;
   margin: -2.25%;
   border-radius: 50%;
-  background: radial-gradient(circle, #fff8e8, #e8c56a);
+  background: var(--ludo-safe-bg);
   border: 1px solid rgba(120, 80, 20, 0.45);
   transform: translate(-50%, -50%);
   pointer-events: none;
@@ -114,29 +281,31 @@
   height: 7.5%;
   margin: 0;
   padding: 0;
-  border-radius: 50% 50% 45% 45%;
-  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 50% 50% 40% 40%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
   transform: translate(-50%, -50%);
   font-size: 0.55rem;
   font-weight: 800;
   color: #fff;
   cursor: default;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  box-shadow:
+    0 3px 0 rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
   z-index: 2;
 }
 
 .ludo-token--red {
-  background: var(--ludo-red);
+  background: linear-gradient(160deg, #ff8a7a, var(--ludo-red));
 }
 .ludo-token--green {
-  background: var(--ludo-green);
+  background: linear-gradient(160deg, #7dffb0, var(--ludo-green));
 }
 .ludo-token--yellow {
-  background: var(--ludo-yellow);
+  background: linear-gradient(160deg, #ffe08a, var(--ludo-yellow));
   color: #1a1208;
 }
 .ludo-token--blue {
-  background: var(--ludo-blue);
+  background: linear-gradient(160deg, #9ec0ff, var(--ludo-blue));
 }
 
 .ludo-token.is-valid {
@@ -162,9 +331,10 @@
   gap: 0.45rem;
   margin-top: 0.75rem;
   padding: 0.65rem 0.75rem;
-  border-radius: 0.85rem;
-  background: rgba(255, 252, 245, 0.92);
-  border: 1.5px solid rgba(138, 90, 43, 0.2);
+  border-radius: 0.45rem;
+  background: var(--ludo-panel-bg);
+  border: 2px solid var(--ludo-panel-border);
+  box-shadow: var(--ludo-block-shadow);
 }
 
 .ludo-panel__row {
@@ -175,19 +345,63 @@
   gap: 0.5rem;
 }
 
+.ludo-dice-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
 .ludo-dice {
-  min-width: 3rem;
-  min-height: 3rem;
-  border-radius: 0.65rem;
-  border: 2px solid #5c3a1a;
-  background: #fff;
-  font-size: 1.4rem;
-  font-weight: 800;
+  min-width: 3.25rem;
+  min-height: 3.25rem;
+  border-radius: 0.35rem;
+  border: 3px solid var(--ludo-dice-border);
+  background: var(--ludo-dice-bg);
+  color: var(--ludo-dice-color);
+  font-size: 1.45rem;
+  font-weight: 900;
   font-variant-numeric: tabular-nums;
+  box-shadow:
+    var(--ludo-block-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  font-family: inherit;
 }
 
 .ludo-dice:disabled {
   opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ludo-dice.is-ready:not(:disabled) {
+  animation: ludo-dice-glow 1.1s ease-in-out infinite;
+}
+
+.ludo-hand {
+  position: absolute;
+  right: -1.35rem;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0.55rem 0.85rem 0.55rem 0;
+  border-color: transparent #fff8e8 transparent transparent;
+  filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+  transform: translateY(-50%);
+  animation: ludo-hand-nudge 0.85s ease-in-out infinite;
+}
+
+@keyframes ludo-dice-glow {
+  50% {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes ludo-hand-nudge {
+  50% {
+    transform: translateY(-50%) translateX(-4px);
+  }
 }
 
 .ludo-seats {
@@ -199,12 +413,14 @@
 
 .ludo-seat {
   padding: 0.35rem 0.45rem;
-  border-radius: 0.5rem;
-  background: rgba(0, 0, 0, 0.04);
+  border-radius: 0.3rem;
+  background: rgba(0, 0, 0, 0.05);
+  border: 2px solid transparent;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.08);
 }
 
 .ludo-seat.is-turn {
-  outline: 2px solid var(--wood-deep, #5c3a1a);
+  border-color: var(--ludo-board-border);
   font-weight: 800;
 }
 
@@ -234,7 +450,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ludo-token.is-valid {
+  .ludo-token.is-valid,
+  .ludo-dice.is-ready,
+  .ludo-hand {
     animation: none;
   }
   .ludo-board__iso {

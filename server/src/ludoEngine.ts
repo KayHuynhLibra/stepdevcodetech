@@ -52,6 +52,16 @@ export type TurnPhase =
   | "animating"
   | "finished";
 
+export type LudoThemeId = "classic" | "soccer" | "arena";
+
+export const LUDO_THEME_IDS: LudoThemeId[] = ["classic", "soccer", "arena"];
+
+export function normalizeLudoThemeId(raw: unknown): LudoThemeId {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (s === "soccer" || s === "arena" || s === "classic") return s;
+  return "classic";
+}
+
 export type LudoPublicState = {
   roomId: string;
   status: "lobby" | "playing" | "finished";
@@ -66,6 +76,7 @@ export type LudoPublicState = {
   winnerSeat: number | null;
   lastEvent: string | null;
   stake: number;
+  themeId: LudoThemeId;
 };
 
 export function tokenId(color: LudoColor, index: number): string {

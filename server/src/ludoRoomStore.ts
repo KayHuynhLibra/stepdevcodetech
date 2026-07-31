@@ -8,8 +8,10 @@ import {
   createTokens,
   earnsExtraTurn,
   LUDO_COLORS,
+  normalizeLudoThemeId,
   type LudoPlayer,
   type LudoPublicState,
+  type LudoThemeId,
   pickAutoToken,
   validTokenIds,
 } from "./ludoEngine.js";
@@ -93,7 +95,11 @@ class LudoRoomStore {
 
   private publicView(r: RoomInternal): LudoPublicState {
     const { updatedAt: _, ...rest } = r;
-    return { ...rest, tokens: r.tokens.map((t) => ({ ...t })) };
+    return {
+      ...rest,
+      themeId: normalizeLudoThemeId(r.themeId),
+      tokens: r.tokens.map((t) => ({ ...t })),
+    };
   }
 
   createRoom(opts: {
@@ -102,9 +108,11 @@ class LudoRoomStore {
     displayName: string;
     stake?: number;
     fillBots?: boolean;
+    themeId?: LudoThemeId | string;
   }): LudoPublicState {
     const roomId = rid();
     const stake = Math.max(0, Math.floor(opts.stake ?? 0));
+    const themeId = normalizeLudoThemeId(opts.themeId);
     const players: LudoPlayer[] = LUDO_COLORS.map((color, seat) => ({
       seat,
       color,
@@ -156,6 +164,7 @@ class LudoRoomStore {
       winnerSeat: null,
       lastEvent: "Phòng tạo — sẵn sàng bắt đầu",
       stake,
+      themeId,
       updatedAt: now(),
     };
 

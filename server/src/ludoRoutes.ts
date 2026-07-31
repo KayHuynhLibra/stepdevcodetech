@@ -58,6 +58,7 @@ export function mountLudoRoutes(app: Express) {
       displayName: a.displayName,
       stake: Number.isFinite(stake) ? Math.min(stake, 100_000) : 0,
       fillBots: req.body?.fillBots !== false,
+      themeId: req.body?.themeId,
     });
     res.json({ ok: true, room });
   });
