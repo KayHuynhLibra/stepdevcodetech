@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Redeploy Sofiaore / Tarot -> Railway (https://stepkay.codes)
 
@@ -80,18 +80,20 @@ function Invoke-Typecheck {
 
 function Invoke-Deploy {
   Write-Title "Deploy Railway (upload local)"
-  Write-Host "Lenh: npx --yes @railway/cli@latest up -c -y" -ForegroundColor DarkGray
+  # PowerShell splat: avoid bare @pkg — use single-quoted package id.
+  $cli = '@railway/cli@latest'
+  Write-Host "Lenh: npx --yes $cli up -c -y" -ForegroundColor DarkGray
   Write-Host "Doi build... (co the 1-3 phut)" -ForegroundColor Yellow
-  # Windows: avoid `npx pkg -- subcmd` (npm "could not determine executable").
-  & npx --yes "@railway/cli@latest" up -c -y
+  & npx.cmd --yes $cli up -c -y
   if ($LASTEXITCODE -ne 0) { throw "railway up failed (exit $LASTEXITCODE)" }
   Write-Host "Deploy CLI xong - kiem tra SUCCESS ben duoi / dashboard." -ForegroundColor Green
 }
 
 function Invoke-Verify {
   Write-Title "Verify live"
+  $cli = '@railway/cli@latest'
   Write-Host "-> deployment list" -ForegroundColor Yellow
-  & npx --yes "@railway/cli@latest" deployment list --limit 3
+  & npx.cmd --yes $cli deployment list --limit 3
 
   Write-Host ""
   Write-Host "-> GET $HealthUrl" -ForegroundColor Yellow
@@ -112,9 +114,10 @@ function Invoke-Verify {
 
 function Invoke-Status {
   Write-Title "Railway status"
-  & npx --yes "@railway/cli@latest" whoami
-  & npx --yes "@railway/cli@latest" status
-  & npx --yes "@railway/cli@latest" deployment list --limit 5
+  $cli = '@railway/cli@latest'
+  & npx.cmd --yes $cli whoami
+  & npx.cmd --yes $cli status
+  & npx.cmd --yes $cli deployment list --limit 5
 }
 
 function Show-Menu {
