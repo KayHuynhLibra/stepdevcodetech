@@ -1,71 +1,305 @@
-/** Map Ludo track index → board % on a 15×15 logical grid (isometric CSS). */
+/**
+ * Ludo 15×15 grid → % (legacy) and world X/Z for R3F.
+ * Track 0..51, home 100..104, finish 105, base -1.
+ * Starts: red 0, green 13, yellow 26, blue 39 (engine).
+ */
 
 export type BoardXY = { x: number; y: number };
+export type WorldPos = [number, number, number];
+
+export const GRID = 15;
+export const CELL = 1;
+export const BOARD_HALF = ((GRID - 1) / 2) * CELL; // 7
+export const PAWN_Y = 0.55;
+
+export type LudoColor = "red" | "green" | "yellow" | "blue";
+
+/** Bijanrai-style ring, clockwise from red start so green sits on the right arm. */
+const TRACK_CR: [number, number][] = (() => {
+  const ccw: [number, number][] = [
+    [6, 13],
+    [6, 12],
+    [6, 11],
+    [6, 10],
+    [6, 9],
+    [5, 8],
+    [4, 8],
+    [3, 8],
+    [2, 8],
+    [1, 8],
+    [0, 8],
+    [0, 7],
+    [0, 6],
+    [1, 6],
+    [2, 6],
+    [3, 6],
+    [4, 6],
+    [5, 6],
+    [6, 5],
+    [6, 4],
+    [6, 3],
+    [6, 2],
+    [6, 1],
+    [6, 0],
+    [7, 0],
+    [8, 0],
+    [8, 1],
+    [8, 2],
+    [8, 3],
+    [8, 4],
+    [8, 5],
+    [9, 6],
+    [10, 6],
+    [11, 6],
+    [12, 6],
+    [13, 6],
+    [14, 6],
+    [14, 7],
+    [14, 8],
+    [13, 8],
+    [12, 8],
+    [11, 8],
+    [10, 8],
+    [9, 8],
+    [8, 9],
+    [8, 10],
+    [8, 11],
+    [8, 12],
+    [8, 13],
+    [8, 14],
+    [7, 14],
+    [6, 14],
+  ];
+  const out: [number, number][] = [ccw[0]!];
+  for (let i = 51; i >= 1; i--) out.push(ccw[i]!);
+  return out;
+})();
+
+/** Home stretch into center (engine 100..104). */
+const HOME_CR: Record<LudoColor, [number, number][]> = {
+  red: [
+    [7, 13],
+    [7, 12],
+    [7, 11],
+    [7, 10],
+    [7, 9],
+  ],
+  green: [
+    [13, 7],
+    [12, 7],
+    [11, 7],
+    [10, 7],
+    [9, 7],
+  ],
+  yellow: [
+    [7, 1],
+    [7, 2],
+    [7, 3],
+    [7, 4],
+    [7, 5],
+  ],
+  blue: [
+    [1, 7],
+    [2, 7],
+    [3, 7],
+    [4, 7],
+    [5, 7],
+  ],
+};
+
+const HOME_CENTER_CR: [number, number] = [7, 7];
+
+/** Yard pads — Red BL, Green TR/right, Yellow TR-top, Blue TL (near starts). */
+const BASE_CR: Record<LudoColor, [number, number][]> = {
+  red: [
+    [1.5, 10.5],
+    [3.5, 10.5],
+    [1.5, 12.5],
+    [3.5, 12.5],
+  ],
+  green: [
+    [10.5, 10.5],
+    [12.5, 10.5],
+    [10.5, 12.5],
+    [12.5, 12.5],
+  ],
+  yellow: [
+    [10.5, 1.5],
+    [12.5, 1.5],
+    [10.5, 3.5],
+    [12.5, 3.5],
+  ],
+  blue: [
+    [1.5, 1.5],
+    [3.5, 1.5],
+    [1.5, 3.5],
+    [3.5, 3.5],
+  ],
+};
+
+export const BASE_PLATFORMS: Record<
+  LudoColor,
+  { col0: number; row0: number }
+> = {
+  red: { col0: 0, row0: 9 },
+  green: { col0: 9, row0: 9 },
+  yellow: { col0: 9, row0: 0 },
+  blue: { col0: 0, row0: 0 },
+};
+
+export const PLAYER_COLORS: Record<LudoColor, string> = {
+  red: "#e53935",
+  green: "#43a047",
+  yellow: "#fdd835",
+  blue: "#1e88e5",
+};
+
+export const SAFE_VISUAL = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
+
+export const SUIT_MARKS: {
+  col: number;
+  row: number;
+  symbol: string;
+  color: string;
+}[] = [
+  { col: 6, row: 13, symbol: "♥", color: "#ffffff" },
+  { col: 13, row: 8, symbol: "♣", color: "#ffffff" },
+  { col: 8, row: 1, symbol: "♦", color: "#333333" },
+  { col: 1, row: 6, symbol: "♠", color: "#ffffff" },
+  { col: 8, row: 9, symbol: "♥", color: "#c62828" },
+  { col: 9, row: 6, symbol: "♣", color: "#1b5e20" },
+  { col: 6, row: 5, symbol: "♦", color: "#f9a825" },
+  { col: 5, row: 8, symbol: "♠", color: "#0d47a1" },
+];
 
 function crToXy(c: number, r: number): BoardXY {
   return {
-    x: ((c + 0.5) / 15) * 100,
-    y: ((r + 0.5) / 15) * 100,
+    x: ((c + 0.5) / GRID) * 100,
+    y: ((r + 0.5) / GRID) * 100,
   };
 }
 
-/** Build exactly 52 cells (13 per side). */
-function buildTrack(): BoardXY[] {
-  const cells: [number, number][] = [];
-  /* 0–12 toward green */
-  for (let r = 13; r >= 8; r--) cells.push([6, r]); // 6
-  cells.push([7, 8]); // 7
-  for (let c = 8; c <= 13; c++) cells.push([c, 6]); // 6 → total 13
-  /* 13–25 toward yellow */
-  for (let r = 5; r >= 0; r--) cells.push([13, r]); // 6
-  cells.push([12, 0]); // 7
-  for (let c = 11; c >= 6; c--) cells.push([c, 1]); // 6 → 13
-  /* 26–38 toward blue */
-  for (let c = 5; c >= 0; c--) cells.push([c, 1]); // 6 — wait wrong
-
-  /* Reset with cleaner square ring on outer playable lane */
-  const ring: [number, number][] = [];
-  for (let c = 1; c <= 13; c++) ring.push([c, 13]); // bottom L→R : 13
-  for (let r = 12; r >= 1; r--) ring.push([13, r]); // right B→T : 12
-  for (let c = 12; c >= 1; c--) ring.push([c, 1]); // top R→L : 12
-  for (let r = 2; r <= 12; r++) ring.push([1, r]); // left T→B : 11
-  // 13+12+12+11 = 48 — pad 4 corners inward
-  while (ring.length < 52) {
-    ring.push([7, 7]);
-  }
-  return ring.slice(0, 52).map(([c, r]) => crToXy(c, r));
+export function gridToWorld(
+  col: number,
+  row: number,
+  y = 0,
+): WorldPos {
+  return [(col - BOARD_HALF) * CELL, y, (row - BOARD_HALF) * CELL];
 }
 
-const TRACK_XY = buildTrack();
+export function worldToGrid(
+  x: number,
+  z: number,
+): { col: number; row: number } {
+  return {
+    col: Math.round(x / CELL + BOARD_HALF),
+    row: Math.round(z / CELL + BOARD_HALF),
+  };
+}
 
-const HOME_PATH: Record<string, BoardXY[]> = {
-  red: [0, 1, 2, 3, 4].map((i) => crToXy(7, 12 - i)),
-  green: [0, 1, 2, 3, 4].map((i) => crToXy(12 - i, 7)),
-  yellow: [0, 1, 2, 3, 4].map((i) => crToXy(7, 2 + i)),
-  blue: [0, 1, 2, 3, 4].map((i) => crToXy(2 + i, 7)),
-};
+export function trackCell(index: number): [number, number] | null {
+  if (index < 0 || index >= TRACK_CR.length) return null;
+  return TRACK_CR[index]!;
+}
 
-const HOME_CENTER = crToXy(7, 7);
+export function isInBase(col: number, row: number): LudoColor | null {
+  for (const color of Object.keys(BASE_PLATFORMS) as LudoColor[]) {
+    const b = BASE_PLATFORMS[color];
+    if (
+      col >= b.col0 &&
+      col < b.col0 + 6 &&
+      row >= b.row0 &&
+      row < b.row0 + 6
+    ) {
+      return color;
+    }
+  }
+  return null;
+}
 
-const BASE: Record<string, BoardXY[]> = {
-  red: [crToXy(2, 11), crToXy(3, 11), crToXy(2, 12), crToXy(3, 12)],
-  green: [crToXy(11, 2), crToXy(12, 2), crToXy(11, 3), crToXy(12, 3)],
-  yellow: [crToXy(11, 11), crToXy(12, 11), crToXy(11, 12), crToXy(12, 12)],
-  blue: [crToXy(2, 2), crToXy(3, 2), crToXy(2, 3), crToXy(3, 3)],
-};
+export function isCenter(col: number, row: number): boolean {
+  return col >= 6 && col <= 8 && row >= 6 && row <= 8;
+}
+
+export function isOnCross(col: number, row: number): boolean {
+  return (col >= 6 && col <= 8) || (row >= 6 && row <= 8);
+}
+
+export function homeColumnColor(
+  col: number,
+  row: number,
+): LudoColor | null {
+  if (col === 7 && row >= 9 && row <= 13) return "red";
+  if (row === 7 && col >= 9 && col <= 13) return "green";
+  if (col === 7 && row >= 1 && row <= 5) return "yellow";
+  if (row === 7 && col >= 1 && col <= 5) return "blue";
+  return null;
+}
+
+export function startTileColor(
+  col: number,
+  row: number,
+): LudoColor | null {
+  const starts: [LudoColor, number][] = [
+    ["red", 0],
+    ["green", 13],
+    ["yellow", 26],
+    ["blue", 39],
+  ];
+  for (const [color, idx] of starts) {
+    const cr = TRACK_CR[idx];
+    if (cr && cr[0] === col && cr[1] === row) return color;
+  }
+  return null;
+}
+
+/** Raised track / home-column tiles (not base fill, not center). */
+export function isBoardTile(col: number, row: number): boolean {
+  if (isInBase(col, row)) return false;
+  if (isCenter(col, row)) return false;
+  if (homeColumnColor(col, row)) return true;
+  if (!isOnCross(col, row)) {
+    // Outer ring cells used by TRACK_CR (edges 0 / 14)
+    for (const [c, r] of TRACK_CR) {
+      if (c === col && r === row) return true;
+    }
+    return false;
+  }
+  return true;
+}
+
+function posToCr(
+  color: string,
+  pos: number,
+  tokenIndex: number,
+): [number, number] {
+  const c = color as LudoColor;
+  if (pos === -1) {
+    return BASE_CR[c]?.[tokenIndex] ?? HOME_CENTER_CR;
+  }
+  if (pos === 105) return HOME_CENTER_CR;
+  if (pos >= 100 && pos <= 104) {
+    return HOME_CR[c]?.[pos - 100] ?? HOME_CENTER_CR;
+  }
+  if (pos >= 0 && pos < TRACK_CR.length) return TRACK_CR[pos]!;
+  return HOME_CENTER_CR;
+}
 
 export function posToXy(
   color: string,
   pos: number,
   tokenIndex: number,
 ): BoardXY {
-  if (pos === -1) return BASE[color]?.[tokenIndex] ?? HOME_CENTER;
-  if (pos === 105) return HOME_CENTER;
-  if (pos >= 100 && pos <= 104) {
-    return HOME_PATH[color]?.[pos - 100] ?? HOME_CENTER;
-  }
-  if (pos >= 0 && pos < TRACK_XY.length) return TRACK_XY[pos]!;
-  return HOME_CENTER;
+  const [c, r] = posToCr(color, pos, tokenIndex);
+  return crToXy(c, r);
 }
 
-export const SAFE_VISUAL = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
+export function posToWorld(
+  color: string,
+  pos: number,
+  tokenIndex: number,
+  y = PAWN_Y,
+): WorldPos {
+  const [c, r] = posToCr(color, pos, tokenIndex);
+  return gridToWorld(c, r, y);
+}

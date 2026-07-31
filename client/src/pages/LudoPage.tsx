@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { getStoredUser, getToken } from "../auth";
 import { AppShell } from "../components/AppShell";
 import { GameChrome } from "../components/GameChrome";
 import { ensureGuestCode, getGuestCode } from "../guest";
-import { LudoBoard } from "../platform/ludo/LudoBoard";
 import {
   LUDO_THEMES,
   normalizeThemeId,
   type LudoThemeId,
 } from "../platform/ludo/themes";
 import "../platform/ludo/ludo.css";
+
+const LazyLudoBoard = lazy(() =>
+  import("../platform/ludo/LudoBoard").then((m) => ({ default: m.LudoBoard })),
+);
 
 type LudoColor = "red" | "green" | "yellow" | "blue";
 
@@ -210,7 +213,7 @@ export default function LudoPage() {
           <div className="ludo-hub app-panel p-3">
             <p className="play-heading text-sm">Chọn loại bàn</p>
             <p className="text-[11px] text-[var(--play-muted)]">
-              3 skin UI — logic quân cờ không đổi. Nút dạng khối.
+              3 skin · bàn 3D — logic quân cờ không đổi.
             </p>
             <div className="ludo-theme-grid" role="radiogroup" aria-label="Theme">
               {LUDO_THEMES.map((t) => (
@@ -261,16 +264,25 @@ export default function LudoPage() {
           </div>
         ) : (
           <>
-            <LudoBoard
-              tokens={room.tokens}
-              validTokenIds={
-                isMyTurn && room.phase === "wait_pick"
-                  ? room.validTokenIds
-                  : []
+            <Suspense
+              fallback={
+                <div className="ludo-board3d ludo-board3d--loading">
+                  Đang tải bàn 3D…
+                </div>
               }
-              onPick={(id) => void pick(id)}
-              myColor={mySeat?.color}
-            />
+            >
+              <LazyLudoBoard
+                tokens={room.tokens}
+                validTokenIds={
+                  isMyTurn && room.phase === "wait_pick"
+                    ? room.validTokenIds
+                    : []
+                }
+                onPick={(id) => void pick(id)}
+                myColor={mySeat?.color}
+                themeId={activeTheme}
+              />
+            </Suspense>
             <div className="ludo-panel">
               <div className="ludo-panel__row">
                 <div>
