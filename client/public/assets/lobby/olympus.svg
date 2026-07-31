@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a0e2e"/>
+      <stop offset="100%" stop-color="#3a2060"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f5e6c8"/>
+      <stop offset="100%" stop-color="#8b6914"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="320" fill="url(#g)"/>
+  <rect x="24" y="24" width="272" height="272" rx="18" fill="none" stroke="url(#gold)" stroke-width="4"/>
+  <rect x="40" y="40" width="240" height="240" rx="12" fill="rgba(255,248,232,0.08)" stroke="#f5e6c8" stroke-width="1" opacity="0.5"/>
+  <text x="160" y="155" text-anchor="middle" font-family="Georgia,serif" font-size="72" fill="#f5e6c8">⚡</text>
+  <text x="160" y="230" text-anchor="middle" font-family="Georgia,serif" font-size="28" font-weight="700" fill="#f5e6c8">OLYMPUS</text>
+</svg>

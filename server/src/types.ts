@@ -225,6 +225,14 @@ export interface PublicState {
     text: string;
     cost: number;
     at: number;
+    mode?: string;
+    fly?: boolean;
+    saint?: boolean;
+    userId?: string;
+    playLevel?: number;
+    roundsPlayed?: number;
+    cultivationRank?: string;
+    isVip?: boolean;
   }[];
   /** Tip / gợi ý AI nhẹ — client ẩn với player nếu flags = false (staff vẫn hiện) */
   aiUx?: {

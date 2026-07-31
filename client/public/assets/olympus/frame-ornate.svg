@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 340" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="rim" x1="0" y1="0" x2="400" y2="340" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff6c8"/>
+      <stop offset=".35" stop-color="#f2ab27"/>
+      <stop offset=".7" stop-color="#c87820"/>
+      <stop offset="1" stop-color="#fff0b0"/>
+    </linearGradient>
+  </defs>
+  <!-- Single outer rim + corners only -->
+  <rect x="5" y="5" width="390" height="330" rx="16" stroke="url(#rim)" stroke-width="3.5" opacity=".9"/>
+  <g stroke="url(#rim)" stroke-width="2" stroke-linecap="round" opacity=".75">
+    <path d="M26 44 V24 H46"/>
+    <path d="M374 44 V24 H354"/>
+    <path d="M26 296 V316 H46"/>
+    <path d="M374 296 V316 H354"/>
+  </g>
+  <g fill="#f2ab27" opacity=".7">
+    <circle cx="24" cy="24" r="2.8"/>
+    <circle cx="376" cy="24" r="2.8"/>
+    <circle cx="24" cy="316" r="2.8"/>
+    <circle cx="376" cy="316" r="2.8"/>
+  </g>
+</svg>

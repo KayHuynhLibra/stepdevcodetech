@@ -16,7 +16,8 @@ export type UserRole =
   | "eco"
   | "audit"
   | "sgift"
-  | "ring";
+  | "ring"
+  | "pm";
 
 export interface AuthUser {
   id: string;
@@ -208,7 +209,13 @@ export function isRing(
   return userHasRole(user, "ring");
 }
 
-/** Dashboard admin/main/eco/audit/sgift/ring — không gồm deal/mod/tutien. */
+export function isPm(
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
+): boolean {
+  return userHasRole(user, "pm");
+}
+
+/** Dashboard admin/main/eco/audit/sgift/ring/pm — không gồm deal/mod/tutien. */
 export function canAccessStaffDashboard(
   user:
     | { role: UserRole; extraRoles?: UserRole[]; staffGrantLevel?: number }
@@ -330,6 +337,7 @@ export function homePath(
   if (user.role === "audit") return `/audit/${code}`;
   if (user.role === "sgift") return `/sgift/${code}`;
   if (user.role === "ring") return `/ring/${code}`;
+  if (user.role === "pm") return `/pm/${code}`;
   if (user.role === "deal") return `/deal/${code}`;
   if (user.role === "tutien") return `/tutien/${code}`;
   if (user.role === "mod") return `/mod/${code}`;

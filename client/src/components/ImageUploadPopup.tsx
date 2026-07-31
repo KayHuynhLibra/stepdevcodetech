@@ -5,7 +5,12 @@ import {
   formatCatalogBytes,
 } from "../catalogImage";
 
-export type CatalogUploadKind = "gift" | "ring" | "oracle";
+export type CatalogUploadKind =
+  | "gift"
+  | "ring"
+  | "oracle"
+  | "lobby"
+  | "olympus";
 
 interface ImageUploadPopupProps {
   open: boolean;
@@ -44,7 +49,15 @@ export function ImageUploadPopup({
 
   const keyOk = itemKey.trim().length >= 2;
   const kindLabel =
-    kind === "gift" ? "quà" : kind === "oracle" ? "bói bài" : "nhẫn";
+    kind === "gift"
+      ? "quà"
+      : kind === "oracle"
+        ? "bói bài"
+        : kind === "lobby"
+          ? "lobby"
+          : kind === "olympus"
+            ? "olympus"
+            : "nhẫn";
 
   const onPick = async (file: File | null) => {
     setError(null);

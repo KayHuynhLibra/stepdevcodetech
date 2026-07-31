@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="w" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff6c8"/><stop offset=".5" stop-color="#7ec8ff"/><stop offset="1" stop-color="#f5c542"/>
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="32" r="28" fill="#1a2848" stroke="url(#w)" stroke-width="2.5"/>
+  <path d="M32 10 L36 28 H50 L38 38 L42 54 L32 44 L22 54 L26 38 L14 28 H28 Z" fill="url(#w)"/>
+  <text x="32" y="60" text-anchor="middle" font-size="7" fill="#ffe08a" font-family="sans-serif">WILD</text>
+</svg>

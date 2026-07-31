@@ -159,6 +159,7 @@ export function resolveDisplayAvatarFrame(
   if (role === "audit") return "celestial";
   if (role === "sgift") return "pearl";
   if (role === "ring") return "heart";
+  if (role === "pm") return "gold";
   if (hints?.bonded) return "heart";
   if (hints?.isVip) return "vip";
   return "gold";

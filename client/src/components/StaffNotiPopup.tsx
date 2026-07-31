@@ -206,7 +206,7 @@ export function StaffNotiPopup({ user }: StaffNotiPopupProps) {
   };
 
   return (
-    <div className="staff-noti" ref={rootRef}>
+    <div className={`staff-noti${open ? " is-open" : ""}`} ref={rootRef}>
       <button
         type="button"
         className={`staff-noti__trigger ${open ? "is-open" : ""}`}

@@ -13,6 +13,8 @@ interface PlayToolsBarProps {
   onRing: () => void;
   onBalance?: () => void;
   onToggleMute: () => void;
+  /** Mở panel âm thanh / hình (setup từng kênh) */
+  onAudioPrefs?: () => void;
   onVoice?: () => void;
 }
 
@@ -29,6 +31,7 @@ export function PlayToolsBar({
   onRing,
   onBalance,
   onToggleMute,
+  onAudioPrefs,
   onVoice,
 }: PlayToolsBarProps) {
   const [open, setOpen] = useState(false);
@@ -119,9 +122,16 @@ export function PlayToolsBar({
               className={`play-tools-bar__pill play-tools-bar__pill--audio ${
                 muted ? "is-muted" : ""
               }`}
-              title={muted ? "Bật tiếng" : "Tắt tiếng"}
+              title={
+                onAudioPrefs
+                  ? "Cài âm thanh & hình"
+                  : muted
+                    ? "Bật tiếng"
+                    : "Tắt tiếng"
+              }
               onClick={() => {
-                onToggleMute();
+                if (onAudioPrefs) run(onAudioPrefs);
+                else onToggleMute();
               }}
             >
               {muted ? "Tắt" : "Âm"}

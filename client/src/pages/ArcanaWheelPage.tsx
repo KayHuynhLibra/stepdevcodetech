@@ -9,10 +9,11 @@ import { Link } from "react-router-dom";
 import {
   api,
   getStoredUser,
-  homePath,
   type AuthUser,
 } from "../auth";
+import { ensureGuestCode, guestHomePath } from "../guest";
 import { AppShell } from "../components/AppShell";
+import { GameChrome } from "../components/GameChrome";
 import { BottomSheet } from "../components/BottomSheet";
 import { ArcanaHowItWorks } from "../components/arcana/ArcanaHowItWorks";
 import { ArcanaHistoryList } from "../components/arcana/ArcanaHistoryList";
@@ -30,6 +31,7 @@ import {
   type StreakBonusRules,
 } from "../lib/arcanaPayout";
 import { onArcanaImgError } from "../lib/arcanaImages";
+import { useApplyPlayMediaPresets } from "../hooks/useApplyPlayMediaPresets";
 import {
   EU_WHEEL_ORDER,
   outerPickLabelVi,
@@ -307,6 +309,7 @@ function DoubleArcanaRoulette({
 }
 
 export default function ArcanaWheelPage() {
+  useApplyPlayMediaPresets("arcana");
   const playSock = usePlaySocket();
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
   const [balance, setBalance] = useState(user?.balance ?? 0);
@@ -705,11 +708,20 @@ export default function ArcanaWheelPage() {
   );
 
   if (!user) {
+    const lobby = guestHomePath(ensureGuestCode());
     return (
       <AppShell>
-        <p className="text-center text-sm">Chưa đăng nhập</p>
+        <p className="text-center text-sm">
+          Arcana cần tài khoản để quay xu chơi.
+        </p>
         <Link to="/login" className="app-btn-primary mt-3 block text-center">
           Đăng nhập
+        </Link>
+        <Link
+          to={lobby}
+          className="mt-2 block text-center text-xs font-semibold text-[var(--wood-deep)] underline-offset-2 hover:underline"
+        >
+          ← Lobby khách (Tarot / Olympus / Bói bài)
         </Link>
       </AppShell>
     );
@@ -725,58 +737,47 @@ export default function ArcanaWheelPage() {
 
   return (
     <AppShell maxWidth="md">
-      <header className="flex items-center gap-2">
-        <Link
-          to={homePath(user)}
-          className="rounded-lg bg-[var(--wood-deep)]/80 px-2 py-1 text-xs text-[var(--cream)] ring-1 ring-[var(--gold)]/30"
-        >
-          ← Hub
-        </Link>
-        <div className="min-w-0 flex-1">
-          <p className="play-heading truncate text-sm">Arcana</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => playSock.openVoiceRoom()}
-          className="rounded-lg bg-[var(--wood-deep)]/80 px-2 py-1 text-[10px] font-bold text-amber-100 ring-1 ring-[var(--gold)]/35"
-          title="Phòng voice — giữ ghế khi đổi bàn"
-        >
-          {playSock.voiceStatus.inRoom && playSock.voiceStatus.roomId
-            ? `Room ${playSock.voiceStatus.roomId}`
-            : "Room"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setDetailSheet("streak")}
-          className="rounded-lg bg-white/70 px-2 py-1 text-[10px] font-bold tabular-nums text-[var(--wood-deep)] ring-1 ring-[var(--wood-deep)]/20"
-          title="Chuỗi vận"
-        >
-          ×{luckStreak}
-          {(streakBonus.nextWinBonusPercent ?? 0) > 0
-            ? ` +${streakBonus.nextWinBonusPercent}%`
-            : ""}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setHistoryOpen(true);
-            void loadHistory();
-          }}
-          className="rounded-lg bg-white/70 px-2 py-1 text-[10px] font-bold text-[var(--wood-deep)] ring-1 ring-[var(--wood-deep)]/20"
-        >
-          LS
-        </button>
-        <div className="flex items-center gap-1.5 rounded-full bg-[var(--night)]/70 px-2.5 py-1 ring-1 ring-[var(--gold)]/35">
-          <img
-            src="/assets/ui/icon-coin-xu.png"
-            alt=""
-            className="h-4 w-4 object-contain"
-          />
-          <span className="font-play text-sm font-bold tabular-nums text-[var(--gold-soft)]">
-            {formatXu(balance)}
-          </span>
-        </div>
-      </header>
+      <GameChrome
+        title="Arcana"
+        active="arcana"
+        user={user}
+        playBalance={balance}
+        tools={
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => playSock.openVoiceRoom()}
+              className="rounded-lg bg-[var(--wood-deep)]/80 px-2 py-1 text-[10px] font-bold text-amber-100 ring-1 ring-[var(--gold)]/35"
+              title="Phòng voice — giữ ghế khi đổi bàn"
+            >
+              {playSock.voiceStatus.inRoom && playSock.voiceStatus.roomId
+                ? `Room ${playSock.voiceStatus.roomId}`
+                : "Room"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDetailSheet("streak")}
+              className="rounded-lg bg-white/70 px-2 py-1 text-[10px] font-bold tabular-nums text-[var(--wood-deep)] ring-1 ring-[var(--wood-deep)]/20"
+              title="Chuỗi vận"
+            >
+              ×{luckStreak}
+              {(streakBonus.nextWinBonusPercent ?? 0) > 0
+                ? ` +${streakBonus.nextWinBonusPercent}%`
+                : ""}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setHistoryOpen(true);
+                void loadHistory();
+              }}
+              className="rounded-lg bg-white/70 px-2 py-1 text-[10px] font-bold text-[var(--wood-deep)] ring-1 ring-[var(--wood-deep)]/20"
+            >
+              LS
+            </button>
+          </div>
+        }
+      />
 
       <p className="mt-1 text-center text-[10px] text-[var(--play-muted)]">
         NV {mission.count}/{mission.target}

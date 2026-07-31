@@ -13,6 +13,7 @@ export interface GameManifest {
   kind: GameKind;
   spendLane: "play";
   vaultKey?: string;
+  coverUrl?: string;
   sort: number;
   enabled: boolean;
 }
@@ -27,6 +28,7 @@ const FALLBACK: GameManifest[] = [
     kind: "stake",
     spendLane: "play",
     vaultKey: "tarot",
+    coverUrl: "/assets/lobby/tarot.svg",
     sort: 10,
     enabled: true,
   },
@@ -39,7 +41,20 @@ const FALLBACK: GameManifest[] = [
     kind: "spin",
     spendLane: "play",
     vaultKey: "arcana",
+    coverUrl: "/assets/lobby/arcana.svg",
     sort: 20,
+    enabled: true,
+  },
+  {
+    id: "olympus",
+    nameVi: "Olympus",
+    blurb: "Slot tumble 6×5 — xu chơi · demo giáo dục SOFIAORE.",
+    status: "live",
+    pathSuffix: "olympus",
+    kind: "spin",
+    spendLane: "play",
+    coverUrl: "/assets/lobby/olympus.svg",
+    sort: 25,
     enabled: true,
   },
   {
@@ -50,6 +65,7 @@ const FALLBACK: GameManifest[] = [
     pathSuffix: "boi-bai",
     kind: "oracle",
     spendLane: "play",
+    coverUrl: "/assets/lobby/boi.svg",
     sort: 30,
     enabled: true,
   },
@@ -105,10 +121,11 @@ export async function fetchPlatformGames(
 
 export function navActiveFromPath(
   pathname: string,
-): "tarot" | "arcana" | "boi" | "home" | GameId {
+): "tarot" | "arcana" | "boi" | "olympus" | "home" | GameId {
   if (pathname.endsWith("/play") || pathname === "/play") return "tarot";
   if (pathname.includes("/arcana")) return "arcana";
   if (pathname.includes("/boi-bai")) return "boi";
+  if (pathname.includes("/olympus")) return "olympus";
   const m = pathname.match(/\/g\/([a-z0-9_-]+)/i);
   if (m) return m[1].toLowerCase();
   return "home";

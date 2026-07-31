@@ -90,7 +90,14 @@ CREATE TABLE IF NOT EXISTS oracle_draws (
   deck_id TEXT NOT NULL,
   spread TEXT NOT NULL,
   cards JSONB NOT NULL,
+  question TEXT,
+  notes TEXT,
+  title TEXT,
   at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_oracle_draws_user ON oracle_draws (user_id, at DESC);
+
+ALTER TABLE oracle_draws ADD COLUMN IF NOT EXISTS question TEXT;
+ALTER TABLE oracle_draws ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE oracle_draws ADD COLUMN IF NOT EXISTS title TEXT;

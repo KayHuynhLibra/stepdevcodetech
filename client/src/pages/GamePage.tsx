@@ -92,15 +92,18 @@ import {
 import { normalizeAvatar } from "../avatars";
 import { AvatarPickerSheet } from "../components/AvatarPickerSheet";
 import { IdentityBadge } from "../components/IdentityBadge";
+import { GameChrome } from "../components/GameChrome";
 import { PlayToolsBar } from "../components/PlayToolsBar";
-import { TableNav } from "../components/TableNav";
+import { PlayPrefsSheet } from "../components/PlayPrefsSheet";
+import { useApplyPlayMediaPresets } from "../hooks/useApplyPlayMediaPresets";
 import { StaffNotiPopup } from "../components/StaffNotiPopup";
 import { FeedbackPopup } from "../components/FeedbackPopup";
+import { MessPopup } from "../components/MessPopup";
 import { PlayRecentBar } from "../components/PlayRecentBar";
 import { uploadAvatarFromFile } from "../uploadAvatar";
 import { getDevicePayload } from "../device";
 import { formatGem } from "../gem";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { usePlaySocket } from "../socket/PlaySocketContext";
 
 type Sheet =
@@ -127,6 +130,7 @@ type Sheet =
 
 export default function GamePage() {
   const nav = useNavigate();
+  useApplyPlayMediaPresets("tarot");
   const playSock = usePlaySocket();
   const socket = playSock.socket;
   const connected = playSock.connected;
@@ -183,6 +187,7 @@ export default function GamePage() {
   const [shoutBusy, setShoutBusy] = useState(false);
   /** Mode chat: no | vip | saint */
   const [chatMode, setChatMode] = useState<ChatMode>("no");
+  const [mentionInsert, setMentionInsert] = useState<string | null>(null);
   const [couponBusy, setCouponBusy] = useState(false);
   const [topupRows, setTopupRows] = useState<TopupRow[]>([]);
   const [topupTotalXu, setTopupTotalXu] = useState(0);
@@ -191,7 +196,8 @@ export default function GamePage() {
   const autoRoundRef = useRef<number | null>(null);
   const [profile, setProfile] = useState<PlayerInfoView | null>(null);
   const [adminBusy, setAdminBusy] = useState(false);
-  const { play, muted, toggleMute } = useSfx();
+  const { play, muted, toggleMute } = useSfx("tarot");
+  const [audioPrefsOpen, setAudioPrefsOpen] = useState(false);
   const {
     sessionMs,
     dayMs,
@@ -210,11 +216,13 @@ export default function GamePage() {
   >([]);
 
   const staffViewer = isStaff(me);
-  const onlineViewer = canSeeOnline(me);
+  /** Danh sách phòng: mọi user đã login (server luôn gửi khi authed). */
+  const showPlayersDock = !!(me && sessionAuthed);
+  const onlineViewer = showPlayersDock || canSeeOnline(me);
   const staffViewerRef = useRef(staffViewer);
   const onlineViewerRef = useRef(onlineViewer);
   staffViewerRef.current = staffViewer;
-  onlineViewerRef.current = onlineViewer;
+  onlineViewerRef.current = true;
 
   const lbFlags = {
     winToday: state?.leaderboardFlags?.winToday !== false,
@@ -1277,7 +1285,14 @@ export default function GamePage() {
     }
   };
 
-  const sendChat = (payload: { id?: string; text?: string }) => {
+  const sendChat = (
+    payload: {
+      id?: string;
+      text?: string;
+      replyTo?: { name: string; text: string };
+      mentions?: string[];
+    },
+  ) => {
     if (!socket || !connected) return;
     const token = getToken();
     if (!me || !token) {
@@ -1847,71 +1862,56 @@ export default function GamePage() {
         }}
       />
       <div className="relative z-[1] mx-auto flex w-full max-w-md flex-col px-3 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))]">
-        {/* ===== ZONE 1: Hồ sơ & số dư (per-user) ===== */}
-        <header className="game-task flex flex-col gap-2 px-2.5 py-2.5">
-          <div className="flex items-center gap-2">
-            <Link
-              to={
-                getStoredUser() ? homePath(getStoredUser()) : "/login"
+        {/* ===== ZONE 1: Chrome + hồ sơ ===== */}
+        <GameChrome
+          title="Tarot"
+          active="tarot"
+          user={me}
+          guestCode={me ? null : getGuestCode() || ensureGuestCode()}
+          playBalance={me ? (me.balances?.play ?? me.balance ?? 0) : undefined}
+          socialBalance={me ? (me.balances?.social ?? 0) : undefined}
+          tools={
+            <PlayToolsBar
+              muted={muted}
+              showBalance={showLbBalance}
+              jackpotLabel={`Hũ ${formatXu(state?.jackpotPool ?? 0)}`}
+              jackpotHint="Hũ tăng theo cược · nổ khi đủ điều kiện (pool ≥5k, stake thắng ≥500, ~8%) · trả ~18% pool"
+              voiceLabel={
+                voiceStatus.inRoom && voiceStatus.roomId
+                  ? `Room ${voiceStatus.roomId}${voiceStatus.isHost ? " · H" : ""}`
+                  : "Room"
               }
-              className="app-btn-ghost shrink-0 px-2.5 py-1 text-[10px]"
-            >
-              ← Menu
-            </Link>
-            <img
-              src="/assets/logo/logo-tarot.png"
-              alt="SOFIAORE-TAROT"
-              decoding="async"
-              className="h-10 w-10 shrink-0 rounded-full object-cover ring-2 ring-white/80 shadow-md"
+              voiceLive={!!(voiceStatus.inRoom && voiceStatus.roomOpen)}
+              onRules={() => setSheet("rules")}
+              onGift={() => openGiftHub()}
+              onRing={() => openRingHub()}
+              onBalance={openBalanceBoard}
+              onToggleMute={toggleMute}
+              onAudioPrefs={() => setAudioPrefsOpen(true)}
+              onVoice={() => playSock.openVoiceRoom()}
             />
-            <div className="min-w-0 flex-1">
-              <h1 className="play-heading truncate text-base leading-tight tracking-wide sm:text-lg">
-                SOFIAORE-TAROT
-              </h1>
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <PlayToolsBar
-                muted={muted}
-                showBalance={showLbBalance}
-                jackpotLabel={`Hũ ${formatXu(state?.jackpotPool ?? 0)}`}
-                jackpotHint="Hũ tăng theo cược · nổ khi đủ điều kiện (pool ≥5k, stake thắng ≥500, ~8%) · trả ~18% pool"
-                voiceLabel={
-                  voiceStatus.inRoom && voiceStatus.roomId
-                    ? `Room ${voiceStatus.roomId}${voiceStatus.isHost ? " · H" : ""}`
-                    : "Room"
-                }
-                voiceLive={!!(voiceStatus.inRoom && voiceStatus.roomOpen)}
-                onRules={() => setSheet("rules")}
-                onGift={() => openGiftHub()}
-                onRing={() => openRingHub()}
-                onBalance={openBalanceBoard}
-                onToggleMute={toggleMute}
-                onVoice={() => playSock.openVoiceRoom()}
-              />
-            </div>
-          </div>
-          {getStoredUser() ? (
-            <div className="mt-2 flex justify-center px-1">
-              <TableNav user={getStoredUser()} active="tarot" compact />
-            </div>
-          ) : null}
-          {!!(getToken() && getStoredUser() && !sessionAuthed) && (
-            <div className="mb-2 flex items-center justify-between gap-2 rounded-xl bg-rose-500/15 px-2.5 py-2 ring-1 ring-rose-400/40">
-              <p className="text-[11px] font-semibold text-rose-100">
-                Phiên đăng nhập hết hạn — vào lại để chat, nạp xu và lưu lịch sử ván.
-              </p>
-              <button
-                type="button"
-                className="shrink-0 rounded-full bg-rose-500 px-2.5 py-1 text-[10px] font-bold text-white"
-                onClick={() => {
-                  clearSession();
-                  nav("/login");
-                }}
-              >
-                Đăng nhập
-              </button>
-            </div>
-          )}
+          }
+          banner={
+            !!(getToken() && getStoredUser() && !sessionAuthed) ? (
+              <div className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-rose-500/15 px-2.5 py-2 ring-1 ring-rose-400/40">
+                <p className="text-[11px] font-semibold text-rose-100">
+                  Phiên đăng nhập hết hạn — vào lại để chat, nạp xu và lưu lịch sử ván.
+                </p>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-full bg-rose-500 px-2.5 py-1 text-[10px] font-bold text-white"
+                  onClick={() => {
+                    clearSession();
+                    nav("/login");
+                  }}
+                >
+                  Đăng nhập
+                </button>
+              </div>
+            ) : null
+          }
+        />
+        <div className="game-task mt-2 flex flex-col gap-2 px-2.5 py-2.5">
           <div className="relative" ref={renameRef}>
             <IdentityBadge
               user={me}
@@ -2077,29 +2077,32 @@ export default function GamePage() {
                   <FeedbackPopup user={me ?? getStoredUser()} />
                   <StaffNotiPopup user={me ?? getStoredUser()} />
                 </div>
-                <button
-                  type="button"
-                  onClick={openCoupon}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    void openVipTopups();
-                  }}
-                  title="Nạp xu · giữ/chuột phải xem danh sách nạp"
-                  className={`px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide ${
-                    balance <= 0
-                      ? "animate-pulse rounded-full bg-rose-500 text-white ring-1 ring-rose-300"
-                      : "ui-pill ui-pill--strong"
-                  }`}
-                >
-                  Nạp!
-                </button>
+                <div className="flex items-center gap-1">
+                  <MessPopup user={me ?? getStoredUser()} />
+                  <button
+                    type="button"
+                    onClick={openCoupon}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      void openVipTopups();
+                    }}
+                    title="Nạp xu · giữ/chuột phải xem danh sách nạp"
+                    className={`px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide ${
+                      balance <= 0
+                        ? "animate-pulse rounded-full bg-rose-500 text-white ring-1 ring-rose-300"
+                        : "ui-pill ui-pill--strong"
+                    }`}
+                  >
+                    Nạp!
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </header>
+        </div>
 
-        {/* ===== ZONE 2: Đồng bộ phòng — admin mở list người chơi ===== */}
-        {onlineViewer ? (
+        {/* ===== ZONE 2: Người chơi trong phòng (mọi user đã login) ===== */}
+        {showPlayersDock ? (
         <button
           type="button"
           onClick={() => connected && setSheet("players")}
@@ -2114,7 +2117,7 @@ export default function GamePage() {
           />
           <span className="flex-1 font-semibold text-[var(--play-ink)]">
             {connected
-              ? `${state?.onlineDisplay ?? 0} online`
+              ? `${state?.onlineDisplay ?? state?.onlinePlayers?.length ?? 0} người chơi`
               : "Mất kết nối"}
           </span>
           {connected && (
@@ -2334,7 +2337,14 @@ export default function GamePage() {
             nav("/login");
           }}
           onSendSlang={(id) => sendChat({ id })}
-          onSendText={(text) => sendChat({ text })}
+          onSendText={(text, meta) =>
+            sendChat({ text, replyTo: meta?.replyTo, mentions: meta?.mentions })
+          }
+          mentionHints={(state?.onlinePlayers ?? [])
+            .filter((p) => !p.isBot)
+            .map((p) => ({ name: p.name, userId: p.userId }))}
+          insertMentionRequest={mentionInsert}
+          onInsertMentionConsumed={() => setMentionInsert(null)}
           chatSuggests={
             state?.aiUx &&
             (staffViewer || state.aiUx.chatSuggestsForPlayers)
@@ -2778,7 +2788,7 @@ export default function GamePage() {
         }}
         onConfirm={confirmStake}
       />
-      {onlineViewer && (
+      {showPlayersDock && (
       <PlayersSheet
         open={sheet === "players"}
         players={state?.onlinePlayers ?? []}
@@ -2786,6 +2796,26 @@ export default function GamePage() {
         onSelectPlayer={(p) => {
           setSheet(null);
           openOnlinePlayer(p);
+        }}
+        onGift={(p) => {
+          setSheet(null);
+          openGiftHub({
+            userId: p.userId,
+            code: p.code,
+            name: p.name,
+          });
+        }}
+        onRing={(p) => {
+          setSheet(null);
+          openRingPropose({
+            userId: p.userId,
+            code: p.code,
+            name: p.name,
+          });
+        }}
+        onMention={(p) => {
+          setSheet(null);
+          setMentionInsert(p.name);
         }}
       />
       )}
@@ -3050,11 +3080,15 @@ export default function GamePage() {
         onPick={pickAvatar}
         onUploadFile={uploadAvatarFile}
       />
+      <PlayPrefsSheet
+        open={audioPrefsOpen}
+        onClose={() => setAudioPrefsOpen(false)}
+      />
 
       {playtimeNudge && (
         <PlaytimeNudge
           nudge={playtimeNudge}
-          menuHref={me ? homePath(me) : "/login"}
+          menuHref={me ? homePath(me) : `/guest/${ensureGuestCode()}`}
           onContinue={dismissNudge}
         />
       )}

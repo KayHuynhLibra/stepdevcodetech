@@ -53,6 +53,7 @@ import { buildChatSuggests, buildPlayTips } from "./playTips.js";
 import {
   CHAT_COOLDOWN_MS,
   CHAT_HISTORY_LIMIT,
+  CHAT_MAX_LEN,
   SAINT_COOLDOWN_MS,
   containsBlockedWords,
   getShout,
@@ -1105,6 +1106,8 @@ export class GameEngine {
       mode?: ChatMode;
       /** Legacy */
       vipFly?: boolean;
+      replyTo?: { name?: string; text?: string };
+      mentions?: string[];
     },
   ):
     | { ok: true; balance: number; event: ShoutEvent }
@@ -1194,6 +1197,19 @@ export class GameEngine {
     this.syncUser(player);
     this.broadcast(this.getStateFor(socketId), socketId);
 
+    const replyName = String(opts.replyTo?.name ?? "")
+      .trim()
+      .slice(0, 32);
+    const replyText = String(opts.replyTo?.text ?? "")
+      .trim()
+      .slice(0, CHAT_MAX_LEN);
+    const mentions = Array.isArray(opts.mentions)
+      ? opts.mentions
+          .map((m) => String(m).trim().slice(0, 32))
+          .filter(Boolean)
+          .slice(0, 5)
+      : undefined;
+    const roundsPlayed = authStore.getRoundsPlayed(player.userId);
     const event: ShoutEvent = {
       name: player.name,
       avatar: normalizeAvatar(player.avatar),
@@ -1203,6 +1219,15 @@ export class GameEngine {
       mode,
       fly: mode === "vip",
       saint: mode === "saint",
+      userId: player.userId,
+      playLevel: playLevelFromRounds(roundsPlayed),
+      roundsPlayed,
+      isVip: authStore.isVipUser(player.userId),
+      ...(rank ? { cultivationRank: rank } : {}),
+      ...(replyName && replyText
+        ? { replyTo: { name: replyName, text: replyText } }
+        : {}),
+      ...(mentions && mentions.length ? { mentions } : {}),
     };
     this.ensureChatDay();
     this.chatLines.push(event);
@@ -1526,15 +1551,16 @@ export class GameEngine {
     const displayStakes = this.realStakes.map((v, i) => v + this.botStakes[i]);
     const playerCounts = this.realPlacers.map((v, i) => v + this.botPlacers[i]);
 
+    /** Mọi user đã login thấy danh sách phòng; staff thêm extras. */
     let seeOnline = false;
     let seeOnlineStaffExtras = false;
     if (playerId) {
       const viewer = this.players.get(playerId);
       if (viewer?.userId) {
+        seeOnline = true;
         const vu = authStore.getById(viewer.userId);
         if (vu) {
-          seeOnline = canSeeOnline(vu);
-          seeOnlineStaffExtras = isStaff(vu);
+          seeOnlineStaffExtras = isStaff(vu) || canSeeOnline(vu);
         }
       }
     }

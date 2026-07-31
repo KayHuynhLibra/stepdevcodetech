@@ -9,7 +9,7 @@ export type ChatMode = "no" | "vip" | "saint";
 export const CHAT_COST = 10;
 export const VIP_CHAT_COST = 50;
 export const SAINT_CHAT_COST = 10_000;
-export const CHAT_MAX_LEN = 40;
+export const CHAT_MAX_LEN = 72;
 export const SAINT_DISPLAY_MS = 4_500;
 export const SAINT_COOLDOWN_MS = 45_000;
 
@@ -36,6 +36,11 @@ export function chatCost(
   return CHAT_COST;
 }
 
+export interface ShoutReplyRef {
+  name: string;
+  text: string;
+}
+
 export interface ShoutEvent {
   name: string;
   avatar: string;
@@ -47,4 +52,11 @@ export interface ShoutEvent {
   fly?: boolean;
   /** Toàn màn hình vài giây — mode saint */
   saint?: boolean;
+  userId?: string;
+  replyTo?: ShoutReplyRef;
+  mentions?: string[];
+  playLevel?: number;
+  roundsPlayed?: number;
+  cultivationRank?: string;
+  isVip?: boolean;
 }

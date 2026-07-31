@@ -92,7 +92,8 @@ export type UserRole =
   | "eco"
   | "audit"
   | "sgift"
-  | "ring";
+  | "ring"
+  | "pm";
 
 /** Đủ số ván lifetime → VIP tự động */
 export const VIP_ROUNDS_REQUIRED = 10_000;
@@ -688,7 +689,8 @@ function isAssignableStaffRole(role: string): role is UserRole {
     role === "eco" ||
     role === "audit" ||
     role === "sgift" ||
-    role === "ring"
+    role === "ring" ||
+    role === "pm"
   );
 }
 
@@ -704,6 +706,7 @@ export const EXTRA_ROLE_ALLOWED: UserRole[] = [
   "audit",
   "sgift",
   "ring",
+  "pm",
 ];
 
 /** Chuẩn hóa extraRoles: bỏ mainadmin, bỏ trùng primary, unique. */
@@ -739,7 +742,8 @@ function isUserRecord(u: unknown): u is UserRecord {
     r.role === "eco" ||
     r.role === "audit" ||
     r.role === "sgift" ||
-    r.role === "ring";
+    r.role === "ring" ||
+    r.role === "pm";
   return (
     typeof r.id === "string" &&
     typeof r.username === "string" &&
@@ -1236,7 +1240,8 @@ export class AuthStore {
       | "eco"
       | "audit"
       | "sgift"
-      | "ring",
+      | "ring"
+      | "pm",
   ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
     const user = this.byId.get(userId);
     if (!user) return { ok: false, reason: "Không tìm thấy user" };
@@ -1253,7 +1258,8 @@ export class AuthStore {
       role === "eco" ||
       role === "audit" ||
       role === "sgift" ||
-      role === "ring"
+      role === "ring" ||
+      role === "pm"
     ) {
       user.mustChangePassword = user.mustChangePassword ?? true;
     }
@@ -2773,7 +2779,13 @@ export function isSGift(
   return userHasRole(user, "sgift");
 }
 
-/** Dashboard staff (admin/main/eco/audit/sgift) — không gồm deal/mod/tutien. */
+export function isPm(
+  user: { role: UserRole; extraRoles?: UserRole[] } | null | undefined,
+): boolean {
+  return userHasRole(user, "pm");
+}
+
+/** Dashboard staff (admin/main/eco/audit/sgift/ring/pm) — không gồm deal/mod/tutien. */
 export function canAccessStaffDashboard(
   user:
     | { role: UserRole; extraRoles?: UserRole[]; staffGrantLevel?: number }
@@ -2791,3 +2803,4 @@ export function isBalanceOperator(
 ): boolean {
   return hasCapability(user, "balance_ops");
 }
+

@@ -20,6 +20,8 @@ export interface GameManifest {
   kind: GameKind;
   spendLane: SpendLane;
   vaultKey?: string;
+  /** Ảnh cover Lobby */
+  coverUrl?: string;
   sort: number;
   enabled: boolean;
 }
@@ -40,6 +42,7 @@ const SEED: GameManifest[] = [
     kind: "stake",
     spendLane: "play",
     vaultKey: "tarot",
+    coverUrl: "/assets/lobby/tarot.svg",
     sort: 10,
     enabled: true,
   },
@@ -52,7 +55,20 @@ const SEED: GameManifest[] = [
     kind: "spin",
     spendLane: "play",
     vaultKey: "arcana",
+    coverUrl: "/assets/lobby/arcana.svg",
     sort: 20,
+    enabled: true,
+  },
+  {
+    id: "olympus",
+    nameVi: "Olympus",
+    blurb: "Slot tumble 6×5 — xu chơi · demo giáo dục SOFIAORE.",
+    status: "live",
+    pathSuffix: "olympus",
+    kind: "spin",
+    spendLane: "play",
+    coverUrl: "/assets/lobby/olympus.svg",
+    sort: 25,
     enabled: true,
   },
   {
@@ -63,6 +79,7 @@ const SEED: GameManifest[] = [
     pathSuffix: "boi-bai",
     kind: "oracle",
     spendLane: "play",
+    coverUrl: "/assets/lobby/boi.svg",
     sort: 30,
     enabled: true,
   },
@@ -75,6 +92,7 @@ const SEED: GameManifest[] = [
     kind: "stake",
     spendLane: "play",
     vaultKey: "dice",
+    coverUrl: "/assets/lobby/soon.svg",
     sort: 40,
     enabled: true,
   },
@@ -87,6 +105,7 @@ const SEED: GameManifest[] = [
     kind: "spin",
     spendLane: "play",
     vaultKey: "slots",
+    coverUrl: "/assets/lobby/soon.svg",
     sort: 50,
     enabled: true,
   },
@@ -98,6 +117,7 @@ const SEED: GameManifest[] = [
     pathSuffix: "g/quiz",
     kind: "other",
     spendLane: "play",
+    coverUrl: "/assets/lobby/soon.svg",
     sort: 60,
     enabled: true,
   },
@@ -149,6 +169,9 @@ function normalizeManifest(raw: unknown): GameManifest | null {
     vaultKey: g.vaultKey
       ? String(g.vaultKey).trim().toLowerCase().slice(0, 32)
       : undefined,
+    coverUrl: g.coverUrl
+      ? String(g.coverUrl).trim().slice(0, 200)
+      : undefined,
     sort: Number.isFinite(sort) ? sort : 100,
     enabled: g.enabled !== false,
   };
@@ -157,7 +180,14 @@ function normalizeManifest(raw: unknown): GameManifest | null {
 function mergeSeed(existing: GameManifest[]): GameManifest[] {
   const byId = new Map(existing.map((g) => [g.id, g]));
   for (const s of SEED) {
-    if (!byId.has(s.id)) byId.set(s.id, s);
+    const cur = byId.get(s.id);
+    if (!cur) {
+      byId.set(s.id, s);
+      continue;
+    }
+    if (!cur.coverUrl && s.coverUrl) {
+      byId.set(s.id, { ...cur, coverUrl: s.coverUrl });
+    }
   }
   return [...byId.values()].sort((a, b) => a.sort - b.sort || a.id.localeCompare(b.id));
 }
@@ -245,6 +275,7 @@ class PlatformGamesStore {
       vaultKey: string | null;
       sort: number;
       enabled: boolean;
+      coverUrl: string;
     }>,
   ): { ok: true; game: GameManifest } | { ok: false; reason: string } {
     const key = normalizeId(id);

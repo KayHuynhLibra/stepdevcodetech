@@ -1,4 +1,4 @@
-import { FormEvent, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { formatXu } from "../cards";
 import {
   CHAT_MAX_LEN,
@@ -6,9 +6,19 @@ import {
   chatCost,
   type ChatMode,
   type ShoutEvent,
+  type ShoutReplyRef,
 } from "../shouts";
+import { CultivationChip } from "./CultivationChip";
+import { PlayLevelBadge } from "./PlayLevelBadge";
 
 const VIP_BADGE_KEY = "tarot_vip_badge";
+
+const EXTRA_REACT = [
+  { id: "heart", text: "❤" },
+  { id: "ok", text: "OK" },
+  { id: "lol", text: "Haha" },
+  { id: "wow", text: "Wow" },
+];
 
 function readVipBadgeVisible(): boolean {
   try {
@@ -17,6 +27,8 @@ function readVipBadgeVisible(): boolean {
     return true;
   }
 }
+
+export type ChatMentionHint = { name: string; userId?: string };
 
 interface ShoutBarProps {
   disabled?: boolean;
@@ -29,14 +41,22 @@ interface ShoutBarProps {
   chatCosts?: { no: number; vip: number; saint: number };
   onModeChange: (mode: ChatMode) => void;
   onSendSlang: (id: string) => void;
-  onSendText: (text: string) => void;
-  /** Gợi ý chat nhanh (AI nhẹ) */
+  onSendText: (
+    text: string,
+    meta?: { replyTo?: ShoutReplyRef; mentions?: string[] },
+  ) => void;
   chatSuggests?: string[];
   onAvatarClick?: (line: ShoutEvent) => void;
-  /** Hiện nút đăng nhập lại khi phiên chat chết */
   needRelogin?: boolean;
   onRelogin?: () => void;
   onReport?: (line: ShoutEvent) => void;
+  /** Gợi ý @mention từ danh sách phòng */
+  mentionHints?: ChatMentionHint[];
+  /** Phase-2 stub — hub toàn site (chưa làm) */
+  onOpenGlobalHub?: () => void;
+  /** Chèn mention từ bên ngoài (PlayersSheet) */
+  insertMentionRequest?: string | null;
+  onInsertMentionConsumed?: () => void;
 }
 
 export function ShoutBar({
@@ -56,11 +76,50 @@ export function ShoutBar({
   needRelogin,
   onRelogin,
   onReport,
+  mentionHints = [],
+  onOpenGlobalHub,
+  insertMentionRequest,
+  onInsertMentionConsumed,
 }: ShoutBarProps) {
   const [text, setText] = useState("");
+  const [replyTo, setReplyTo] = useState<ShoutReplyRef | null>(null);
   const [badgeVisible, setBadgeVisible] = useState(readVipBadgeVisible);
   const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const cost = chatCost(mode, chatCosts);
+
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [lines.length, lines[lines.length - 1]?.at]);
+
+  useEffect(() => {
+    if (!insertMentionRequest) return;
+    const tag = `@${insertMentionRequest} `;
+    setText((t) => {
+      const next = (t + (t.endsWith(" ") || !t ? "" : " ") + tag).slice(
+        0,
+        CHAT_MAX_LEN,
+      );
+      return next;
+    });
+    inputRef.current?.focus();
+    onInsertMentionConsumed?.();
+  }, [insertMentionRequest, onInsertMentionConsumed]);
+
+  const mentionQuery = useMemo(() => {
+    const m = text.match(/(?:^|\s)@([\p{L}\p{N}_.-]*)$/u);
+    return m ? m[1].toLowerCase() : null;
+  }, [text]);
+
+  const mentionOptions = useMemo(() => {
+    if (mentionQuery == null) return [];
+    const q = mentionQuery;
+    return mentionHints
+      .filter((h) => h.name.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [mentionHints, mentionQuery]);
 
   const toggleBadge = () => {
     const next = !badgeVisible;
@@ -72,12 +131,28 @@ export function ShoutBar({
     }
   };
 
+  const pickMention = (name: string) => {
+    setText((t) => t.replace(/(?:^|\s)@([\p{L}\p{N}_.-]*)$/u, ` @${name} `).trimStart().slice(0, CHAT_MAX_LEN));
+    inputRef.current?.focus();
+  };
+
+  const extractMentions = (raw: string): string[] => {
+    const found = [...raw.matchAll(/@([\p{L}\p{N}_.-]{1,32})/gu)].map(
+      (m) => m[1],
+    );
+    return [...new Set(found)].slice(0, 5);
+  };
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const t = text.trim();
     if (!t || disabled || busy) return;
-    onSendText(t);
+    onSendText(t, {
+      replyTo: replyTo ?? undefined,
+      mentions: extractMentions(t),
+    });
     setText("");
+    setReplyTo(null);
   };
 
   const modes: { id: ChatMode; label: string; title: string; needVip?: boolean }[] =
@@ -97,7 +172,8 @@ export function ShoutBar({
     ];
 
   return (
-    <section className="game-task mt-2 overflow-hidden px-0 py-0">
+    <section className="game-task social-dock mt-2 overflow-hidden px-0 py-0">
+      {/* Phase-2 hook: onOpenGlobalHub — chưa gắn hub toàn site */}
       <div className="flex items-center justify-between gap-2 border-b border-[var(--wood-deep)]/12 px-2.5 py-1">
         <div className="flex min-w-0 items-center gap-1.5">
           <span
@@ -124,7 +200,18 @@ export function ShoutBar({
               aria-hidden
             />
           </span>
-          <p className="text-[11px] font-bold text-[var(--play-ink)]">Chat</p>
+          <p className="text-[11px] font-bold text-[var(--play-ink)]">
+            Kênh chat
+          </p>
+          {onOpenGlobalHub ? (
+            <button
+              type="button"
+              className="hidden"
+              aria-hidden
+              tabIndex={-1}
+              onClick={onOpenGlobalHub}
+            />
+          ) : null}
           <div className="flex items-center gap-0.5">
             {modes.map((m) => {
               const locked = !!(m.needVip && !isVip);
@@ -174,7 +261,7 @@ export function ShoutBar({
           )}
         </div>
         <span className="shrink-0 text-[9px] font-semibold text-amber-700 tabular-nums">
-          {formatXu(cost)} xu
+          {formatXu(cost)} xu chơi
           {mode === "vip"
             ? " · bay"
             : mode === "saint"
@@ -185,59 +272,132 @@ export function ShoutBar({
 
       <div
         ref={listRef}
-        className="h-16 space-y-0.5 overflow-y-auto bg-[var(--night)]/8 px-2 py-1"
+        className="h-36 space-y-1 overflow-y-auto bg-[var(--night)]/8 px-2 py-1.5 sm:h-40"
       >
         {lines.length === 0 ? (
-          <p className="py-2 text-center text-[10px] text-[var(--play-muted)]">
-            Chưa có tin · lịch sử reset mỗi ngày (UTC)
+          <p className="py-4 text-center text-[10px] text-[var(--play-muted)]">
+            Chưa có tin · gõ @ để gọi tên · Reply để trả lời
           </p>
         ) : (
           lines.map((m, i) => (
             <div
               key={`${m.at}-${m.name}-${i}`}
-              className="flex items-center gap-1 rounded px-1 py-0.5"
+              className="flex items-start gap-1 rounded px-1 py-0.5"
             >
               <button
                 type="button"
                 onClick={() => onAvatarClick?.(m)}
-                className="shrink-0 rounded-full"
+                className="mt-0.5 shrink-0 rounded-full"
                 title="Xem thông tin"
               >
                 <img
                   src={m.avatar || "/assets/ui/avatar-default.png"}
                   alt=""
-                  className="h-4 w-4 rounded-full object-cover"
+                  className="h-5 w-5 rounded-full object-cover"
                 />
               </button>
-              <p className="min-w-0 flex-1 truncate text-[10px] text-[var(--play-ink)]">
-                <span className="font-bold text-[var(--wood-deep)]">{m.name}</span>
-                {(m.mode === "vip" || m.fly) && (
-                  <span className="ml-1 text-[9px] font-bold text-amber-700">
-                    VIP
-                  </span>
+              <div className="min-w-0 flex-1">
+                {m.replyTo && (
+                  <p className="truncate text-[9px] text-[var(--play-muted)]">
+                    ↳ {m.replyTo.name}: {m.replyTo.text}
+                  </p>
                 )}
-                {(m.mode === "saint" || m.saint) && (
-                  <span className="ml-1 text-[9px] font-bold text-[var(--jade)]">
-                    Saint
+                <p className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[10px] leading-snug text-[var(--play-ink)]">
+                  <span className="font-bold text-[var(--wood-deep)]">
+                    {m.name}
                   </span>
-                )}
-                <span className="mx-1 text-[var(--play-muted)]">·</span>
-                {m.text}
-              </p>
-              {onReport && chatLive && (
+                  {m.roundsPlayed != null ? (
+                    <PlayLevelBadge
+                      rounds={m.roundsPlayed}
+                      size="sm"
+                      className="chat-rank-lv"
+                    />
+                  ) : m.playLevel != null ? (
+                    <span className="text-[9px] font-bold text-[var(--wood-deep)]">
+                      Lv{m.playLevel}
+                    </span>
+                  ) : null}
+                  {m.cultivationRank ? (
+                    <CultivationChip
+                      rank={m.cultivationRank}
+                      className="!px-1.5 !py-0 !text-[8px] chat-rank-cult"
+                    />
+                  ) : null}
+                  {(m.isVip || m.mode === "vip" || m.fly) && (
+                    <span className="text-[9px] font-bold text-amber-700">
+                      VIP
+                    </span>
+                  )}
+                  {(m.mode === "saint" || m.saint) && (
+                    <span className="text-[9px] font-bold text-[var(--jade)]">
+                      Saint
+                    </span>
+                  )}
+                  <span className="text-[var(--play-muted)]">·</span>
+                  <span className="min-w-0 whitespace-pre-wrap break-words">
+                    {m.text}
+                  </span>
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-col gap-0.5">
                 <button
                   type="button"
-                  title="Báo cáo"
-                  className="shrink-0 px-1 text-[9px] font-bold text-rose-700/80"
-                  onClick={() => onReport(m)}
+                  title="Trả lời"
+                  disabled={disabled}
+                  className="px-1 text-[9px] font-bold text-[var(--wood-deep)] disabled:opacity-40"
+                  onClick={() => {
+                    setReplyTo({ name: m.name, text: m.text });
+                    inputRef.current?.focus();
+                  }}
                 >
-                  !
+                  ↩
                 </button>
-              )}
+                {onReport && chatLive && (
+                  <button
+                    type="button"
+                    title="Báo cáo"
+                    className="px-1 text-[9px] font-bold text-rose-700/80"
+                    onClick={() => onReport(m)}
+                  >
+                    !
+                  </button>
+                )}
+              </div>
             </div>
           ))
         )}
       </div>
+
+      {replyTo && (
+        <div className="flex items-center gap-2 border-t border-[var(--wood-deep)]/10 bg-amber-50/80 px-2 py-1 text-[10px]">
+          <span className="min-w-0 flex-1 truncate text-[var(--play-ink)]">
+            Đang trả lời <b>@{replyTo.name}</b>: {replyTo.text}
+          </span>
+          <button
+            type="button"
+            className="shrink-0 font-bold text-[var(--play-muted)]"
+            onClick={() => setReplyTo(null)}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {mentionOptions.length > 0 && (
+        <ul className="max-h-28 overflow-y-auto border-t border-[var(--wood-deep)]/10 bg-white/90 px-1 py-1">
+          {mentionOptions.map((h) => (
+            <li key={h.userId ?? h.name}>
+              <button
+                type="button"
+                className="w-full rounded px-2 py-1 text-left text-[11px] font-semibold text-[var(--play-ink)] hover:bg-[var(--wood-deep)]/8"
+                onClick={() => pickMention(h.name)}
+              >
+                @{h.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {chatSuggests && chatSuggests.length > 0 && (
         <div className="flex gap-1 overflow-x-auto border-t border-[var(--wood-deep)]/10 px-1.5 py-1">
@@ -267,6 +427,17 @@ export function ShoutBar({
             {s.text}
           </button>
         ))}
+        {EXTRA_REACT.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            disabled={disabled || busy}
+            onClick={() => onSendText(s.text)}
+            className="shrink-0 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/12 disabled:opacity-45"
+          >
+            {s.text}
+          </button>
+        ))}
       </div>
 
       <form
@@ -274,6 +445,7 @@ export function ShoutBar({
         className="flex gap-1 border-t border-[var(--wood-deep)]/12 px-1.5 py-1"
       >
         <input
+          ref={inputRef}
           value={text}
           onChange={(e) => setText(e.target.value.slice(0, CHAT_MAX_LEN))}
           maxLength={CHAT_MAX_LEN}
@@ -284,10 +456,10 @@ export function ShoutBar({
                 ? "Phiên hết hạn…"
                 : "Đăng nhập…"
               : mode === "saint"
-                ? "Saint toàn màn…"
+                ? "Saint toàn màn… @tên"
                 : mode === "vip"
-                  ? "VIP bay màn hình…"
-                  : "Nhập tin…"
+                  ? "VIP bay… @tên"
+                  : "Nhập tin · @mention…"
           }
           className="app-input !px-2 !py-1 text-[11px]"
         />

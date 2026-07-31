@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, useState, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import {
   AUTH_CHANGE_PASSWORD,
@@ -9,20 +9,25 @@ import {
   isStaff,
   playPath,
   postAuthPath,
-  type AuthUser,
   type UserRole,
 } from "./auth";
 import { ComplianceGate } from "./components/ComplianceGate";
 import { hasPlayComplianceAck } from "./compliance";
-import { ensureGuestCode, guestPlayPath } from "./guest";
+import { ensureGuestCode, guestHomePath } from "./guest";
 import LoginPage from "./pages/LoginPage";
 import LegalPage from "./pages/LegalPage";
-import UserDashboard from "./pages/UserDashboard";
-import AdminDashboard from "./pages/AdminDashboard";
-import DealDashboard from "./pages/DealDashboard";
-import GamePage from "./pages/GamePage";
-import ArcanaWheelPage from "./pages/ArcanaWheelPage";
-import BoiBaiPage from "./pages/BoiBaiPage";
+import {
+  LazyArcanaWheelPage,
+  LazyBoiBaiPage,
+  LazyGamePage,
+  LazyOlympusCasinoPage,
+  withGameSuspense,
+} from "./platform/lazyGames";
+
+const UserDashboard = lazy(() => import("./pages/UserDashboard"));
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const DealDashboard = lazy(() => import("./pages/DealDashboard"));
+const GuestLobbyPage = lazy(() => import("./pages/GuestLobbyPage"));
 
 type DashRole =
   | "user"
@@ -34,7 +39,8 @@ type DashRole =
   | "eco"
   | "audit"
   | "sgift"
-  | "ring";
+  | "ring"
+  | "pm";
 
 function isNonPlayerRole(role: UserRole): boolean {
   return (
@@ -45,7 +51,8 @@ function isNonPlayerRole(role: UserRole): boolean {
     role === "eco" ||
     role === "audit" ||
     role === "sgift" ||
-    role === "ring"
+    role === "ring" ||
+    role === "pm"
   );
 }
 
@@ -53,7 +60,7 @@ function RequireAuth({
   children,
   role,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   role?: DashRole;
 }) {
   const token = getToken();
@@ -74,13 +81,13 @@ function RequireAuth({
 
 /**
  * URL phải đúng role + đúng mã của user đang login.
- * Sai mã / sai khu → đẩy về đường dẫn của chính họ (giữ /play nếu đang chơi).
+ * Sai mã / sai khu → đẩy về đường dẫn của chính họ (giữ bàn nếu đang chơi).
  */
 function RequireOwnCode({
   children,
   role,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   role?: DashRole;
 }) {
   const { userCode } = useParams();
@@ -97,19 +104,16 @@ function RequireOwnCode({
 
   const mine = String(user.code || user.id).toUpperCase();
   const param = String(userCode || "").toUpperCase();
-  const onPlay =
-    loc.pathname.endsWith("/play") ||
-    loc.pathname.endsWith("/arcana") ||
-    loc.pathname.endsWith("/boi-bai");
   const ownHome = homePath(user);
-  const ownPlay = playPath(user);
   const ownDest = loc.pathname.endsWith("/arcana")
     ? `${ownHome}/arcana`
     : loc.pathname.endsWith("/boi-bai")
       ? `${ownHome}/boi-bai`
-      : onPlay
-        ? ownPlay
-        : ownHome;
+      : loc.pathname.endsWith("/olympus")
+        ? `${ownHome}/olympus`
+        : loc.pathname.endsWith("/play")
+          ? playPath(user)
+          : ownHome;
 
   if (role && role !== "user" && user.role !== role) {
     return <Navigate to={ownDest} replace />;
@@ -125,7 +129,8 @@ function RequireOwnCode({
   return <RequireAuth role={role}>{children}</RequireAuth>;
 }
 
-function RequireOwnGuest() {
+/** Guest gate — children = lazy page của bàn đang vào. */
+function RequireOwnGuest({ children }: { children: ReactNode }) {
   const { guestCode } = useParams();
   const user = getStoredUser();
   const [ack, setAck] = useState(() => hasPlayComplianceAck());
@@ -136,7 +141,7 @@ function RequireOwnGuest() {
   const mine = ensureGuestCode();
   const param = (guestCode || "").toUpperCase();
   if (!param || param !== mine) {
-    return <Navigate to={guestPlayPath(mine)} replace />;
+    return <Navigate to={guestHomePath(mine)} replace />;
   }
   if (!ack) {
     return (
@@ -146,7 +151,7 @@ function RequireOwnGuest() {
       />
     );
   }
-  return <GamePage />;
+  return <>{children}</>;
 }
 
 function GuestEntry() {
@@ -154,7 +159,7 @@ function GuestEntry() {
   if (getToken() && user) {
     return <Navigate to={postAuthPath(user)} replace />;
   }
-  return <Navigate to={guestPlayPath(ensureGuestCode())} replace />;
+  return <Navigate to={guestHomePath(ensureGuestCode())} replace />;
 }
 
 function LegacyRoleRedirect(_props: { role: UserRole }) {
@@ -180,7 +185,7 @@ export default function App() {
         path="/player/:userCode"
         element={
           <RequireOwnCode role="user">
-            <UserDashboard />
+            {withGameSuspense(<UserDashboard />)}
           </RequireOwnCode>
         }
       />
@@ -188,7 +193,7 @@ export default function App() {
         path="/player/:userCode/play"
         element={
           <RequireOwnCode role="user">
-            <GamePage />
+            {withGameSuspense(<LazyGamePage />)}
           </RequireOwnCode>
         }
       />
@@ -196,7 +201,7 @@ export default function App() {
         path="/player/:userCode/arcana"
         element={
           <RequireOwnCode role="user">
-            <ArcanaWheelPage />
+            {withGameSuspense(<LazyArcanaWheelPage />)}
           </RequireOwnCode>
         }
       />
@@ -204,7 +209,15 @@ export default function App() {
         path="/player/:userCode/boi-bai"
         element={
           <RequireOwnCode role="user">
-            <BoiBaiPage />
+            {withGameSuspense(<LazyBoiBaiPage />)}
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/player/:userCode/olympus"
+        element={
+          <RequireOwnCode role="user">
+            {withGameSuspense(<LazyOlympusCasinoPage />)}
           </RequireOwnCode>
         }
       />
@@ -213,7 +226,7 @@ export default function App() {
         path="/admin/:userCode"
         element={
           <RequireOwnCode role="admin">
-            <AdminDashboard />
+            {withGameSuspense(<AdminDashboard />)}
           </RequireOwnCode>
         }
       />
@@ -221,7 +234,7 @@ export default function App() {
         path="/admin/:userCode/play"
         element={
           <RequireOwnCode role="admin">
-            <GamePage />
+            {withGameSuspense(<LazyGamePage />)}
           </RequireOwnCode>
         }
       />
@@ -229,7 +242,7 @@ export default function App() {
         path="/admin/:userCode/arcana"
         element={
           <RequireOwnCode role="admin">
-            <ArcanaWheelPage />
+            {withGameSuspense(<LazyArcanaWheelPage />)}
           </RequireOwnCode>
         }
       />
@@ -237,7 +250,15 @@ export default function App() {
         path="/admin/:userCode/boi-bai"
         element={
           <RequireOwnCode role="admin">
-            <BoiBaiPage />
+            {withGameSuspense(<LazyBoiBaiPage />)}
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/admin/:userCode/olympus"
+        element={
+          <RequireOwnCode role="admin">
+            {withGameSuspense(<LazyOlympusCasinoPage />)}
           </RequireOwnCode>
         }
       />
@@ -246,7 +267,7 @@ export default function App() {
         path="/mainadmin/:userCode"
         element={
           <RequireOwnCode role="mainadmin">
-            <AdminDashboard />
+            {withGameSuspense(<AdminDashboard />)}
           </RequireOwnCode>
         }
       />
@@ -254,7 +275,7 @@ export default function App() {
         path="/mainadmin/:userCode/play"
         element={
           <RequireOwnCode role="mainadmin">
-            <GamePage />
+            {withGameSuspense(<LazyGamePage />)}
           </RequireOwnCode>
         }
       />
@@ -262,7 +283,7 @@ export default function App() {
         path="/mainadmin/:userCode/arcana"
         element={
           <RequireOwnCode role="mainadmin">
-            <ArcanaWheelPage />
+            {withGameSuspense(<LazyArcanaWheelPage />)}
           </RequireOwnCode>
         }
       />
@@ -270,7 +291,15 @@ export default function App() {
         path="/mainadmin/:userCode/boi-bai"
         element={
           <RequireOwnCode role="mainadmin">
-            <BoiBaiPage />
+            {withGameSuspense(<LazyBoiBaiPage />)}
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/mainadmin/:userCode/olympus"
+        element={
+          <RequireOwnCode role="mainadmin">
+            {withGameSuspense(<LazyOlympusCasinoPage />)}
           </RequireOwnCode>
         }
       />
@@ -279,7 +308,7 @@ export default function App() {
         path="/eco/:userCode"
         element={
           <RequireOwnCode role="eco">
-            <AdminDashboard />
+            {withGameSuspense(<AdminDashboard />)}
           </RequireOwnCode>
         }
       />
@@ -287,7 +316,7 @@ export default function App() {
         path="/eco/:userCode/play"
         element={
           <RequireOwnCode role="eco">
-            <GamePage />
+            {withGameSuspense(<LazyGamePage />)}
           </RequireOwnCode>
         }
       />
@@ -295,7 +324,7 @@ export default function App() {
         path="/eco/:userCode/arcana"
         element={
           <RequireOwnCode role="eco">
-            <ArcanaWheelPage />
+            {withGameSuspense(<LazyArcanaWheelPage />)}
           </RequireOwnCode>
         }
       />
@@ -303,7 +332,15 @@ export default function App() {
         path="/eco/:userCode/boi-bai"
         element={
           <RequireOwnCode role="eco">
-            <BoiBaiPage />
+            {withGameSuspense(<LazyBoiBaiPage />)}
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/eco/:userCode/olympus"
+        element={
+          <RequireOwnCode role="eco">
+            {withGameSuspense(<LazyOlympusCasinoPage />)}
           </RequireOwnCode>
         }
       />
@@ -312,7 +349,7 @@ export default function App() {
         path="/audit/:userCode"
         element={
           <RequireOwnCode role="audit">
-            <AdminDashboard />
+            {withGameSuspense(<AdminDashboard />)}
           </RequireOwnCode>
         }
       />
@@ -320,7 +357,7 @@ export default function App() {
         path="/audit/:userCode/play"
         element={
           <RequireOwnCode role="audit">
-            <GamePage />
+            {withGameSuspense(<LazyGamePage />)}
           </RequireOwnCode>
         }
       />
@@ -328,7 +365,7 @@ export default function App() {
         path="/audit/:userCode/arcana"
         element={
           <RequireOwnCode role="audit">
-            <ArcanaWheelPage />
+            {withGameSuspense(<LazyArcanaWheelPage />)}
           </RequireOwnCode>
         }
       />
@@ -336,7 +373,15 @@ export default function App() {
         path="/audit/:userCode/boi-bai"
         element={
           <RequireOwnCode role="audit">
-            <BoiBaiPage />
+            {withGameSuspense(<LazyBoiBaiPage />)}
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/audit/:userCode/olympus"
+        element={
+          <RequireOwnCode role="audit">
+            {withGameSuspense(<LazyOlympusCasinoPage />)}
           </RequireOwnCode>
         }
       />
@@ -345,7 +390,7 @@ export default function App() {
         path="/sgift/:userCode"
         element={
           <RequireOwnCode role="sgift">
-            <AdminDashboard />
+            {withGameSuspense(<AdminDashboard />)}
           </RequireOwnCode>
         }
       />
@@ -353,7 +398,7 @@ export default function App() {
         path="/sgift/:userCode/play"
         element={
           <RequireOwnCode role="sgift">
-            <GamePage />
+            {withGameSuspense(<LazyGamePage />)}
           </RequireOwnCode>
         }
       />
@@ -361,7 +406,7 @@ export default function App() {
         path="/sgift/:userCode/arcana"
         element={
           <RequireOwnCode role="sgift">
-            <ArcanaWheelPage />
+            {withGameSuspense(<LazyArcanaWheelPage />)}
           </RequireOwnCode>
         }
       />
@@ -369,7 +414,15 @@ export default function App() {
         path="/sgift/:userCode/boi-bai"
         element={
           <RequireOwnCode role="sgift">
-            <BoiBaiPage />
+            {withGameSuspense(<LazyBoiBaiPage />)}
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/sgift/:userCode/olympus"
+        element={
+          <RequireOwnCode role="sgift">
+            {withGameSuspense(<LazyOlympusCasinoPage />)}
           </RequireOwnCode>
         }
       />
@@ -378,7 +431,7 @@ export default function App() {
         path="/ring/:userCode"
         element={
           <RequireOwnCode role="ring">
-            <AdminDashboard />
+            {withGameSuspense(<AdminDashboard />)}
           </RequireOwnCode>
         }
       />
@@ -386,7 +439,7 @@ export default function App() {
         path="/ring/:userCode/play"
         element={
           <RequireOwnCode role="ring">
-            <GamePage />
+            {withGameSuspense(<LazyGamePage />)}
           </RequireOwnCode>
         }
       />
@@ -394,7 +447,7 @@ export default function App() {
         path="/ring/:userCode/arcana"
         element={
           <RequireOwnCode role="ring">
-            <ArcanaWheelPage />
+            {withGameSuspense(<LazyArcanaWheelPage />)}
           </RequireOwnCode>
         }
       />
@@ -402,7 +455,56 @@ export default function App() {
         path="/ring/:userCode/boi-bai"
         element={
           <RequireOwnCode role="ring">
-            <BoiBaiPage />
+            {withGameSuspense(<LazyBoiBaiPage />)}
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/ring/:userCode/olympus"
+        element={
+          <RequireOwnCode role="ring">
+            {withGameSuspense(<LazyOlympusCasinoPage />)}
+          </RequireOwnCode>
+        }
+      />
+
+      <Route
+        path="/pm/:userCode"
+        element={
+          <RequireOwnCode role="pm">
+            {withGameSuspense(<AdminDashboard />)}
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/pm/:userCode/play"
+        element={
+          <RequireOwnCode role="pm">
+            {withGameSuspense(<LazyGamePage />)}
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/pm/:userCode/arcana"
+        element={
+          <RequireOwnCode role="pm">
+            {withGameSuspense(<LazyArcanaWheelPage />)}
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/pm/:userCode/boi-bai"
+        element={
+          <RequireOwnCode role="pm">
+            {withGameSuspense(<LazyBoiBaiPage />)}
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/pm/:userCode/olympus"
+        element={
+          <RequireOwnCode role="pm">
+            {withGameSuspense(<LazyOlympusCasinoPage />)}
           </RequireOwnCode>
         }
       />
@@ -411,7 +513,7 @@ export default function App() {
         path="/deal/:userCode"
         element={
           <RequireOwnCode role="deal">
-            <DealDashboard />
+            {withGameSuspense(<DealDashboard />)}
           </RequireOwnCode>
         }
       />
@@ -419,7 +521,7 @@ export default function App() {
         path="/deal/:userCode/play"
         element={
           <RequireOwnCode role="deal">
-            <GamePage />
+            {withGameSuspense(<LazyGamePage />)}
           </RequireOwnCode>
         }
       />
@@ -427,7 +529,7 @@ export default function App() {
         path="/deal/:userCode/arcana"
         element={
           <RequireOwnCode role="deal">
-            <ArcanaWheelPage />
+            {withGameSuspense(<LazyArcanaWheelPage />)}
           </RequireOwnCode>
         }
       />
@@ -435,7 +537,15 @@ export default function App() {
         path="/deal/:userCode/boi-bai"
         element={
           <RequireOwnCode role="deal">
-            <BoiBaiPage />
+            {withGameSuspense(<LazyBoiBaiPage />)}
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/deal/:userCode/olympus"
+        element={
+          <RequireOwnCode role="deal">
+            {withGameSuspense(<LazyOlympusCasinoPage />)}
           </RequireOwnCode>
         }
       />
@@ -444,7 +554,7 @@ export default function App() {
         path="/tutien/:userCode"
         element={
           <RequireOwnCode role="tutien">
-            <AdminDashboard />
+            {withGameSuspense(<AdminDashboard />)}
           </RequireOwnCode>
         }
       />
@@ -452,7 +562,7 @@ export default function App() {
         path="/tutien/:userCode/play"
         element={
           <RequireOwnCode role="tutien">
-            <GamePage />
+            {withGameSuspense(<LazyGamePage />)}
           </RequireOwnCode>
         }
       />
@@ -460,7 +570,7 @@ export default function App() {
         path="/tutien/:userCode/arcana"
         element={
           <RequireOwnCode role="tutien">
-            <ArcanaWheelPage />
+            {withGameSuspense(<LazyArcanaWheelPage />)}
           </RequireOwnCode>
         }
       />
@@ -468,7 +578,15 @@ export default function App() {
         path="/tutien/:userCode/boi-bai"
         element={
           <RequireOwnCode role="tutien">
-            <BoiBaiPage />
+            {withGameSuspense(<LazyBoiBaiPage />)}
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/tutien/:userCode/olympus"
+        element={
+          <RequireOwnCode role="tutien">
+            {withGameSuspense(<LazyOlympusCasinoPage />)}
           </RequireOwnCode>
         }
       />
@@ -477,7 +595,7 @@ export default function App() {
         path="/mod/:userCode"
         element={
           <RequireOwnCode role="mod">
-            <AdminDashboard />
+            {withGameSuspense(<AdminDashboard />)}
           </RequireOwnCode>
         }
       />
@@ -485,7 +603,7 @@ export default function App() {
         path="/mod/:userCode/play"
         element={
           <RequireOwnCode role="mod">
-            <GamePage />
+            {withGameSuspense(<LazyGamePage />)}
           </RequireOwnCode>
         }
       />
@@ -493,7 +611,7 @@ export default function App() {
         path="/mod/:userCode/arcana"
         element={
           <RequireOwnCode role="mod">
-            <ArcanaWheelPage />
+            {withGameSuspense(<LazyArcanaWheelPage />)}
           </RequireOwnCode>
         }
       />
@@ -501,12 +619,55 @@ export default function App() {
         path="/mod/:userCode/boi-bai"
         element={
           <RequireOwnCode role="mod">
-            <BoiBaiPage />
+            {withGameSuspense(<LazyBoiBaiPage />)}
+          </RequireOwnCode>
+        }
+      />
+      <Route
+        path="/mod/:userCode/olympus"
+        element={
+          <RequireOwnCode role="mod">
+            {withGameSuspense(<LazyOlympusCasinoPage />)}
           </RequireOwnCode>
         }
       />
 
-      <Route path="/guest/:guestCode/play" element={<RequireOwnGuest />} />
+      <Route
+        path="/guest/:guestCode"
+        element={withGameSuspense(<GuestLobbyPage />)}
+      />
+      <Route
+        path="/guest/:guestCode/play"
+        element={
+          <RequireOwnGuest>
+            {withGameSuspense(<LazyGamePage />)}
+          </RequireOwnGuest>
+        }
+      />
+      <Route
+        path="/guest/:guestCode/arcana"
+        element={
+          <RequireOwnGuest>
+            {withGameSuspense(<LazyArcanaWheelPage />)}
+          </RequireOwnGuest>
+        }
+      />
+      <Route
+        path="/guest/:guestCode/olympus"
+        element={
+          <RequireOwnGuest>
+            {withGameSuspense(<LazyOlympusCasinoPage />)}
+          </RequireOwnGuest>
+        }
+      />
+      <Route
+        path="/guest/:guestCode/boi-bai"
+        element={
+          <RequireOwnGuest>
+            {withGameSuspense(<LazyBoiBaiPage />)}
+          </RequireOwnGuest>
+        }
+      />
       <Route path="/play" element={<GuestEntry />} />
 
       <Route path="/player" element={<LegacyRoleRedirect role="user" />} />
@@ -519,6 +680,7 @@ export default function App() {
       <Route path="/audit" element={<LegacyRoleRedirect role="audit" />} />
       <Route path="/sgift" element={<LegacyRoleRedirect role="sgift" />} />
       <Route path="/ring" element={<LegacyRoleRedirect role="ring" />} />
+      <Route path="/pm" element={<LegacyRoleRedirect role="pm" />} />
       <Route path="/deal" element={<LegacyRoleRedirect role="deal" />} />
       <Route path="/tutien" element={<LegacyRoleRedirect role="tutien" />} />
       <Route path="/mod" element={<LegacyRoleRedirect role="mod" />} />
@@ -527,14 +689,11 @@ export default function App() {
       <Route
         path="/"
         element={
-          <Navigate
-            to={
-              getToken()
-                ? postAuthPath(getStoredUser() as AuthUser)
-                : AUTH_LOGIN
-            }
-            replace
-          />
+          getToken() && getStoredUser() ? (
+            <Navigate to={postAuthPath(getStoredUser()!)} replace />
+          ) : (
+            <Navigate to={AUTH_LOGIN} replace />
+          )
         }
       />
       <Route path="*" element={<Navigate to={AUTH_LOGIN} replace />} />

@@ -17,7 +17,8 @@ export type UserRoleForGrant =
   | "eco"
   | "audit"
   | "sgift"
-  | "ring";
+  | "ring"
+  | "pm";
 
 export type GrantCapability =
   | "play"
@@ -41,7 +42,8 @@ export type GrantCapability =
   | "inter_control"
   | "gift_manage"
   | "ring_manage"
-  | "oracle_manage";
+  | "oracle_manage"
+  | "pm_assets";
 
 export const STAFF_GRANT_LEVEL_MIN = 0;
 export const STAFF_GRANT_LEVEL_MAX = 6;
@@ -57,6 +59,7 @@ export const ROLE_DEFAULT_LEVEL: Record<UserRoleForGrant, number> = {
   audit: 5,
   sgift: 5,
   ring: 5,
+  pm: 5,
   mainadmin: 6,
 };
 
@@ -169,6 +172,7 @@ export function hasCapability(
           "audit",
           "sgift",
           "ring",
+          "pm",
         ]) ||
         (overridden && L >= 1)
       );
@@ -200,6 +204,7 @@ export function hasCapability(
           "audit",
           "sgift",
           "ring",
+          "pm",
         ]) ||
         (overridden && L >= 5)
       );
@@ -221,7 +226,11 @@ export function hasCapability(
     case "ring_manage":
       return userHasRole(user, "ring") || isMainish;
     case "oracle_manage":
-      return isMainish || userHasAnyRole(user, ["admin"]);
+      return (
+        isMainish || userHasAnyRole(user, ["admin", "pm"])
+      );
+    case "pm_assets":
+      return userHasRole(user, "pm") || isMainish || userHasRole(user, "admin");
     case "inter_control":
       return isMainish;
     case "inter_vault_ip":

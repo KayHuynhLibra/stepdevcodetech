@@ -222,7 +222,7 @@ export function FeedbackPopup({ user }: FeedbackPopupProps) {
   };
 
   return (
-    <div className="feedback-noti" ref={rootRef}>
+    <div className={`feedback-noti${open ? " is-open" : ""}`} ref={rootRef}>
       <button
         type="button"
         className={`feedback-noti__trigger ${open ? "is-open" : ""}`}

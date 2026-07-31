@@ -126,20 +126,45 @@ export async function dualWriteOracleDraw(row: {
   deckId: string;
   spread: string;
   cards: unknown;
+  question?: string | null;
+  notes?: string | null;
+  title?: string | null;
   at?: number;
 }): Promise<void> {
   if (!dualWriteOn()) return;
   await dbQuery(
-    `INSERT INTO oracle_draws (id, user_id, deck_id, spread, cards, at)
-     VALUES ($1,$2,$3,$4,$5::jsonb,to_timestamp($6/1000.0))
-     ON CONFLICT (id) DO NOTHING`,
+    `INSERT INTO oracle_draws (id, user_id, deck_id, spread, cards, question, notes, title, at)
+     VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,to_timestamp($9/1000.0))
+     ON CONFLICT (id) DO UPDATE SET
+       notes = COALESCE(EXCLUDED.notes, oracle_draws.notes),
+       title = COALESCE(EXCLUDED.title, oracle_draws.title),
+       question = COALESCE(EXCLUDED.question, oracle_draws.question)`,
     [
       row.id,
       row.userId,
       row.deckId,
       row.spread,
       JSON.stringify(row.cards),
+      row.question ?? null,
+      row.notes ?? null,
+      row.title ?? null,
       row.at ?? Date.now(),
     ],
   ).catch((e) => logDw(e, "oracle_draw"));
+}
+
+export async function dualWriteOracleDrawPatch(row: {
+  id: string;
+  userId: string;
+  notes?: string | null;
+  title?: string | null;
+}): Promise<void> {
+  if (!dualWriteOn()) return;
+  await dbQuery(
+    `UPDATE oracle_draws SET
+       notes = COALESCE($3, notes),
+       title = COALESCE($4, title)
+     WHERE id = $1 AND user_id = $2`,
+    [row.id, row.userId, row.notes ?? null, row.title ?? null],
+  ).catch((e) => logDw(e, "oracle_draw_patch"));
 }

@@ -3,7 +3,23 @@
  * Admin có thể cập nhật qua API / store JSON.
  */
 
-export type OracleDeckId = "tarot" | "zodiac";
+export type OracleDeckId = string;
+
+export type OracleSuit =
+  | "major"
+  | "wands"
+  | "cups"
+  | "swords"
+  | "pentacles"
+  | "zodiac"
+  | string;
+
+export type OracleTradition =
+  | "rider-waite"
+  | "marseille"
+  | "thoth"
+  | "custom"
+  | "zodiac";
 
 export interface OracleDeckMeta {
   id: OracleDeckId;
@@ -11,6 +27,9 @@ export interface OracleDeckMeta {
   blurb: string;
   enabled: boolean;
   sort: number;
+  tradition?: OracleTradition;
+  /** Highlight trên Lab nghiên cứu */
+  research?: boolean;
 }
 
 export interface OracleCardSeed {
@@ -20,7 +39,7 @@ export interface OracleCardSeed {
   nameVi: string;
   /** Số thứ tự trong bộ (0–21 major, 1–14 minor rank, 1–12 zodiac) */
   number: number;
-  suit?: "major" | "wands" | "cups" | "swords" | "pentacles" | "zodiac";
+  suit?: OracleSuit;
   element?: string;
   upright: string;
   reversed: string;
@@ -29,6 +48,11 @@ export interface OracleCardSeed {
   enabled: boolean;
   sort: number;
   blurb?: string;
+  tags?: string[];
+  notes?: string;
+  citations?: string;
+  /** Ẩn khỏi catalog/draw public; staff Lab vẫn thấy */
+  draft?: boolean;
 }
 
 const MAJOR: Omit<OracleCardSeed, "deckId" | "suit" | "enabled" | "sort" | "image">[] = [
@@ -552,7 +576,7 @@ function minorCards(): OracleCardSeed[] {
         upright: `${rank.up} Chủ đề: ${suit.theme}.`,
         reversed: `${rank.rev} Chủ đề: ${suit.theme}.`,
         keywords: [suit.nameVi.toLowerCase(), rank.vi.toLowerCase(), suit.element],
-        image: `/assets/oracle/tarot/${key}.webp`,
+        image: `/assets/oracle/tarot/${key}.svg`,
         enabled: true,
         sort: sort++,
         blurb: `Minor · ${suit.nameVi}`,
@@ -565,29 +589,93 @@ function minorCards(): OracleCardSeed[] {
 export const DEFAULT_ORACLE_DECKS: OracleDeckMeta[] = [
   {
     id: "tarot",
-    nameVi: "Tarot (78 lá)",
-    blurb: "Major Arcana + Minor Arcana — bói bài kinh điển.",
+    nameVi: "Rider–Waite (78 lá)",
+    blurb: "Truyền thống Rider–Waite–Smith — Major + Minor kinh điển.",
     enabled: true,
     sort: 1,
+    tradition: "rider-waite",
+    research: true,
+  },
+  {
+    id: "tarot-marseille",
+    nameVi: "Marseille (78 lá)",
+    blurb: "Tarot de Marseille — hình học cổ, nghiên cứu biểu tượng châu Âu.",
+    enabled: true,
+    sort: 2,
+    tradition: "marseille",
+    research: true,
+  },
+  {
+    id: "tarot-thoth",
+    nameVi: "Thoth (78 lá)",
+    blurb: "Thoth Crowley — Qabalah, astrology, alchemy layered.",
+    enabled: true,
+    sort: 3,
+    tradition: "thoth",
+    research: true,
   },
   {
     id: "zodiac",
     nameVi: "Chiêm tinh (12 cung)",
     blurb: "Mười hai cung Hoàng đạo — năng lượng tháng / bản ngã.",
     enabled: true,
-    sort: 2,
+    sort: 10,
+    tradition: "zodiac",
   },
 ];
+
+function cloneTarot78(
+  deckId: OracleDeckId,
+  tradition: OracleTradition,
+  meaningTag: string,
+): OracleCardSeed[] {
+  const base = [
+    ...MAJOR.map((c, i) => ({
+      ...c,
+      deckId: "tarot" as OracleDeckId,
+      suit: "major" as const,
+      image: `/assets/oracle/tarot/${c.key}.svg`,
+      enabled: true,
+      sort: i,
+    })),
+    ...minorCards(),
+  ];
+  return base.map((c) => ({
+    ...c,
+    deckId,
+    upright: `[${meaningTag}] ${c.upright}`,
+    reversed: `[${meaningTag}] ${c.reversed}`,
+    keywords: [...c.keywords, meaningTag.toLowerCase()].slice(0, 8),
+    tags: [tradition, c.suit ?? "card"].filter(Boolean) as string[],
+    notes: "",
+    citations: "",
+    draft: false,
+    blurb: c.blurb
+      ? `${c.blurb} · ${meaningTag}`
+      : `${meaningTag} · ${c.suit ?? "card"}`,
+    // Art mặc định dùng chung RW SVG; P+M upload thay per-deck sau
+    image: c.image,
+  }));
+}
 
 export function buildDefaultOracleCards(): OracleCardSeed[] {
   const major: OracleCardSeed[] = MAJOR.map((c, i) => ({
     ...c,
     deckId: "tarot",
     suit: "major",
-    image: `/assets/oracle/tarot/${c.key}.webp`,
+    image: `/assets/oracle/tarot/${c.key}.svg`,
     enabled: true,
     sort: i,
+    tags: ["rider-waite", "major"],
+    draft: false,
   }));
+  const minors = minorCards().map((c) => ({
+    ...c,
+    tags: ["rider-waite", c.suit ?? "minor"],
+    draft: false,
+  }));
+  const marseille = cloneTarot78("tarot-marseille", "marseille", "Marseille");
+  const thoth = cloneTarot78("tarot-thoth", "thoth", "Thoth");
   const zodiac: OracleCardSeed[] = ZODIAC.map((c, i) => ({
     ...c,
     deckId: "zodiac",
@@ -595,6 +683,8 @@ export function buildDefaultOracleCards(): OracleCardSeed[] {
     image: `/assets/oracle/zodiac/${c.key}.webp`,
     enabled: true,
     sort: i,
+    tags: ["zodiac"],
+    draft: false,
   }));
-  return [...major, ...minorCards(), ...zodiac];
+  return [...major, ...minors, ...marseille, ...thoth, ...zodiac];
 }

@@ -32,19 +32,19 @@ export function BottomSheet({
         onClick={onClose}
       />
       <div
-        className={`sheet-shell relative w-full max-w-md ${heightClass} animate-[sheet-up_0.18s_ease-out] overflow-hidden rounded-t-2xl ring-1 ring-[var(--jade)]/45 ${shellClass}`}
+        className={`sheet-shell form-popup relative w-full max-w-md ${heightClass} animate-[sheet-up_0.18s_ease-out] overflow-hidden rounded-t-2xl ${shellClass}`}
         role="dialog"
         aria-modal="true"
       >
-        <div className="flex items-center justify-between border-b border-[var(--jade)]/25 px-4 py-3">
-          <div className="mx-auto h-1 w-10 rounded-full bg-[var(--jade-soft)]/50 absolute left-1/2 top-2 -translate-x-1/2" />
-          <h2 className="font-display text-base font-bold text-[var(--jade-soft)]">
+        <div className="form-popup__head flex items-center justify-between px-4 py-3">
+          <div className="form-popup__grip absolute left-1/2 top-2 -translate-x-1/2" />
+          <h2 className="font-display text-base font-bold text-[var(--gold-soft)]">
             {title}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full px-2 py-1 text-sm text-[var(--jade-soft)]/65 hover:text-[var(--jade-soft)]"
+            className="rounded-full px-2 py-1 text-sm text-[var(--gold-soft)]/70 hover:text-[var(--gold-soft)]"
           >
             Đóng
           </button>

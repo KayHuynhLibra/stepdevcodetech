@@ -1,10 +1,17 @@
+import { useMemo, useState } from "react";
 import type { OnlinePlayerPublic } from "../cards";
+import { BottomSheet } from "./BottomSheet";
+import { CultivationChip } from "./CultivationChip";
+import { PlayLevelBadge } from "./PlayLevelBadge";
 
 interface PlayersSheetProps {
   open: boolean;
   players: OnlinePlayerPublic[];
   onClose: () => void;
   onSelectPlayer: (p: OnlinePlayerPublic) => void;
+  onGift?: (p: OnlinePlayerPublic) => void;
+  onRing?: (p: OnlinePlayerPublic) => void;
+  onMention?: (p: OnlinePlayerPublic) => void;
 }
 
 export function PlayersSheet({
@@ -12,72 +19,124 @@ export function PlayersSheet({
   players,
   onClose,
   onSelectPlayer,
+  onGift,
+  onRing,
+  onMention,
 }: PlayersSheetProps) {
-  if (!open) return null;
+  const [q, setQ] = useState("");
 
-  const humans = players.filter((p) => !p.isBot);
+  const humans = useMemo(() => {
+    const list = players.filter((p) => !p.isBot);
+    const needle = q.trim().toLowerCase();
+    if (!needle) return list;
+    return list.filter((p) =>
+      `${p.name} ${p.code ?? ""} ${p.userId ?? ""}`
+        .toLowerCase()
+        .includes(needle),
+    );
+  }, [players, q]);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/55"
-        aria-label="Đóng"
-        onClick={onClose}
+    <BottomSheet
+      open={open}
+      title="Người chơi trong phòng"
+      onClose={onClose}
+      heightClass="max-h-[80vh]"
+    >
+      <p className="-mt-1 mb-2 text-[11px] text-[var(--jade-soft)]/70">
+        {humans.length} người · hồ sơ / quà / nhẫn / @chat
+      </p>
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Tìm tên / ID…"
+        className="form-input mb-2 w-full"
       />
-      <div className="sheet-shell relative z-10 mb-0 flex max-h-[75vh] w-full max-w-md flex-col rounded-t-2xl px-4 pb-5 pt-4 shadow-xl ring-1 ring-[var(--jade)]/40 sm:mb-0 sm:rounded-2xl">
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <p className="font-display text-base text-[var(--jade-soft)]">
-              Đang trong phòng
-            </p>
-            <p className="text-[11px] text-white/50">
-              {humans.length} người · chạm avatar xem info
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full bg-white/8 px-3 py-1 text-xs font-semibold text-[var(--cream)]/55 ring-1 ring-white/10"
-          >
-            Đóng
-          </button>
-        </div>
 
-        <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5">
-          {humans.length === 0 && (
-            <li className="py-8 text-center text-sm text-white/40">
-              Chưa có ai trong phòng
-            </li>
-          )}
-          {humans.map((p) => (
-            <li key={p.id}>
+      <ul className="min-h-0 space-y-1.5">
+        {humans.length === 0 && (
+          <li className="py-8 text-center text-sm text-white/40">
+            {q.trim() ? "Không khớp" : "Chưa có ai trong phòng"}
+          </li>
+        )}
+        {humans.map((p) => (
+          <li key={p.id} className="form-row form-row--dark">
+            <button
+              type="button"
+              onClick={() => onSelectPlayer(p)}
+              className="flex w-full items-center gap-2.5 text-left transition active:scale-[0.99]"
+            >
+              <img
+                src={p.avatar || "/assets/ui/avatar-default.png"}
+                alt=""
+                className="h-9 w-9 shrink-0 rounded-full object-cover ring-1 ring-[var(--gold)]/35"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="flex flex-wrap items-center gap-1 truncate text-sm font-semibold text-white/95">
+                  <span className="truncate">{p.name}</span>
+                  {p.isVip ? (
+                    <span className="text-[10px] text-amber-300">VIP</span>
+                  ) : null}
+                </p>
+                <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                  <span className="text-[10px] text-white/45">
+                    {p.code ? `ID ${p.code}` : "Khách"}
+                  </span>
+                  {p.roundsPlayed != null ? (
+                    <PlayLevelBadge rounds={p.roundsPlayed} size="sm" />
+                  ) : p.playLevel != null ? (
+                    <span className="text-[10px] font-bold text-[var(--gold-soft)]">
+                      Lv{p.playLevel}
+                    </span>
+                  ) : null}
+                  {p.cultivationRank ? (
+                    <CultivationChip
+                      rank={p.cultivationRank}
+                      className="!px-1.5 !py-0 !text-[8px]"
+                    />
+                  ) : null}
+                </div>
+              </div>
+            </button>
+            <div className="mt-1.5 flex flex-wrap gap-1">
               <button
                 type="button"
+                className="form-pill"
                 onClick={() => onSelectPlayer(p)}
-                className="flex w-full items-center gap-2.5 rounded-xl bg-white/5 px-2.5 py-2 text-left ring-1 ring-white/8 transition active:scale-[0.99]"
               >
-                <img
-                  src={p.avatar || "/assets/ui/avatar-default.png"}
-                  alt=""
-                  className="h-9 w-9 shrink-0 rounded-full object-cover ring-1 ring-white/20"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-white/95">
-                    {p.name}
-                  </p>
-                  <p className="text-[10px] text-white/45">
-                    {p.code ? `ID ${p.code}` : "Khách"}
-                  </p>
-                </div>
-                <span className="rounded-full bg-[var(--jade)]/25 px-2 py-0.5 text-[10px] font-bold text-[var(--jade-soft)]">
-                  USER
-                </span>
+                Hồ sơ
               </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
+              {onGift && (
+                <button
+                  type="button"
+                  className="form-pill form-pill--jade"
+                  onClick={() => onGift(p)}
+                >
+                  Quà
+                </button>
+              )}
+              {onRing && (
+                <button
+                  type="button"
+                  className="form-pill form-pill--gold"
+                  onClick={() => onRing(p)}
+                >
+                  Nhẫn
+                </button>
+              )}
+              {onMention && (
+                <button
+                  type="button"
+                  className="form-pill"
+                  onClick={() => onMention(p)}
+                >
+                  @Chat
+                </button>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </BottomSheet>
   );
 }

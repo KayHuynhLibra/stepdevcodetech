@@ -63,6 +63,11 @@ const LazyPlatformGamesAdminPanel = lazy(() =>
     default: m.PlatformGamesAdminPanel,
   })),
 );
+const LazyPmAssetsPanel = lazy(() =>
+  import("../components/PmAssetsPanel").then((m) => ({
+    default: m.PmAssetsPanel,
+  })),
+);
 import {
   CULTIVATION_LABELS,
   CULTIVATION_RANKS,
@@ -79,6 +84,7 @@ import type {
   FeedbackStatus,
   FeedbackTicket,
 } from "../components/FeedbackPopup";
+import type { MessThread } from "../components/MessPopup";
 import { TrafficPanel, type TrafficPayload } from "../components/TrafficPanel";
 import { onArcanaImgError } from "../lib/arcanaImages";
 import {
@@ -248,10 +254,12 @@ type TabId =
   | "level"
   | "gifts"
   | "rings"
+  | "pm"
   | "oracle"
   | "games"
   | "room"
   | "feedback"
+  | "mess"
   | "deleteAcc";
 
 interface VoiceRoomSeatAdmin {
@@ -1003,6 +1011,7 @@ interface Overview {
   }[];
   /** Mainadmin — số ticket Feedback đang open */
   feedbackOpenCount?: number;
+  messUnreadCount?: number;
   liveGuests?: {
     socketId: string;
     guestCode?: string;
@@ -1344,6 +1353,7 @@ export default function AdminDashboard() {
     if (u?.role === "tutien") return "tutien";
     if (u?.role === "sgift") return "gifts";
     if (u?.role === "ring") return "rings";
+    if (u?.role === "pm") return "pm";
     return "overview";
   });
   const [managedGame, setManagedGame] = useState<ManagedGame>(() => {
@@ -1619,6 +1629,13 @@ export default function AdminDashboard() {
   const [feedbackActiveId, setFeedbackActiveId] = useState<string | null>(null);
   const [feedbackReply, setFeedbackReply] = useState("");
   const [feedbackBusy, setFeedbackBusy] = useState(false);
+  const [messThreads, setMessThreads] = useState<MessThread[]>([]);
+  const [messUnreadCount, setMessUnreadCount] = useState(0);
+  const [messQuery, setMessQuery] = useState("");
+  const [messActiveId, setMessActiveId] = useState<string | null>(null);
+  const [messReply, setMessReply] = useState("");
+  const [messPreview, setMessPreview] = useState<string | null>(null);
+  const [messBusy, setMessBusy] = useState(false);
   const [codeDrafts, setCodeDrafts] = useState<Record<string, string>>({});
   const [codeBusyId, setCodeBusyId] = useState<string | null>(null);
   const [selfNickDraft, setSelfNickDraft] = useState<string | null>(null);
@@ -1778,6 +1795,9 @@ export default function AdminDashboard() {
     setBotCount(overview.stats.botTarget);
     if (typeof overview.feedbackOpenCount === "number") {
       setFeedbackOpenCount(overview.feedbackOpenCount);
+    }
+    if (typeof overview.messUnreadCount === "number") {
+      setMessUnreadCount(overview.messUnreadCount);
     }
     if (overview.extraStakeTiers) {
       setExtraStakeTiers(overview.extraStakeTiers);
@@ -1995,6 +2015,7 @@ export default function AdminDashboard() {
         if (r.user.role === "audit") setTab("tools");
         if (r.user.role === "sgift") setTab("gifts");
         if (r.user.role === "ring") setTab("rings");
+        if (r.user.role === "pm") setTab("pm");
         const token = getToken();
         if (token) saveSession(token, r.user);
         return load();
@@ -2275,7 +2296,8 @@ export default function AdminDashboard() {
       | "eco"
       | "audit"
       | "sgift"
-      | "ring",
+      | "ring"
+      | "pm",
   ) => {
     try {
       await api("/api/mainadmin/user-role", {
@@ -2301,7 +2323,9 @@ export default function AdminDashboard() {
                         ? "Đã cấp role SGift (quà)"
                         : role === "ring"
                           ? "Đã cấp role Ring (nhẫn)"
-                          : "Đã chuyển về user",
+                          : role === "pm"
+                            ? "Đã cấp role P+M (ảnh / SFX)"
+                            : "Đã chuyển về user",
       );
       await load();
     } catch (err) {
@@ -2341,7 +2365,8 @@ export default function AdminDashboard() {
       | "eco"
       | "audit"
       | "sgift"
-      | "ring",
+      | "ring"
+      | "pm",
   ) => {
     if (user.role === role || user.role === "mainadmin") return;
     const cur = new Set(user.extraRoles ?? []);
@@ -3057,6 +3082,76 @@ export default function AdminDashboard() {
     if (tab !== "feedback" || !isMainAdmin(me)) return;
     void loadFeedbackInbox();
   }, [tab, me, loadFeedbackInbox]);
+
+  const loadMessInbox = useCallback(async () => {
+    if (!isMainAdmin(me)) return;
+    setMessBusy(true);
+    try {
+      const qs = new URLSearchParams({ q: messQuery.trim() });
+      const r = await api<{
+        ok: true;
+        unreadCount: number;
+        threads: MessThread[];
+      }>(`/api/mainadmin/mess?${qs.toString()}`);
+      setMessThreads(r.threads ?? []);
+      setMessUnreadCount(r.unreadCount ?? 0);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi tải Mess");
+    } finally {
+      setMessBusy(false);
+    }
+  }, [me, messQuery]);
+
+  useEffect(() => {
+    if (tab !== "mess" || !isMainAdmin(me)) return;
+    void loadMessInbox();
+  }, [tab, me, loadMessInbox]);
+
+  const openMessThread = async (id: string) => {
+    setMessActiveId(id);
+    setMessReply("");
+    setMessPreview(null);
+    try {
+      const r = await api<{ ok: true; thread: MessThread }>(
+        `/api/mainadmin/mess/${encodeURIComponent(id)}`,
+      );
+      setMessThreads((prev) =>
+        prev.map((t) => (t.id === r.thread.id ? r.thread : t)),
+      );
+      await loadMessInbox();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi mở Mess");
+    }
+  };
+
+  const replyMess = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!messActiveId || messBusy) return;
+    if (!messReply.trim() && !messPreview) return;
+    setMessBusy(true);
+    try {
+      const r = await api<{ ok: true; thread: MessThread }>(
+        `/api/mainadmin/mess/${encodeURIComponent(messActiveId)}/message`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            body: messReply.trim(),
+            dataUrl: messPreview || undefined,
+          }),
+        },
+      );
+      setMessThreads((prev) =>
+        prev.map((t) => (t.id === r.thread.id ? r.thread : t)),
+      );
+      setMessReply("");
+      setMessPreview(null);
+      setMsg("Đã trả lời Mess");
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Lỗi gửi Mess");
+    } finally {
+      setMessBusy(false);
+    }
+  };
 
   const runIpAction = async (
     path: string,
@@ -4129,6 +4224,7 @@ export default function AdminDashboard() {
   const auditOnly = me?.role === "audit";
   const sgiftOnly = me?.role === "sgift";
   const ringOnly = me?.role === "ring";
+  const pmOnly = me?.role === "pm";
   const canVault = hasCapability(me, "vault_ops");
   const canTraffic = hasCapability(me, "traffic_view");
   const canInter = hasCapability(me, "inter_control");
@@ -4139,6 +4235,8 @@ export default function AdminDashboard() {
   const canArcanaCfg = hasCapability(me, "arcana_config");
   const canGiftManage = hasCapability(me, "gift_manage");
   const canRingManage = hasCapability(me, "ring_manage");
+  const canPmAssets = hasCapability(me, "pm_assets");
+  const canOracleManage = hasCapability(me, "oracle_manage");
   const canGameSwitch = canVault || canArcanaCfg || canInter;
   const canCultivation = canManageCultivation(me);
   const canRoom = canAccessRoomAdmin(me);
@@ -4147,26 +4245,26 @@ export default function AdminDashboard() {
     {
       id: "overview",
       label: "Tổng quan",
-      show: !tutienOnly && !modOnly && !sgiftOnly && !ringOnly,
+      show: !tutienOnly && !modOnly && !sgiftOnly && !ringOnly && !pmOnly,
     },
-    { id: "tools", label: "Tra cứu", show: canTools },
+    { id: "tools", label: "Tra cứu", show: canTools && !pmOnly },
     {
       id: "traffic",
       label: "Lưu lượng",
-      show: canTraffic && managedGame === "tarot",
+      show: canTraffic && managedGame === "tarot" && !pmOnly,
     },
     {
       id: "inter",
       label: "Inter",
-      show: canInter && managedGame === "tarot",
+      show: canInter && managedGame === "tarot" && !pmOnly,
     },
     {
       id: "arcana",
       label: "Bánh xe",
-      show: canArcanaCfg && managedGame === "arcana",
+      show: canArcanaCfg && managedGame === "arcana" && !pmOnly,
     },
-    { id: "ips", label: "IP", show: canIp },
-    { id: "chat", label: "Chat", show: canChat },
+    { id: "ips", label: "IP", show: canIp && !pmOnly },
+    { id: "chat", label: "Chat", show: canChat && !pmOnly },
     {
       id: "users",
       label: "User & Bot",
@@ -4176,7 +4274,8 @@ export default function AdminDashboard() {
         !ecoOnly &&
         !auditOnly &&
         !sgiftOnly &&
-        !ringOnly,
+        !ringOnly &&
+        !pmOnly,
     },
     { id: "rolead", label: "RoleAD", show: main },
     {
@@ -4184,7 +4283,7 @@ export default function AdminDashboard() {
       label: "Xóa acc",
       show: main,
     },
-    { id: "room", label: "Room", show: canRoom },
+    { id: "room", label: "Room", show: canRoom && !pmOnly },
     {
       id: "mod",
       label: "Mod",
@@ -4194,40 +4293,52 @@ export default function AdminDashboard() {
         !ecoOnly &&
         !auditOnly &&
         !sgiftOnly &&
-        !ringOnly,
+        !ringOnly &&
+        !pmOnly,
     },
     {
       id: "coupons",
       label: "Coupon ẩn",
-      show: !tutienOnly && !modOnly && !auditOnly && !sgiftOnly && !ringOnly,
+      show:
+        !tutienOnly &&
+        !modOnly &&
+        !auditOnly &&
+        !sgiftOnly &&
+        !ringOnly &&
+        !pmOnly,
     },
-    { id: "invites", label: "Đăng ký", show: canInvites },
+    { id: "invites", label: "Đăng ký", show: canInvites && !pmOnly },
     {
       id: "vault",
       label: vaultLabel(managedGame),
-      show: canVault,
+      show: canVault && !pmOnly,
     },
-    { id: "tutien", label: "Tu Tiên", show: canCultivation },
+    { id: "tutien", label: "Tu Tiên", show: canCultivation && !pmOnly },
     { id: "level", label: "Level", show: main },
     {
       id: "gifts",
       label: "Quà",
-      show: main || canGiftManage,
+      show: (main || canGiftManage) && !pmOnly,
     },
     {
       id: "rings",
       label: "Nhẫn",
-      show: main || canRingManage,
+      show: (main || canRingManage) && !pmOnly,
+    },
+    {
+      id: "pm",
+      label: "P+M",
+      show: main || canPmAssets,
     },
     {
       id: "oracle",
-      label: "Bói bài",
-      show: main || isStaff(me),
+      label: "Bói bài / Lab",
+      show: main || isStaff(me) || canOracleManage,
     },
     {
       id: "games",
       label: "Games",
-      show: main || isStaff(me),
+      show: (main || isStaff(me)) && !pmOnly,
     },
     {
       id: "feedback",
@@ -4235,6 +4346,12 @@ export default function AdminDashboard() {
         feedbackOpenCount > 0
           ? `Feedback (${feedbackOpenCount})`
           : "Feedback",
+      show: main,
+    },
+    {
+      id: "mess",
+      label:
+        messUnreadCount > 0 ? `Mess (${messUnreadCount})` : "Mess",
       show: main,
     },
   ];
@@ -4281,34 +4398,61 @@ export default function AdminDashboard() {
 
   return (
     <AppShell maxWidth="lg">
-      <header className="admin-header">
-        <div className="admin-header__bar">
-          <p className="admin-header__title">Quản trị</p>
+      <header className="platform-head app-frame mb-3 px-2.5 py-2 sm:px-3 sm:py-2.5">
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="play-heading text-base text-[var(--wood-deep)] sm:text-lg">
+              Quản trị
+            </p>
+            <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
+              Panel staff · thao tác trong khung form
+            </p>
+          </div>
+          <div className="platform-head__xu shrink-0">
+            <div className="platform-head__xu-cell">
+              <span>Chơi</span>
+              <strong>
+                {formatXu(me.balances?.play ?? me.balance ?? 0)}
+              </strong>
+            </div>
+            <div className="platform-head__xu-cell">
+              <span>Quà</span>
+              <strong>{formatXu(me.balances?.social ?? 0)}</strong>
+            </div>
+          </div>
+        </div>
+        <div className="platform-head__actions mt-1.5">
+          <Link to={playPath(me)} className="form-tab text-[10px]">
+            Vào bàn
+          </Link>
           <button
             type="button"
+            className="form-tab text-[10px]"
             onClick={logout}
-            className="app-btn-ghost admin-header__exit"
           >
             Thoát
           </button>
         </div>
-        <IdentityBadge
-          user={me}
-          showPath={false}
-          onAvatarClick={() => {
-            document
-              .getElementById("avatar-picker")
-              ?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }}
-        />
+        <div className="mt-2 border-t border-[var(--gold)]/35 pt-2">
+          <IdentityBadge
+            user={me}
+            compact
+            showPath={false}
+            onAvatarClick={() => {
+              document
+                .getElementById("avatar-picker")
+                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          />
+        </div>
       </header>
 
       {canGameSwitch && (
-        <div className="mt-3 rounded-xl bg-[var(--wood-deep)]/90 p-1.5 ring-1 ring-[var(--gold)]/30">
-          <p className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--gold-soft)]/80">
+        <div className="app-frame mt-3 p-2">
+          <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--play-muted)]">
             Chọn game quản lý
           </p>
-          <div className="flex gap-1">
+          <div className="form-tabs">
             {(
               [
                 ["tarot", "Bàn Tarot"],
@@ -4320,11 +4464,7 @@ export default function AdminDashboard() {
                 key={id}
                 type="button"
                 onClick={() => selectManagedGame(id)}
-                className={`flex-1 rounded-lg px-3 py-2 text-xs font-bold transition ${
-                  managedGame === id
-                    ? "bg-[var(--gold)] text-[var(--wood-deep)]"
-                    : "bg-transparent text-[var(--cream)]/85 hover:bg-white/10"
-                }`}
+                className={`form-tab flex-1 text-center ${managedGame === id ? "is-on" : ""}`}
               >
                 {label}
               </button>
@@ -4333,7 +4473,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      <nav className="mt-4 flex flex-wrap gap-1.5 sm:flex-nowrap sm:overflow-x-auto">
+      <nav className="form-tabs mt-4 sm:flex-nowrap sm:overflow-x-auto">
         {tabs
           .filter((t) => t.show)
           .map((t) => (
@@ -4341,11 +4481,7 @@ export default function AdminDashboard() {
               key={t.id}
               type="button"
               onClick={() => setTab(t.id)}
-              className={`min-h-9 shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold transition ${
-                tab === t.id
-                  ? "bg-[var(--wood-deep)] text-white shadow-sm"
-                  : "bg-white/80 text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
-              }`}
+              className={`form-tab min-h-9 ${tab === t.id ? "is-on" : ""}`}
             >
               {t.label}
             </button>
@@ -5970,7 +6106,29 @@ export default function AdminDashboard() {
         </>
       )}
 
-      {tab === "oracle" && (main || isStaff(me)) && (
+      {tab === "pm" && (main || canPmAssets) && (
+        <Suspense
+          fallback={
+            <p className="mt-4 text-[11px] text-[var(--play-muted)]">
+              Đang tải module P+M…
+            </p>
+          }
+        >
+          <div className="mt-4">
+            <LazyPmAssetsPanel
+              me={me}
+              main={main}
+              onMsg={setMsg}
+              onOpenCosmetics={(userId) => {
+                setCosmeticsInitialTab("color");
+                setCosmeticsEditUserId(userId);
+              }}
+            />
+          </div>
+        </Suspense>
+      )}
+
+      {tab === "oracle" && (main || isStaff(me) || canOracleManage) && (
         <Suspense
           fallback={
             <p className="mt-4 text-[11px] text-[var(--play-muted)]">
@@ -5978,7 +6136,11 @@ export default function AdminDashboard() {
             </p>
           }
         >
-          <LazyOracleAdminPanel main={main} onMsg={setMsg} />
+          <LazyOracleAdminPanel
+            main={main}
+            canEdit={main || canOracleManage}
+            onMsg={setMsg}
+          />
         </Suspense>
       )}
 
@@ -6189,6 +6351,168 @@ export default function AdminDashboard() {
                           </button>
                         </form>
                       )}
+                    </div>
+                  );
+                })()
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {tab === "mess" && main && (
+        <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="play-heading text-sm">Mess</p>
+              <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
+                Tin nhắn / ảnh từ người chơi · chưa đọc: {messUnreadCount}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={messBusy}
+              onClick={() => void loadMessInbox()}
+              className="rounded-full bg-white px-3 py-1.5 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/20 disabled:opacity-45"
+            >
+              Làm mới
+            </button>
+          </div>
+          <input
+            value={messQuery}
+            onChange={(e) => setMessQuery(e.target.value)}
+            placeholder="Lọc user / mã…"
+            className="app-input w-full !py-1.5 text-xs"
+          />
+          <div className="grid gap-3 lg:grid-cols-2">
+            <ul className="max-h-[28rem] space-y-1.5 overflow-y-auto">
+              {messThreads.length === 0 ? (
+                <li className="rounded-lg bg-white/70 px-2.5 py-3 text-[11px] text-[var(--play-muted)]">
+                  {messBusy ? "Đang tải…" : "Chưa có Mess."}
+                </li>
+              ) : (
+                messThreads.map((t) => (
+                  <li key={t.id}>
+                    <button
+                      type="button"
+                      onClick={() => void openMessThread(t.id)}
+                      className={`w-full rounded-lg px-2.5 py-2 text-left text-[11px] ring-1 ${
+                        messActiveId === t.id
+                          ? "bg-[var(--wood-deep)] text-[var(--cream)]"
+                          : "bg-white/75 ring-[var(--wood-deep)]/10"
+                      }`}
+                    >
+                      <p className="font-bold">{t.userName}</p>
+                      <p className="opacity-80">
+                        {t.userCode ?? t.userId} ·{" "}
+                        {new Date(t.updatedAt).toLocaleString("vi-VN")} ·{" "}
+                        {t.messages.length} tin
+                      </p>
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+            <div className="rounded-lg bg-white/75 p-3 ring-1 ring-[var(--wood-deep)]/10">
+              {!messActiveId ||
+              !messThreads.some((t) => t.id === messActiveId) ? (
+                <p className="text-[11px] text-[var(--play-muted)]">
+                  Chọn hội thoại để trả lời.
+                </p>
+              ) : (
+                (() => {
+                  const active = messThreads.find((t) => t.id === messActiveId)!;
+                  return (
+                    <div className="space-y-2">
+                      <p className="play-heading text-sm">
+                        {active.userName}
+                        {active.userCode ? ` · ${active.userCode}` : ""}
+                      </p>
+                      <ul className="max-h-56 space-y-1.5 overflow-y-auto">
+                        {active.messages.map((m) => (
+                          <li
+                            key={m.id}
+                            className={`rounded-md px-2 py-1.5 text-[11px] ${
+                              m.by === "staff"
+                                ? "bg-[var(--wood-deep)]/10"
+                                : "bg-white ring-1 ring-[var(--wood-deep)]/8"
+                            }`}
+                          >
+                            <p className="text-[9px] font-bold uppercase opacity-60">
+                              {m.byName} ·{" "}
+                              {new Date(m.at).toLocaleString("vi-VN")}
+                            </p>
+                            {m.body ? <p className="mt-0.5">{m.body}</p> : null}
+                            {m.imageUrl ? (
+                              <a
+                                href={m.imageUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                <img
+                                  src={m.imageUrl}
+                                  alt=""
+                                  className="mt-1 max-h-32 rounded-md"
+                                />
+                              </a>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                      {messPreview ? (
+                        <div className="flex items-center gap-2">
+                          <img
+                            src={messPreview}
+                            alt=""
+                            className="h-14 w-14 rounded object-cover"
+                          />
+                          <button
+                            type="button"
+                            className="text-[10px] font-bold"
+                            onClick={() => setMessPreview(null)}
+                          >
+                            Bỏ ảnh
+                          </button>
+                        </div>
+                      ) : null}
+                      <form
+                        className="flex flex-wrap gap-1.5"
+                        onSubmit={(e) => void replyMess(e)}
+                      >
+                        <label className="rounded-full bg-white px-2.5 py-1.5 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15">
+                          Ảnh
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            className="sr-only"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (!f) return;
+                              const reader = new FileReader();
+                              reader.onload = () =>
+                                setMessPreview(String(reader.result ?? ""));
+                              reader.readAsDataURL(f);
+                            }}
+                          />
+                        </label>
+                        <input
+                          className="app-input min-w-0 flex-1 !py-1.5 text-xs"
+                          value={messReply}
+                          onChange={(e) => setMessReply(e.target.value)}
+                          placeholder="Trả lời…"
+                          maxLength={1500}
+                        />
+                        <button
+                          type="submit"
+                          disabled={
+                            messBusy ||
+                            (!messReply.trim() && !messPreview)
+                          }
+                          className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-[10px] font-bold text-[var(--cream)] disabled:opacity-45"
+                        >
+                          Gửi
+                        </button>
+                      </form>
                     </div>
                   );
                 })()
@@ -6648,10 +6972,10 @@ export default function AdminDashboard() {
             <p className="play-heading text-sm">Cấp / thu role</p>
             <p className="text-[11px] text-[var(--play-muted)]">
               Primary: user · deal · admin · onl · tutien · mod · eco · audit ·
-              sgift / ring. Roles phụ cộng dồn quyền (không gồm mainadmin). Eco =
-              kho/lưu lượng; Audit = IP/tra cứu; SGift = catalog quà / fly; Ring =
-              catalog nhẫn. Bậc
-              L = override capability; Room# = đóng phòng / đặt MK.
+              sgift / ring / pm. Roles phụ cộng dồn quyền (không gồm mainadmin).
+              Eco = kho/lưu lượng; Audit = IP/tra cứu; SGift = catalog quà / fly;
+              Ring = catalog nhẫn; P+M = ảnh lobby / SFX / cosmetics. Bậc L =
+              override capability; Room# = đóng phòng / đặt MK.
             </p>
             <input
               value={userFilter}
@@ -6726,6 +7050,7 @@ export default function AdminDashboard() {
                             ["audit", "Audit"],
                             ["sgift", "SGift"],
                             ["ring", "Ring"],
+                            ["pm", "P+M"],
                             ["onl", "Onl"],
                             ["tutien", "Tu Tiên"],
                             ["mod", "Mod"],
@@ -6758,6 +7083,7 @@ export default function AdminDashboard() {
                               ["audit", "Audit"],
                               ["sgift", "SGift"],
                               ["ring", "Ring"],
+                              ["pm", "P+M"],
                               ["onl", "Onl"],
                               ["tutien", "Tu Tiên"],
                               ["mod", "Mod"],

@@ -44,6 +44,11 @@ export interface OracleDrawHistoryRow {
   at: number;
   deckId: OracleDeckId;
   cards: DrawnOracleCard[];
+  spread?: string;
+  question?: string;
+  notes?: string;
+  title?: string;
+  mantraClose?: string;
 }
 
 export interface OracleSnapshot {
@@ -60,9 +65,21 @@ function atomicWrite(path: string, data: unknown) {
 }
 
 function normalizeDeckId(raw: unknown): OracleDeckId | null {
-  const s = String(raw ?? "").trim().toLowerCase();
-  if (s === "tarot" || s === "zodiac") return s;
-  return null;
+  const s = String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "")
+    .slice(0, 32);
+  return s.length >= 2 ? s : null;
+}
+
+function normalizeSuit(raw: unknown): OracleCard["suit"] | undefined {
+  const s = String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "")
+    .slice(0, 24);
+  return s || undefined;
 }
 
 function normalizeKey(raw: unknown): string {
@@ -71,6 +88,20 @@ function normalizeKey(raw: unknown): string {
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, "")
     .slice(0, 40);
+}
+
+function normalizeTradition(raw: unknown): OracleDeckMeta["tradition"] | undefined {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (
+    s === "rider-waite" ||
+    s === "marseille" ||
+    s === "thoth" ||
+    s === "custom" ||
+    s === "zodiac"
+  ) {
+    return s;
+  }
+  return undefined;
 }
 
 function normalizeCard(raw: unknown): OracleCard | null {
@@ -89,27 +120,25 @@ function normalizeCard(raw: unknown): OracleCard | null {
         .filter(Boolean)
         .slice(0, 8)
     : [];
+  const tags = Array.isArray(c.tags)
+    ? c.tags
+        .map((k) => String(k).trim().slice(0, 32))
+        .filter(Boolean)
+        .slice(0, 16)
+    : undefined;
   const image = String(c.image ?? "").trim().slice(0, 200) || "🃏";
   const number = Math.floor(Number(c.number));
   const sort = Math.floor(Number(c.sort));
-  const suitRaw = String(c.suit ?? "").trim().toLowerCase();
-  const suitOk = [
-    "major",
-    "wands",
-    "cups",
-    "swords",
-    "pentacles",
-    "zodiac",
-  ].includes(suitRaw)
-    ? (suitRaw as OracleCard["suit"])
-    : undefined;
+  const notes = c.notes != null ? String(c.notes).trim().slice(0, 2000) : undefined;
+  const citations =
+    c.citations != null ? String(c.citations).trim().slice(0, 500) : undefined;
   return {
     key,
     deckId,
     name,
     nameVi,
     number: Number.isFinite(number) ? number : 0,
-    suit: suitOk,
+    suit: normalizeSuit(c.suit),
     element: c.element ? String(c.element).trim().slice(0, 24) : undefined,
     upright,
     reversed,
@@ -118,6 +147,10 @@ function normalizeCard(raw: unknown): OracleCard | null {
     enabled: c.enabled !== false,
     sort: Number.isFinite(sort) ? sort : 0,
     blurb: c.blurb ? String(c.blurb).trim().slice(0, 120) : undefined,
+    tags: tags?.length ? tags : undefined,
+    notes: notes || undefined,
+    citations: citations || undefined,
+    draft: c.draft === true,
   };
 }
 
@@ -126,12 +159,15 @@ function normalizeDeck(raw: unknown): OracleDeckMeta | null {
   const d = raw as Partial<OracleDeckMeta>;
   const id = normalizeDeckId(d.id);
   if (!id) return null;
+  const tradition = normalizeTradition(d.tradition);
   return {
     id,
     nameVi: String(d.nameVi ?? id).trim().slice(0, 60) || id,
     blurb: String(d.blurb ?? "").trim().slice(0, 200),
     enabled: d.enabled !== false,
     sort: Math.floor(Number(d.sort)) || 0,
+    tradition: tradition ?? (id === "zodiac" ? "zodiac" : "custom"),
+    research: d.research === true,
   };
 }
 
@@ -143,6 +179,29 @@ function shuffleInPlace<T>(arr: T[]): T[] {
     arr[j] = t;
   }
   return arr;
+}
+
+function normalizeHistoryRow(raw: unknown): OracleDrawHistoryRow {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Partial<OracleDrawHistoryRow>;
+  const cards = Array.isArray(r.cards) ? r.cards : [];
+  const spread =
+    r.spread != null && String(r.spread).trim()
+      ? String(r.spread).trim().slice(0, 8)
+      : String(cards.length || "");
+  return {
+    id: String(r.id ?? "").trim() || `od_${Date.now().toString(36)}`,
+    at: Math.floor(Number(r.at)) || Date.now(),
+    deckId: (normalizeDeckId(r.deckId) ?? "tarot") as OracleDeckId,
+    cards,
+    spread,
+    question: r.question != null ? String(r.question).trim().slice(0, 120) : undefined,
+    notes: r.notes != null ? String(r.notes).trim().slice(0, 2000) : undefined,
+    title: r.title != null ? String(r.title).trim().slice(0, 120) : undefined,
+    mantraClose:
+      r.mantraClose != null
+        ? String(r.mantraClose).trim().slice(0, 280)
+        : undefined,
+  };
 }
 
 class OracleStore {
@@ -178,12 +237,64 @@ class OracleStore {
         this.decks = DEFAULT_ORACLE_DECKS.map((d) => ({ ...d }));
         this.save();
       }
+      let dirty = false;
+      if (this.migratePlaceholderTarotImages()) dirty = true;
+      if (this.ensureTraditionDecks()) dirty = true;
+      if (dirty) this.save();
       this.updatedAt = Math.floor(Number(raw.updatedAt)) || Date.now();
     } catch {
       this.decks = DEFAULT_ORACLE_DECKS.map((d) => ({ ...d }));
       this.cards = buildDefaultOracleCards().map((c) => ({ ...c }));
       this.save();
     }
+  }
+
+  /** Emoji / 🃏 / default .webp → SVG stylized; không đụng URL upload thật. */
+  private migratePlaceholderTarotImages(): boolean {
+    let changed = false;
+    this.cards = this.cards.map((c) => {
+      if (c.deckId !== "tarot") return c;
+      const img = String(c.image ?? "").trim();
+      const defaultSvg = `/assets/oracle/tarot/${c.key}.svg`;
+      const isPlaceholder =
+        !img ||
+        img === "🃏" ||
+        (!img.startsWith("/") &&
+          !img.startsWith("http") &&
+          !img.startsWith("data:")) ||
+        img === `/assets/oracle/tarot/${c.key}.webp`;
+      if (!isPlaceholder) return c;
+      if (img === defaultSvg) return c;
+      changed = true;
+      return { ...c, image: defaultSvg };
+    });
+    return changed;
+  }
+
+  /** Bổ sung Marseille/Thoth nếu store cũ chưa có. */
+  private ensureTraditionDecks(): boolean {
+    let changed = false;
+    const have = new Set(this.decks.map((d) => d.id));
+    for (const d of DEFAULT_ORACLE_DECKS) {
+      if (have.has(d.id)) {
+        const idx = this.decks.findIndex((x) => x.id === d.id);
+        if (idx >= 0 && !this.decks[idx]!.tradition) {
+          this.decks[idx] = {
+            ...this.decks[idx]!,
+            tradition: d.tradition,
+            research: d.research ?? this.decks[idx]!.research,
+            nameVi: this.decks[idx]!.nameVi || d.nameVi,
+          };
+          changed = true;
+        }
+        continue;
+      }
+      this.decks.push({ ...d });
+      const seeded = buildDefaultOracleCards().filter((c) => c.deckId === d.id);
+      this.cards.push(...seeded.map((c) => ({ ...c })));
+      changed = true;
+    }
+    return changed;
   }
 
   private save() {
@@ -205,12 +316,7 @@ class OracleStore {
           rows
             .filter((r) => r && typeof r === "object" && r.id)
             .slice(0, 30)
-            .map((r) => ({
-              id: String(r.id),
-              at: Math.floor(Number(r.at)) || Date.now(),
-              deckId: (normalizeDeckId(r.deckId) ?? "tarot") as OracleDeckId,
-              cards: Array.isArray(r.cards) ? r.cards : [],
-            })),
+            .map((r) => normalizeHistoryRow(r)),
         );
       }
     } catch {
@@ -230,9 +336,33 @@ class OracleStore {
     const uid = String(userId ?? "").trim();
     if (!uid) return;
     const prev = this.drawHistory.get(uid) ?? [];
-    prev.unshift(row);
+    prev.unshift(normalizeHistoryRow(row));
     this.drawHistory.set(uid, prev.slice(0, 30));
     this.saveHistory();
+  }
+
+  updateDrawHistory(
+    userId: string,
+    id: string,
+    patch: { notes?: string; title?: string },
+  ): OracleDrawHistoryRow | null {
+    const uid = String(userId ?? "").trim();
+    const drawId = String(id ?? "").trim();
+    if (!uid || !drawId) return null;
+    const rows = this.drawHistory.get(uid) ?? [];
+    const idx = rows.findIndex((r) => r.id === drawId);
+    if (idx < 0) return null;
+    const cur = rows[idx]!;
+    if (patch.notes !== undefined) {
+      cur.notes = String(patch.notes).trim().slice(0, 2000);
+    }
+    if (patch.title !== undefined) {
+      cur.title = String(patch.title).trim().slice(0, 120) || undefined;
+    }
+    rows[idx] = cur;
+    this.drawHistory.set(uid, rows);
+    this.saveHistory();
+    return { ...cur, cards: cur.cards.map((c) => ({ ...c })) };
   }
 
   listDrawHistory(userId: string, limit = 10): OracleDrawHistoryRow[] {
@@ -253,18 +383,24 @@ class OracleStore {
     };
   }
 
-  /** Public: chỉ deck/card đang bật. */
-  publicCatalog() {
+  /** Public: deck/card bật; ẩn draft trừ lab. */
+  publicCatalog(opts?: { lab?: boolean }) {
+    const lab = !!opts?.lab;
     const decks = this.decks
       .filter((d) => d.enabled)
       .slice()
       .sort((a, b) => a.sort - b.sort || a.id.localeCompare(b.id));
     const enabledDeck = new Set(decks.map((d) => d.id));
     const cards = this.cards
-      .filter((c) => c.enabled && enabledDeck.has(c.deckId))
+      .filter(
+        (c) =>
+          c.enabled &&
+          enabledDeck.has(c.deckId) &&
+          (lab || !c.draft),
+      )
       .slice()
       .sort((a, b) => a.sort - b.sort || a.key.localeCompare(b.key));
-    return { decks, cards, updatedAt: this.updatedAt };
+    return { decks, cards, updatedAt: this.updatedAt, lab };
   }
 
   adminCatalog() {
@@ -274,12 +410,25 @@ class OracleStore {
         .sort((a, b) => a.sort - b.sort || a.id.localeCompare(b.id)),
       cards: this.cards
         .slice()
-        .sort((a, b) => a.sort - b.sort || a.key.localeCompare(b.key)),
+        .sort(
+          (a, b) =>
+            a.deckId.localeCompare(b.deckId) ||
+            a.sort - b.sort ||
+            a.key.localeCompare(b.key),
+        ),
       updatedAt: this.updatedAt,
       counts: {
         tarot: this.cards.filter((c) => c.deckId === "tarot").length,
         zodiac: this.cards.filter((c) => c.deckId === "zodiac").length,
         enabled: this.cards.filter((c) => c.enabled).length,
+        draft: this.cards.filter((c) => c.draft).length,
+        total: this.cards.length,
+        byDeck: Object.fromEntries(
+          this.decks.map((d) => [
+            d.id,
+            this.cards.filter((c) => c.deckId === d.id).length,
+          ]),
+        ),
       },
     };
   }
@@ -301,14 +450,18 @@ class OracleStore {
   ): { ok: true; card: OracleCard } | { ok: false; reason: string } {
     const next = normalizeCard(patch);
     if (!next) return { ok: false, reason: "Lá bài không hợp lệ" };
-    const idx = this.cards.findIndex((c) => c.key === next.key);
+    const idx = this.cards.findIndex(
+      (c) => c.key === next.key && c.deckId === next.deckId,
+    );
     if (idx >= 0) {
       this.cards[idx] = { ...this.cards[idx]!, ...next, key: next.key };
     } else {
       this.cards.push(next);
     }
     this.save();
-    const card = this.cards.find((c) => c.key === next.key)!;
+    const card = this.cards.find(
+      (c) => c.key === next.key && c.deckId === next.deckId,
+    )!;
     return { ok: true, card: { ...card } };
   }
 
@@ -331,7 +484,9 @@ class OracleStore {
         errors.push("invalid row");
         continue;
       }
-      const idx = this.cards.findIndex((c) => c.key === next.key);
+      const idx = this.cards.findIndex(
+        (c) => c.key === next.key && c.deckId === next.deckId,
+      );
       if (idx >= 0) this.cards[idx] = { ...this.cards[idx]!, ...next };
       else this.cards.push(next);
       upserted += 1;
@@ -343,13 +498,86 @@ class OracleStore {
   setCardEnabled(
     keyRaw: unknown,
     enabled: boolean,
+    deckIdRaw?: unknown,
   ): { ok: true; card: OracleCard } | { ok: false; reason: string } {
     const key = normalizeKey(keyRaw);
-    const card = this.cards.find((c) => c.key === key);
+    const deckId = normalizeDeckId(deckIdRaw);
+    const card = this.cards.find(
+      (c) => c.key === key && (!deckId || c.deckId === deckId),
+    );
     if (!card) return { ok: false, reason: "Không tìm thấy lá" };
     card.enabled = !!enabled;
     this.save();
     return { ok: true, card: { ...card } };
+  }
+
+  /** Clone 78 keys từ template deck sang deck đích (không ghi đè lá đã có). */
+  cloneDeckTemplate(
+    fromIdRaw: unknown,
+    toIdRaw: unknown,
+  ):
+    | { ok: true; added: number; deckId: string }
+    | { ok: false; reason: string } {
+    const fromId = normalizeDeckId(fromIdRaw) ?? "tarot";
+    const toId = normalizeDeckId(toIdRaw);
+    if (!toId) return { ok: false, reason: "Deck đích không hợp lệ" };
+    if (!this.decks.some((d) => d.id === toId)) {
+      return { ok: false, reason: "Tạo deck đích trước khi clone" };
+    }
+    const src = this.cards.filter((c) => c.deckId === fromId);
+    if (!src.length) return { ok: false, reason: "Deck nguồn trống" };
+    let added = 0;
+    for (const c of src) {
+      const exists = this.cards.some(
+        (x) => x.deckId === toId && x.key === c.key,
+      );
+      if (exists) continue;
+      this.cards.push({
+        ...c,
+        deckId: toId,
+        tags: [...(c.tags ?? []), "cloned"].slice(0, 16),
+        draft: false,
+      });
+      added += 1;
+    }
+    if (added) this.save();
+    return { ok: true, added, deckId: toId };
+  }
+
+  /** Gán tag hàng loạt theo bộ hoặc key list. */
+  batchTag(
+    tagsRaw: unknown,
+    opts: { deckId?: unknown; keys?: unknown; mode?: "add" | "set" },
+  ): { ok: true; updated: number } | { ok: false; reason: string } {
+    const tags = Array.isArray(tagsRaw)
+      ? tagsRaw
+          .map((t) => String(t).trim().slice(0, 32))
+          .filter(Boolean)
+          .slice(0, 16)
+      : String(tagsRaw ?? "")
+          .split(/[,;]+/)
+          .map((t) => t.trim().slice(0, 32))
+          .filter(Boolean)
+          .slice(0, 16);
+    if (!tags.length) return { ok: false, reason: "Thiếu tags" };
+    const deckId = normalizeDeckId(opts.deckId);
+    const keys = Array.isArray(opts.keys)
+      ? new Set(opts.keys.map((k) => normalizeKey(k)).filter(Boolean))
+      : null;
+    const mode = opts.mode === "set" ? "set" : "add";
+    let updated = 0;
+    this.cards = this.cards.map((c) => {
+      if (deckId && c.deckId !== deckId) return c;
+      if (keys && !keys.has(c.key)) return c;
+      const nextTags =
+        mode === "set"
+          ? tags
+          : [...new Set([...(c.tags ?? []), ...tags])].slice(0, 16);
+      updated += 1;
+      return { ...c, tags: nextTags };
+    });
+    if (updated) this.save();
+    return { ok: true, updated };
   }
 
   resetToSeed(): { ok: true; count: number } {
@@ -373,7 +601,9 @@ class OracleStore {
     let count = Math.floor(Number(countRaw));
     if (!Number.isFinite(count) || count < 1) count = 1;
     if (count > 10) count = 10;
-    const pool = this.cards.filter((c) => c.enabled && c.deckId === deckId);
+    const pool = this.cards.filter(
+      (c) => c.enabled && !c.draft && c.deckId === deckId,
+    );
     if (pool.length < count) {
       return { ok: false, reason: "Không đủ lá trong bộ" };
     }

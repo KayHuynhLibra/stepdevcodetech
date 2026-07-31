@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { type AuthUser } from "../auth";
+import { guestGamePath } from "../guest";
 import {
   fetchPlatformGames,
   gamePath,
@@ -9,13 +10,15 @@ import {
   type GameManifest,
 } from "../platform/games";
 
-/** Shell điều hướng bàn chơi — đọc Game Registry. */
+/** Shell điều hướng bàn chơi — đọc Game Registry (login hoặc guest). */
 export function TableNav({
   user,
+  guestCode,
   active,
   compact,
 }: {
-  user: AuthUser | null | undefined;
+  user?: AuthUser | null;
+  guestCode?: string | null;
   active?: string;
   compact?: boolean;
 }) {
@@ -36,11 +39,18 @@ export function TableNav({
     });
   }, []);
 
-  if (!user) return null;
+  if (!user && !guestCode) return null;
+
+  const hrefFor = (g: GameManifest) =>
+    guestCode
+      ? guestGamePath(guestCode, g.pathSuffix)
+      : user
+        ? gamePath(user, g)
+        : "#";
 
   return (
     <nav
-      className={`table-nav flex flex-wrap gap-1.5 ${compact ? "justify-center" : ""}`}
+      className={`table-nav form-tabs ${compact ? "justify-center" : ""}`}
       aria-label="Chọn bàn"
     >
       {games.map((g) => {
@@ -50,7 +60,7 @@ export function TableNav({
           return (
             <span
               key={g.id}
-              className="rounded-full bg-white/50 px-3 py-1.5 text-[11px] font-bold text-[var(--play-muted)] ring-1 ring-[var(--wood-deep)]/10"
+              className="form-tab form-tab--disabled"
               title={g.blurb}
             >
               {g.nameVi}
@@ -60,12 +70,8 @@ export function TableNav({
         return (
           <Link
             key={g.id}
-            to={gamePath(user, g)}
-            className={`rounded-full px-3 py-1.5 text-[11px] font-bold transition ${
-              on
-                ? "bg-[var(--wood-deep)] text-[var(--cream)]"
-                : "bg-white/80 text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15 hover:bg-white"
-            }`}
+            to={hrefFor(g)}
+            className={`form-tab ${on ? "is-on" : ""}`}
           >
             {g.nameVi}
           </Link>

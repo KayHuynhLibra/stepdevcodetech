@@ -33,6 +33,7 @@ import {
   type FeedbackKind,
   type FeedbackStatus,
 } from "./feedbackStore.js";
+import { messStore, saveMessImage } from "./messStore.js";
 import {
   AVATARS,
   normalizeAvatar,
@@ -68,6 +69,8 @@ import { giftStore } from "./giftStore.js";
 import { ringStore } from "./ringStore.js";
 import { oracleStore } from "./oracleStore.js";
 import { platformGamesStore } from "./platformGamesStore.js";
+import { playMediaPresetsStore } from "./playMediaPresetsStore.js";
+import { mountOlympusRoutes } from "./platform/olympus.js";
 import { chatConfigStore } from "./chatConfigStore.js";
 import {
   tableConfigStore,
@@ -1190,6 +1193,135 @@ app.post("/api/mainadmin/feedback/:id/status", (req, res) => {
   res.json({ ok: true, ticket: result.ticket });
 });
 
+/** Mess: user lấy thread với mainadmin (không tạo trống) */
+app.get("/api/mess/mine", (req, res) => {
+  const user = requireAuth(req, res);
+  if (!user) return;
+  const existing = messStore.getByUserId(user.id);
+  if (!existing) {
+    return res.json({
+      ok: true,
+      thread: {
+        id: "",
+        userId: user.id,
+        userName: userDisplayName(user) || user.username,
+        userCode: user.code,
+        at: 0,
+        updatedAt: 0,
+        userReadAt: 0,
+        staffReadAt: 0,
+        messages: [],
+      },
+      unreadStaff: 0,
+    });
+  }
+  const markRead = String(req.query.markRead ?? "") === "1";
+  if (markRead) messStore.markRead(existing.id, "user");
+  const fresh = messStore.getById(existing.id)!;
+  const unreadStaff = fresh.messages.filter(
+    (m) => m.by === "staff" && m.at > (fresh.userReadAt || 0),
+  ).length;
+  res.json({
+    ok: true,
+    thread: fresh,
+    unreadStaff,
+  });
+});
+
+app.post("/api/mess/mine/message", (req, res) => {
+  const user = requireAuth(req, res);
+  if (!user) return;
+  if (!rateLimit(`mess-msg:${user.id}`, 20, 60_000)) {
+    return res.status(429).json({ ok: false, reason: "Gửi quá nhanh — thử lại sau" });
+  }
+  let imageUrl: string | undefined;
+  const dataUrl = String(req.body?.dataUrl ?? "").trim();
+  if (dataUrl) {
+    const saved = saveMessImage(user.id, dataUrl);
+    if (!saved.ok) return res.status(400).json(saved);
+    imageUrl = saved.imageUrl;
+  }
+  const result = messStore.addMessage({
+    userId: user.id,
+    userName: userDisplayName(user) || user.username,
+    userCode: user.code,
+    by: "user",
+    byUserId: user.id,
+    byName: userDisplayName(user) || user.username,
+    body: req.body?.body,
+    imageUrl,
+  });
+  if (!result.ok) return res.status(400).json(result);
+  res.json({ ok: true, thread: result.thread });
+});
+
+app.get("/api/mainadmin/mess", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const q = String(req.query.q ?? "")
+    .trim()
+    .toLowerCase();
+  let threads = messStore.listAll(100).filter((t) => t.messages.length > 0);
+  if (q) {
+    threads = threads.filter(
+      (t) =>
+        t.userName.toLowerCase().includes(q) ||
+        (t.userCode ?? "").toLowerCase().includes(q) ||
+        t.userId.toLowerCase().includes(q),
+    );
+  }
+  res.json({
+    ok: true,
+    unreadCount: messStore.unreadForStaff(),
+    threads,
+  });
+});
+
+app.get("/api/mainadmin/mess/:id", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const id = String(req.params.id ?? "");
+  const thread = messStore.getById(id);
+  if (!thread) {
+    return res.status(404).json({ ok: false, reason: "Không tìm thấy" });
+  }
+  messStore.markRead(id, "staff");
+  res.json({ ok: true, thread: messStore.getById(id) });
+});
+
+app.post("/api/mainadmin/mess/:id/message", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  if (!rateLimit(`mess-staff:${me.id}`, 40, 60_000)) {
+    return res.status(429).json({ ok: false, reason: "Thử lại sau" });
+  }
+  const id = String(req.params.id ?? "");
+  const thread = messStore.getById(id);
+  if (!thread) {
+    return res.status(404).json({ ok: false, reason: "Không tìm thấy" });
+  }
+  let imageUrl: string | undefined;
+  const dataUrl = String(req.body?.dataUrl ?? "").trim();
+  if (dataUrl) {
+    const saved = saveMessImage(`staff_${me.id}`, dataUrl);
+    if (!saved.ok) return res.status(400).json(saved);
+    imageUrl = saved.imageUrl;
+  }
+  const result = messStore.addMessage({
+    threadId: id,
+    userId: thread.userId,
+    userName: thread.userName,
+    userCode: thread.userCode,
+    by: "staff",
+    byUserId: me.id,
+    byName: userDisplayName(me) || me.username,
+    body: req.body?.body,
+    imageUrl,
+  });
+  if (!result.ok) return res.status(400).json(result);
+  res.json({ ok: true, thread: result.thread });
+});
+
 app.get("/api/admin/overview", (req, res) => {
   const me = requireAdmin(req, res);
   if (!me) return;
@@ -1229,6 +1361,7 @@ app.get("/api/admin/overview", (req, res) => {
   payload.liveGuests = engine.listLiveGuestsForAdmin();
   if (isMainAdmin(me)) {
     payload.feedbackOpenCount = feedbackStore.openCount();
+    payload.messUnreadCount = messStore.unreadForStaff();
   }
 
   const canVault = hasCapability(me, "vault_ops");
@@ -2514,19 +2647,26 @@ app.post("/api/admin/catalog-upload", (req, res) => {
   if (!me) return;
   const kindRaw = String(req.body?.kind ?? "").trim().toLowerCase();
   const kind: CatalogKind | null =
-    kindRaw === "gift" || kindRaw === "ring" || kindRaw === "oracle"
+    kindRaw === "gift" ||
+    kindRaw === "ring" ||
+    kindRaw === "oracle" ||
+    kindRaw === "lobby" ||
+    kindRaw === "olympus"
       ? (kindRaw as CatalogKind)
       : null;
   if (!kind) {
-    return res
-      .status(400)
-      .json({ ok: false, reason: "kind phải là gift, ring hoặc oracle" });
+    return res.status(400).json({
+      ok: false,
+      reason: "kind phải là gift, ring, oracle, lobby hoặc olympus",
+    });
   }
   const allowed =
     (kind === "gift" && hasCapability(me, "gift_manage")) ||
     (kind === "ring" && hasCapability(me, "ring_manage")) ||
     (kind === "oracle" &&
       (hasCapability(me, "oracle_manage") || isMainAdmin(me))) ||
+    ((kind === "lobby" || kind === "olympus") &&
+      (hasCapability(me, "pm_assets") || isMainAdmin(me))) ||
     isMainAdmin(me);
   if (!allowed) {
     return res
@@ -2881,7 +3021,7 @@ app.get("/api/platform/games", (_req, res) => {
 app.get("/api/admin/platform/games", (req, res) => {
   const me = requireAuth(req, res);
   if (!me) return;
-  if (!isStaff(me) && !isMainAdmin(me)) {
+  if (!isStaff(me) && !isMainAdmin(me) && !hasCapability(me, "pm_assets")) {
     return res.status(403).json({ ok: false, reason: "Không có quyền" });
   }
   res.json({ ok: true, ...platformGamesStore.snapshot() });
@@ -2890,35 +3030,113 @@ app.get("/api/admin/platform/games", (req, res) => {
 app.post("/api/admin/platform/games", (req, res) => {
   const me = requireAuth(req, res);
   if (!me) return;
-  if (!isMainAdmin(me)) {
-    return res.status(403).json({ ok: false, reason: "Chỉ mainadmin" });
+  const canFull = isMainAdmin(me);
+  const canCover = canFull || hasCapability(me, "pm_assets");
+  if (!canCover) {
+    return res.status(403).json({ ok: false, reason: "Không đủ quyền" });
   }
   const id = String(req.body?.id ?? "").trim();
   if (!id) {
     return res.status(400).json({ ok: false, reason: "Thiếu id" });
   }
   const patch: Parameters<typeof platformGamesStore.patch>[1] = {};
-  if (req.body?.nameVi !== undefined) patch.nameVi = String(req.body.nameVi);
-  if (req.body?.blurb !== undefined) patch.blurb = String(req.body.blurb);
-  if (req.body?.status !== undefined) patch.status = req.body.status;
-  if (req.body?.pathSuffix !== undefined) {
-    patch.pathSuffix = String(req.body.pathSuffix);
+  if (canFull) {
+    if (req.body?.nameVi !== undefined) patch.nameVi = String(req.body.nameVi);
+    if (req.body?.blurb !== undefined) patch.blurb = String(req.body.blurb);
+    if (req.body?.status !== undefined) patch.status = req.body.status;
+    if (req.body?.pathSuffix !== undefined) {
+      patch.pathSuffix = String(req.body.pathSuffix);
+    }
+    if (req.body?.kind !== undefined) patch.kind = req.body.kind;
+    if (req.body?.vaultKey !== undefined) {
+      patch.vaultKey =
+        req.body.vaultKey === null || req.body.vaultKey === ""
+          ? null
+          : String(req.body.vaultKey);
+    }
+    if (req.body?.sort !== undefined) patch.sort = Number(req.body.sort);
+    if (req.body?.enabled !== undefined) patch.enabled = !!req.body.enabled;
   }
-  if (req.body?.kind !== undefined) patch.kind = req.body.kind;
-  if (req.body?.vaultKey !== undefined) {
-    patch.vaultKey =
-      req.body.vaultKey === null || req.body.vaultKey === ""
-        ? null
-        : String(req.body.vaultKey);
+  if (req.body?.coverUrl !== undefined) {
+    patch.coverUrl = String(req.body.coverUrl).trim().slice(0, 200);
   }
-  if (req.body?.sort !== undefined) patch.sort = Number(req.body.sort);
-  if (req.body?.enabled !== undefined) patch.enabled = !!req.body.enabled;
+  if (!canFull && req.body?.coverUrl === undefined) {
+    return res
+      .status(403)
+      .json({ ok: false, reason: "P+M chỉ sửa coverUrl" });
+  }
   const result = platformGamesStore.patch(id, patch);
   if (!result.ok) return res.status(400).json(result);
   audit(me, "platform_game_patch", {
     detail: `${result.game.id}:${result.game.status}:${result.game.enabled}`,
   });
   res.json({ ok: true, ...platformGamesStore.snapshot() });
+});
+
+/** Public play-media presets (SFX / FX / hero) — client áp khi vào bàn */
+app.get("/api/play-media-presets", (_req, res) => {
+  res.json({ ok: true, ...playMediaPresetsStore.publicSnap() });
+});
+
+app.get("/api/admin/pm/presets", (req, res) => {
+  const me = requireCapability(req, res, "pm_assets");
+  if (!me) return;
+  res.json({ ok: true, ...playMediaPresetsStore.snapshot() });
+});
+
+app.post("/api/admin/pm/presets", (req, res) => {
+  const me = requireCapability(req, res, "pm_assets");
+  if (!me) return;
+  const gameId = String(req.body?.gameId ?? "").trim();
+  if (gameId) {
+    const result = playMediaPresetsStore.patchGame(gameId, req.body?.preset ?? req.body);
+    if (!result.ok) return res.status(400).json(result);
+    audit(me, "pm_presets_patch", { detail: gameId });
+    return res.json({ ok: true, ...playMediaPresetsStore.snapshot() });
+  }
+  if (req.body?.games && typeof req.body.games === "object") {
+    const snap = playMediaPresetsStore.replaceAll(req.body.games);
+    audit(me, "pm_presets_replace", { detail: Object.keys(req.body.games).join(",") });
+    return res.json({ ok: true, ...snap });
+  }
+  return res.status(400).json({ ok: false, reason: "Thiếu gameId hoặc games" });
+});
+
+/** Cosmetics Bói — card back / nền / FX (oracle_manage hoặc P+M) */
+app.get("/api/admin/boi/cosmetics", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  if (
+    !isMainAdmin(me) &&
+    !hasCapability(me, "oracle_manage") &&
+    !hasCapability(me, "pm_assets")
+  ) {
+    return res.status(403).json({ ok: false, reason: "Không đủ quyền" });
+  }
+  const games = playMediaPresetsStore.snapshot().games;
+  res.json({ ok: true, cosmetics: games.boi ?? {} });
+});
+
+app.post("/api/admin/boi/cosmetics", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  if (
+    !isMainAdmin(me) &&
+    !hasCapability(me, "oracle_manage") &&
+    !hasCapability(me, "pm_assets")
+  ) {
+    return res.status(403).json({ ok: false, reason: "Không đủ quyền" });
+  }
+  const result = playMediaPresetsStore.patchGame(
+    "boi",
+    req.body?.preset ?? req.body?.cosmetics ?? req.body,
+  );
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "boi_cosmetics", { detail: "patch" });
+  res.json({
+    ok: true,
+    cosmetics: playMediaPresetsStore.snapshot().games.boi ?? {},
+  });
 });
 
 app.post("/api/admin/platform/games/upsert", (req, res) => {
@@ -2934,8 +3152,18 @@ app.post("/api/admin/platform/games/upsert", (req, res) => {
 });
 
 /** ——— Bói bài / Oracle decks ——— */
-app.get("/api/oracle/catalog", (_req, res) => {
-  res.json({ ok: true, ...oracleStore.publicCatalog() });
+app.get("/api/oracle/catalog", (req, res) => {
+  const labWanted =
+    String(req.query.lab ?? "") === "1" ||
+    String(req.query.lab ?? "").toLowerCase() === "true";
+  let lab = false;
+  if (labWanted) {
+    const me = authStore.resolveToken(bearer(req));
+    if (me && (isMainAdmin(me) || hasCapability(me, "oracle_manage"))) {
+      lab = true;
+    }
+  }
+  res.json({ ok: true, ...oracleStore.publicCatalog({ lab }) });
 });
 
 app.post("/api/oracle/draw", (req, res) => {
@@ -2963,6 +3191,76 @@ app.post("/api/oracle/draw", (req, res) => {
   res.json({ ...result, drawId });
 });
 
+/** Ghi lịch sử từ ritual client (chồng đã xào cục bộ, rút đúng thứ tự) */
+app.post("/api/oracle/record", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  const deckId = String(req.body?.deckId ?? "tarot").trim() || "tarot";
+  const cards = Array.isArray(req.body?.cards) ? req.body.cards : [];
+  if (!cards.length || cards.length > 10) {
+    return res.status(400).json({ ok: false, reason: "cards 1–10" });
+  }
+  const spread = String(req.body?.spread ?? cards.length).trim().slice(0, 8);
+  const question = String(req.body?.question ?? "").trim().slice(0, 120);
+  const notes = String(req.body?.notes ?? "").trim().slice(0, 2000);
+  const title = String(req.body?.title ?? "").trim().slice(0, 120);
+  const mantraClose = String(req.body?.mantraClose ?? "").trim().slice(0, 280);
+  const drawId = `od_${Date.now().toString(36)}_${randomBytes(3).toString("hex")}`;
+  const row = {
+    id: drawId,
+    at: Date.now(),
+    deckId,
+    cards,
+    spread,
+    question: question || undefined,
+    notes: notes || undefined,
+    title: title || undefined,
+    mantraClose: mantraClose || undefined,
+  };
+  oracleStore.recordDrawHistory(me.id, row);
+  void import("./db/dualWrite.js").then(({ dualWriteOracleDraw }) =>
+    dualWriteOracleDraw({
+      id: drawId,
+      userId: me.id,
+      deckId,
+      spread,
+      cards,
+      question: question || null,
+      notes: notes || null,
+      title: title || null,
+      at: row.at,
+    }),
+  );
+  res.json({ ok: true, drawId, ...row });
+});
+
+app.patch("/api/oracle/history/:id", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  const id = String(req.params.id ?? "").trim();
+  if (!id) return res.status(400).json({ ok: false, reason: "missing id" });
+  const patch: { notes?: string; title?: string } = {};
+  if (req.body?.notes !== undefined) {
+    patch.notes = String(req.body.notes).trim().slice(0, 2000);
+  }
+  if (req.body?.title !== undefined) {
+    patch.title = String(req.body.title).trim().slice(0, 120);
+  }
+  const updated = oracleStore.updateDrawHistory(me.id, id, patch);
+  if (!updated) {
+    return res.status(404).json({ ok: false, reason: "Không tìm thấy" });
+  }
+  void import("./db/dualWrite.js").then(({ dualWriteOracleDrawPatch }) =>
+    dualWriteOracleDrawPatch({
+      id,
+      userId: me.id,
+      notes: patch.notes ?? null,
+      title: patch.title ?? null,
+    }),
+  );
+  res.json({ ok: true, row: updated });
+});
+
 app.get("/api/oracle/history", (req, res) => {
   const me = requireAuth(req, res);
   if (!me) return;
@@ -2973,14 +3271,18 @@ app.get("/api/oracle/history", (req, res) => {
 app.get("/api/admin/oracle", (req, res) => {
   const me = requireAuth(req, res);
   if (!me) return;
-  if (!isMainAdmin(me) && !isStaff(me)) {
-    return res.status(403).json({ ok: false, reason: "Chỉ admin" });
+  if (
+    !isMainAdmin(me) &&
+    !isStaff(me) &&
+    !hasCapability(me, "oracle_manage")
+  ) {
+    return res.status(403).json({ ok: false, reason: "Không đủ quyền" });
   }
   res.json({ ok: true, ...oracleStore.adminCatalog() });
 });
 
 app.post("/api/admin/oracle/deck", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "oracle_manage");
   if (!me) return;
   const result = oracleStore.upsertDeck(req.body?.deck ?? req.body);
   if (!result.ok) return res.status(400).json(result);
@@ -2989,7 +3291,7 @@ app.post("/api/admin/oracle/deck", (req, res) => {
 });
 
 app.post("/api/admin/oracle/card", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "oracle_manage");
   if (!me) return;
   const result = oracleStore.upsertCard(req.body?.card ?? req.body);
   if (!result.ok) return res.status(400).json(result);
@@ -3000,7 +3302,7 @@ app.post("/api/admin/oracle/card", (req, res) => {
 });
 
 app.post("/api/admin/oracle/batch", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "oracle_manage");
   if (!me) return;
   const rows = req.body?.cards ?? req.body;
   const result = oracleStore.batchUpsertCards(rows);
@@ -3012,14 +3314,47 @@ app.post("/api/admin/oracle/batch", (req, res) => {
 });
 
 app.post("/api/admin/oracle/card/toggle", (req, res) => {
-  const me = requireMainAdmin(req, res);
+  const me = requireCapability(req, res, "oracle_manage");
   if (!me) return;
-  const result = oracleStore.setCardEnabled(req.body?.key, !!req.body?.enabled);
+  const result = oracleStore.setCardEnabled(
+    req.body?.key,
+    !!req.body?.enabled,
+    req.body?.deckId,
+  );
   if (!result.ok) return res.status(400).json(result);
   audit(me, "oracle_card_toggle", {
-    detail: `${result.card.key} → ${result.card.enabled ? "on" : "off"}`,
+    detail: `${result.card.deckId}/${result.card.key} → ${result.card.enabled ? "on" : "off"}`,
   });
   res.json({ ok: true, card: result.card, ...oracleStore.adminCatalog() });
+});
+
+app.post("/api/admin/oracle/clone-deck", (req, res) => {
+  const me = requireCapability(req, res, "oracle_manage");
+  if (!me) return;
+  const result = oracleStore.cloneDeckTemplate(
+    req.body?.fromId ?? "tarot",
+    req.body?.toId,
+  );
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "oracle_clone_deck", {
+    detail: `${req.body?.fromId} → ${result.deckId} +${result.added}`,
+  });
+  res.json({ ...result, ...oracleStore.adminCatalog() });
+});
+
+app.post("/api/admin/oracle/batch-tag", (req, res) => {
+  const me = requireCapability(req, res, "oracle_manage");
+  if (!me) return;
+  const result = oracleStore.batchTag(req.body?.tags, {
+    deckId: req.body?.deckId,
+    keys: req.body?.keys,
+    mode: req.body?.mode === "set" ? "set" : "add",
+  });
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "oracle_batch_tag", {
+    detail: `updated=${result.updated}`,
+  });
+  res.json({ ...result, ...oracleStore.adminCatalog() });
 });
 
 app.post("/api/admin/oracle/reset-seed", (req, res) => {
@@ -3491,12 +3826,13 @@ app.post("/api/mainadmin/user-role", (req, res) => {
       role !== "eco" &&
       role !== "audit" &&
       role !== "sgift" &&
-      role !== "ring")
+      role !== "ring" &&
+      role !== "pm")
   ) {
     return res.status(400).json({
       ok: false,
       reason:
-        "Thiếu userId hoặc role (user|deal|admin|onl|tutien|mod|eco|audit|sgift|ring)",
+        "Thiếu userId hoặc role (user|deal|admin|onl|tutien|mod|eco|audit|sgift|ring|pm)",
     });
   }
   const result = authStore.setUserRole(userId, role);
@@ -4480,6 +4816,8 @@ io.on("connection", (socket) => {
         token?: string;
         mode?: string;
         vipFly?: boolean;
+        replyTo?: { name?: string; text?: string };
+        mentions?: string[];
       },
       ack?: (r: { ok: boolean; reason?: string; balance?: number }) => void,
     ) => {
@@ -4498,12 +4836,32 @@ io.on("connection", (socket) => {
         userId: authUser?.id,
         mode: payload?.mode as "no" | "vip" | "saint" | undefined,
         vipFly: !!payload?.vipFly,
+        replyTo: payload?.replyTo,
+        mentions: payload?.mentions,
       });
       if (!result.ok) {
         ack?.(result);
         return;
       }
-      socket.emit("balanceUpdate", { balance: result.balance });
+      const walletUser = authUser
+        ? authStore.getById(authUser.id)
+        : undefined;
+      socket.emit(
+        "balanceUpdate",
+        walletUser
+          ? {
+              balance: result.balance,
+              play: result.balance,
+              social: walletUser.socialBalance ?? 0,
+              displayTotal:
+                result.balance + (walletUser.socialBalance ?? 0),
+              balances: {
+                play: result.balance,
+                social: walletUser.socialBalance ?? 0,
+              },
+            }
+          : { balance: result.balance },
+      );
       io.emit("shout", result.event);
       ack?.({ ok: true, balance: result.balance });
     },
@@ -4577,6 +4935,8 @@ io.on("connection", (socket) => {
     engine.leave(socket.id);
   });
 });
+
+mountOlympusRoutes(app);
 
 if (existsSync(CLIENT_DIST)) {
   app.use(express.static(CLIENT_DIST));

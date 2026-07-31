@@ -20,7 +20,7 @@ import {
   clearGuestMergePending,
   ensureGuestCode,
   getGuestMergePayload,
-  guestPlayPath,
+  guestHomePath,
 } from "../guest";
 import { getDevicePayload } from "../device";
 import { AppShell } from "../components/AppShell";
@@ -50,7 +50,7 @@ export default function LoginPage({ page }: { page: AuthPage }) {
     () => (location.state as { info?: string } | null)?.info ?? null,
   );
   const [loading, setLoading] = useState(false);
-  const guestHref = useMemo(() => guestPlayPath(ensureGuestCode()), []);
+  const guestHref = useMemo(() => guestHomePath(ensureGuestCode()), []);
 
   useEffect(() => {
     const msg = (location.state as { info?: string } | null)?.info;

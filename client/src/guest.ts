@@ -47,9 +47,25 @@ export function getGuestCode(): string | null {
   }
 }
 
-export function guestPlayPath(code?: string | null): string {
+/** Lobby khách — chọn bàn, chưa tải chunk game. */
+export function guestHomePath(code?: string | null): string {
   const c = (code || ensureGuestCode()).toUpperCase();
-  return `/guest/${c}/play`;
+  return `/guest/${c}`;
+}
+
+/** Vào đúng bàn khách (play | arcana | olympus | boi-bai | …). */
+export function guestGamePath(
+  code: string | null | undefined,
+  suffix: string,
+): string {
+  const c = (code || ensureGuestCode()).toUpperCase();
+  const s = suffix.replace(/^\/+/, "");
+  return `/guest/${c}/${s}`;
+}
+
+/** Tương thích cũ — bàn Tarot. */
+export function guestPlayPath(code?: string | null): string {
+  return guestGamePath(code, "play");
 }
 
 export function getGuestName(): string {

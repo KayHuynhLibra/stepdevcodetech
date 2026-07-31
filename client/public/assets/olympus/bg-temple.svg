@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="sky" x1="400" y1="0" x2="400" y2="600" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4a2a88" stop-opacity=".55"/>
+      <stop offset=".45" stop-color="#1a0e38" stop-opacity=".2"/>
+      <stop offset="1" stop-color="#0a0618" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="stone" x1="400" y1="220" x2="400" y2="560" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c8b080"/>
+      <stop offset=".55" stop-color="#8a7048"/>
+      <stop offset="1" stop-color="#3a2818"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="200" y1="180" x2="600" y2="260" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff0b0"/>
+      <stop offset=".5" stop-color="#e0a830"/>
+      <stop offset="1" stop-color="#8a5a10"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="600" fill="url(#sky)"/>
+  <!-- Pediment -->
+  <path d="M120 260 L400 170 L680 260 Z" fill="url(#gold)" opacity=".85"/>
+  <path d="M150 258 L400 185 L650 258 Z" fill="#2a1838" opacity=".55"/>
+  <!-- Entablature -->
+  <rect x="140" y="255" width="520" height="28" rx="2" fill="url(#gold)" opacity=".9"/>
+  <rect x="148" y="262" width="504" height="8" fill="#fff6c8" opacity=".35"/>
+  <!-- Columns -->
+  <g fill="url(#stone)" opacity=".88">
+    <rect x="168" y="283" width="42" height="220" rx="4"/>
+    <rect x="248" y="283" width="42" height="220" rx="4"/>
+    <rect x="328" y="283" width="42" height="220" rx="4"/>
+    <rect x="430" y="283" width="42" height="220" rx="4"/>
+    <rect x="510" y="283" width="42" height="220" rx="4"/>
+    <rect x="590" y="283" width="42" height="220" rx="4"/>
+  </g>
+  <g fill="#fff6c8" opacity=".18">
+    <rect x="174" y="290" width="10" height="200"/>
+    <rect x="254" y="290" width="10" height="200"/>
+    <rect x="334" y="290" width="10" height="200"/>
+    <rect x="436" y="290" width="10" height="200"/>
+    <rect x="516" y="290" width="10" height="200"/>
+    <rect x="596" y="290" width="10" height="200"/>
+  </g>
+  <!-- Capitals -->
+  <g fill="url(#gold)" opacity=".8">
+    <rect x="160" y="278" width="58" height="10" rx="2"/>
+    <rect x="240" y="278" width="58" height="10" rx="2"/>
+    <rect x="320" y="278" width="58" height="10" rx="2"/>
+    <rect x="422" y="278" width="58" height="10" rx="2"/>
+    <rect x="502" y="278" width="58" height="10" rx="2"/>
+    <rect x="582" y="278" width="58" height="10" rx="2"/>
+  </g>
+  <!-- Base -->
+  <rect x="130" y="500" width="540" height="36" rx="4" fill="url(#stone)" opacity=".95"/>
+  <rect x="120" y="528" width="560" height="18" rx="3" fill="#2a1a10" opacity=".7"/>
+  <!-- Soft mist -->
+  <ellipse cx="400" cy="470" rx="320" ry="70" fill="#1a1030" opacity=".45"/>
+</svg>
