@@ -35,9 +35,7 @@ type GameMediaPreset = {
     volumes?: Partial<Record<"master" | "ui" | "tarot" | "olympus", number>>;
     muted?: Partial<Record<"ui" | "tarot" | "olympus", boolean>>;
     presetName?: string;
-    styles?: Partial<
-      Record<string, "classic" | "soft" | "crisp" | "bright">
-    >;
+    styles?: Partial<Record<string, string>>;
     paths?: Partial<Record<string, string>>;
   };
 };

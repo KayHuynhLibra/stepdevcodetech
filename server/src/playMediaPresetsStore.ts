@@ -60,8 +60,19 @@ export type GameMediaPreset = {
     muted?: Partial<Record<"ui" | "tarot" | "olympus", boolean>>;
     /** Optional named synth / file path hooks */
     presetName?: string;
-    /** Per-slot style: classic | soft | crisp | bright */
-    styles?: Partial<Record<string, "classic" | "soft" | "crisp" | "bright">>;
+    /** Per-slot voice pack — soft/crisp/bright legacy map → mystic/casino/fortune */
+    styles?: Partial<
+      Record<
+        string,
+        | "classic"
+        | "mystic"
+        | "casino"
+        | "fortune"
+        | "soft"
+        | "crisp"
+        | "bright"
+      >
+    >;
     /** Custom uploaded audio URL per slot — overrides synth */
     paths?: Partial<Record<string, string>>;
   };
@@ -163,6 +174,9 @@ function normalizeGamePreset(raw: unknown): GameMediaPreset {
       )) {
         if (
           val === "classic" ||
+          val === "mystic" ||
+          val === "casino" ||
+          val === "fortune" ||
           val === "soft" ||
           val === "crisp" ||
           val === "bright"

@@ -33,6 +33,7 @@ import {
 import { onArcanaImgError } from "../lib/arcanaImages";
 import { useApplyPlayMediaPresets } from "../hooks/useApplyPlayMediaPresets";
 import { useSfx } from "../hooks/useSfx";
+import { PlayPrefsSheet } from "../components/PlayPrefsSheet";
 import {
   EU_WHEEL_ORDER,
   outerPickLabelVi,
@@ -311,8 +312,12 @@ function DoubleArcanaRoulette({
 
 export default function ArcanaWheelPage() {
   useApplyPlayMediaPresets("arcana");
-  const { play: playSfx } = useSfx("tarot", "arcana");
+  const { play: playSfx, muted: sfxMuted, toggleMute } = useSfx(
+    "tarot",
+    "arcana",
+  );
   const playSock = usePlaySocket();
+  const [prefsOpen, setPrefsOpen] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
   const [balance, setBalance] = useState(user?.balance ?? 0);
   const [enabled, setEnabled] = useState(true);
@@ -481,8 +486,12 @@ export default function ArcanaWheelPage() {
   const togglePick = (id: number) => {
     if (spinning) return;
     setPickIds((prev) => {
-      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.includes(id)) {
+        playSfx("ui");
+        return prev.filter((x) => x !== id);
+      }
       if (prev.length >= pickMax) return prev;
+      playSfx("ui");
       return [...prev, id];
     });
   };
@@ -781,6 +790,26 @@ export default function ArcanaWheelPage() {
             >
               LS
             </button>
+            <button
+              type="button"
+              onClick={toggleMute}
+              className={`rounded-lg px-2 py-1 text-[10px] font-bold ring-1 ${
+                sfxMuted
+                  ? "bg-white/40 text-[var(--play-muted)] ring-[var(--wood-deep)]/15 line-through"
+                  : "bg-white/70 text-[var(--wood-deep)] ring-[var(--wood-deep)]/20"
+              }`}
+              title="Tắt / mở âm bàn"
+            >
+              {sfxMuted ? "Tắt" : "Âm"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPrefsOpen(true)}
+              className="rounded-lg bg-white/70 px-2 py-1 text-[10px] font-bold text-[var(--wood-deep)] ring-1 ring-[var(--wood-deep)]/20"
+              title="Âm thanh & hiệu ứng"
+            >
+              Cài
+            </button>
           </div>
         }
       />
@@ -974,7 +1003,10 @@ export default function ArcanaWheelPage() {
               key={t}
               type="button"
               disabled={spinning}
-              onClick={() => setStake(t)}
+              onClick={() => {
+                playSfx("ui");
+                setStake(t);
+              }}
               className={`rounded-full px-2.5 py-1 font-play text-[11px] font-bold tabular-nums ${
                 stake === t
                   ? "bg-[var(--wood-deep)] text-[var(--gold-soft)] ring-1 ring-[var(--gold)]"
@@ -1168,6 +1200,11 @@ export default function ArcanaWheelPage() {
           />
         )}
       </BottomSheet>
+
+      <PlayPrefsSheet
+        open={prefsOpen}
+        onClose={() => setPrefsOpen(false)}
+      />
     </AppShell>
   );
 }

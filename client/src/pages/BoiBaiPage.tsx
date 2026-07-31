@@ -38,6 +38,8 @@ import {
   updateGuestJournal,
 } from "../boiJournal";
 import { ORACLE_DISCLAIMER, pickMantra } from "../oracleMantras";
+import { PlayPrefsSheet } from "../components/PlayPrefsSheet";
+import { useSfx } from "../hooks/useSfx";
 
 type PageMode = "draw" | "journal" | "lab";
 
@@ -70,6 +72,8 @@ function CardFace({
 
 export default function BoiBaiPage() {
   useApplyPlayMediaPresets("boi");
+  const { muted: sfxMuted, toggleMute } = useSfx("tarot", "boi");
+  const [prefsOpen, setPrefsOpen] = useState(false);
   const cosmetics = useBoiCosmetics();
   const cardBackUrl = resolveCardBackUrl(cosmetics);
   const [me] = useState<AuthUser | null>(() => getStoredUser());
@@ -308,6 +312,28 @@ export default function BoiBaiPage() {
           active="boi"
           user={me}
           guestCode={guestCode}
+          tools={
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={toggleMute}
+                className={`rounded-lg px-2 py-1 text-[10px] font-bold ring-1 ${
+                  sfxMuted
+                    ? "bg-white/40 text-[var(--play-muted)] ring-[var(--wood-deep)]/15 line-through"
+                    : "bg-white/70 text-[var(--wood-deep)] ring-[var(--wood-deep)]/20"
+                }`}
+              >
+                {sfxMuted ? "Tắt" : "Âm"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrefsOpen(true)}
+                className="rounded-lg bg-white/70 px-2 py-1 text-[10px] font-bold text-[var(--wood-deep)] ring-1 ring-[var(--wood-deep)]/20"
+              >
+                Cài
+              </button>
+            </div>
+          }
         />
         <div className="boi-tabs mb-3 flex gap-1.5">
           {(
@@ -712,6 +738,11 @@ export default function BoiBaiPage() {
         onDealt={onRitualDealt}
         onSaveReading={(row) => saveReading(row)}
         onNotesChange={(id, notes) => patchNotes(id, notes)}
+      />
+
+      <PlayPrefsSheet
+        open={prefsOpen}
+        onClose={() => setPrefsOpen(false)}
       />
     </AppShell>
   );

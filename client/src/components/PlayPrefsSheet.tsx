@@ -1,9 +1,5 @@
 import { BottomSheet } from "./BottomSheet";
-import {
-  usePlayPrefs,
-  type AudioChannel,
-  type SymbolStripMode,
-} from "../hooks/usePlayPrefs";
+import { usePlayPrefs, type AudioChannel } from "../hooks/usePlayPrefs";
 
 const CHANNELS: {
   id: Exclude<AudioChannel, "master">;
@@ -11,7 +7,11 @@ const CHANNELS: {
   hint: string;
 }[] = [
   { id: "ui", label: "Giao diện", hint: "Click / nút chung" },
-  { id: "tarot", label: "Tarot / Arcana", hint: "Xáo · lật · thắng" },
+  {
+    id: "tarot",
+    label: "Tarot · Arcana · Bói",
+    hint: "Xào · lật · quay bánh · thắng/thua",
+  },
   { id: "olympus", label: "Olympus", hint: "Quay · sấm · thắng" },
 ];
 
@@ -121,47 +121,36 @@ export function PlayPrefsSheet({
 
         <section className="space-y-2 border-t border-current/15 pt-3">
           <p className="text-xs font-bold uppercase tracking-wide opacity-70">
-            Hình ảnh
+            Hiệu ứng
           </p>
           <p className="text-[11px] opacity-65">
-            Hàng biểu tượng luôn hiện cạnh bàn — không ẩn trong menu phụ.
+            Tắt để máy nhẹ hơn (điện thoại / web). Sấm trên lưới vẫn chạy khi
+            bật.
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {(
-              [
-                ["icons", "Icon"],
-                ["labels", "Icon + tên"],
-                ["off", "Ẩn"],
-              ] as [SymbolStripMode, string][]
-            ).map(([mode, label]) => (
-              <button
-                key={mode}
-                type="button"
-                className={`rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ${
-                  prefs.symbolStrip === mode
-                    ? "bg-current/15 ring-current/50"
-                    : "ring-current/25 opacity-80"
-                }`}
-                onClick={() => patch({ symbolStrip: mode })}
-              >
-                {label}
-              </button>
-            ))}
+            <button
+              type="button"
+              className={`rounded-lg px-3 py-2 text-[12px] font-semibold ring-1 ${
+                !prefs.reduceFx
+                  ? "bg-current/15 ring-current/50"
+                  : "ring-current/25 opacity-80"
+              }`}
+              onClick={() => patch({ reduceFx: false })}
+            >
+              Có hiệu ứng
+            </button>
+            <button
+              type="button"
+              className={`rounded-lg px-3 py-2 text-[12px] font-semibold ring-1 ${
+                prefs.reduceFx
+                  ? "bg-current/15 ring-current/50"
+                  : "ring-current/25 opacity-80"
+              }`}
+              onClick={() => patch({ reduceFx: true })}
+            >
+              Không hiệu ứng
+            </button>
           </div>
-          <label className="mt-2 flex items-start gap-2 text-[12px]">
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              checked={prefs.reduceFx}
-              onChange={(e) => patch({ reduceFx: e.target.checked })}
-            />
-            <span>
-              Giảm FX ngoài deck
-              <span className="mt-0.5 block text-[11px] opacity-60">
-                Olympus: sấm / flash chỉ trên lưới ô, không phủ cả màn.
-              </span>
-            </span>
-          </label>
         </section>
       </div>
     </BottomSheet>

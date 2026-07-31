@@ -7,18 +7,23 @@ import {
   BOI_SFX_SLOTS,
   OLYMPUS_SFX_SLOT_META,
   OLYMPUS_SFX_SLOTS,
+  normalizeSfxStyleId,
   SFX_STYLES,
   TAROT_SFX_SLOT_META,
   TAROT_SFX_SLOTS,
   type SfxStyleId,
 } from "../sfxCatalog";
-import { invalidateSfxRuntimeCache } from "../hooks/useSfx";
+import {
+  invalidateSfxRuntimeCache,
+  previewSfxSlot,
+} from "../hooks/useSfx";
 import { invalidatePlayMediaPresetsCache } from "../hooks/useApplyPlayMediaPresets";
 
 type GameId = "tarot" | "olympus" | "arcana" | "boi";
 
 type GameSfx = {
-  styles?: Partial<Record<string, SfxStyleId>>;
+  /** May include legacy soft/crisp/bright — normalized when playing / highlighting */
+  styles?: Partial<Record<string, string>>;
   paths?: Partial<Record<string, string>>;
 };
 
@@ -71,7 +76,8 @@ function SlotRows({
     <ul className="mt-2 space-y-2">
       {slots.map((slot) => {
         const m = meta[slot] ?? { label: slot, hint: "" };
-        const style = sfx.styles?.[slot] ?? "classic";
+        const style =
+          normalizeSfxStyleId(sfx.styles?.[slot]) ?? "classic";
         const path = sfx.paths?.[slot];
         return (
           <li
@@ -169,14 +175,8 @@ export function SfxAdminPanel({
 }: {
   canEdit: boolean;
   onMsg: (s: string) => void;
-  presets: Partial<
-    Record<GameId, { sfx?: GameSfx & Record<string, unknown> }>
-  >;
-  setPresets: Dispatch<
-    SetStateAction<
-      Partial<Record<GameId, { sfx?: GameSfx & Record<string, unknown> }>>
-    >
-  >;
+  presets: Partial<Record<GameId, { sfx?: GameSfx }>>;
+  setPresets: Dispatch<SetStateAction<Partial<Record<GameId, { sfx?: GameSfx }>>>>;
   busy: boolean;
   setBusy: (v: boolean) => void;
 }) {
@@ -259,32 +259,23 @@ export function SfxAdminPanel({
 
   const onPreview = (slot: string) => {
     const path = presets[tab]?.sfx?.paths?.[slot];
-    if (path) {
-      const a = new Audio(path);
-      a.volume = 0.7;
-      void a.play().catch(() => onMsg("Không phát được file"));
-      return;
-    }
-    // Quick synth ping via AudioContext for preview without full hook
-    try {
-      const Ctx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext })
-          .webkitAudioContext;
-      const ctx = new Ctx();
-      const osc = ctx.createOscillator();
-      const g = ctx.createGain();
-      osc.frequency.value = 660;
-      g.gain.value = 0.08;
-      osc.connect(g);
-      g.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.12);
-      window.setTimeout(() => void ctx.close(), 300);
-      onMsg(`Preview synth · ${slot} (${presets[tab]?.sfx?.styles?.[slot] ?? "classic"})`);
-    } catch {
-      onMsg("Không preview được");
-    }
+    const style =
+      normalizeSfxStyleId(presets[tab]?.sfx?.styles?.[slot]) ?? "classic";
+    previewSfxSlot(slot, style, path);
+  };
+
+  const applyPackAll = (style: SfxStyleId) => {
+    const slots =
+      tab === "tarot"
+        ? TAROT_SFX_SLOTS
+        : tab === "olympus"
+          ? OLYMPUS_SFX_SLOTS
+          : tab === "arcana"
+            ? ARCANA_SFX_SLOTS
+            : BOI_SFX_SLOTS;
+    const styles: Record<string, SfxStyleId> = {};
+    for (const s of slots) styles[s] = style;
+    void patchSfx(tab, { styles });
   };
 
   const sfx = (presets[tab]?.sfx ?? {}) as GameSfx;
@@ -294,8 +285,8 @@ export function SfxAdminPanel({
       <div>
         <p className="play-heading text-sm">SFX · Tuỳ chọn âm thanh</p>
         <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-          Mỗi phần 4 kiểu (Cổ điển / Êm / Sắc / Sáng) hoặc upload file riêng.
-          Ưu tiên bàn Tarot 8 lá.
+          Đủ 4 bàn: Tarot · Olympus · Arcana · Bói. Gói âm khác chất liệu (không
+          phải chỉnh êm·sắc). Nghe thử = synth thật / file upload.
         </p>
       </div>
       <div className="flex flex-wrap gap-1.5">
@@ -318,6 +309,23 @@ export function SfxAdminPanel({
             }`}
           >
             {label}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] font-bold text-[var(--play-muted)]">
+          Áp gói cả bàn:
+        </span>
+        {SFX_STYLES.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            disabled={!canEdit || busy}
+            title={s.hint}
+            onClick={() => applyPackAll(s.id)}
+            className="rounded-full bg-amber-900/90 px-2.5 py-1 text-[10px] font-bold text-amber-50 disabled:opacity-45"
+          >
+            {s.label}
           </button>
         ))}
       </div>

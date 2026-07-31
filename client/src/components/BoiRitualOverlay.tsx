@@ -165,6 +165,7 @@ export function BoiRitualOverlay({
     setSaved(false);
     setPhase("shuffle");
     setShuffleRound((n) => n + 1);
+    playSfx("shuffle");
   };
 
   useEffect(() => {
@@ -221,6 +222,7 @@ export function BoiRitualOverlay({
 
   const deal = (count: RitualSpread) => {
     if (pile.length < count) return;
+    playSfx("ui");
     const { dealt: nextDealt, remaining } = dealFromTop(pile, count);
     setPile(remaining);
     setDealt(nextDealt);

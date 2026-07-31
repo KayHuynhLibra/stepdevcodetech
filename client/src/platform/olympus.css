@@ -151,14 +151,46 @@
 }
 
 .oly-nav-wrap--desktop {
+  display: flex;
+  width: 100%;
+  padding: 0 0.55rem 0.35rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.oly-nav-wrap--desktop::-webkit-scrollbar {
   display: none;
 }
 
-@media (min-width: 641px) {
-  .oly-nav-wrap--desktop {
-    display: flex;
-  }
+.oly-nav-wrap--desktop .table-nav {
+  flex-wrap: nowrap;
+  width: max-content;
+  min-width: 100%;
+  gap: 0.4rem;
+}
 
+.oly-nav-wrap--desktop .form-tab {
+  flex-shrink: 0;
+  background: rgba(255, 244, 230, 0.1);
+  border-color: rgba(245, 197, 66, 0.35);
+  color: #fff4e6;
+  font-size: 0.68rem;
+  padding: 0.4rem 0.75rem;
+  min-height: 2.15rem;
+}
+
+.oly-nav-wrap--desktop .form-tab.is-on {
+  background: linear-gradient(180deg, #f5c542, #c4891a);
+  color: #1a0e08;
+  border-color: #ffe08a;
+}
+
+.oly-nav-wrap--desktop .form-tab--disabled {
+  opacity: 0.4;
+}
+
+@media (min-width: 641px) {
   .oly-top--play {
     flex-wrap: wrap;
     gap: 0.65rem;
@@ -570,6 +602,137 @@
   overflow: visible;
 }
 
+/* Dock gọn: cược | turbo | (dừng) | quay — cao cố định tránh đẩy lưới */
+.oly-ctrl-panel--dock {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 3.35rem;
+  padding: 0.4rem 0.45rem;
+  contain: layout style;
+}
+
+.oly-dock-bet {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 0.05rem;
+  text-align: left;
+  padding: 0.3rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid rgba(245, 197, 66, 0.35);
+  background: rgba(0, 0, 0, 0.28);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.oly-dock-bet:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.oly-dock-bet__lab {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 244, 230, 0.5);
+}
+
+.oly-dock-bet strong {
+  color: #f2ab27;
+  font-family: var(--font-display);
+  font-size: clamp(0.95rem, 2.6vw, 1.15rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oly-dock-bet .oly-bal-last {
+  font-size: 0.62rem;
+  color: #9eebd9;
+}
+
+.oly-dock-turbo {
+  flex: 0 0 auto;
+  min-width: 3.4rem;
+}
+
+.oly-dock-stop {
+  flex: 0 0 auto;
+  min-width: 3.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+}
+
+.oly-dock-stop__n {
+  display: inline-block;
+  min-width: 1.4ch;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.oly-ctrl-panel--dock .oly-spin {
+  flex: 0 0 auto;
+  min-width: 4.5rem;
+  margin: 0;
+}
+
+.oly-winline--dock {
+  margin-top: 0.35rem;
+  min-height: 1.15rem;
+  text-align: center;
+  font-size: 0.72rem;
+  color: rgba(255, 236, 180, 0.85);
+}
+
+.oly-stake-sec {
+  margin: 0.35rem 0 0;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 244, 230, 0.5);
+}
+
+.oly-bet-row--sheet {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.oly-bet-row--sheet .oly-bets {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  justify-content: center;
+}
+
+.oly-stake-actions {
+  grid-template-columns: 1fr 1fr;
+}
+
+.oly-stake-done {
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.7rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(245, 197, 66, 0.4);
+  background: rgba(255, 244, 230, 0.08);
+  color: #fff4e6;
+  font-weight: 800;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
 .oly-ctrl-label {
   display: block;
   font-size: 0.62rem;
@@ -741,40 +904,25 @@
     padding-bottom: calc(0.85rem + env(safe-area-inset-bottom));
   }
 
-  .oly-ctrl-panel {
+  .oly-ctrl-panel--dock {
     position: sticky;
     bottom: 0;
     z-index: 15;
     margin: 0;
-    padding: 0.45rem 0.5rem calc(1rem + env(safe-area-inset-bottom));
+    min-height: 3.5rem;
+    padding: 0.4rem 0.45rem calc(0.65rem + env(safe-area-inset-bottom));
     border-radius: 12px 12px 0 0;
-    backdrop-filter: blur(10px);
   }
 
-  .oly-ctrl-row--bet {
-    grid-template-columns: minmax(4.25rem, 5.5rem) minmax(0, 1fr) auto;
-    gap: 0.35rem;
+  .oly-ctrl-panel--dock .oly-spin {
+    min-width: 4.5rem;
+    padding: 0.65rem 0.8rem;
+    font-size: 1.05rem;
   }
 
-  .oly-ctrl-row--auto {
-    grid-template-columns: 1fr;
-    gap: 0.3rem;
-  }
-
-  .oly-ctrl-row--auto > .oly-ctrl-label {
-    display: none;
-  }
-
-  .oly-action-bar .oly-mode {
-    flex: 1 1 calc(33.33% - 0.35rem);
-    min-width: 2.8rem;
-  }
-
-  .oly-spin {
-    min-width: 4.75rem;
-    padding: 0.7rem 0.9rem;
-    font-size: 1.08rem;
-    align-self: center;
+  .oly-dock-turbo {
+    font-size: 0.68rem;
+    padding: 0.45rem 0.5rem;
   }
 }
 
@@ -1649,10 +1797,17 @@
 .oly-reduce-fx .oly-atm-bolt,
 .oly-reduce-fx .oly-sky-flash,
 .oly-reduce-fx .oly-atm-stars,
+.oly-reduce-fx .oly-atm-mist,
 .oly-reduce-fx .oly-rage-track::after,
 .oly-reduce-fx .oly-frame-ornate,
 .oly-reduce-fx .oly-zeus-rays {
-  display: none;
+  display: none !important;
+}
+
+.oly-reduce-fx .oly-atm-temple {
+  opacity: 0.22;
+  filter: none;
+  mask-image: none;
 }
 
 .oly-reduce-fx .oly-spin,
@@ -2657,6 +2812,30 @@
   opacity: 0.4;
 }
 
+/* Mobile web: cắt FX nặng (blur / mask / anim liên tục) — nguồn lag chính */
+@media (max-width: 900px) {
+  .oly-atm-mist {
+    display: none !important;
+  }
+
+  .oly-atm-temple {
+    opacity: 0.18;
+    filter: none;
+    max-height: 36vh;
+    mask-image: none;
+  }
+
+  .oly-atm-bolt,
+  .oly-atm-stars,
+  .oly-atmosphere::after {
+    display: none !important;
+  }
+
+  .oly-root {
+    background: #0c0818;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .oly-atm-bolt,
   .oly-atm-stars,
@@ -2669,6 +2848,10 @@
   .oly-mult--hot .oly-mult-val,
   .oly-atmosphere::after {
     animation: none !important;
+  }
+
+  .oly-atm-mist {
+    filter: none;
   }
 }
 

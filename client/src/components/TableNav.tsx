@@ -24,7 +24,7 @@ export function TableNav({
 }) {
   const [games, setGames] = useState<GameManifest[]>(() =>
     getCachedPlatformGames().filter(
-      (g) => g.status === "live" || g.status === "beta",
+      (g) => g.enabled && (g.status === "live" || g.status === "beta"),
     ),
   );
 
@@ -50,19 +50,21 @@ export function TableNav({
 
   return (
     <nav
-      className={`table-nav form-tabs ${compact ? "justify-center" : ""}`}
+      className={`table-nav form-tabs ${compact ? "table-nav--compact" : ""}`}
       aria-label="Chọn bàn"
     >
       {games.map((g) => {
         const open = isGameOpen(g);
         const on = active === g.id;
+        const cover = g.coverUrl || "/assets/lobby/soon.svg";
         if (!open) {
           return (
             <span
               key={g.id}
-              className="form-tab form-tab--disabled"
+              className="form-tab form-tab--disabled form-tab--game"
               title={g.blurb}
             >
+              <img src={cover} alt="" className="form-tab__icon" />
               {g.nameVi}
             </span>
           );
@@ -71,8 +73,10 @@ export function TableNav({
           <Link
             key={g.id}
             to={hrefFor(g)}
-            className={`form-tab ${on ? "is-on" : ""}`}
+            className={`form-tab form-tab--game ${on ? "is-on" : ""}`}
+            title={g.blurb}
           >
+            <img src={cover} alt="" className="form-tab__icon" />
             {g.nameVi}
           </Link>
         );

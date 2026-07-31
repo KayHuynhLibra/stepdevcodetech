@@ -1,20 +1,37 @@
 /**
- * Catalog SFX — 4 kiểu synth / slot + optional file upload override.
- * Dùng chung client + khớp server playMediaPresets.sfx.styles / paths.
+ * Catalog SFX — gói âm (voice pack) khác nhau về chất liệu, không chỉ chỉnh êm/sắc.
+ * Upload file vẫn override từng slot.
  */
 
-export type SfxStyleId = "classic" | "soft" | "crisp" | "bright";
+export type SfxStyleId = "classic" | "mystic" | "casino" | "fortune";
+
+/** Legacy admin / preset IDs — map sang gói mới */
+export type SfxStyleIdLegacy = "soft" | "crisp" | "bright";
 
 export const SFX_STYLES: {
   id: SfxStyleId;
   label: string;
   hint: string;
 }[] = [
-  { id: "classic", label: "Cổ điển", hint: "Mặc định hiện tại" },
-  { id: "soft", label: "Êm", hint: "Nhẹ · ít ồn" },
-  { id: "crisp", label: "Sắc", hint: "Nhanh · rõ" },
-  { id: "bright", label: "Sáng", hint: "Cao · vui" },
+  { id: "classic", label: "Cổ điển", hint: "Bài gỗ · dày lớp" },
+  { id: "mystic", label: "Huyền bí", hint: "Pad · chuông nghi lễ" },
+  { id: "casino", label: "Sòng bài", hint: "Chip · dứt · rõ" },
+  { id: "fortune", label: "Tài vận", hint: "Chuông may · fanfare" },
 ];
+
+export function normalizeSfxStyleId(v: unknown): SfxStyleId | null {
+  if (v === "classic" || v === "mystic" || v === "casino" || v === "fortune") {
+    return v;
+  }
+  if (v === "soft") return "mystic";
+  if (v === "crisp") return "casino";
+  if (v === "bright") return "fortune";
+  return null;
+}
+
+export function isSfxStyleId(v: unknown): v is SfxStyleId {
+  return normalizeSfxStyleId(v) != null;
+}
 
 /** Slot bàn Tarot 8 lá (ưu tiên) */
 export const TAROT_SFX_SLOTS = [
@@ -102,9 +119,3 @@ export type SfxSlotName =
   | BoiSfxSlot
   | ArcanaSfxSlot
   | "ui";
-
-export function isSfxStyleId(v: unknown): v is SfxStyleId {
-  return (
-    v === "classic" || v === "soft" || v === "crisp" || v === "bright"
-  );
-}

@@ -11,7 +11,7 @@ import { TableNav } from "./TableNav";
 
 /**
  * Header bàn chơi dùng chung — play-first mobile:
- * Lobby · tên bàn · xu · (tools) · TableNav (desktop).
+ * Lobby · tên bàn · xu · (tools) · TableNav (luôn hiện, cuộn ngang trên mobile).
  */
 export function GameChrome({
   title,

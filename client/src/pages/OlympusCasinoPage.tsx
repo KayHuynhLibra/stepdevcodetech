@@ -410,8 +410,23 @@ export default function OlympusCasinoPage() {
   const skyTierRef = useRef<SkyTier>("calm");
   const rayIdRef = useRef(0);
   const { play: playSfx, muted: sfxMuted } = useSfx("olympus", "olympus");
-  const { prefs } = usePlayPrefs();
+  const { prefs, patch } = usePlayPrefs();
   useApplyPlayMediaPresets("olympus");
+
+  /** Mobile / reduce-motion: bật giảm FX một lần (không đè nếu user đã chỉnh). */
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("oly_fx_tuned") === "1") return;
+      const narrow = window.matchMedia("(max-width: 900px)").matches;
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (narrow || reduce) {
+        patch({ reduceFx: true });
+        localStorage.setItem("oly_fx_tuned", "1");
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [patch]);
 
   useEffect(() => {
     skyTierRef.current = skyTier;
@@ -1112,7 +1127,7 @@ export default function OlympusCasinoPage() {
         </button>
       </header>
       {me || guestCode ? (
-        <div className="oly-nav-wrap oly-nav-wrap--desktop">
+        <div className="oly-nav-wrap oly-nav-wrap--desktop" aria-label="Các bàn đang mở">
           <TableNav
             user={me}
             guestCode={guestCode}
@@ -1499,185 +1514,135 @@ export default function OlympusCasinoPage() {
         </div>
 
         <div className="oly-controls">
-          <div className="oly-ctrl-panel">
-            <div className="oly-ctrl-row oly-ctrl-row--bet">
-              <div className="oly-bet-info">
-                <p className="oly-bet-current">
-                  <span className="oly-bal-label">
-                    Đang cược
-                    <button
-                      type="button"
-                      className="oly-bet-custom"
-                      disabled={busy || autoRunning || inFs || !!hold}
-                      onClick={() => {
-                        setCustomBetAmt(bet);
-                        setCustomBetOpen(true);
-                      }}
-                    >
-                      Tuỳ chỉnh
-                    </button>
-                  </span>
-                  <strong title={formatXu(bet)}>{formatXu(bet)}</strong>
-                </p>
-                {lastWin > 0 ? (
-                  <small className="oly-bal-last">+{formatXu(lastWin)}</small>
-                ) : null}
-              </div>
+          <div className="oly-ctrl-panel oly-ctrl-panel--dock">
+            <button
+              type="button"
+              className="oly-dock-bet"
+              disabled={busy || autoRunning || inFs || !!hold}
+              onClick={() => {
+                setCustomBetAmt(bet);
+                setCustomBetOpen(true);
+              }}
+              aria-label="Mở đặt cược"
+            >
+              <span className="oly-dock-bet__lab">Cược</span>
+              <strong title={formatXu(bet)}>{formatXu(bet)}</strong>
+              {lastWin > 0 ? (
+                <small className="oly-bal-last">+{formatXu(lastWin)}</small>
+              ) : null}
+            </button>
 
-              <div className="oly-bet-block">
-                <div className="oly-bet-row">
-                  <button
-                    type="button"
-                    className="oly-bet-step"
-                    disabled={busy || autoRunning || inFs || !!hold}
-                    onClick={betDown}
-                    aria-label="Giảm cược"
-                  >
-                    −
-                  </button>
-                  <div className="oly-bets" role="group" aria-label="Mức cược">
-                    {bets.map((b) => (
-                      <button
-                        key={b}
-                        type="button"
-                        className={`oly-bet stake-sheet-chip ${bet === b ? "on" : ""}`}
-                        disabled={busy || autoRunning || inFs || !!hold}
-                        onClick={() => setBet(b)}
-                        title={formatXu(b)}
-                      >
-                        {formatBetChip(b)}
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    className="oly-bet-step"
-                    disabled={busy || autoRunning || inFs || !!hold}
-                    onClick={betUp}
-                    aria-label="Tăng cược"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
+            <button
+              type="button"
+              className={`oly-mode oly-dock-turbo ${turbo ? "on" : ""}`}
+              disabled={busy && !autoRunning}
+              onClick={() => setTurbo((t) => !t)}
+            >
+              Turbo
+            </button>
 
-              {hold ? (
-                <button
-                  type="button"
-                  className={`oly-spin ${busy ? "pulsing" : ""}`}
-                  disabled={busy}
-                  onClick={() => void runHoldSpin()}
-                >
-                  {busy ? "…" : "RESPIN"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className={`oly-spin ${busy ? "pulsing" : ""} ${inFs ? "oly-spin-fs" : ""}`}
-                  disabled={busy || autoRunning}
-                  onClick={() => void runOneSpin()}
-                >
-                  {busy ? "…" : inFs ? "FS QUAY" : "QUAY"}
-                </button>
-              )}
-            </div>
+            {autoRunning ? (
+              <button
+                type="button"
+                className="oly-mode danger oly-dock-stop"
+                onClick={stopAuto}
+              >
+                Dừng
+                <span className="oly-dock-stop__n">
+                  {autoLeft < 0 ? "∞" : autoLeft > 0 ? autoLeft : ""}
+                </span>
+              </button>
+            ) : null}
 
-            <div className="oly-ctrl-row oly-ctrl-row--auto">
-              <div className="oly-action-bar" role="group" aria-label="Auto và chế độ">
-                {([10, 25, 50, -1] as AutoMode[]).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    className={`oly-mode ${autoMode === m ? "on" : ""}`}
-                    disabled={(busy && !autoRunning) || !!hold}
-                    onClick={() => void startAuto(m)}
-                    title={m === -1 ? "Auto ∞" : `Auto ${m}`}
-                  >
-                    {m === -1 ? "∞" : m}
-                  </button>
-                ))}
-                {autoRunning ? (
-                  <button
-                    type="button"
-                    className="oly-mode danger"
-                    onClick={stopAuto}
-                  >
-                    Dừng
-                    {autoLeft < 0
-                      ? " ∞"
-                      : autoLeft > 0
-                        ? ` ${autoLeft}`
-                        : ""}
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className={`oly-mode ${turbo ? "on" : ""}`}
-                  disabled={busy && !autoRunning}
-                  onClick={() => setTurbo((t) => !t)}
-                >
-                  Turbo
-                </button>
-                <button
-                  type="button"
-                  className={`oly-mode ${payMode === "cluster" ? "on" : ""}`}
-                  disabled={busy || autoRunning || inFs || !!hold}
-                  onClick={() =>
-                    setPayMode((p) =>
-                      p === "scatter" ? "cluster" : "scatter",
-                    )
-                  }
-                >
-                  {payMode === "cluster" ? "Cluster" : "Scatter"}
-                </button>
-              </div>
-            </div>
-
-            <div className="oly-ctrl-footer">
-              {msg ? <div className="oly-winline">{msg}</div> : null}
-              <div className="oly-actions">
-                <button
-                  type="button"
-                  disabled={busy || autoRunning || inFs || !!hold}
-                  onClick={() => void buyBonus()}
-                >
-                  Mua FS ({formatXu(buyCost)})
-                </button>
-                {walletKind !== "auth" ? (
-                  <button
-                    type="button"
-                    className="oly-act-secondary"
-                    onClick={() => void topup()}
-                  >
-                    +10k demo
-                  </button>
-                ) : null}
-              </div>
-            </div>
+            {hold ? (
+              <button
+                type="button"
+                className={`oly-spin ${busy ? "pulsing" : ""}`}
+                disabled={busy}
+                onClick={() => void runHoldSpin()}
+              >
+                {busy ? "…" : "RESPIN"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={`oly-spin ${busy ? "pulsing" : ""} ${inFs ? "oly-spin-fs" : ""}`}
+                disabled={busy || autoRunning}
+                onClick={() => void runOneSpin()}
+              >
+                {busy ? "…" : inFs ? "FS QUAY" : "QUAY"}
+              </button>
+            )}
           </div>
+          {msg ? <div className="oly-winline oly-winline--dock">{msg}</div> : null}
         </div>
       </div>
 
       <BottomSheet
         open={customBetOpen}
         onClose={() => setCustomBetOpen(false)}
-        title="Đặt cược · kiểu Tarot"
+        title="Cược & chế độ"
         backdropClass="bg-black/65"
         shellClass="oly-stake-sheet"
+        heightClass="max-h-[88vh]"
       >
         <div className="oly-stake-sheet-body">
           <p className="oly-stake-status">
-            Số dư <strong>{formatXu(balance)}</strong> · chọn mức nhanh hoặc nhập
-            tay (giống bàn 8 lá).
+            Số dư <strong>{formatXu(balance)}</strong> · đang{" "}
+            <strong>{formatXu(bet)}</strong>
           </p>
+
+          <p className="oly-stake-sec">Mức cược</p>
+          <div className="oly-bet-row oly-bet-row--sheet">
+            <button
+              type="button"
+              className="oly-bet-step"
+              disabled={busy || autoRunning || inFs || !!hold}
+              onClick={betDown}
+              aria-label="Giảm cược"
+            >
+              −
+            </button>
+            <div className="oly-bets" role="group" aria-label="Mức cược">
+              {bets.map((b) => (
+                <button
+                  key={b}
+                  type="button"
+                  className={`oly-bet stake-sheet-chip ${bet === b ? "on" : ""}`}
+                  disabled={busy || autoRunning || inFs || !!hold || b > balance}
+                  onClick={() => {
+                    setBet(b);
+                    setCustomBetAmt(b);
+                  }}
+                  title={formatXu(b)}
+                >
+                  {formatBetChip(b)}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="oly-bet-step"
+              disabled={busy || autoRunning || inFs || !!hold}
+              onClick={betUp}
+              aria-label="Tăng cược"
+            >
+              +
+            </button>
+          </div>
+
           <div className="oly-stake-quick">
             {OLY_QUICK_ADDS.map((n) => (
               <button
                 key={n}
                 type="button"
                 className="stake-sheet-chip"
-                disabled={n > balance}
-                onClick={() => setCustomBetAmt((a) => Math.min(a + n, balance))}
+                disabled={
+                  busy || autoRunning || inFs || !!hold || n > balance
+                }
+                onClick={() =>
+                  setCustomBetAmt((a) => Math.min((a || bet) + n, balance))
+                }
               >
                 +{formatXu(n)}
               </button>
@@ -1687,6 +1652,7 @@ export default function OlympusCasinoPage() {
             <button
               type="button"
               className="oly-mode"
+              disabled={busy || autoRunning || inFs || !!hold}
               onClick={() => setCustomBetAmt(0)}
             >
               Xóa
@@ -1694,6 +1660,7 @@ export default function OlympusCasinoPage() {
             <button
               type="button"
               className="oly-mode"
+              disabled={busy || autoRunning || inFs || !!hold}
               onClick={() => setCustomBetAmt(balance)}
             >
               Max
@@ -1706,6 +1673,7 @@ export default function OlympusCasinoPage() {
               className="oly-stake-input"
               min={1}
               max={balance}
+              disabled={busy || autoRunning || inFs || !!hold}
               value={customBetAmt || ""}
               onChange={(e) => setCustomBetAmt(Number(e.target.value) || 0)}
             />
@@ -1713,10 +1681,85 @@ export default function OlympusCasinoPage() {
           <button
             type="button"
             className="stake-sheet-confirm oly-stake-confirm"
-            disabled={customBetAmt <= 0 || customBetAmt > balance}
+            disabled={
+              busy ||
+              autoRunning ||
+              inFs ||
+              !!hold ||
+              customBetAmt <= 0 ||
+              customBetAmt > balance
+            }
             onClick={applyCustomBet}
           >
-            Xác nhận {formatXu(customBetAmt)} xu
+            Áp dụng {formatXu(customBetAmt)} xu
+          </button>
+
+          <p className="oly-stake-sec">Chế độ trả</p>
+          <div className="oly-stake-quick" role="group" aria-label="Pay mode">
+            <button
+              type="button"
+              className={`oly-mode ${payMode === "scatter" ? "on" : ""}`}
+              disabled={busy || autoRunning || inFs || !!hold}
+              onClick={() => setPayMode("scatter")}
+            >
+              Scatter
+            </button>
+            <button
+              type="button"
+              className={`oly-mode ${payMode === "cluster" ? "on" : ""}`}
+              disabled={busy || autoRunning || inFs || !!hold}
+              onClick={() => setPayMode("cluster")}
+            >
+              Cluster
+            </button>
+          </div>
+
+          <p className="oly-stake-sec">Auto</p>
+          <div className="oly-stake-quick" role="group" aria-label="Auto">
+            {([10, 25, 50, -1] as AutoMode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                className={`oly-mode ${autoMode === m ? "on" : ""}`}
+                disabled={(busy && !autoRunning) || !!hold}
+                onClick={() => {
+                  void startAuto(m);
+                  setCustomBetOpen(false);
+                }}
+                title={m === -1 ? "Auto ∞" : `Auto ${m}`}
+              >
+                {m === -1 ? "∞" : m}
+              </button>
+            ))}
+          </div>
+
+          <p className="oly-stake-sec">Khác</p>
+          <div className="oly-stake-quick oly-stake-actions">
+            <button
+              type="button"
+              className="oly-mode"
+              disabled={busy || autoRunning || inFs || !!hold}
+              onClick={() => void buyBonus()}
+            >
+              Mua FS ({formatXu(buyCost)})
+            </button>
+            {walletKind !== "auth" ? (
+              <button
+                type="button"
+                className="oly-mode"
+                onClick={() => void topup()}
+              >
+                +10k demo
+              </button>
+            ) : null}
+          </div>
+
+          <button
+            type="button"
+            className="oly-stake-done"
+            onClick={() => setCustomBetOpen(false)}
+          >
+            Xong
           </button>
         </div>
       </BottomSheet>
