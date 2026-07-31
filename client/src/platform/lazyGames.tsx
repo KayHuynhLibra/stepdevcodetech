@@ -10,12 +10,14 @@ export const LazyBoiBaiPage = lazy(() => import("../pages/BoiBaiPage"));
 export const LazyOlympusCasinoPage = lazy(
   () => import("../pages/OlympusCasinoPage"),
 );
+export const LazyLudoPage = lazy(() => import("../pages/LudoPage"));
 
 const PREFETCH: Record<string, () => Promise<{ default: ComponentType }>> = {
   tarot: () => import("../pages/GamePage"),
   arcana: () => import("../pages/ArcanaWheelPage"),
   "boi-bai": () => import("../pages/BoiBaiPage"),
   olympus: () => import("../pages/OlympusCasinoPage"),
+  ludo: () => import("../pages/LudoPage"),
 };
 
 const warmed = new Set<string>();

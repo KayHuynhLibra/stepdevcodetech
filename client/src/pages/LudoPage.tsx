@@ -1,0 +1,305 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { getStoredUser, getToken } from "../auth";
+import { AppShell } from "../components/AppShell";
+import { GameChrome } from "../components/GameChrome";
+import { ensureGuestCode, getGuestCode } from "../guest";
+import { LudoBoard } from "../platform/ludo/LudoBoard";
+import "../platform/ludo/ludo.css";
+
+type LudoColor = "red" | "green" | "yellow" | "blue";
+
+type LudoPlayer = {
+  seat: number;
+  color: LudoColor;
+  userId: string | null;
+  guestId: string | null;
+  displayName: string;
+  isBot: boolean;
+  strikes: number;
+  connected: boolean;
+};
+
+type LudoToken = {
+  id: string;
+  color: LudoColor;
+  index: number;
+  pos: number;
+};
+
+type LudoRoom = {
+  roomId: string;
+  status: "lobby" | "playing" | "finished";
+  players: LudoPlayer[];
+  tokens: LudoToken[];
+  turnSeat: number;
+  phase: string;
+  dice: number | null;
+  validTokenIds: string[];
+  consecutiveSixes: number;
+  turnDeadline: number;
+  winnerSeat: number | null;
+  lastEvent: string | null;
+  stake: number;
+};
+
+function headers(): Record<string, string> {
+  const h: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const t = getToken();
+  if (t) h.Authorization = `Bearer ${t}`;
+  else h["x-guest-id"] = ensureGuestCode();
+  return h;
+}
+
+export default function LudoPage() {
+  const me = getStoredUser();
+  const guestCode = !me ? getGuestCode() || ensureGuestCode() : null;
+  const [room, setRoom] = useState<LudoRoom | null>(null);
+  const [joinCode, setJoinCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now());
+
+  const mySeat = useMemo(() => {
+    if (!room) return null;
+    return (
+      room.players.find(
+        (p) =>
+          (me && p.userId === me.id) ||
+          (guestCode && p.guestId === guestCode),
+      ) ?? null
+    );
+  }, [room, me, guestCode]);
+
+  const isMyTurn =
+    !!room &&
+    !!mySeat &&
+    !mySeat.isBot &&
+    room.turnSeat === mySeat.seat &&
+    room.status === "playing";
+
+  const refresh = useCallback(async (id: string) => {
+    const r = await fetch(`/api/ludo/rooms/${id}`, { headers: headers() });
+    const j = await r.json();
+    if (j.ok) setRoom(j.room);
+  }, []);
+
+  useEffect(() => {
+    if (!room?.roomId) return;
+    const t = window.setInterval(() => {
+      void refresh(room.roomId);
+      setNow(Date.now());
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [room?.roomId, refresh]);
+
+  const create = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await fetch("/api/ludo/rooms", {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({ fillBots: true, stake: 0 }),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.reason || "Tạo phòng lỗi");
+      setRoom(j.room);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Lỗi");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const join = async () => {
+    const id = joinCode.trim().toUpperCase();
+    if (!id) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await fetch(`/api/ludo/rooms/${id}/join`, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({}),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.reason || "Vào phòng lỗi");
+      setRoom(j.room);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Lỗi");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const roll = async () => {
+    if (!room) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/ludo/rooms/${room.roomId}/roll`, {
+        method: "POST",
+        headers: headers(),
+        body: "{}",
+      });
+      const j = await r.json();
+      if (!j.ok) setErr(j.reason || "Tung lỗi");
+      else {
+        setErr(null);
+        setRoom(j.room);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pick = async (tokenId: string) => {
+    if (!room) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/ludo/rooms/${room.roomId}/pick`, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({ tokenId }),
+      });
+      const j = await r.json();
+      if (!j.ok) setErr(j.reason || "Chọn quân lỗi");
+      else {
+        setErr(null);
+        setRoom(j.room);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const leftSec = room
+    ? Math.max(0, Math.ceil((room.turnDeadline - now) / 1000))
+    : 0;
+
+  return (
+    <AppShell maxWidth="md">
+      <div className="ludo-page px-3 pb-8 pt-2">
+        <GameChrome
+          title="Ludo"
+          active="ludo"
+          user={me}
+          guestCode={guestCode}
+        />
+
+        {!room ? (
+          <div className="ludo-hub app-panel p-3">
+            <p className="play-heading text-sm">Cờ cá ngựa · isometric</p>
+            <p className="text-[11px] text-[var(--play-muted)]">
+              Server giữ bàn — 1 người + 3 bot. Không WebGL nặng.
+            </p>
+            <div className="ludo-hub__actions">
+              <button
+                type="button"
+                className="app-btn-primary"
+                disabled={busy}
+                onClick={() => void create()}
+              >
+                Chơi nhanh 1v3 bot
+              </button>
+            </div>
+            <div className="ludo-hub__actions">
+              <input
+                value={joinCode}
+                onChange={(e) => setJoinCode(e.target.value)}
+                placeholder="Mã phòng"
+                maxLength={8}
+              />
+              <button
+                type="button"
+                className="rounded-xl bg-white px-3 py-2 text-xs font-bold ring-1 ring-[var(--wood-deep)]/20"
+                disabled={busy}
+                onClick={() => void join()}
+              >
+                Vào phòng
+              </button>
+            </div>
+            {err ? (
+              <p className="text-xs text-red-600">{err}</p>
+            ) : null}
+          </div>
+        ) : (
+          <>
+            <LudoBoard
+              tokens={room.tokens}
+              validTokenIds={
+                isMyTurn && room.phase === "wait_pick"
+                  ? room.validTokenIds
+                  : []
+              }
+              onPick={(id) => void pick(id)}
+              myColor={mySeat?.color}
+            />
+            <div className="ludo-panel">
+              <div className="ludo-panel__row">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
+                    Phòng {room.roomId}
+                  </p>
+                  <p className="text-xs font-semibold">
+                    {room.status === "finished"
+                      ? `Kết thúc · ghế ${room.winnerSeat}`
+                      : `Lượt ghế ${room.turnSeat} · ${leftSec}s`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="ludo-dice"
+                  disabled={
+                    busy ||
+                    !isMyTurn ||
+                    room.phase !== "wait_roll" ||
+                    room.status !== "playing"
+                  }
+                  onClick={() => void roll()}
+                  title="Tung xúc xắc"
+                >
+                  {room.dice ?? "🎲"}
+                </button>
+              </div>
+              <div className="ludo-seats">
+                {room.players.map((p) => (
+                  <div
+                    key={p.seat}
+                    className={`ludo-seat ludo-seat--${p.color} ${
+                      room.turnSeat === p.seat ? "is-turn" : ""
+                    }`}
+                  >
+                    {p.displayName}
+                    {p.isBot ? " · bot" : ""}
+                    {p.strikes ? ` · ⚠${p.strikes}` : ""}
+                  </div>
+                ))}
+              </div>
+              <p className="ludo-msg">{room.lastEvent || "—"}</p>
+              {err ? <p className="text-xs text-red-600">{err}</p> : null}
+              <div className="ludo-hub__actions">
+                <button
+                  type="button"
+                  className="rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-bold ring-1 ring-[var(--wood-deep)]/15"
+                  onClick={() => setRoom(null)}
+                >
+                  Rời bàn
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-bold ring-1 ring-[var(--wood-deep)]/15"
+                  onClick={() => void create()}
+                  disabled={busy}
+                >
+                  Ván mới
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </AppShell>
+  );
+}

@@ -1,0 +1,243 @@
+.ludo-page {
+  --ludo-ink: #1a1208;
+  --ludo-red: #c23b2e;
+  --ludo-green: #2d8a4e;
+  --ludo-yellow: #d4a017;
+  --ludo-blue: #2b6cb0;
+  max-width: 28rem;
+  margin: 0 auto;
+}
+
+.ludo-hub {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+}
+
+.ludo-hub__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ludo-hub input {
+  flex: 1;
+  min-width: 7rem;
+  border-radius: 0.65rem;
+  border: 1.5px solid rgba(138, 90, 43, 0.25);
+  padding: 0.55rem 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.ludo-board {
+  width: 100%;
+  max-width: 22rem;
+  margin: 0.5rem auto;
+  perspective: 640px;
+}
+
+.ludo-board__iso {
+  transform: rotateX(28deg) rotateZ(-18deg);
+  transform-style: preserve-3d;
+}
+
+.ludo-board__face {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 0.75rem;
+  background:
+    linear-gradient(135deg, #f7efe0, #e8d4b0);
+  border: 3px solid #5c3a1a;
+  box-shadow:
+    0 12px 28px rgba(40, 20, 8, 0.35),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+
+.ludo-board__quad {
+  position: absolute;
+  width: 40%;
+  height: 40%;
+  opacity: 0.55;
+}
+
+.ludo-board__quad--red {
+  left: 0;
+  bottom: 0;
+  background: var(--ludo-red);
+}
+
+.ludo-board__quad--green {
+  right: 0;
+  top: 0;
+  background: var(--ludo-green);
+}
+
+.ludo-board__quad--yellow {
+  right: 0;
+  bottom: 0;
+  background: var(--ludo-yellow);
+}
+
+.ludo-board__quad--blue {
+  left: 0;
+  top: 0;
+  background: var(--ludo-blue);
+}
+
+.ludo-board__cross {
+  position: absolute;
+  inset: 20%;
+  background:
+    linear-gradient(#f0e6d2, #f0e6d2) center/20% 100% no-repeat,
+    linear-gradient(#f0e6d2, #f0e6d2) center/100% 20% no-repeat;
+  opacity: 0.95;
+}
+
+.ludo-safe {
+  position: absolute;
+  width: 4.5%;
+  height: 4.5%;
+  margin: -2.25%;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff8e8, #e8c56a);
+  border: 1px solid rgba(120, 80, 20, 0.45);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.ludo-token {
+  position: absolute;
+  width: 7.5%;
+  height: 7.5%;
+  margin: 0;
+  padding: 0;
+  border-radius: 50% 50% 45% 45%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  transform: translate(-50%, -50%);
+  font-size: 0.55rem;
+  font-weight: 800;
+  color: #fff;
+  cursor: default;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  z-index: 2;
+}
+
+.ludo-token--red {
+  background: var(--ludo-red);
+}
+.ludo-token--green {
+  background: var(--ludo-green);
+}
+.ludo-token--yellow {
+  background: var(--ludo-yellow);
+  color: #1a1208;
+}
+.ludo-token--blue {
+  background: var(--ludo-blue);
+}
+
+.ludo-token.is-valid {
+  cursor: pointer;
+  outline: 2px solid #fff;
+  box-shadow: 0 0 0 3px rgba(242, 171, 39, 0.85);
+  z-index: 4;
+  animation: ludo-pulse 0.9s ease-in-out infinite;
+}
+
+.ludo-token:disabled:not(.is-valid) {
+  opacity: 0.92;
+}
+
+@keyframes ludo-pulse {
+  50% {
+    transform: translate(-50%, -50%) scale(1.12);
+  }
+}
+
+.ludo-panel {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.85rem;
+  background: rgba(255, 252, 245, 0.92);
+  border: 1.5px solid rgba(138, 90, 43, 0.2);
+}
+
+.ludo-panel__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ludo-dice {
+  min-width: 3rem;
+  min-height: 3rem;
+  border-radius: 0.65rem;
+  border: 2px solid #5c3a1a;
+  background: #fff;
+  font-size: 1.4rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.ludo-dice:disabled {
+  opacity: 0.5;
+}
+
+.ludo-seats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+}
+
+.ludo-seat {
+  padding: 0.35rem 0.45rem;
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.ludo-seat.is-turn {
+  outline: 2px solid var(--wood-deep, #5c3a1a);
+  font-weight: 800;
+}
+
+.ludo-seat--red {
+  border-left: 4px solid var(--ludo-red);
+}
+.ludo-seat--green {
+  border-left: 4px solid var(--ludo-green);
+}
+.ludo-seat--yellow {
+  border-left: 4px solid var(--ludo-yellow);
+}
+.ludo-seat--blue {
+  border-left: 4px solid var(--ludo-blue);
+}
+
+.ludo-msg {
+  font-size: 0.75rem;
+  color: var(--play-muted, #6b5344);
+  min-height: 1.2rem;
+}
+
+@media (max-width: 420px) {
+  .ludo-board__iso {
+    transform: rotateX(22deg) rotateZ(-12deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ludo-token.is-valid {
+    animation: none;
+  }
+  .ludo-board__iso {
+    transform: none;
+  }
+}

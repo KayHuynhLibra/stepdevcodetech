@@ -84,6 +84,18 @@ const SEED: GameManifest[] = [
     enabled: true,
   },
   {
+    id: "ludo",
+    nameVi: "Ludo",
+    blurb: "Cờ cá ngựa isometric — 1v3 bot · demo.",
+    status: "beta",
+    pathSuffix: "ludo",
+    kind: "other",
+    spendLane: "play",
+    coverUrl: "/assets/lobby/ludo.svg",
+    sort: 28,
+    enabled: true,
+  },
+  {
     id: "dice",
     nameVi: "Xúc xắc",
     blurb: "Sắp mở — bàn xúc xắc ảo.",

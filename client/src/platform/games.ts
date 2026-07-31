@@ -69,6 +69,18 @@ const FALLBACK: GameManifest[] = [
     sort: 30,
     enabled: true,
   },
+  {
+    id: "ludo",
+    nameVi: "Ludo",
+    blurb: "Cờ cá ngựa isometric — 1v3 bot · demo.",
+    status: "beta",
+    pathSuffix: "ludo",
+    kind: "other",
+    spendLane: "play",
+    coverUrl: "/assets/lobby/ludo.svg",
+    sort: 28,
+    enabled: true,
+  },
 ];
 
 let cache: GameManifest[] | null = null;
@@ -126,6 +138,7 @@ export function navActiveFromPath(
   if (pathname.includes("/arcana")) return "arcana";
   if (pathname.includes("/boi-bai")) return "boi";
   if (pathname.includes("/olympus")) return "olympus";
+  if (pathname.includes("/ludo")) return "ludo";
   const m = pathname.match(/\/g\/([a-z0-9_-]+)/i);
   if (m) return m[1].toLowerCase();
   return "home";

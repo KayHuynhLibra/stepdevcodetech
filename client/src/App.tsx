@@ -20,6 +20,7 @@ import {
   LazyArcanaWheelPage,
   LazyBoiBaiPage,
   LazyGamePage,
+  LazyLudoPage,
   LazyOlympusCasinoPage,
   withGameSuspense,
 } from "./platform/lazyGames";
@@ -111,9 +112,11 @@ function RequireOwnCode({
       ? `${ownHome}/boi-bai`
       : loc.pathname.endsWith("/olympus")
         ? `${ownHome}/olympus`
-        : loc.pathname.endsWith("/play")
-          ? playPath(user)
-          : ownHome;
+        : loc.pathname.endsWith("/ludo")
+          ? `${ownHome}/ludo`
+          : loc.pathname.endsWith("/play")
+            ? playPath(user)
+            : ownHome;
 
   if (role && role !== "user" && user.role !== role) {
     return <Navigate to={ownDest} replace />;
@@ -167,6 +170,20 @@ function LegacyRoleRedirect(_props: { role: UserRole }) {
   if (!getToken() || !user) return <Navigate to={AUTH_LOGIN} replace />;
   return <Navigate to={postAuthPath(user)} replace />;
 }
+
+const LUDO_ROLE_ROUTES: { path: string; role: DashRole }[] = [
+  { path: "player", role: "user" },
+  { path: "admin", role: "admin" },
+  { path: "mainadmin", role: "mainadmin" },
+  { path: "eco", role: "eco" },
+  { path: "audit", role: "audit" },
+  { path: "sgift", role: "sgift" },
+  { path: "ring", role: "ring" },
+  { path: "pm", role: "pm" },
+  { path: "deal", role: "deal" },
+  { path: "tutien", role: "tutien" },
+  { path: "mod", role: "mod" },
+];
 
 export default function App() {
   return (
@@ -668,6 +685,25 @@ export default function App() {
           </RequireOwnGuest>
         }
       />
+      <Route
+        path="/guest/:guestCode/ludo"
+        element={
+          <RequireOwnGuest>
+            {withGameSuspense(<LazyLudoPage />)}
+          </RequireOwnGuest>
+        }
+      />
+      {LUDO_ROLE_ROUTES.map(({ path, role }) => (
+        <Route
+          key={`ludo-${path}`}
+          path={`/${path}/:userCode/ludo`}
+          element={
+            <RequireOwnCode role={role}>
+              {withGameSuspense(<LazyLudoPage />)}
+            </RequireOwnCode>
+          }
+        />
+      ))}
       <Route path="/play" element={<GuestEntry />} />
 
       <Route path="/player" element={<LegacyRoleRedirect role="user" />} />

@@ -72,6 +72,7 @@ import { oracleStore } from "./oracleStore.js";
 import { platformGamesStore } from "./platformGamesStore.js";
 import { playMediaPresetsStore } from "./playMediaPresetsStore.js";
 import { mountOlympusRoutes } from "./platform/olympus.js";
+import { mountLudoRoutes } from "./ludoRoutes.js";
 import { chatConfigStore } from "./chatConfigStore.js";
 import {
   tableConfigStore,
@@ -4987,6 +4988,7 @@ io.on("connection", (socket) => {
 });
 
 mountOlympusRoutes(app);
+mountLudoRoutes(app);
 
 if (existsSync(CLIENT_DIST)) {
   app.use(express.static(CLIENT_DIST));
