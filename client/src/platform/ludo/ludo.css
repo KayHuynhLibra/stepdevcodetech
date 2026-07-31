@@ -193,6 +193,128 @@
   font-weight: 600;
 }
 
+.ludo-board {
+  width: 100%;
+  max-width: 22rem;
+  margin: 0.5rem auto;
+}
+
+.ludo-board__face {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 0.55rem;
+  background: var(--ludo-board-bg);
+  border: 3px solid var(--ludo-board-border);
+  box-shadow:
+    0 12px 28px rgba(40, 20, 8, 0.35),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+
+.ludo-board__quad {
+  position: absolute;
+  width: 40%;
+  height: 40%;
+  opacity: 0.55;
+}
+
+.ludo-board__quad--red {
+  left: 0;
+  bottom: 0;
+  background: var(--ludo-red);
+}
+
+.ludo-board__quad--green {
+  right: 0;
+  bottom: 0;
+  background: var(--ludo-green);
+}
+
+.ludo-board__quad--yellow {
+  right: 0;
+  top: 0;
+  background: var(--ludo-yellow);
+}
+
+.ludo-board__quad--blue {
+  left: 0;
+  top: 0;
+  background: var(--ludo-blue);
+}
+
+.ludo-board__cross {
+  position: absolute;
+  inset: 20%;
+  background:
+    linear-gradient(var(--ludo-cross), var(--ludo-cross)) center/20% 100% no-repeat,
+    linear-gradient(var(--ludo-cross), var(--ludo-cross)) center/100% 20% no-repeat;
+  opacity: 0.95;
+}
+
+.ludo-safe {
+  position: absolute;
+  width: 4.5%;
+  height: 4.5%;
+  margin: -2.25%;
+  border-radius: 50%;
+  background: var(--ludo-safe-bg);
+  border: 1px solid rgba(120, 80, 20, 0.45);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.ludo-token {
+  position: absolute;
+  width: 7.5%;
+  height: 7.5%;
+  margin: 0;
+  padding: 0;
+  border-radius: 50% 50% 40% 40%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  transform: translate(-50%, -50%);
+  font-size: 0.55rem;
+  font-weight: 800;
+  color: #fff;
+  cursor: default;
+  box-shadow:
+    0 3px 0 rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  z-index: 2;
+}
+
+.ludo-token--red {
+  background: linear-gradient(160deg, #ff8a7a, var(--ludo-red));
+}
+.ludo-token--green {
+  background: linear-gradient(160deg, #7dffb0, var(--ludo-green));
+}
+.ludo-token--yellow {
+  background: linear-gradient(160deg, #ffe08a, var(--ludo-yellow));
+  color: #1a1208;
+}
+.ludo-token--blue {
+  background: linear-gradient(160deg, #9ec0ff, var(--ludo-blue));
+}
+
+.ludo-token.is-valid {
+  cursor: pointer;
+  outline: 2px solid #fff;
+  box-shadow: 0 0 0 3px rgba(242, 171, 39, 0.85);
+  z-index: 4;
+  animation: ludo-pulse 0.9s ease-in-out infinite;
+}
+
+.ludo-token:disabled:not(.is-valid) {
+  opacity: 0.92;
+}
+
+@keyframes ludo-pulse {
+  50% {
+    transform: translate(-50%, -50%) scale(1.12);
+  }
+}
+
 .ludo-panel {
   display: grid;
   gap: 0.45rem;
@@ -318,7 +440,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ludo-dice.is-ready,
-  .ludo-hand {
+  .ludo-hand,
+  .ludo-token.is-valid {
     animation: none;
   }
 }

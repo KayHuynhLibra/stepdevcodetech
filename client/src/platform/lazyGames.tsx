@@ -17,7 +17,12 @@ const PREFETCH: Record<string, () => Promise<{ default: ComponentType }>> = {
   arcana: () => import("../pages/ArcanaWheelPage"),
   "boi-bai": () => import("../pages/BoiBaiPage"),
   olympus: () => import("../pages/OlympusCasinoPage"),
-  ludo: () => import("../pages/LudoPage"),
+  ludo: () => {
+    void import("../platform/ludo/preferLiteBoard").then((m) =>
+      m.prefetchLudo3D(),
+    );
+    return import("../pages/LudoPage");
+  },
 };
 
 const warmed = new Set<string>();

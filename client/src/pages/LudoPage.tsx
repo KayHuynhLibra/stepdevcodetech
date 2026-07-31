@@ -1,18 +1,16 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getStoredUser, getToken } from "../auth";
 import { AppShell } from "../components/AppShell";
 import { GameChrome } from "../components/GameChrome";
 import { ensureGuestCode, getGuestCode } from "../guest";
+import { LudoBoard } from "../platform/ludo/LudoBoard";
+import { prefetchLudo3D } from "../platform/ludo/preferLiteBoard";
 import {
   LUDO_THEMES,
   normalizeThemeId,
   type LudoThemeId,
 } from "../platform/ludo/themes";
 import "../platform/ludo/ludo.css";
-
-const LazyLudoBoard = lazy(() =>
-  import("../platform/ludo/LudoBoard").then((m) => ({ default: m.LudoBoard })),
-);
 
 type LudoColor = "red" | "green" | "yellow" | "blue";
 
@@ -70,6 +68,10 @@ export default function LudoPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    prefetchLudo3D();
+  }, []);
 
   const activeTheme = room
     ? normalizeThemeId(room.themeId)
@@ -264,25 +266,17 @@ export default function LudoPage() {
           </div>
         ) : (
           <>
-            <Suspense
-              fallback={
-                <div className="ludo-board3d ludo-board3d--loading">
-                  Đang tải bàn 3D…
-                </div>
+            <LudoBoard
+              tokens={room.tokens}
+              validTokenIds={
+                isMyTurn && room.phase === "wait_pick"
+                  ? room.validTokenIds
+                  : []
               }
-            >
-              <LazyLudoBoard
-                tokens={room.tokens}
-                validTokenIds={
-                  isMyTurn && room.phase === "wait_pick"
-                    ? room.validTokenIds
-                    : []
-                }
-                onPick={(id) => void pick(id)}
-                myColor={mySeat?.color}
-                themeId={activeTheme}
-              />
-            </Suspense>
+              onPick={(id) => void pick(id)}
+              myColor={mySeat?.color}
+              themeId={activeTheme}
+            />
             <div className="ludo-panel">
               <div className="ludo-panel__row">
                 <div>
