@@ -30,9 +30,9 @@ export type LudoCosmetics = {
   viewMode: LudoViewMode;
 };
 
-/** Demo art — `/public/ludo/pawns/king-red.png` (admin upload ghi đè). */
+/** Demo art — BG đã tách (`/public/ludo/pawns/clam-boy.png`; admin ghi đè). */
 export const DEMO_PAWN_URLS: Partial<Record<LudoPawnColor, string>> = {
-  red: "/ludo/pawns/king-red.png",
+  red: "/ludo/pawns/clam-boy.png",
 };
 
 const DEFAULTS: LudoCosmetics = {
