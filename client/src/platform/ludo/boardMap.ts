@@ -10,6 +10,8 @@ export type WorldPos = [number, number, number];
 export const GRID = 15;
 export const CELL = 1;
 export const BOARD_HALF = ((GRID - 1) / 2) * CELL; // 7
+/** Outer wood slab size used by R3F mesh (grid + rim). */
+export const BOARD_WORLD_SIZE = GRID * CELL + 0.6;
 export const PAWN_Y = 0.55;
 
 export type LudoColor = "red" | "green" | "yellow" | "blue";
@@ -109,7 +111,7 @@ const HOME_CR: Record<LudoColor, [number, number][]> = {
 const HOME_CENTER_CR: [number, number] = [7, 7];
 
 /** Yard pads — Red BL, Green TL, Yellow TR, Blue BR (near starts). */
-const BASE_CR: Record<LudoColor, [number, number][]> = {
+export const BASE_CR: Record<LudoColor, [number, number][]> = {
   red: [
     [1.5, 10.5],
     [3.5, 10.5],

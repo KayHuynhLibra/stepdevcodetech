@@ -19,7 +19,7 @@ const PREFETCH: Record<string, () => Promise<{ default: ComponentType }>> = {
   olympus: () => import("../pages/OlympusCasinoPage"),
   ludo: () => {
     void import("../platform/ludo/preferLiteBoard").then((m) =>
-      m.prefetchLudo3D(),
+      m.prefetchLudo3D(m.readLudoBoardMode()),
     );
     return import("../pages/LudoPage");
   },

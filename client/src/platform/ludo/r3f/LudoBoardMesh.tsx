@@ -13,7 +13,9 @@ import {
   startTileColor,
   type LudoColor,
 } from "../boardMap";
+import type { LudoPlayerColors } from "../cosmeticsCatalog";
 import type { LudoThemeId } from "../themes";
+import { LudoGltfModel } from "./LudoGltfModel";
 import { themeMaterials } from "./themeMaterials";
 
 const TILE_H = 0.12;
@@ -29,18 +31,20 @@ function TrackTile({
   col,
   row,
   trackColor,
+  colors,
 }: {
   col: number;
   row: number;
   trackColor: string;
+  colors: LudoPlayerColors;
 }) {
   const [x, , z] = gridToWorld(col, row, TILE_Y);
   const start = startTileColor(col, row);
   const home = homeColumnColor(col, row);
   const color = start
-    ? PLAYER_COLORS[start]
+    ? colors[start]
     : home
-      ? PLAYER_COLORS[home]
+      ? colors[home]
       : trackColor;
   const size = CELL * 0.92;
   return (
@@ -53,41 +57,32 @@ function TrackTile({
 
 function BasePlatform({
   color,
+  colors,
 }: {
   color: LudoColor;
+  colors: LudoPlayerColors;
 }) {
   const b = BASE_PLATFORMS[color];
   const [x, , z] = gridToWorld(b.col0 + 2.5, b.row0 + 2.5, 0);
   const w = 6 * CELL * 0.98;
   const h = 0.18;
+  const hex = colors[color];
   return (
     <group>
       <mesh position={[x, h / 2, z]} castShadow receiveShadow>
         <boxGeometry args={[w, h, w]} />
-        <meshStandardMaterial
-          color={PLAYER_COLORS[color]}
-          roughness={0.5}
-          metalness={0.08}
-        />
+        <meshStandardMaterial color={hex} roughness={0.5} metalness={0.08} />
       </mesh>
       <mesh position={[x, h + 0.02, z]} receiveShadow>
         <boxGeometry args={[w * 0.72, 0.04, w * 0.72]} />
         <meshStandardMaterial color="#eceff1" roughness={0.7} />
       </mesh>
       {YARD_PADS.map(([dc, dr], i) => {
-        const [px, , pz] = gridToWorld(
-          b.col0 + dc,
-          b.row0 + dr,
-          h + 0.06,
-        );
+        const [px, , pz] = gridToWorld(b.col0 + dc, b.row0 + dr, h + 0.06);
         return (
           <mesh key={i} position={[px, h + 0.06, pz]} receiveShadow castShadow>
             <cylinderGeometry args={[0.32, 0.36, 0.1, 24]} />
-            <meshStandardMaterial
-              color={PLAYER_COLORS[color]}
-              roughness={0.4}
-              metalness={0.1}
-            />
+            <meshStandardMaterial color={hex} roughness={0.4} metalness={0.1} />
           </mesh>
         );
       })}
@@ -132,16 +127,22 @@ function HomeWedge({
   );
 }
 
-function CenterHome({ woodDark }: { woodDark: string }) {
+function CenterHome({
+  woodDark,
+  colors,
+}: {
+  woodDark: string;
+  colors: LudoPlayerColors;
+}) {
   const [x, , z] = gridToWorld(7, 7, 0);
   const size = 3 * CELL * 0.95;
   const half = size / 2;
   const tipY = 0.42;
   const wedges = [
-    { color: PLAYER_COLORS.red, rotY: 0 }, // +Z bottom
-    { color: PLAYER_COLORS.green, rotY: -Math.PI / 2 }, // −X left
-    { color: PLAYER_COLORS.yellow, rotY: Math.PI }, // −Z top
-    { color: PLAYER_COLORS.blue, rotY: Math.PI / 2 }, // +X right
+    { color: colors.red, rotY: 0 },
+    { color: colors.green, rotY: -Math.PI / 2 },
+    { color: colors.yellow, rotY: Math.PI },
+    { color: colors.blue, rotY: Math.PI / 2 },
   ];
   return (
     <group position={[x, 0.12, z]}>
@@ -149,9 +150,9 @@ function CenterHome({ woodDark }: { woodDark: string }) {
         <boxGeometry args={[size, 0.06, size]} />
         <meshStandardMaterial color={woodDark} roughness={0.6} />
       </mesh>
-      {wedges.map((w) => (
+      {wedges.map((w, i) => (
         <HomeWedge
-          key={w.color}
+          key={i}
           color={w.color}
           rotY={w.rotY}
           half={half}
@@ -184,11 +185,16 @@ function BoardArtPlane({ url, size }: { url: string; size: number }) {
 export function LudoBoardMesh({
   themeId,
   boardUrl,
+  boardModelUrl,
+  playerColors,
 }: {
   themeId: LudoThemeId;
   boardUrl?: string;
+  boardModelUrl?: string | null;
+  playerColors?: LudoPlayerColors;
 }) {
   const mats = themeMaterials(themeId);
+  const colors = playerColors ?? PLAYER_COLORS;
   const tiles = useMemo(() => {
     const list: { col: number; row: number }[] = [];
     for (let row = 0; row < GRID; row++) {
@@ -200,8 +206,9 @@ export function LudoBoardMesh({
   }, []);
 
   const boardSize = GRID * CELL + 0.6;
-  const colors = Object.keys(BASE_PLATFORMS) as LudoColor[];
+  const seatColors = Object.keys(BASE_PLATFORMS) as LudoColor[];
   const art = (boardUrl || "").trim();
+  const model = (boardModelUrl || "").trim();
 
   return (
     <group>
@@ -214,14 +221,22 @@ export function LudoBoardMesh({
         <meshStandardMaterial color={mats.woodDark} roughness={0.8} />
       </mesh>
 
-      {art ? (
+      {model ? (
+        <Suspense fallback={null}>
+          <LudoGltfModel
+            url={model}
+            scale={boardSize * 0.085}
+            position={[0, 0.12, 0]}
+          />
+        </Suspense>
+      ) : art ? (
         <Suspense fallback={null}>
           <BoardArtPlane url={art} size={boardSize} />
         </Suspense>
       ) : (
         <>
-          {colors.map((c) => (
-            <BasePlatform key={c} color={c} />
+          {seatColors.map((c) => (
+            <BasePlatform key={c} color={c} colors={colors} />
           ))}
 
           {tiles.map(({ col, row }) => (
@@ -230,10 +245,11 @@ export function LudoBoardMesh({
               col={col}
               row={row}
               trackColor={mats.track}
+              colors={colors}
             />
           ))}
 
-          <CenterHome woodDark={mats.woodDark} />
+          <CenterHome woodDark={mats.woodDark} colors={colors} />
 
           {SUIT_MARKS.map((m, i) => {
             const [x, , z] = gridToWorld(m.col, m.row, TILE_Y + TILE_H / 2 + 0.06);

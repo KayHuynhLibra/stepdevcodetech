@@ -1,10 +1,11 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
-import { useCursor, useTexture } from "@react-three/drei";
+import { Billboard, useCursor, useTexture } from "@react-three/drei";
 import type { ThreeEvent } from "@react-three/fiber";
 import type { Group } from "three";
 import { SRGBColorSpace } from "three";
 import type { WorldPos } from "../boardMap";
+import { LudoGltfModel } from "./LudoGltfModel";
 
 type Props = {
   id: string;
@@ -14,6 +15,7 @@ type Props = {
   mine: boolean;
   onPick: (id: string) => void;
   imageUrl?: string;
+  modelUrl?: string | null;
   reduceFx?: boolean;
 };
 
@@ -21,10 +23,51 @@ function PawnSprite({ url }: { url: string }) {
   const tex = useTexture(url);
   tex.colorSpace = SRGBColorSpace;
   return (
-    <mesh position={[0, 0.45, 0]} castShadow>
-      <planeGeometry args={[0.55, 0.7]} />
-      <meshStandardMaterial map={tex} transparent roughness={0.5} />
-    </mesh>
+    <Billboard follow position={[0, 0.55, 0]}>
+      <mesh castShadow>
+        <planeGeometry args={[0.72, 0.95]} />
+        <meshStandardMaterial
+          map={tex}
+          transparent
+          depthWrite={false}
+          roughness={0.55}
+          metalness={0}
+        />
+      </mesh>
+    </Billboard>
+  );
+}
+
+function ProceduralPawn({
+  color,
+  valid,
+  mine,
+}: {
+  color: string;
+  valid: boolean;
+  mine: boolean;
+}) {
+  return (
+    <>
+      <mesh position={[0, 0.12, 0]} castShadow receiveShadow>
+        <cylinderGeometry args={[0.22, 0.28, 0.24, 16]} />
+        <meshStandardMaterial
+          color={color}
+          roughness={0.45}
+          metalness={0.15}
+          emissive={valid ? color : "#000000"}
+          emissiveIntensity={valid ? 0.35 : mine ? 0.08 : 0}
+        />
+      </mesh>
+      <mesh position={[0, 0.32, 0]} castShadow>
+        <cylinderGeometry args={[0.12, 0.18, 0.22, 12]} />
+        <meshStandardMaterial color={color} roughness={0.45} metalness={0.15} />
+      </mesh>
+      <mesh position={[0, 0.52, 0]} castShadow>
+        <sphereGeometry args={[0.18, 20, 16]} />
+        <meshStandardMaterial color={color} roughness={0.35} metalness={0.2} />
+      </mesh>
+    </>
   );
 }
 
@@ -36,6 +79,7 @@ export function LudoPawn({
   mine,
   onPick,
   imageUrl,
+  modelUrl,
   reduceFx,
 }: Props) {
   const group = useRef<Group>(null);
@@ -86,6 +130,7 @@ export function LudoPawn({
   };
 
   const art = (imageUrl || "").trim();
+  const model = (modelUrl || "").trim();
 
   return (
     <group
@@ -99,27 +144,12 @@ export function LudoPawn({
         <Suspense fallback={null}>
           <PawnSprite url={art} />
         </Suspense>
+      ) : model ? (
+        <Suspense fallback={<ProceduralPawn color={color} valid={valid} mine={mine} />}>
+          <LudoGltfModel url={model} tint={color} scale={0.55} position={[0, 0, 0]} />
+        </Suspense>
       ) : (
-        <>
-          <mesh position={[0, 0.12, 0]} castShadow receiveShadow>
-            <cylinderGeometry args={[0.22, 0.28, 0.24, 16]} />
-            <meshStandardMaterial
-              color={color}
-              roughness={0.45}
-              metalness={0.15}
-              emissive={valid ? color : "#000000"}
-              emissiveIntensity={valid ? 0.35 : mine ? 0.08 : 0}
-            />
-          </mesh>
-          <mesh position={[0, 0.32, 0]} castShadow>
-            <cylinderGeometry args={[0.12, 0.18, 0.22, 12]} />
-            <meshStandardMaterial color={color} roughness={0.45} metalness={0.15} />
-          </mesh>
-          <mesh position={[0, 0.52, 0]} castShadow>
-            <sphereGeometry args={[0.18, 20, 16]} />
-            <meshStandardMaterial color={color} roughness={0.35} metalness={0.2} />
-          </mesh>
-        </>
+        <ProceduralPawn color={color} valid={valid} mine={mine} />
       )}
     </group>
   );

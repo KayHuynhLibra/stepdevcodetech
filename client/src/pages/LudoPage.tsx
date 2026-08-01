@@ -1,13 +1,40 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { getStoredUser, getToken } from "../auth";
 import { AppShell } from "../components/AppShell";
+import { BottomSheet } from "../components/BottomSheet";
 import { GameChrome } from "../components/GameChrome";
 import { ensureGuestCode, getGuestCode } from "../guest";
 import { useApplyPlayMediaPresets } from "../hooks/useApplyPlayMediaPresets";
-import { useLudoCosmetics } from "../hooks/useLudoCosmetics";
+import {
+  resolvePlayerColors,
+  useLudoCosmetics,
+} from "../hooks/useLudoCosmetics";
 import { useSfx } from "../hooks/useSfx";
 import { LudoBoard } from "../platform/ludo/LudoBoard";
-import { prefetchLudo3D } from "../platform/ludo/preferLiteBoard";
+import {
+  LUDO_VIEW_MODE_CYCLE,
+  LUDO_VIEW_MODE_LABEL,
+  type LudoViewMode,
+} from "../platform/ludo/cosmeticsCatalog";
+import {
+  prefetchLudo3D,
+  preferLiteBoard,
+  readLudoBoardMode,
+  writeLudoBoardMode,
+  type LudoBoardMode,
+} from "../platform/ludo/preferLiteBoard";
+import {
+  readLudoViewModeOverride,
+  resolveViewMode,
+  writeLudoViewModeOverride,
+} from "../platform/ludo/ludoViewMode";
 import {
   LUDO_THEMES,
   normalizeThemeId,
@@ -74,6 +101,13 @@ export default function LudoPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [boardMode, setBoardMode] = useState<LudoBoardMode>(() =>
+    readLudoBoardMode(),
+  );
+  const [viewOverride, setViewOverride] = useState<LudoViewMode | null>(() =>
+    readLudoViewModeOverride(),
+  );
+  const [viewPopupOpen, setViewPopupOpen] = useState(false);
   const prevSnap = useRef<{
     tokens: Record<string, number>;
     dice: number | null;
@@ -82,9 +116,26 @@ export default function LudoPage() {
     tickedAt: number;
   }>({ tokens: {}, dice: null, lastEvent: null, status: null, tickedAt: 0 });
 
+  const usingLite = preferLiteBoard(boardMode);
+  const viewMode = resolveViewMode(cosmetics.viewMode, viewOverride);
+
   useEffect(() => {
-    prefetchLudo3D();
-  }, []);
+    prefetchLudo3D(boardMode);
+  }, [boardMode]);
+
+  const toggleBoard3d = () => {
+    const next: LudoBoardMode = usingLite ? "3d" : "lite";
+    writeLudoBoardMode(next);
+    setBoardMode(next);
+    if (next === "3d") prefetchLudo3D("3d");
+  };
+
+  const pickViewMode = (next: LudoViewMode) => {
+    writeLudoViewModeOverride(next);
+    setViewOverride(next);
+    setViewPopupOpen(false);
+    playSfx("ui");
+  };
 
   useEffect(() => {
     if (!room) return;
@@ -256,6 +307,11 @@ export default function LudoPage() {
   const showHand =
     isMyTurn && room?.phase === "wait_roll" && room.status === "playing";
 
+  const palette = useMemo(
+    () => resolvePlayerColors(cosmetics),
+    [cosmetics],
+  );
+
   useEffect(() => {
     if (!isMyTurn || !room || room.status !== "playing") return;
     if (leftSec > 5 || leftSec <= 0) return;
@@ -267,7 +323,18 @@ export default function LudoPage() {
 
   return (
     <AppShell maxWidth="md">
-      <div className="ludo-page px-3 pb-8 pt-2" data-theme={activeTheme}>
+      <div
+        className="ludo-page px-3 pb-8 pt-2"
+        data-theme={activeTheme}
+        style={
+          {
+            "--ludo-red": palette.red,
+            "--ludo-green": palette.green,
+            "--ludo-yellow": palette.yellow,
+            "--ludo-blue": palette.blue,
+          } as CSSProperties
+        }
+      >
         <GameChrome
           title="Ludo"
           active="ludo"
@@ -344,6 +411,8 @@ export default function LudoPage() {
               myColor={mySeat?.color}
               themeId={activeTheme}
               cosmetics={cosmetics}
+              boardMode={boardMode}
+              viewMode={viewMode}
             />
             <div className="ludo-panel">
               <div className="ludo-panel__row">
@@ -384,6 +453,28 @@ export default function LudoPage() {
                   >
                     {room.dice ?? "?"}
                   </button>
+                  <button
+                    type="button"
+                    className={`ludo-mute ${!usingLite ? "is-on" : ""}`}
+                    onClick={toggleBoard3d}
+                    title={
+                      usingLite
+                        ? "Bật bàn 3D (tải thêm ~1MB, máy yếu có thể lag)"
+                        : "Về bàn 2D nhẹ"
+                    }
+                  >
+                    {usingLite ? "3D" : "2D"}
+                  </button>
+                  {!usingLite ? (
+                    <button
+                      type="button"
+                      className={`ludo-mute ${viewMode !== "orbit" ? "is-on" : ""}`}
+                      onClick={() => setViewPopupOpen(true)}
+                      title="Khóa / mở xoay · góc nhìn"
+                    >
+                      {LUDO_VIEW_MODE_LABEL[viewMode].short}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="ludo-mute"
@@ -434,6 +525,42 @@ export default function LudoPage() {
           </>
         )}
       </div>
+
+      <BottomSheet
+        open={viewPopupOpen && !usingLite}
+        title="Góc nhìn 3D"
+        onClose={() => setViewPopupOpen(false)}
+        heightClass="max-h-[55vh]"
+        shellClass="sheet-shell-light"
+        backdropClass="bg-black/40"
+      >
+        <div className="ludo-view-popup space-y-2 px-1 pb-2">
+          <p className="text-[11px] text-[var(--play-muted)]">
+            Khóa màn hình hoặc mở xoay bàn. Lựa chọn lưu trên máy bạn.
+          </p>
+          {LUDO_VIEW_MODE_CYCLE.map((id) => {
+            const meta = LUDO_VIEW_MODE_LABEL[id];
+            const on = viewMode === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                className={`ludo-view-opt ${on ? "is-on" : ""}`}
+                onClick={() => pickViewMode(id)}
+              >
+                <span className="ludo-view-opt__row">
+                  <span className="ludo-view-opt__badge">{meta.short}</span>
+                  <span className="ludo-view-opt__title">{meta.title}</span>
+                  <span className="ludo-view-opt__lock">
+                    {meta.locked ? "Khóa xoay" : "Mở xoay"}
+                  </span>
+                </span>
+                <span className="ludo-view-opt__hint">{meta.hint}</span>
+              </button>
+            );
+          })}
+        </div>
+      </BottomSheet>
     </AppShell>
   );
 }

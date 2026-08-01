@@ -1,5 +1,31 @@
-/** Mobile / Save-Data → CSS board (skip ~1MB Three.js). */
-export function preferLiteBoard(): boolean {
+/** Board render mode — persisted for mobile opt-in to 3D. */
+export type LudoBoardMode = "auto" | "lite" | "3d";
+
+const STORAGE_KEY = "ludo_board_mode_v1";
+
+export function readLudoBoardMode(): LudoBoardMode {
+  if (typeof window === "undefined") return "auto";
+  try {
+    const v = localStorage.getItem(STORAGE_KEY);
+    if (v === "lite" || v === "3d" || v === "auto") return v;
+  } catch {
+    /* ignore */
+  }
+  return "auto";
+}
+
+export function writeLudoBoardMode(mode: LudoBoardMode): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, mode);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Heuristic: mobile / Save-Data → prefer CSS (unless user forced 3d). */
+export function preferLiteBoard(mode: LudoBoardMode = "auto"): boolean {
+  if (mode === "lite") return true;
+  if (mode === "3d") return false;
   if (typeof window === "undefined") return true;
   try {
     const conn = (
@@ -17,7 +43,8 @@ export function preferLiteBoard(): boolean {
   return window.matchMedia("(max-width: 720px), (pointer: coarse)").matches;
 }
 
-export function prefetchLudo3D(): void {
-  if (preferLiteBoard()) return;
+export function prefetchLudo3D(mode?: LudoBoardMode): void {
+  const m = mode ?? readLudoBoardMode();
+  if (preferLiteBoard(m)) return;
   void import("./r3f/LudoBoard3D");
 }

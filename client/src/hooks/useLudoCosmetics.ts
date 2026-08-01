@@ -1,21 +1,52 @@
 import { useEffect, useState } from "react";
 import { api } from "../auth";
 import { invalidatePlayMediaPresetsCache } from "./useApplyPlayMediaPresets";
+import { PLAYER_COLORS, type LudoColor } from "../platform/ludo/boardMap";
+import {
+  isLudoPaletteId,
+  isLudoViewMode,
+  LUDO_BOARD_MODELS,
+  LUDO_PAWN_MODELS,
+  paletteColors,
+  resolveCatalogModelUrl,
+  type LudoPaletteId,
+  type LudoPlayerColors,
+  type LudoViewMode,
+} from "../platform/ludo/cosmeticsCatalog";
 
-export type LudoPawnColor = "red" | "green" | "yellow" | "blue";
+export type LudoPawnColor = LudoColor;
 
 export type LudoCosmetics = {
   boardUrl: string;
   pawnUrls: Partial<Record<LudoPawnColor, string>>;
   diceUrl: string;
   reduceFx: boolean;
+  paletteId: LudoPaletteId;
+  playerColors: Partial<Record<LudoPawnColor, string>>;
+  pawnModelId: string;
+  pawnModelUrl: string;
+  boardModelId: string;
+  boardModelUrl: string;
+  viewMode: LudoViewMode;
+};
+
+/** Demo art — `/public/ludo/pawns/king-red.png` (admin upload ghi đè). */
+export const DEMO_PAWN_URLS: Partial<Record<LudoPawnColor, string>> = {
+  red: "/ludo/pawns/king-red.png",
 };
 
 const DEFAULTS: LudoCosmetics = {
   boardUrl: "",
-  pawnUrls: {},
+  pawnUrls: { ...DEMO_PAWN_URLS },
   diceUrl: "",
   reduceFx: false,
+  paletteId: "classic",
+  playerColors: {},
+  pawnModelId: "procedural",
+  pawnModelUrl: "",
+  boardModelId: "procedural",
+  boardModelUrl: "",
+  viewMode: "orbit",
 };
 
 type GameMediaPreset = {
@@ -23,24 +54,59 @@ type GameMediaPreset = {
   pawnUrls?: Partial<Record<LudoPawnColor, string>>;
   diceUrl?: string;
   reduceFx?: boolean;
+  paletteId?: string;
+  playerColors?: Partial<Record<LudoPawnColor, string>>;
+  pawnModelId?: string;
+  pawnModelUrl?: string;
+  boardModelId?: string;
+  boardModelUrl?: string;
+  viewMode?: string;
 };
 
 let cached: LudoCosmetics | null = null;
 let cacheAt = 0;
 const CACHE_MS = 45_000;
 
+function withDemoPawns(
+  urls: Partial<Record<LudoPawnColor, string>>,
+): Partial<Record<LudoPawnColor, string>> {
+  const out = { ...urls };
+  for (const c of ["red", "green", "yellow", "blue"] as const) {
+    if (!out[c] && DEMO_PAWN_URLS[c]) out[c] = DEMO_PAWN_URLS[c];
+  }
+  return out;
+}
+
 function fromPreset(g?: GameMediaPreset | null): LudoCosmetics {
-  if (!g) return { ...DEFAULTS, pawnUrls: {} };
+  if (!g) {
+    return {
+      ...DEFAULTS,
+      pawnUrls: { ...DEMO_PAWN_URLS },
+      playerColors: {},
+    };
+  }
   const pawnUrls: Partial<Record<LudoPawnColor, string>> = {};
   for (const c of ["red", "green", "yellow", "blue"] as const) {
     const u = g.pawnUrls?.[c]?.trim();
     if (u) pawnUrls[c] = u;
   }
+  const playerColors: Partial<Record<LudoPawnColor, string>> = {};
+  for (const c of ["red", "green", "yellow", "blue"] as const) {
+    const hex = g.playerColors?.[c]?.trim();
+    if (hex) playerColors[c] = hex;
+  }
   return {
     boardUrl: (g.boardUrl || "").trim(),
-    pawnUrls,
+    pawnUrls: withDemoPawns(pawnUrls),
     diceUrl: (g.diceUrl || "").trim(),
     reduceFx: !!g.reduceFx,
+    paletteId: isLudoPaletteId(g.paletteId) ? g.paletteId : "classic",
+    playerColors,
+    pawnModelId: (g.pawnModelId || "procedural").trim() || "procedural",
+    pawnModelUrl: (g.pawnModelUrl || "").trim(),
+    boardModelId: (g.boardModelId || "procedural").trim() || "procedural",
+    boardModelUrl: (g.boardModelUrl || "").trim(),
+    viewMode: isLudoViewMode(g.viewMode) ? g.viewMode : "orbit",
   };
 }
 
@@ -55,7 +121,7 @@ async function loadLudoCosmetics(force = false): Promise<LudoCosmetics> {
     cacheAt = Date.now();
     return cached;
   } catch {
-    return cached ?? { ...DEFAULTS, pawnUrls: {} };
+    return cached ?? { ...DEFAULTS, pawnUrls: { ...DEMO_PAWN_URLS }, playerColors: {} };
   }
 }
 
@@ -65,10 +131,43 @@ export function invalidateLudoCosmeticsCache() {
   invalidatePlayMediaPresetsCache();
 }
 
-/** Cosmetics Ludo từ P+M presets — bàn / quân / xúc xắc. */
+export function resolvePlayerColors(
+  cosmetics?: LudoCosmetics | null,
+): LudoPlayerColors {
+  const base = paletteColors(cosmetics?.paletteId ?? "classic");
+  const override = cosmetics?.playerColors ?? {};
+  return {
+    red: override.red || base.red,
+    green: override.green || base.green,
+    yellow: override.yellow || base.yellow,
+    blue: override.blue || base.blue,
+  };
+}
+
+export function resolvePawnModelUrl(
+  cosmetics?: LudoCosmetics | null,
+): string | null {
+  return resolveCatalogModelUrl(
+    LUDO_PAWN_MODELS,
+    cosmetics?.pawnModelId,
+    cosmetics?.pawnModelUrl,
+  );
+}
+
+export function resolveBoardModelUrl(
+  cosmetics?: LudoCosmetics | null,
+): string | null {
+  return resolveCatalogModelUrl(
+    LUDO_BOARD_MODELS,
+    cosmetics?.boardModelId,
+    cosmetics?.boardModelUrl,
+  );
+}
+
+/** Cosmetics Ludo từ P+M presets — bàn / quân / xúc xắc / palette / camera. */
 export function useLudoCosmetics() {
   const [cosmetics, setCosmetics] = useState<LudoCosmetics>(
-    () => cached ?? { ...DEFAULTS, pawnUrls: {} },
+    () => cached ?? { ...DEFAULTS, pawnUrls: { ...DEMO_PAWN_URLS }, playerColors: {} },
   );
 
   useEffect(() => {
@@ -84,4 +183,4 @@ export function useLudoCosmetics() {
   return cosmetics;
 }
 
-export { DEFAULTS as LUDO_COSMETICS_DEFAULTS };
+export { DEFAULTS as LUDO_COSMETICS_DEFAULTS, PLAYER_COLORS };

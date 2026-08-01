@@ -1,7 +1,11 @@
 import { lazy, Suspense, useMemo } from "react";
 import type { LudoCosmetics } from "../../hooks/useLudoCosmetics";
+import type { LudoViewMode } from "./cosmeticsCatalog";
 import { LudoBoardLite, type LudoTokenView } from "./LudoBoardLite";
-import { preferLiteBoard } from "./preferLiteBoard";
+import {
+  preferLiteBoard,
+  type LudoBoardMode,
+} from "./preferLiteBoard";
 import type { LudoThemeId } from "./themes";
 
 export type { LudoTokenView };
@@ -15,6 +19,8 @@ export function LudoBoard({
   myColor,
   themeId = "classic",
   cosmetics,
+  boardMode = "auto",
+  viewMode = "orbit",
 }: {
   tokens: LudoTokenView[];
   validTokenIds: string[];
@@ -22,8 +28,10 @@ export function LudoBoard({
   myColor?: string | null;
   themeId?: LudoThemeId;
   cosmetics?: LudoCosmetics;
+  boardMode?: LudoBoardMode;
+  viewMode?: LudoViewMode;
 }) {
-  const lite = useMemo(() => preferLiteBoard(), []);
+  const lite = useMemo(() => preferLiteBoard(boardMode), [boardMode]);
 
   if (lite) {
     return (
@@ -40,7 +48,9 @@ export function LudoBoard({
   return (
     <Suspense
       fallback={
-        <div className="ludo-board3d ludo-board3d--loading">Đang tải bàn 3D…</div>
+        <div className="ludo-board3d ludo-board3d--loading">
+          Đang tải bàn 3D… (máy yếu có thể hơi lâu)
+        </div>
       }
     >
       <LazyLudoBoard3D
@@ -50,6 +60,7 @@ export function LudoBoard({
         myColor={myColor}
         themeId={themeId}
         cosmetics={cosmetics}
+        viewMode={viewMode}
       />
     </Suspense>
   );

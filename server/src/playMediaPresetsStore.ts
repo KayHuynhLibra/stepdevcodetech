@@ -16,6 +16,34 @@ export type PlayGameId = "tarot" | "olympus" | "arcana" | "boi" | "ludo";
 export const LUDO_PAWN_COLORS = ["red", "green", "yellow", "blue"] as const;
 export type LudoPawnColor = (typeof LUDO_PAWN_COLORS)[number];
 
+export const LUDO_PALETTE_IDS = [
+  "classic",
+  "neon",
+  "pastel",
+  "royal",
+  "ember",
+  "custom",
+] as const;
+export type LudoPaletteId = (typeof LUDO_PALETTE_IDS)[number];
+
+export const LUDO_VIEW_MODES = ["orbit", "screen", "cinema"] as const;
+export type LudoViewMode = (typeof LUDO_VIEW_MODES)[number];
+
+const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+function normalizeHex(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const t = v.trim().slice(0, 16);
+  return HEX_RE.test(t) ? t : undefined;
+}
+
+function normalizeModelId(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const t = v.trim().toLowerCase().slice(0, 32);
+  if (!t || !/^[a-z0-9_-]+$/.test(t)) return undefined;
+  return t;
+}
+
 export const OLYMPUS_SYMBOL_IDS = [
   "ruby",
   "sapphire",
@@ -63,6 +91,20 @@ export type GameMediaPreset = {
   pawnUrls?: Partial<Record<LudoPawnColor, string>>;
   /** Ludo: mặt xúc xắc (optional) */
   diceUrl?: string;
+  /** Ludo: palette màu ghế (admin cosmetics) */
+  paletteId?: LudoPaletteId;
+  /** Ludo: hex override theo ghế (custom / partial) */
+  playerColors?: Partial<Record<LudoPawnColor, string>>;
+  /** Ludo: catalog id model quân (`procedural` = mesh mặc định) */
+  pawnModelId?: string;
+  /** Ludo: URL .glb/.gltf quân (override catalog) */
+  pawnModelUrl?: string;
+  /** Ludo: catalog id model bàn */
+  boardModelId?: string;
+  /** Ludo: URL .glb/.gltf bàn */
+  boardModelUrl?: string;
+  /** Ludo: camera 3D mặc định — orbit xoay / screen hướng màn hình */
+  viewMode?: LudoViewMode;
   sfx?: {
     masterMuted?: boolean;
     volumes?: Partial<Record<"master" | "ui" | "tarot" | "olympus", number>>;
@@ -184,6 +226,41 @@ function normalizeGamePreset(raw: unknown): GameMediaPreset {
       }
     }
     if (Object.keys(urls).length) out.pawnUrls = urls;
+  }
+  if (
+    typeof o.paletteId === "string" &&
+    (LUDO_PALETTE_IDS as readonly string[]).includes(o.paletteId)
+  ) {
+    out.paletteId = o.paletteId as LudoPaletteId;
+  }
+  if (o.playerColors && typeof o.playerColors === "object") {
+    const colors: NonNullable<GameMediaPreset["playerColors"]> = {};
+    const raw = o.playerColors as Record<string, unknown>;
+    for (const id of LUDO_PAWN_COLORS) {
+      const hex = normalizeHex(raw[id]);
+      if (hex) colors[id] = hex;
+    }
+    if (Object.keys(colors).length) out.playerColors = colors;
+  }
+  {
+    const pid = normalizeModelId(o.pawnModelId);
+    if (pid) out.pawnModelId = pid;
+  }
+  if (typeof o.pawnModelUrl === "string") {
+    out.pawnModelUrl = o.pawnModelUrl.trim().slice(0, 200);
+  }
+  {
+    const bid = normalizeModelId(o.boardModelId);
+    if (bid) out.boardModelId = bid;
+  }
+  if (typeof o.boardModelUrl === "string") {
+    out.boardModelUrl = o.boardModelUrl.trim().slice(0, 200);
+  }
+  if (
+    typeof o.viewMode === "string" &&
+    (LUDO_VIEW_MODES as readonly string[]).includes(o.viewMode)
+  ) {
+    out.viewMode = o.viewMode as LudoViewMode;
   }
   if (o.sfx && typeof o.sfx === "object") {
     const s = o.sfx as Record<string, unknown>;
@@ -320,6 +397,15 @@ class PlayMediaPresetsStore {
         if (v === "") delete (mergedPawnUrls as Record<string, string>)[k];
       }
     }
+    const mergedPlayerColors = {
+      ...(cur.playerColors ?? {}),
+      ...(patch.playerColors ?? {}),
+    };
+    if (patch.playerColors) {
+      for (const [k, v] of Object.entries(patch.playerColors)) {
+        if (v === "") delete (mergedPlayerColors as Record<string, string>)[k];
+      }
+    }
     const mergedStyles = {
       ...(cur.sfx?.styles ?? {}),
       ...(patch.sfx?.styles ?? {}),
@@ -338,6 +424,7 @@ class PlayMediaPresetsStore {
       ...patch,
       symbolUrls: mergedSymbolUrls,
       pawnUrls: mergedPawnUrls,
+      playerColors: mergedPlayerColors,
       sfx: {
         ...cur.sfx,
         ...patch.sfx,
