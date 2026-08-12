@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { homePath, type AuthUser } from "../auth";
 import { formatXu } from "../cards";
+import { formatGem } from "../gem";
 import {
   ensureGuestCode,
   getGuestCode,
@@ -11,7 +12,7 @@ import { TableNav } from "./TableNav";
 
 /**
  * Header bàn chơi dùng chung — play-first mobile:
- * Lobby · tên bàn · xu · (tools) · TableNav (luôn hiện, cuộn ngang trên mobile).
+ * Lobby · tên bàn · xu · gem · (tools) · TableNav.
  */
 export function GameChrome({
   title,
@@ -20,9 +21,10 @@ export function GameChrome({
   guestCode,
   playBalance,
   socialBalance,
+  gemBalance,
   tools,
   banner,
-  showNav = true,
+  showNav = false,
 }: {
   title: string;
   active?: string;
@@ -30,6 +32,7 @@ export function GameChrome({
   guestCode?: string | null;
   playBalance?: number | null;
   socialBalance?: number | null;
+  gemBalance?: number | null;
   tools?: ReactNode;
   banner?: ReactNode;
   showNav?: boolean;
@@ -43,12 +46,16 @@ export function GameChrome({
     user?.balance ??
     null;
   const social = socialBalance ?? user?.balances?.social ?? null;
+  const gem = gemBalance ?? user?.gemBalance ?? null;
 
   return (
     <header className="game-chrome">
       <div className="game-chrome__row">
         <Link to={lobbyTo} className="game-chrome__lobby">
-          ← Lobby
+          <span className="game-chrome__lobby-arrow" aria-hidden>
+            ←
+          </span>
+          Lobby
         </Link>
         <div className="game-chrome__title min-w-0 flex-1">
           <p className="play-heading truncate text-sm leading-tight sm:text-base">
@@ -66,6 +73,12 @@ export function GameChrome({
                   <span className="text-[var(--wood-deep)]">
                     {formatXu(social)}
                   </span>
+                </span>
+              ) : null}
+              {gem != null && user ? (
+                <span className="game-chrome__gem">
+                  Gem{" "}
+                  <span className="text-[var(--wood-deep)]">{formatGem(gem)}</span>
                 </span>
               ) : null}
             </p>

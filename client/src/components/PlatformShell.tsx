@@ -142,7 +142,7 @@ export function PlatformShell({
                   SOFIAORE
                 </Link>
                 <p className="mt-0.5 text-[11px] text-[var(--cream)]/70">
-                  {subtitle ?? "Nền tảng giải trí / học tập · xu ảo"}
+                  {subtitle ?? "Nền tảng giải trí · xu ảo"}
                 </p>
               </div>
               <Link

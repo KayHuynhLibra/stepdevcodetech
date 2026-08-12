@@ -7,7 +7,8 @@ import { invalidateLudoCosmeticsCache } from "../hooks/useLudoCosmetics";
 import { invalidatePlayMediaPresetsCache } from "../hooks/useApplyPlayMediaPresets";
 import { SfxAdminPanel } from "./SfxAdminPanel";
 import { BoiCosmeticsAdmin } from "./BoiCosmeticsAdmin";
-import { LudoCosmeticsAdmin } from "./LudoCosmeticsAdmin";
+
+type PmSubTab = "sfx" | "boi" | "cover" | "hero";
 
 type GameId = "tarot" | "olympus" | "arcana" | "boi" | "ludo";
 
@@ -55,7 +56,7 @@ type GameMediaPreset = {
 
 const GAME_OPTS: { id: GameId; label: string }[] = [
   { id: "tarot", label: "Tarot" },
-  { id: "olympus", label: "Olympus" },
+  { id: "olympus", label: "BoltPeak" },
   { id: "arcana", label: "Arcana" },
   { id: "boi", label: "Bói bài" },
   { id: "ludo", label: "Ludo" },
@@ -66,12 +67,16 @@ export function PmAssetsPanel({
   main,
   onMsg,
   onOpenCosmetics,
+  onOpenLudoAdmin,
 }: {
   me: AuthUser | null;
   main: boolean;
   onMsg: (s: string) => void;
   onOpenCosmetics: (userId: string) => void;
+  /** Ludo cosmetics & economy — tab Ludo (hub Kinh tế). */
+  onOpenLudoAdmin?: () => void;
 }) {
+  const [sub, setSub] = useState<PmSubTab>("sfx");
   const [games, setGames] = useState<GameManifest[]>([]);
   const [presets, setPresets] = useState<Partial<Record<GameId, GameMediaPreset>>>(
     {},
@@ -186,7 +191,7 @@ export function PmAssetsPanel({
       <div className="app-panel p-3">
         <p className="play-heading text-sm">P+M · Ảnh & SFX</p>
         <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-          Cover lobby, hero/avatar bàn, preset SFX/FX, Cosmetics.
+          Âm thanh · cosmetics Bói · cover lobby · hero/symbol.
           {main ? " Mainadmin + role P+M." : ""}
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
@@ -205,22 +210,57 @@ export function PmAssetsPanel({
           >
             Xem 78 lá Tarot
           </button>
+          {onOpenLudoAdmin ? (
+            <button
+              type="button"
+              onClick={onOpenLudoAdmin}
+              className="rounded-full bg-white px-3 py-1.5 text-[11px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/15"
+            >
+              Ludo cosmetics & tiền →
+            </button>
+          ) : null}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {(
+            [
+              ["sfx", "SFX"],
+              ["boi", "Bói"],
+              ["cover", "Lobby cover"],
+              ["hero", "Hero / Symbol"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={`rounded-full px-3 py-1.5 text-[11px] font-bold ${
+                sub === id
+                  ? "bg-[var(--wood-deep)] text-white"
+                  : "bg-white ring-1 ring-[var(--wood-deep)]/15"
+              }`}
+              onClick={() => setSub(id)}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
-      <SfxAdminPanel
-        canEdit={main || !!me}
-        onMsg={onMsg}
-        presets={presets}
-        setPresets={setPresets}
-        busy={busy}
-        setBusy={setBusy}
-      />
+      {sub === "sfx" ? (
+        <SfxAdminPanel
+          canEdit={main || !!me}
+          onMsg={onMsg}
+          presets={presets}
+          setPresets={setPresets}
+          busy={busy}
+          setBusy={setBusy}
+        />
+      ) : null}
 
-      <BoiCosmeticsAdmin canEdit={main || !!me} onMsg={onMsg} />
+      {sub === "boi" ? (
+        <BoiCosmeticsAdmin canEdit={main || !!me} onMsg={onMsg} />
+      ) : null}
 
-      <LudoCosmeticsAdmin canEdit={main || !!me} onMsg={onMsg} />
-
+      {sub === "cover" ? (
       <div className="app-panel p-3">
         <p className="play-heading text-sm">Ảnh cover lobby</p>
         {busy && !games.length ? (
@@ -300,7 +340,10 @@ export function PmAssetsPanel({
           ))}
         </ul>
       </div>
+      ) : null}
 
+      {sub === "hero" ? (
+      <>
       <div className="app-panel p-3">
         <p className="play-heading text-sm">Hero / Zeus per-game</p>
         <ul className="mt-2 space-y-2">
@@ -383,7 +426,7 @@ export function PmAssetsPanel({
       </div>
 
       <div className="app-panel p-3">
-        <p className="play-heading text-sm">Olympus · Symbols</p>
+        <p className="play-heading text-sm">BoltPeak · Symbols</p>
         <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
           Icon strip / reel (ruby → zeus / wild). Để trống = SVG mặc định.
         </p>
@@ -458,7 +501,7 @@ export function PmAssetsPanel({
       </div>
 
       <div className="app-panel p-3">
-        <p className="play-heading text-sm">Olympus · Sấm & SFX</p>
+        <p className="play-heading text-sm">BoltPeak · Sấm & SFX</p>
         <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
           Kiểu đường sấm từ Zeus xuống ô (thẳng / zigzag / uốn sóng) + độ đậm.
         </p>
@@ -513,9 +556,11 @@ export function PmAssetsPanel({
           }
           className="mt-2 rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-45"
         >
-          Lưu sấm Olympus
+          Lưu sấm BoltPeak
         </button>
       </div>
+      </>
+      ) : null}
 
       <ImageUploadPopup
         open={!!upload}
@@ -660,7 +705,7 @@ export function PmAssetsPanel({
               [
                 ["ui", "UI"],
                 ["tarot", "Tarot"],
-                ["olympus", "Olympus"],
+                ["olympus", "BoltPeak"],
               ] as const
             ).map(([ch, label]) => (
               <div key={ch} className="flex items-center gap-2">

@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../auth";
 import { formatXu } from "../cards";
 import {
@@ -21,6 +22,10 @@ interface GiftHubSheetProps {
   busy?: boolean;
   /** Gợi ý người nhận (click từ hồ sơ / online) */
   preset?: GiftHubTarget | null;
+  /** Prefill quà (vd. từ Shop quà) */
+  initialGiftKey?: string | null;
+  /** Link tới trang Shop quà đầy đủ */
+  shopHref?: string | null;
   onlineHints?: GiftHubTarget[];
   onClose: () => void;
   onSend: (opts: {
@@ -62,6 +67,8 @@ export function GiftHubSheet({
   balance,
   busy,
   preset,
+  initialGiftKey,
+  shopHref,
   onlineHints = [],
   onClose,
   onSend,
@@ -88,6 +95,22 @@ export function GiftHubSheet({
       setToCode("");
       setToUsername("");
     }
+    const pickFrom = (gifts: GiftItem[]) => {
+      const want = initialGiftKey
+        ? gifts.find((g) => g.key === initialGiftKey)
+        : undefined;
+      if (want) {
+        setCategory(want.category);
+        setGiftKey(want.key);
+        return;
+      }
+      const firstCat =
+        GIFT_CATEGORIES.find((c) => gifts.some((g) => g.category === c.id))
+          ?.id ?? "warm";
+      setCategory(firstCat);
+      const first = gifts.find((g) => g.category === firstCat) ?? gifts[0]!;
+      setGiftKey(first.key);
+    };
     let cancelled = false;
     void api<{ ok: true; gifts: GiftItem[] }>("/api/gifts")
       .then((r) => {
@@ -95,30 +118,22 @@ export function GiftHubSheet({
         const gifts = (r.gifts ?? []).filter((g) => g.enabled !== false);
         if (gifts.length) {
           setCatalog(gifts);
-          const firstCat =
-            GIFT_CATEGORIES.find((c) => gifts.some((g) => g.category === c.id))
-              ?.id ?? "warm";
-          setCategory(firstCat);
-          const first =
-            gifts.find((g) => g.category === firstCat) ?? gifts[0]!;
-          setGiftKey(first.key);
+          pickFrom(gifts);
         } else {
           setCatalog(DEFAULT_GIFTS);
-          setCategory("warm");
-          setGiftKey(DEFAULT_GIFTS[0]!.key);
+          pickFrom(DEFAULT_GIFTS);
         }
       })
       .catch(() => {
         if (cancelled) return;
         setCatalog(DEFAULT_GIFTS);
-        setCategory("warm");
-        setGiftKey(DEFAULT_GIFTS[0]!.key);
+        pickFrom(DEFAULT_GIFTS);
         setLoadNote("Dùng catalog mặc định (API quà lỗi)");
       });
     return () => {
       cancelled = true;
     };
-  }, [open, preset]);
+  }, [open, preset, initialGiftKey]);
 
   const byCategory = useMemo(
     () => catalog.filter((g) => g.category === category),
@@ -177,13 +192,24 @@ export function GiftHubSheet({
               Xu ảo P2P · không tiền thật · tối đa 12 chữ số xu / lần
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="shrink-0 rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-bold text-white/80"
-          >
-            Đóng
-          </button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {shopHref ? (
+              <Link
+                to={shopHref}
+                onClick={onClose}
+                className="rounded-full bg-[var(--jade-deep)]/80 px-2.5 py-1 text-[10px] font-bold text-white ring-1 ring-[var(--jade)]/40"
+              >
+                Shop
+              </Link>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-bold text-white/80"
+            >
+              Đóng
+            </button>
+          </div>
         </div>
 
         <form onSubmit={submit} className="space-y-3 px-3 py-3">

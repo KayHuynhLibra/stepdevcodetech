@@ -1,12 +1,14 @@
 # hackmyapp (lab bảo mật — local)
 
-Folder **`hackmyapp/`** trên máy bạn dùng để **học kiểm thử phòng thủ** trên app SOFIAORE / https://stepkay.codes (local + domain tự vận hành).
+Folder **`hackmyapp/`** trên máy bạn dùng để **học kiểm thử phòng thủ** trên app SOFIAORE (local và/hoặc domain **bạn tự vận hành**).
 
 ## GitHub chỉ giữ file này
 
-Chi tiết lab (checklist, script `safe-check`, mẫu thông báo ISP, nhật ký, phương thức A1–A14…) **không push** — đã `.gitignore` (`hackmyapp/*`, trừ README này).
+Chi tiết lab (checklist, script `safe-check`, mẫu thông báo ISP, nhật ký, phương thức…) **không push** — đã `.gitignore` (`hackmyapp/*`, trừ README này).
 
 Clone repo → tự tạo lại lab local nếu cần, hoặc copy từ máy operator.
+
+Xem bảng up/không up: [`docs/GITHUB_UPLOAD.md`](../docs/GITHUB_UPLOAD.md).
 
 ## Mục đích
 
@@ -25,4 +27,5 @@ npm run hackmyapp:local
 
 - Threat model nội bộ: folder `cybersecurity/` (cũng gitignore)  
 - Privacy / Terms công khai: [`PRIVACY.md`](../PRIVACY.md), [`TERMS.md`](../TERMS.md)  
+- **US compliance study (tracked):** [`docs/study-us-compliance.md`](../docs/study-us-compliance.md)  
 - Redeploy: `npm run redeploy`

@@ -99,6 +99,98 @@ function FloatingPetals({
   );
 }
 
+function GardenTree({ x, z, scale }: { x: number; z: number; scale: number }) {
+  return (
+    <group position={[x, 0, z]} scale={scale}>
+      <mesh position={[0, 0.55, 0]} castShadow>
+        <cylinderGeometry args={[0.12, 0.18, 1.1, 6]} />
+        <meshStandardMaterial color="#6d4c41" roughness={0.9} />
+      </mesh>
+      <mesh position={[0, 1.35, 0]} castShadow>
+        <sphereGeometry args={[0.72, 10, 10]} />
+        <meshStandardMaterial color="#43a047" roughness={0.75} />
+      </mesh>
+      <mesh position={[0.35, 1.55, 0.2]} castShadow>
+        <sphereGeometry args={[0.42, 8, 8]} />
+        <meshStandardMaterial color="#66bb6a" roughness={0.7} />
+      </mesh>
+    </group>
+  );
+}
+
+function NeonPillar({
+  x,
+  z,
+  color,
+}: {
+  x: number;
+  z: number;
+  color: string;
+}) {
+  return (
+    <group position={[x, 0, z]}>
+      <mesh position={[0, 1.1, 0]} castShadow>
+        <boxGeometry args={[0.28, 2.2, 0.28]} />
+        <meshStandardMaterial
+          color="#1a1030"
+          emissive={color}
+          emissiveIntensity={0.55}
+          metalness={0.4}
+          roughness={0.35}
+        />
+      </mesh>
+      <mesh position={[0, 2.35, 0]}>
+        <sphereGeometry args={[0.18, 10, 10]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={1.2}
+          roughness={0.2}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+function FrostCrystal({
+  x,
+  z,
+  scale,
+}: {
+  x: number;
+  z: number;
+  scale: number;
+}) {
+  return (
+    <group position={[x, 0.05, z]} scale={scale} rotation={[0, x * 0.4, 0.15]}>
+      <mesh position={[0, 0.7, 0]} castShadow>
+        <octahedronGeometry args={[0.45, 0]} />
+        <meshStandardMaterial
+          color="#e1f5fe"
+          emissive="#81d4fa"
+          emissiveIntensity={0.35}
+          metalness={0.55}
+          roughness={0.2}
+          transparent
+          opacity={0.88}
+        />
+      </mesh>
+      <mesh position={[0.22, 0.35, 0.1]} rotation={[0.3, 0.5, 0.2]}>
+        <octahedronGeometry args={[0.22, 0]} />
+        <meshStandardMaterial
+          color="#b3e5fc"
+          emissive="#4fc3f7"
+          emissiveIntensity={0.25}
+          metalness={0.5}
+          roughness={0.25}
+          transparent
+          opacity={0.8}
+        />
+      </mesh>
+    </group>
+  );
+}
+
 /** Garden / patterned backdrop around the Ludo table. */
 export function LudoAtmosphere({
   themeId,
@@ -114,10 +206,24 @@ export function LudoAtmosphere({
         ? ["#ff6b1a", "#ffd27a", "#c45aff", "#5b8cff"]
         : themeId === "soccer"
           ? ["#fff", "#ffeb3b", "#e53935", "#42a5f5"]
-          : ["#ff8a80", "#ffd54f", "#ce93d8", "#81d4fa", "#f8bbd0"];
-    const center = themeId === "arena" ? "#ffeb99" : "#fff59d";
-    return Array.from({ length: FLOWER_RING }, (_, i) => {
-      const a = (i / FLOWER_RING) * Math.PI * 2;
+          : themeId === "garden"
+            ? ["#81c784", "#fff176", "#ff8a65", "#4db6ac"]
+            : themeId === "neon"
+              ? ["#e040fb", "#00e5ff", "#ffea00", "#7c4dff"]
+              : themeId === "frost"
+                ? ["#e3f2fd", "#90caf9", "#ffffff", "#b3e5fc"]
+                : ["#ff8a80", "#ffd54f", "#ce93d8", "#81d4fa", "#f8bbd0"];
+    const center =
+      themeId === "arena"
+        ? "#ffeb99"
+        : themeId === "neon"
+          ? "#00e5ff"
+          : themeId === "frost"
+            ? "#e1f5fe"
+            : "#fff59d";
+    const count = themeId === "garden" ? FLOWER_RING : Math.min(FLOWER_RING, 14);
+    return Array.from({ length: count }, (_, i) => {
+      const a = (i / count) * Math.PI * 2;
       const r = 10.2 + (i % 3) * 0.55;
       return {
         x: Math.cos(a) * r,
@@ -129,10 +235,59 @@ export function LudoAtmosphere({
     });
   }, [themeId]);
 
+  const envProps = useMemo(() => {
+    if (themeId === "garden") {
+      return Array.from({ length: 8 }, (_, i) => {
+        const a = (i / 8) * Math.PI * 2 + 0.2;
+        const r = 12.2 + (i % 2) * 0.8;
+        return { kind: "tree" as const, x: Math.cos(a) * r, z: Math.sin(a) * r, scale: 0.85 + (i % 3) * 0.15 };
+      });
+    }
+    if (themeId === "neon") {
+      const colors = ["#e040fb", "#00e5ff", "#ffea00", "#7c4dff"];
+      return Array.from({ length: 8 }, (_, i) => {
+        const a = (i / 8) * Math.PI * 2;
+        const r = 11.6;
+        return {
+          kind: "neon" as const,
+          x: Math.cos(a) * r,
+          z: Math.sin(a) * r,
+          color: colors[i % colors.length]!,
+        };
+      });
+    }
+    if (themeId === "frost") {
+      return Array.from({ length: 10 }, (_, i) => {
+        const a = (i / 10) * Math.PI * 2 + 0.15;
+        const r = 11.4 + (i % 3) * 0.55;
+        return {
+          kind: "crystal" as const,
+          x: Math.cos(a) * r,
+          z: Math.sin(a) * r,
+          scale: 0.7 + (i % 4) * 0.18,
+        };
+      });
+    }
+    return [] as const;
+  }, [themeId]);
+
   const petalColors =
     themeId === "arena"
       ? ["#ff8a65", "#ffd54f", "#b39ddb"]
-      : ["#ffcdd2", "#fff9c4", "#e1bee7", "#bbdefb"];
+      : themeId === "garden"
+        ? ["#c5e1a5", "#fff59d", "#ffcc80"]
+        : themeId === "neon"
+          ? ["#e040fb", "#00e5ff", "#ffea00"]
+          : themeId === "frost"
+            ? ["#e3f2fd", "#ffffff", "#90caf9"]
+            : ["#ffcdd2", "#fff9c4", "#e1bee7", "#bbdefb"];
+
+  const sparkleCount =
+    themeId === "arena" || themeId === "neon"
+      ? 28
+      : themeId === "frost"
+        ? 32
+        : 20;
 
   return (
     <group>
@@ -157,7 +312,7 @@ export function LudoAtmosphere({
           color={mats.accent}
           roughness={0.6}
           emissive={mats.accent}
-          emissiveIntensity={0.12}
+          emissiveIntensity={themeId === "neon" ? 0.35 : 0.12}
         />
       </mesh>
 
@@ -165,16 +320,29 @@ export function LudoAtmosphere({
         <Flower key={i} {...f} />
       ))}
 
+      {envProps.map((p, i) => {
+        if (p.kind === "tree") {
+          return <GardenTree key={`t${i}`} x={p.x} z={p.z} scale={p.scale} />;
+        }
+        if (p.kind === "neon") {
+          return <NeonPillar key={`n${i}`} x={p.x} z={p.z} color={p.color} />;
+        }
+        if (p.kind === "crystal") {
+          return <FrostCrystal key={`c${i}`} x={p.x} z={p.z} scale={p.scale} />;
+        }
+        return null;
+      })}
+
       {!reduceFx ? (
         <>
           <FloatingPetals colors={petalColors} reduceFx={reduceFx} />
           <Sparkles
-            count={themeId === "arena" ? 48 : 36}
+            count={sparkleCount}
             scale={[22, 6, 22]}
             position={[0, 2.5, 0]}
-            size={themeId === "arena" ? 3.2 : 2.4}
-            speed={0.35}
-            opacity={0.55}
+            size={themeId === "arena" || themeId === "neon" ? 3.2 : 2.4}
+            speed={themeId === "frost" ? 0.22 : 0.35}
+            opacity={themeId === "frost" ? 0.7 : 0.55}
             color={mats.sparkle}
           />
         </>

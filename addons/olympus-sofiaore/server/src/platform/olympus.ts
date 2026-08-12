@@ -841,10 +841,10 @@ export function mountOlympusRoutes(app: Express): void {
     const cfg = loadPlatformConfig();
     res.json({
       ok: true,
-      title: "Olympus Casino",
-      aka: "Tên gọi phổ biến tại VN cho Gates of Olympus — bản demo gốc SOFIAORE",
+      title: "BoltPeak",
+      aka: "BoltPeak · tumble slot demo giáo dục SOFIAORE (original)",
       officialNote:
-        "Gates of Olympus là thương hiệu của nhà phát hành gốc; bàn này là slot tumble giáo dục/demo, không dùng asset/IP của họ.",
+        "Original SOFIAORE educational demo — not affiliated with any third-party slot brand. Virtual xu only.",
       cols: OLYMPUS_COLS,
       rows: OLYMPUS_ROWS,
       symbols: SYMBOLS,

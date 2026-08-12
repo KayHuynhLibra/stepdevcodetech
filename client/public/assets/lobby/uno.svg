@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-label="HueRush">
+  <defs>
+    <linearGradient id="hr-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a4d3e"/>
+      <stop offset="100%" stop-color="#0d2818"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="320" fill="url(#hr-bg)"/>
+  <rect x="60" y="80" width="70" height="100" rx="8" fill="#e63946" transform="rotate(-12 95 130)"/>
+  <rect x="125" y="70" width="70" height="100" rx="8" fill="#f4d35e" transform="rotate(6 160 120)"/>
+  <rect x="190" y="85" width="70" height="100" rx="8" fill="#457b9d" transform="rotate(18 225 135)"/>
+  <text x="95" y="135" font-family="Arial,sans-serif" font-size="28" font-weight="800" fill="#fff" transform="rotate(-12 95 130)">H</text>
+  <text x="160" y="125" font-family="Arial,sans-serif" font-size="28" font-weight="800" fill="#1a1a1a" transform="rotate(6 160 120)">R</text>
+  <text x="225" y="140" font-family="Arial,sans-serif" font-size="22" font-weight="800" fill="#fff" transform="rotate(18 225 135)">4</text>
+  <text x="160" y="260" text-anchor="middle" font-family="Arial,sans-serif" font-size="26" font-weight="800" fill="#f4d35e">HueRush</text>
+</svg>

@@ -6,6 +6,9 @@ import {
   isCultivationRank,
   type CultivationRank,
 } from "./cultivationRanks.js";
+import { vipStakeBonusMul } from "./statusBenefits.js";
+import { computeVipTier } from "./vipTiers.js";
+import { xuLevelsStore } from "./xuLevelsStore.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, "..", "data");
@@ -102,11 +105,28 @@ export function personalTutienMax(
   return m.luyen_khi;
 }
 
-/** Trần đặt / lá (Tarot) hoặc chip max (Arcana) cho user. */
+/** Trần đặt / lá (Tarot) hoặc chip max (Arcana) cho user — VIP nhân hệ số, Quý tộc không đụng. */
 export function maxStakeForUser(
-  user: { role: string; cultivationRank?: string } | null | undefined,
+  user:
+    | {
+        role: string;
+        cultivationRank?: string;
+        roundsPlayed?: number;
+        vipGranted?: boolean;
+        vipTier?: number;
+      }
+    | null
+    | undefined,
 ): number {
-  return personalTutienMax(user) ?? PUBLIC_MAX_STAKE;
+  const base = personalTutienMax(user) ?? PUBLIC_MAX_STAKE;
+  const vipTier =
+    user && typeof user.vipTier === "number"
+      ? user.vipTier
+      : user
+        ? computeVipTier(user)
+        : 0;
+  const mul = vipStakeBonusMul(vipTier);
+  return Math.min(ABSOLUTE_MAX_STAKE, Math.floor(base * mul));
 }
 
 export function effectiveStakeTiersForUser(
@@ -144,7 +164,11 @@ export function isStakeAllowedForUser(
 export function quickAddsForUser(
   user: { role: string; cultivationRank?: string } | null | undefined,
 ): number[] {
-  const publicAdds = [10, 100, 1_000, 10_000, 100_000, 1_000_000];
+  const fromXu = xuLevelsStore.forGame("tarot");
+  const publicAdds =
+    fromXu.length > 0
+      ? fromXu
+      : [10, 100, 1_000, 10_000, 100_000, 1_000_000];
   return effectiveStakeTiersForUser(user, publicAdds);
 }
 
@@ -267,10 +291,15 @@ class TutienStakeLimitsStore {
   }
 
   /** Payload for /api/auth/me and game UI */
-  limitsForUser(user: {
-    role: string;
-    cultivationRank?: string;
-  } | null) {
+  limitsForUser(
+    user: {
+      role: string;
+      cultivationRank?: string;
+      roundsPlayed?: number;
+      vipGranted?: boolean;
+      vipTier?: number;
+    } | null,
+  ) {
     const maxStakePerCard = maxStakeForUser(user);
     return {
       maxStakePerCard,

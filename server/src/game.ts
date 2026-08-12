@@ -44,6 +44,7 @@ import {
 import { vaultStore } from "./vaultStore.js";
 import { feePocketStore } from "./feePocketStore.js";
 import { cultivationStore } from "./cultivationStore.js";
+import { chatDiscountPct, tiersFromUser } from "./statusBenefits.js";
 import { maxStakeForUser } from "./tutienStakeLimitsStore.js";
 import { guestPlayStore, GUEST_PLAY_LIMIT_MS } from "./guestPlayStore.js";
 import { chatConfigStore } from "./chatConfigStore.js";
@@ -89,6 +90,10 @@ import {
   type TarotStarEntry,
   type TopAcePreview,
 } from "./types.js";
+import {
+  guestBalanceServerOnly,
+  guestClientBalanceCap,
+} from "./systemOps.js";
 
 function readBotTargetCount(): number {
   const raw = process.env.BOT_TARGET_COUNT;
@@ -508,15 +513,20 @@ export class GameEngine {
       guestPlayRemainingMs = play.remainingMs;
     }
 
-    let guestBalanceHint =
+    // Guest balance: mặc định server-only (carried / STARTING).
+    // GUEST_BALANCE_SERVER_ONLY=0 → chấp nhận client hint trong trần thấp.
+    let guestBalanceHint: number | undefined;
+    if (
       !linked &&
+      !guestBalanceServerOnly() &&
       opts?.guestBalance != null &&
       Number.isFinite(opts.guestBalance)
-        ? Math.max(
-            0,
-            Math.min(Math.floor(opts.guestBalance), 50_000_000),
-          )
-        : undefined;
+    ) {
+      guestBalanceHint = Math.max(
+        0,
+        Math.min(Math.floor(opts.guestBalance), guestClientBalanceCap()),
+      );
+    }
 
     if (guestPlayExpired) {
       guestBalanceHint = undefined;
@@ -1143,7 +1153,15 @@ export class GameEngine {
     }
     const costBase = chatConfigStore.costForMode(mode);
     const rank = authStore.getCultivationRank(player.userId);
-    const cost = cultivationStore.chatCostAfterDiscount(costBase, rank);
+    const cultPct =
+      cultivationStore.getBenefit(rank ?? null)?.chatDiscountPct ?? 0;
+    const rec = authStore.getById(player.userId);
+    const { vipTier, nobilityTier } = tiersFromUser(rec ?? {});
+    const discPct = chatDiscountPct(vipTier, nobilityTier, cultPct);
+    const cost = Math.max(
+      0,
+      Math.floor(costBase * (1 - discPct / 100)),
+    );
 
     let text: string | null = null;
     const sid = String(opts.id ?? "").trim();

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>Ops khẩn — StepKay</title>
+    <style>
+      :root {
+        --ink: #2a1a0c;
+        --muted: #6b5340;
+        --bg0: #1a120c;
+        --bg1: #2c1c12;
+        --panel: #fff8ef;
+        --line: rgba(42, 26, 12, 0.14);
+        --ok: #1b7a3d;
+        --bad: #b42318;
+        --warn: #b54708;
+        --accent: #5c3310;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(1200px 600px at 10% -10%, #4a2a14 0%, transparent 55%),
+          linear-gradient(165deg, var(--bg0), var(--bg1));
+        padding: 1.25rem;
+      }
+      .wrap {
+        max-width: 42rem;
+        margin: 0 auto;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.35rem;
+        letter-spacing: 0.02em;
+        color: #f6e8d4;
+      }
+      .sub {
+        margin: 0.35rem 0 1rem;
+        color: #cbb79a;
+        font-size: 0.85rem;
+        line-height: 1.4;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 0.85rem;
+        padding: 0.9rem 1rem;
+        margin-bottom: 0.75rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+      }
+      .panel h2 {
+        margin: 0 0 0.55rem;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      label {
+        display: block;
+        font-size: 0.75rem;
+        font-weight: 700;
+        margin-bottom: 0.25rem;
+      }
+      input {
+        width: 100%;
+        padding: 0.55rem 0.65rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--line);
+        font-size: 0.95rem;
+        margin-bottom: 0.55rem;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+      }
+      button {
+        appearance: none;
+        border: 0;
+        border-radius: 0.55rem;
+        padding: 0.55rem 0.85rem;
+        font-weight: 700;
+        font-size: 0.8rem;
+        cursor: pointer;
+        background: var(--accent);
+        color: #fff;
+      }
+      button.ghost {
+        background: transparent;
+        color: var(--accent);
+        border: 1px solid var(--line);
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .statgrid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.45rem;
+      }
+      @media (min-width: 520px) {
+        .statgrid {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+      }
+      .stat {
+        background: rgba(42, 26, 12, 0.05);
+        border: 1px solid var(--line);
+        border-radius: 0.55rem;
+        padding: 0.45rem 0.55rem;
+      }
+      .stat b {
+        display: block;
+        font-size: 0.7rem;
+        opacity: 0.65;
+      }
+      .stat span {
+        font-weight: 800;
+        font-size: 0.95rem;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .bad {
+        color: var(--bad);
+      }
+      .warn {
+        color: var(--warn);
+      }
+      ul {
+        margin: 0;
+        padding-left: 1.1rem;
+        font-size: 0.82rem;
+        line-height: 1.45;
+      }
+      li {
+        margin-bottom: 0.35rem;
+      }
+      .msg {
+        font-size: 0.8rem;
+        margin-top: 0.5rem;
+      }
+      .msg.err {
+        color: var(--bad);
+        font-weight: 700;
+      }
+      .msg.ok {
+        color: var(--ok);
+        font-weight: 700;
+      }
+      code {
+        font-size: 0.78rem;
+        background: rgba(0, 0, 0, 0.06);
+        padding: 0.05rem 0.25rem;
+        border-radius: 0.25rem;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+      a.link {
+        color: #f0d2a8;
+        font-size: 0.8rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Ops khẩn cấp</h1>
+      <p class="sub">
+        Trang tĩnh trên server — dùng khi SPA/admin React hỏng nhưng API còn sống.
+        Nếu cả Node sập: vào Railway Dashboard (Logs / Volume / Restart).
+      </p>
+      <p>
+        <a class="link" href="/health" target="_blank" rel="noopener">/health</a>
+        ·
+        <a class="link" href="/" rel="noopener">Về trang chính</a>
+      </p>
+
+      <div class="panel" id="loginPanel">
+        <h2>Đăng nhập mainadmin</h2>
+        <label for="user">Username</label>
+        <input id="user" autocomplete="username" />
+        <label for="pass">Password</label>
+        <input id="pass" type="password" autocomplete="current-password" />
+        <div class="row">
+          <button type="button" id="btnLogin">Đăng nhập</button>
+          <button type="button" class="ghost" id="btnToken">Dùng token có sẵn</button>
+        </div>
+        <p class="msg" id="loginMsg"></p>
+      </div>
+
+      <div class="panel" id="dash" hidden>
+        <h2>Trạng thái</h2>
+        <div class="statgrid" id="stats"></div>
+        <div class="row" style="margin-top: 0.65rem">
+          <button type="button" id="btnRefresh">Quét lại</button>
+          <button type="button" id="btnBackup">Sao lưu JSON</button>
+          <button type="button" class="ghost" id="btnLogout">Đăng xuất</button>
+        </div>
+        <p class="msg" id="dashMsg"></p>
+      </div>
+
+      <div class="panel" id="playbookPanel" hidden>
+        <h2>Khi web sập — làm gì</h2>
+        <ul id="playbook"></ul>
+        <p class="muted" id="offsite"></p>
+      </div>
+
+      <div class="panel" id="backupPanel" hidden>
+        <h2>Backup local gần đây</h2>
+        <ul id="backups"></ul>
+      </div>
+    </div>
+    <script src="/ops.js" defer></script>
+  </body>
+</html>

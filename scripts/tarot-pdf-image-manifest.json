@@ -1,0 +1,1016 @@
+[
+  {
+    "key": "fool",
+    "name": "THE FOOL",
+    "page": 1,
+    "xobject": "Im4",
+    "file": "/assets/oracle/tarot/fool.jpg",
+    "bytes": 27396,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "c942fc7e0e751d71ce32171435363b10"
+  },
+  {
+    "key": "magician",
+    "name": "THE MAGICIAN",
+    "page": 3,
+    "xobject": "Im11",
+    "file": "/assets/oracle/tarot/magician.jpg",
+    "bytes": 27097,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "7736abdb21950009e07f11f0ff885a9e"
+  },
+  {
+    "key": "priestess",
+    "name": "THE HIGH PRIESTESS",
+    "page": 5,
+    "xobject": "Im18",
+    "file": "/assets/oracle/tarot/priestess.jpg",
+    "bytes": 29628,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "f9ce76165a42d76c126c3c7f1acf0a4f"
+  },
+  {
+    "key": "empress",
+    "name": "THE EMPRESS",
+    "page": 7,
+    "xobject": "Im25",
+    "file": "/assets/oracle/tarot/empress.jpg",
+    "bytes": 31820,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "34f89423f3d6d03060e8d5bbaaf719ff"
+  },
+  {
+    "key": "emperor",
+    "name": "THE EMPEROR",
+    "page": 9,
+    "xobject": "Im32",
+    "file": "/assets/oracle/tarot/emperor.jpg",
+    "bytes": 30582,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "e3154f36a8cfd2eb1c578f2549cd5c3c"
+  },
+  {
+    "key": "hierophant",
+    "name": "THE HIEROPHANT",
+    "page": 11,
+    "xobject": "Im39",
+    "file": "/assets/oracle/tarot/hierophant.jpg",
+    "bytes": 31502,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "d4cf0b5212ac6e6dcb13829c1344495e"
+  },
+  {
+    "key": "lovers",
+    "name": "THE LOVERS",
+    "page": 13,
+    "xobject": "Im46",
+    "file": "/assets/oracle/tarot/lovers.jpg",
+    "bytes": 31828,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "ce02692dcc9d169e1dd1a20777739366"
+  },
+  {
+    "key": "chariot",
+    "name": "THE CHARIOT",
+    "page": 15,
+    "xobject": "Im53",
+    "file": "/assets/oracle/tarot/chariot.jpg",
+    "bytes": 30633,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "002d86691e572785b556c4590bf0e8d0"
+  },
+  {
+    "key": "strength",
+    "name": "STRENGTH",
+    "page": 17,
+    "xobject": "Im60",
+    "file": "/assets/oracle/tarot/strength.jpg",
+    "bytes": 23734,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "513965288adce7317f5bbeefbac1712b"
+  },
+  {
+    "key": "hermit",
+    "name": "THE HERMIT",
+    "page": 19,
+    "xobject": "Im67",
+    "file": "/assets/oracle/tarot/hermit.jpg",
+    "bytes": 21373,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "10b817593dd60db774d1eae6a491f1d2"
+  },
+  {
+    "key": "wheel",
+    "name": "THE WHEEL OF FORTUNE",
+    "page": 21,
+    "xobject": "Im74",
+    "file": "/assets/oracle/tarot/wheel.jpg",
+    "bytes": 30364,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "8639a8fb5b892c88a778b626e9e73695"
+  },
+  {
+    "key": "justice",
+    "name": "JUSTICE",
+    "page": 23,
+    "xobject": "Im81",
+    "file": "/assets/oracle/tarot/justice.jpg",
+    "bytes": 29041,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "f52daeabee75116b360205d7e7ca7cc0"
+  },
+  {
+    "key": "hanged",
+    "name": "THE HANGED MAN",
+    "page": 25,
+    "xobject": "Im88",
+    "file": "/assets/oracle/tarot/hanged.jpg",
+    "bytes": 21697,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "2d5a8020651a72290f6cc6f27f51e624"
+  },
+  {
+    "key": "death",
+    "name": "DEATH",
+    "page": 27,
+    "xobject": "Im95",
+    "file": "/assets/oracle/tarot/death.jpg",
+    "bytes": 30509,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "f21ffee1bb15a70219d34714068f9954"
+  },
+  {
+    "key": "temperance",
+    "name": "TEMPERANCE",
+    "page": 29,
+    "xobject": "Im102",
+    "file": "/assets/oracle/tarot/temperance.jpg",
+    "bytes": 31527,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "f5663cf12cfb2caa3ab9b64ee464bc33"
+  },
+  {
+    "key": "devil",
+    "name": "THE DEVIL",
+    "page": 31,
+    "xobject": "Im109",
+    "file": "/assets/oracle/tarot/devil.jpg",
+    "bytes": 28114,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "2fc5c0e0716343c01d523dd1d0cc4f40"
+  },
+  {
+    "key": "tower",
+    "name": "THE TOWER",
+    "page": 33,
+    "xobject": "Im116",
+    "file": "/assets/oracle/tarot/tower.jpg",
+    "bytes": 27936,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "59e0a8ec6326367ea3d9b3ea36005e4e"
+  },
+  {
+    "key": "star",
+    "name": "THE STAR",
+    "page": 35,
+    "xobject": "Im123",
+    "file": "/assets/oracle/tarot/star.jpg",
+    "bytes": 29213,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "a821143f02687262bb8c5f27d1f48ab0"
+  },
+  {
+    "key": "moon",
+    "name": "THE MOON",
+    "page": 37,
+    "xobject": "Im130",
+    "file": "/assets/oracle/tarot/moon.jpg",
+    "bytes": 29031,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "f73ac1918340d382ac8b71f75749bbc5"
+  },
+  {
+    "key": "sun",
+    "name": "THE SUN",
+    "page": 39,
+    "xobject": "Im137",
+    "file": "/assets/oracle/tarot/sun.jpg",
+    "bytes": 32542,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "752385c86d2a390c575b7673f2026320"
+  },
+  {
+    "key": "judgement",
+    "name": "JUDGEMENT",
+    "page": 41,
+    "xobject": "Im144",
+    "file": "/assets/oracle/tarot/judgement.jpg",
+    "bytes": 33060,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "815bcf3d72a101159440943c018bd764"
+  },
+  {
+    "key": "world",
+    "name": "THE WORLD",
+    "page": 43,
+    "xobject": "Im151",
+    "file": "/assets/oracle/tarot/world.jpg",
+    "bytes": 32443,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "1964b94aa1c867dc61a75880cd526a53"
+  },
+  {
+    "key": "wands_1",
+    "name": "ACE OF WANDS",
+    "page": 45,
+    "xobject": "Im158",
+    "file": "/assets/oracle/tarot/wands_1.jpg",
+    "bytes": 21390,
+    "size": [
+      182,
+      300
+    ],
+    "md5": "0f50b9be16934e460867e0e78645d164"
+  },
+  {
+    "key": "wands_2",
+    "name": "TWO OF WANDS",
+    "page": 47,
+    "xobject": "Im165",
+    "file": "/assets/oracle/tarot/wands_2.jpg",
+    "bytes": 21946,
+    "size": [
+      182,
+      300
+    ],
+    "md5": "a3e0f2c5c2e7bc34cb89cbf525dc88e9"
+  },
+  {
+    "key": "wands_3",
+    "name": "THREE OF WANDS",
+    "page": 49,
+    "xobject": "Im172",
+    "file": "/assets/oracle/tarot/wands_3.jpg",
+    "bytes": 23418,
+    "size": [
+      182,
+      300
+    ],
+    "md5": "3ec834948975a6aec95a403f3b8248a7"
+  },
+  {
+    "key": "wands_4",
+    "name": "FOUR OF WANDS",
+    "page": 51,
+    "xobject": "Im179",
+    "file": "/assets/oracle/tarot/wands_4.jpg",
+    "bytes": 25584,
+    "size": [
+      182,
+      300
+    ],
+    "md5": "beb5667e7efe5b6469960f548af29447"
+  },
+  {
+    "key": "wands_5",
+    "name": "FIVE OF WANDS",
+    "page": 53,
+    "xobject": "Im186",
+    "file": "/assets/oracle/tarot/wands_5.jpg",
+    "bytes": 26751,
+    "size": [
+      182,
+      300
+    ],
+    "md5": "befd252fcc7c407df3b34be9e6dddbdf"
+  },
+  {
+    "key": "wands_6",
+    "name": "SIX OF WANDS",
+    "page": 55,
+    "xobject": "Im193",
+    "file": "/assets/oracle/tarot/wands_6.jpg",
+    "bytes": 26510,
+    "size": [
+      182,
+      300
+    ],
+    "md5": "b5733b2e464fbf548f154d7b212ed95a"
+  },
+  {
+    "key": "wands_7",
+    "name": "SEVEN OF WANDS",
+    "page": 57,
+    "xobject": "Im200",
+    "file": "/assets/oracle/tarot/wands_7.jpg",
+    "bytes": 24051,
+    "size": [
+      182,
+      300
+    ],
+    "md5": "0d5483789f86e2712016886ac36fc568"
+  },
+  {
+    "key": "wands_8",
+    "name": "EIGHT OF WANDS",
+    "page": 59,
+    "xobject": "Im207",
+    "file": "/assets/oracle/tarot/wands_8.jpg",
+    "bytes": 24372,
+    "size": [
+      182,
+      300
+    ],
+    "md5": "46bf5de67b8dab47fcf11803ba2ac45e"
+  },
+  {
+    "key": "wands_9",
+    "name": "NINE OF WANDS",
+    "page": 61,
+    "xobject": "Im214",
+    "file": "/assets/oracle/tarot/wands_9.jpg",
+    "bytes": 26521,
+    "size": [
+      182,
+      300
+    ],
+    "md5": "3c90f31c49bb2232746a99baa3b9b29d"
+  },
+  {
+    "key": "wands_10",
+    "name": "TEN OF WANDS",
+    "page": 63,
+    "xobject": "Im221",
+    "file": "/assets/oracle/tarot/wands_10.jpg",
+    "bytes": 25543,
+    "size": [
+      182,
+      300
+    ],
+    "md5": "95e9b682dfb126e8c70c3925d8835a2b"
+  },
+  {
+    "key": "wands_11",
+    "name": "PAGE OF WANDS",
+    "page": 65,
+    "xobject": "Im228",
+    "file": "/assets/oracle/tarot/wands_11.jpg",
+    "bytes": 22337,
+    "size": [
+      182,
+      300
+    ],
+    "md5": "d7e9e6fc22eb823048496c892f9a2a65"
+  },
+  {
+    "key": "wands_12",
+    "name": "KNIGHT OF WANDS",
+    "page": 67,
+    "xobject": "Im235",
+    "file": "/assets/oracle/tarot/wands_12.jpg",
+    "bytes": 28143,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "34f28ac006ad4587c48aed253f986878"
+  },
+  {
+    "key": "wands_13",
+    "name": "QUEEN OF WANDS",
+    "page": 69,
+    "xobject": "Im242",
+    "file": "/assets/oracle/tarot/wands_13.jpg",
+    "bytes": 27609,
+    "size": [
+      182,
+      300
+    ],
+    "md5": "a517926b5c76cbde81f97b60fbb0798c"
+  },
+  {
+    "key": "wands_14",
+    "name": "KING OF WANDS",
+    "page": 71,
+    "xobject": "Im249",
+    "file": "/assets/oracle/tarot/wands_14.jpg",
+    "bytes": 28185,
+    "size": [
+      182,
+      300
+    ],
+    "md5": "dc214727d88a3e82580a8e6c0ed82d90"
+  },
+  {
+    "key": "cups_1",
+    "name": "ACE OF CUPS",
+    "page": 73,
+    "xobject": "Im256",
+    "file": "/assets/oracle/tarot/cups_1.jpg",
+    "bytes": 24437,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "f1c801b7c8b1224828500b1e3aeca7f7"
+  },
+  {
+    "key": "cups_2",
+    "name": "TWO OF CUPS",
+    "page": 75,
+    "xobject": "Im263",
+    "file": "/assets/oracle/tarot/cups_2.jpg",
+    "bytes": 26500,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "9db3d1f2c52821ada3314d9ebd5a4272"
+  },
+  {
+    "key": "cups_3",
+    "name": "THREE OF CUPS",
+    "page": 77,
+    "xobject": "Im270",
+    "file": "/assets/oracle/tarot/cups_3.jpg",
+    "bytes": 27801,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "eed808b34a5ae78f799bf573b655827a"
+  },
+  {
+    "key": "cups_4",
+    "name": "FOUR OF CUPS",
+    "page": 79,
+    "xobject": "Im277",
+    "file": "/assets/oracle/tarot/cups_4.jpg",
+    "bytes": 28608,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "4d7f44cdce327eadfc6fb6c3bb69d5f4"
+  },
+  {
+    "key": "cups_5",
+    "name": "FIVE OF CUPS",
+    "page": 81,
+    "xobject": "Im284",
+    "file": "/assets/oracle/tarot/cups_5.jpg",
+    "bytes": 20233,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "6607c418d187c3d2387704789c06ea1d"
+  },
+  {
+    "key": "cups_6",
+    "name": "SIX OF CUPS",
+    "page": 83,
+    "xobject": "Im291",
+    "file": "/assets/oracle/tarot/cups_6.jpg",
+    "bytes": 30365,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "b46d19dd65fdca2503b1223c09c9749d"
+  },
+  {
+    "key": "cups_7",
+    "name": "SEVEN OF CUPS",
+    "page": 85,
+    "xobject": "Im298",
+    "file": "/assets/oracle/tarot/cups_7.jpg",
+    "bytes": 28726,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "928f571156d38f8539e210fc47b46cad"
+  },
+  {
+    "key": "cups_8",
+    "name": "EIGHT OF CUPS",
+    "page": 87,
+    "xobject": "Im305",
+    "file": "/assets/oracle/tarot/cups_8.jpg",
+    "bytes": 24754,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "635aceed0df89a1611a093d4ff7d52ba"
+  },
+  {
+    "key": "cups_9",
+    "name": "NINE OF CUPS",
+    "page": 89,
+    "xobject": "Im312",
+    "file": "/assets/oracle/tarot/cups_9.jpg",
+    "bytes": 27600,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "6072e504f11a7b864f6b9210f0c45578"
+  },
+  {
+    "key": "cups_10",
+    "name": "TEN OF CUPS",
+    "page": 91,
+    "xobject": "Im319",
+    "file": "/assets/oracle/tarot/cups_10.jpg",
+    "bytes": 24986,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "5d70e99163c3fb8046706ca40d2736aa"
+  },
+  {
+    "key": "cups_11",
+    "name": "PAGE OF CUPS",
+    "page": 93,
+    "xobject": "Im326",
+    "file": "/assets/oracle/tarot/cups_11.jpg",
+    "bytes": 23308,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "c0a24af1eb84ca29341749cb5d5371db"
+  },
+  {
+    "key": "cups_12",
+    "name": "KNIGHT OF CUPS",
+    "page": 95,
+    "xobject": "Im333",
+    "file": "/assets/oracle/tarot/cups_12.jpg",
+    "bytes": 14093,
+    "size": [
+      140,
+      243
+    ],
+    "md5": "e7fb23c7dbce997292e8de14a078f9c7"
+  },
+  {
+    "key": "cups_13",
+    "name": "QUEEN OF CUPS",
+    "page": 97,
+    "xobject": "Im342",
+    "file": "/assets/oracle/tarot/cups_13.jpg",
+    "bytes": 28410,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "9bdbe0eb19a678369a2043aba0b117e4"
+  },
+  {
+    "key": "cups_14",
+    "name": "KING OF CUPS",
+    "page": 99,
+    "xobject": "Im349",
+    "file": "/assets/oracle/tarot/cups_14.jpg",
+    "bytes": 27653,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "e6df854cc90f20ac7da0c99af86e3f0b"
+  },
+  {
+    "key": "swords_1",
+    "name": "ACE OF SWORDS",
+    "page": 101,
+    "xobject": "Im356",
+    "file": "/assets/oracle/tarot/swords_1.jpg",
+    "bytes": 21890,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "e936c9bbb3fa766bb9f2ae6dd4f45461"
+  },
+  {
+    "key": "swords_2",
+    "name": "TWO OF SWORDS",
+    "page": 103,
+    "xobject": "Im363",
+    "file": "/assets/oracle/tarot/swords_2.jpg",
+    "bytes": 22783,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "9813b12379b3ccf68baf4d0124a41eea"
+  },
+  {
+    "key": "swords_3",
+    "name": "THREE OF SWORDS",
+    "page": 105,
+    "xobject": "Im370",
+    "file": "/assets/oracle/tarot/swords_3.jpg",
+    "bytes": 19992,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "53731a95a96b58bb4596a8adff3ae26d"
+  },
+  {
+    "key": "swords_4",
+    "name": "FOUR OF SWORDS",
+    "page": 107,
+    "xobject": "Im377",
+    "file": "/assets/oracle/tarot/swords_4.jpg",
+    "bytes": 23280,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "822e93fcb00fc92b6339cdd2f8ec8a8a"
+  },
+  {
+    "key": "swords_5",
+    "name": "FIVE OF SWORDS",
+    "page": 109,
+    "xobject": "Im384",
+    "file": "/assets/oracle/tarot/swords_5.jpg",
+    "bytes": 28698,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "354de98cede35161c72abc77ae38e901"
+  },
+  {
+    "key": "swords_6",
+    "name": "SIX OF SWORDS",
+    "page": 111,
+    "xobject": "Im391",
+    "file": "/assets/oracle/tarot/swords_6.jpg",
+    "bytes": 24423,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "9595f691eb50c160264c765f419c59b4"
+  },
+  {
+    "key": "swords_7",
+    "name": "SEVEN OF SWORDS",
+    "page": 113,
+    "xobject": "Im398",
+    "file": "/assets/oracle/tarot/swords_7.jpg",
+    "bytes": 22912,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "34596104340f72d109d5c93e4999502f"
+  },
+  {
+    "key": "swords_8",
+    "name": "EIGHT OF SWORDS",
+    "page": 115,
+    "xobject": "Im405",
+    "file": "/assets/oracle/tarot/swords_8.jpg",
+    "bytes": 25767,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "96f7b1c83ec36ba0783ef39b942ec3dc"
+  },
+  {
+    "key": "swords_9",
+    "name": "NINE OF SWORDS",
+    "page": 117,
+    "xobject": "Im412",
+    "file": "/assets/oracle/tarot/swords_9.jpg",
+    "bytes": 25599,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "80c8e5d0230fed4203ea042695ab8bd0"
+  },
+  {
+    "key": "swords_10",
+    "name": "TEN OF SWORDS",
+    "page": 119,
+    "xobject": "Im419",
+    "file": "/assets/oracle/tarot/swords_10.jpg",
+    "bytes": 25178,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "304d4023164b2b6404a4b8648dddcb96"
+  },
+  {
+    "key": "swords_11",
+    "name": "PAGE OF SWORDS",
+    "page": 121,
+    "xobject": "Im426",
+    "file": "/assets/oracle/tarot/swords_11.jpg",
+    "bytes": 27454,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "6ae63dc0b5271674ab9c3faa7038b0cf"
+  },
+  {
+    "key": "swords_12",
+    "name": "KNIGHT OF SWORDS",
+    "page": 123,
+    "xobject": "Im433",
+    "file": "/assets/oracle/tarot/swords_12.jpg",
+    "bytes": 29104,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "9c675bf5c8afb58bcbc4d4dc0ac3fe15"
+  },
+  {
+    "key": "swords_13",
+    "name": "QUEEN OF SWORDS",
+    "page": 125,
+    "xobject": "Im440",
+    "file": "/assets/oracle/tarot/swords_13.jpg",
+    "bytes": 26096,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "b5a76d1abc8a12e5d7aaf28f3d7b0844"
+  },
+  {
+    "key": "swords_14",
+    "name": "KING OF SWORDS",
+    "page": 127,
+    "xobject": "Im447",
+    "file": "/assets/oracle/tarot/swords_14.jpg",
+    "bytes": 27595,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "d462619610859661ca11d6096f939a81"
+  },
+  {
+    "key": "pentacles_1",
+    "name": "ACE OF PENTACLES",
+    "page": 129,
+    "xobject": "Im454",
+    "file": "/assets/oracle/tarot/pentacles_1.jpg",
+    "bytes": 22666,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "9056e3d4347f83ef84057d10ff961e37"
+  },
+  {
+    "key": "pentacles_2",
+    "name": "TWO OF PENTACLES",
+    "page": 131,
+    "xobject": "Im461",
+    "file": "/assets/oracle/tarot/pentacles_2.jpg",
+    "bytes": 21362,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "9387b45cc5b1543ad3dd329fb8a77cff"
+  },
+  {
+    "key": "pentacles_3",
+    "name": "THREE OF PENTACLES",
+    "page": 133,
+    "xobject": "Im468",
+    "file": "/assets/oracle/tarot/pentacles_3.jpg",
+    "bytes": 31511,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "0aaa731aebacbfb530aeca89c0741352"
+  },
+  {
+    "key": "pentacles_4",
+    "name": "FOUR OF PENTACLES",
+    "page": 135,
+    "xobject": "Im475",
+    "file": "/assets/oracle/tarot/pentacles_4.jpg",
+    "bytes": 19463,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "cedfd540163606743e45758670098dea"
+  },
+  {
+    "key": "pentacles_5",
+    "name": "FIVE OF PENTACLES",
+    "page": 137,
+    "xobject": "Im482",
+    "file": "/assets/oracle/tarot/pentacles_5.jpg",
+    "bytes": 32988,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "39c85d025cadb5447500db9f88378bb8"
+  },
+  {
+    "key": "pentacles_6",
+    "name": "SIX OF PENTACLES",
+    "page": 139,
+    "xobject": "Im489",
+    "file": "/assets/oracle/tarot/pentacles_6.jpg",
+    "bytes": 25643,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "6f9f4b5ee19eb35c39e5cc53aafe645b"
+  },
+  {
+    "key": "pentacles_7",
+    "name": "SEVEN OF PENTACLES",
+    "page": 141,
+    "xobject": "Im496",
+    "file": "/assets/oracle/tarot/pentacles_7.jpg",
+    "bytes": 27522,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "dadc303d76020c4b16fb3751fa113ceb"
+  },
+  {
+    "key": "pentacles_8",
+    "name": "EIGHT OF PENTACLES",
+    "page": 143,
+    "xobject": "Im503",
+    "file": "/assets/oracle/tarot/pentacles_8.jpg",
+    "bytes": 22594,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "a5fdb9286f0f20598118524db8a9b732"
+  },
+  {
+    "key": "pentacles_9",
+    "name": "NINE OF PENTACLES",
+    "page": 145,
+    "xobject": "Im510",
+    "file": "/assets/oracle/tarot/pentacles_9.jpg",
+    "bytes": 28378,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "fc1d493c130aa350af73621b0fbb5656"
+  },
+  {
+    "key": "pentacles_10",
+    "name": "TEN OF PENTACLES",
+    "page": 147,
+    "xobject": "Im517",
+    "file": "/assets/oracle/tarot/pentacles_10.jpg",
+    "bytes": 33133,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "a921d5eeb37a5a02095e5b045db5c31b"
+  },
+  {
+    "key": "pentacles_11",
+    "name": "PAGE OF PENTACLES",
+    "page": 149,
+    "xobject": "Im524",
+    "file": "/assets/oracle/tarot/pentacles_11.jpg",
+    "bytes": 22408,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "77fb8cfa5c206c1a5b690bcd69b027eb"
+  },
+  {
+    "key": "pentacles_12",
+    "name": "KNIGHT OF PENTACLES",
+    "page": 151,
+    "xobject": "Im531",
+    "file": "/assets/oracle/tarot/pentacles_12.jpg",
+    "bytes": 23848,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "542be1445ae1da54bc97fd90d97b6ce4"
+  },
+  {
+    "key": "pentacles_13",
+    "name": "QUEEN OF PENTACLES",
+    "page": 153,
+    "xobject": "Im538",
+    "file": "/assets/oracle/tarot/pentacles_13.jpg",
+    "bytes": 33132,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "3765e5c41d0d88877afbabdb3677056b"
+  },
+  {
+    "key": "pentacles_14",
+    "name": "KING OF PENTACLES",
+    "page": 155,
+    "xobject": "Im545",
+    "file": "/assets/oracle/tarot/pentacles_14.jpg",
+    "bytes": 30516,
+    "size": [
+      175,
+      300
+    ],
+    "md5": "e68be350fb85ac25c0bafc4043a86b96"
+  }
+]

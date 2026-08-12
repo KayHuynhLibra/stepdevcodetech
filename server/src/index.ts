@@ -24,6 +24,12 @@ import {
   type GrantCapability,
   type WalletLane,
 } from "./auth.js";
+import {
+  createLocalBackup,
+  guestBalanceServerOnly,
+  guestClientBalanceCap,
+  opsSnapshot,
+} from "./systemOps.js";
 import { auditStore } from "./auditStore.js";
 import { staffNotiStore } from "./staffNotiStore.js";
 import {
@@ -71,8 +77,13 @@ import { ringStore } from "./ringStore.js";
 import { oracleStore } from "./oracleStore.js";
 import { platformGamesStore } from "./platformGamesStore.js";
 import { playMediaPresetsStore } from "./playMediaPresetsStore.js";
-import { mountOlympusRoutes } from "./platform/olympus.js";
+import { mountOlympusRoutes, olympusAdminAct, olympusAdminSnapshot } from "./platform/olympus.js";
+import { olympusEconomyStore } from "./olympusEconomyStore.js";
+import { xuLevelsStore, XU_GAME_IDS, XU_GAME_LABEL } from "./xuLevelsStore.js";
+import { ludoEconomyStore } from "./ludoEconomyStore.js";
 import { mountLudoRoutes } from "./ludoRoutes.js";
+import { mountOanQuanRoutes } from "./oanQuanRoutes.js";
+import { mountUnoRoutes } from "./unoRoutes.js";
 import { chatConfigStore } from "./chatConfigStore.js";
 import {
   tableConfigStore,
@@ -106,6 +117,7 @@ import {
 import {
   clientIp,
   globalHttpRateLimit,
+  rateBucketStats,
   rateLimit,
   socketIp,
   startRateLimitPrune,
@@ -174,7 +186,22 @@ app.use(
     return next(err);
   },
 );
-app.use(globalHttpRateLimit({ max: 160, windowMs: 60_000, skipPaths: ["/health"] }));
+const isProd = process.env.NODE_ENV === "production";
+const httpRateMax = Math.max(
+  60,
+  Number(process.env.HTTP_RATE_MAX) || (isProd ? 900 : 4000),
+);
+app.use(
+  globalHttpRateLimit({
+    max: httpRateMax,
+    windowMs: 60_000,
+    skipPaths: ["/health"],
+    /* Auth có rate-limit riêng — không để poll Ludo/admin chặn đăng nhập. */
+    skipPrefixes: ["/api/auth"],
+    /* Poll phòng Ludo (GET) không ăn bucket chung — có limit riêng trên route. */
+    skipGetPrefixes: ["/api/ludo/rooms", "/api/oan-quan/rooms"],
+  }),
+);
 /** /uploads/avatars + /uploads/catalog/... */
 app.use("/uploads", express.static(UPLOADS_ROOT));
 /** Giữ mount cũ nếu UPLOADS_DIR lệch (avatars nằm dưới data/uploads/avatars). */
@@ -270,6 +297,43 @@ function requireAuth(
   return user;
 }
 
+type ArcanaActor =
+  | { kind: "auth"; user: NonNullable<ReturnType<typeof authStore.resolveToken>> }
+  | { kind: "guest"; guestId: string };
+
+function resolveArcanaGuestId(req: express.Request): string {
+  return String(
+    req.headers["x-guest-id"] || req.body?.guestId || req.query?.guestId || "",
+  )
+    .trim()
+    .toUpperCase();
+}
+
+function resolveArcanaActor(
+  req: express.Request,
+  res: express.Response,
+): ArcanaActor | null {
+  const token = bearer(req);
+  if (token) {
+    const user = authStore.resolveToken(token);
+    if (user) return { kind: "auth", user };
+    if (!resolveArcanaGuestId(req)) {
+      res.status(401).json({ ok: false, reason: "Chưa đăng nhập" });
+      return null;
+    }
+  }
+
+  const guestId = resolveArcanaGuestId(req);
+  if (guestId) return { kind: "guest", guestId };
+
+  const user = authStore.resolveToken(token);
+  if (!user) {
+    res.status(401).json({ ok: false, reason: "Chưa đăng nhập" });
+    return null;
+  }
+  return { kind: "auth", user };
+}
+
 function requireAdmin(
   req: express.Request,
   res: express.Response,
@@ -306,6 +370,21 @@ function requireCapability(
   const user = requireAuth(req, res);
   if (!user) return null;
   if (!hasCapability(user, cap)) {
+    res.status(403).json({ ok: false, reason });
+    return null;
+  }
+  return user;
+}
+
+function requireAnyCapability(
+  req: express.Request,
+  res: express.Response,
+  caps: GrantCapability[],
+  reason = "Không đủ quyền",
+): ReturnType<typeof authStore.resolveToken> {
+  const user = requireAuth(req, res);
+  if (!user) return null;
+  if (!caps.some((c) => hasCapability(user, c))) {
     res.status(403).json({ ok: false, reason });
     return null;
   }
@@ -483,6 +562,358 @@ app.get("/health", async (req, res) => {
 app.get("/api/health", (_req, res) => {
   res.redirect(307, "/health");
 });
+
+/** Admin: an ninh mạng + sức khỏe hệ thống (không lộ secret). */
+app.get("/api/admin/system-security", async (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  if (!isMainAdmin(me) && !hasCapability(me, "staff_dashboard")) {
+    res.status(403).json({
+      ok: false,
+      reason: "Cần mainadmin hoặc staff dashboard",
+    });
+    return;
+  }
+
+  const dataDir = join(__dirname, "..", "data");
+  const stats = engine.getOnlineStats();
+  const [db, redis] = await Promise.all([dbHealth(), redisHealth()]);
+  const mem = process.memoryUsage();
+  const rate = rateBucketStats();
+  const isProd =
+    process.env.NODE_ENV === "production" ||
+    !!process.env.RAILWAY_ENVIRONMENT;
+  const httpRateMax = Math.max(
+    60,
+    Number(process.env.HTTP_RATE_MAX) || (isProd ? 480 : 3000),
+  );
+  const allowedRaw = ALLOWED_ORIGINS_RAW;
+  const allowedResolved = ALLOWED_ORIGINS;
+  const corsOpenDev = !isProd && allowedResolved.length === 0;
+  const corsUsesFallback =
+    isProd && allowedRaw.length === 0 && allowedResolved.length > 0;
+  const healthDetailSet = Boolean(String(process.env.HEALTH_DETAIL || "").trim());
+
+  const checks = {
+    cards: CARDS.length === 8,
+    clientDist: existsSync(CLIENT_DIST),
+    dataDir: existsSync(dataDir),
+    engine: typeof stats?.phase === "string",
+    db: db.ok,
+    redis: redis.ok,
+  };
+  const ready =
+    checks.cards && checks.clientDist && checks.dataDir && checks.engine;
+
+  type Issue = {
+    id: string;
+    severity: "critical" | "warn" | "info";
+    title: string;
+    detail: string;
+  };
+  const issues: Issue[] = [];
+
+  if (!ready) {
+    issues.push({
+      id: "not-ready",
+      severity: "critical",
+      title: "Server chưa ready",
+      detail:
+        "Thiếu dist/data/cards/engine — deploy hoặc build client có thể lỗi.",
+    });
+  }
+  if (!checks.clientDist) {
+    issues.push({
+      id: "no-dist",
+      severity: "critical",
+      title: "Thiếu client/dist",
+      detail: "Chạy build client trước khi serve production.",
+    });
+  }
+  if (db.configured && !db.ok) {
+    issues.push({
+      id: "db-down",
+      severity: "critical",
+      title: "Database không OK",
+      detail: "DATABASE_URL đã cấu hình nhưng health check fail.",
+    });
+  }
+  if (redis.configured && !redis.ok) {
+    issues.push({
+      id: "redis-down",
+      severity: "warn",
+      title: "Redis không OK",
+      detail: "REDIS_URL đã cấu hình nhưng ping fail — cache/scale có thể lệch.",
+    });
+  }
+  if (corsOpenDev) {
+    issues.push({
+      id: "cors-open",
+      severity: "info",
+      title: "CORS mở (dev)",
+      detail: "ALLOWED_ORIGINS trống — bình thường khi local.",
+    });
+  }
+  if (corsUsesFallback) {
+    issues.push({
+      id: "cors-fallback",
+      severity: "warn",
+      title: "CORS dùng fallback PUBLIC_ORIGIN",
+      detail:
+        "Production nên set ALLOWED_ORIGINS rõ (vd https://YOUR_DOMAIN).",
+    });
+  }
+  if (isProd && !process.env.PUBLIC_ORIGIN && allowedRaw.length === 0) {
+    issues.push({
+      id: "no-public-origin",
+      severity: "warn",
+      title: "Chưa set PUBLIC_ORIGIN",
+      detail: "Nên khai báo origin public chính thức trên host.",
+    });
+  }
+  if (isProd && httpRateMax < 200) {
+    issues.push({
+      id: "rate-low",
+      severity: "warn",
+      title: "HTTP rate limit thấp",
+      detail: `HTTP_RATE_MAX=${httpRateMax} — poll/game dễ trả 429 «Quá nhiều yêu cầu».`,
+    });
+  }
+  if (rate.bucketCount > 800) {
+    issues.push({
+      id: "rate-buckets",
+      severity: "warn",
+      title: "Nhiều rate-limit bucket",
+      detail: `${rate.bucketCount} bucket — có thể đang bị flood hoặc traffic cao.`,
+    });
+  }
+  if (rate.ipSocketGroups > 200) {
+    issues.push({
+      id: "socket-ips",
+      severity: "info",
+      title: "Nhiều nhóm socket theo IP",
+      detail: `${rate.ipSocketGroups} IP đang giữ socket.`,
+    });
+  }
+  if (!healthDetailSet && isProd) {
+    issues.push({
+      id: "health-public",
+      severity: "info",
+      title: "/health public tối giản",
+      detail:
+        "Đúng hướng bảo mật. Set HEALTH_DETAIL để xem full khi cần (token).",
+    });
+  }
+  if (!isProd) {
+    issues.push({
+      id: "not-prod",
+      severity: "info",
+      title: "Đang chạy non-production",
+      detail: `NODE_ENV=${process.env.NODE_ENV || "(unset)"} — rate limit nới hơn prod.`,
+    });
+  }
+
+  const ops = opsSnapshot();
+  if (isProd && !db.configured) {
+    issues.push({
+      id: "json-mode-spof",
+      severity: "warn",
+      title: "JSON mode — single volume SPOF",
+      detail:
+        "DATABASE_URL tắt: data = file JSON trên volume. Backup local cùng disk không cứu volume corrupt. Cần off-site + xác nhận Railway Volume.",
+    });
+  }
+  if (isProd && !redis.configured) {
+    issues.push({
+      id: "redis-off",
+      severity: "info",
+      title: "Redis tắt",
+      detail:
+        "Rate-limit/lock in-memory — mất khi restart; multi-instance sẽ lệch. Bật REDIS_URL nếu scale >1.",
+    });
+  }
+  if (!ops.latestBackup) {
+    issues.push({
+      id: "no-local-backup",
+      severity: "warn",
+      title: "Chưa có backup local",
+      detail:
+        "Chạy Sao lưu trong tab Hệ thống /ops hoặc npm run backup:data trước deploy rủi ro.",
+    });
+  } else {
+    const ageH = (Date.now() - ops.latestBackup.mtimeMs) / 3_600_000;
+    if (ageH > 48) {
+      issues.push({
+        id: "stale-backup",
+        severity: "warn",
+        title: "Backup local cũ",
+        detail: `Bản mới nhất ${ops.latestBackup.id} (~${Math.floor(ageH)}h trước). Nên backup định kỳ + off-site.`,
+      });
+    }
+  }
+  if (isProd && !ops.offsiteConfigured) {
+    issues.push({
+      id: "no-offsite",
+      severity: "warn",
+      title: "Chưa cấu hình backup off-site",
+      detail:
+        "Set BACKUP_S3_* + Railway Cron `npm run backup:offsite`. Local backup không cứu volume corrupt.",
+    });
+  }
+  if (!guestBalanceServerOnly()) {
+    issues.push({
+      id: "guest-balance-client",
+      severity: "warn",
+      title: "Guest balance nhận hint từ client",
+      detail: `GUEST_BALANCE_SERVER_ONLY tắt — cap ${guestClientBalanceCap().toLocaleString("vi-VN")} xu. Nên bật server-only.`,
+    });
+  } else {
+    issues.push({
+      id: "guest-balance-server",
+      severity: "info",
+      title: "Guest balance server-only",
+      detail:
+        "Client không set số dư guest khi join — dùng phiên carried hoặc STARTING_BALANCE.",
+    });
+  }
+  if (
+    db.configured &&
+    String(process.env.PG_SSL_REJECT_UNAUTHORIZED ?? "").trim() !== "1"
+  ) {
+    issues.push({
+      id: "pg-ssl-lax",
+      severity: "info",
+      title: "Postgres SSL không verify CA",
+      detail:
+        "rejectUnauthorized=false (mặc định). Set PG_SSL_REJECT_UNAUTHORIZED=1 khi có CA.",
+    });
+  }
+
+  const severityRank = { critical: 0, warn: 1, info: 2 };
+  issues.sort(
+    (a, b) => severityRank[a.severity] - severityRank[b.severity],
+  );
+
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    ok: true,
+    ts: Date.now(),
+    summary: {
+      ready,
+      issueCount: issues.length,
+      critical: issues.filter((i) => i.severity === "critical").length,
+      warn: issues.filter((i) => i.severity === "warn").length,
+      info: issues.filter((i) => i.severity === "info").length,
+    },
+    process: {
+      node: process.version,
+      uptimeSec: Math.floor(process.uptime()),
+      pid: process.pid,
+      platform: process.platform,
+      env: isProd ? "production" : "development",
+      memory: {
+        rssMb: Math.round(mem.rss / 1024 / 1024),
+        heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+        heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024),
+      },
+    },
+    network: {
+      trustProxy: true,
+      httpRateMax,
+      httpRateWindowMs: 60_000,
+      allowedOriginsRawCount: allowedRaw.length,
+      allowedOrigins: allowedResolved,
+      corsMode: corsOpenDev
+        ? "open-dev"
+        : corsUsesFallback
+          ? "fallback-public-origin"
+          : "allowlist",
+      requireInvite: inviteStore.isInviteRequired(),
+      headers: [
+        "X-Content-Type-Options",
+        "X-Frame-Options",
+        "Referrer-Policy",
+        "Permissions-Policy",
+        "Content-Security-Policy",
+        "Strict-Transport-Security (HTTPS)",
+      ],
+    },
+    runtime: {
+      checks,
+      ready,
+      cards: CARDS.length,
+      phase: stats.phase,
+      roundNumber: stats.roundNumber,
+      displayOnline: stats.displayOnline,
+      clientDist: checks.clientDist,
+      dataDir: checks.dataDir,
+      db,
+      redis,
+      scale: {
+        databaseUrl: isDbEnabled(),
+        redisUrl: isRedisEnabled(),
+        dualWrite: String(process.env.SCALE_DUAL_WRITE ?? "1") !== "0",
+      },
+    },
+    rateLimit: rate,
+    ops: {
+      emergencyUrl: "/ops",
+      dataDir: ops.dataDir,
+      dataDirExists: ops.dataDirExists,
+      fileCount: ops.fileCount,
+      totalBytes: ops.totalBytes,
+      latestBackup: ops.latestBackup,
+      backupCount: ops.backups.length,
+      guest: ops.guest,
+      offsiteHint: ops.offsiteHint,
+      offsiteConfigured: ops.offsiteConfigured,
+      playbook: ops.playbook,
+    },
+    issues,
+  });
+});
+
+/** Inventory data + playbook (cùng quyền system-security). */
+app.get("/api/admin/system-ops", async (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  if (!isMainAdmin(me) && !hasCapability(me, "staff_dashboard")) {
+    res.status(403).json({
+      ok: false,
+      reason: "Cần mainadmin hoặc staff dashboard",
+    });
+    return;
+  }
+  const [db, redis] = await Promise.all([dbHealth(), redisHealth()]);
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    ok: true,
+    ts: Date.now(),
+    ...opsSnapshot(),
+    db,
+    redis,
+    emergencyUrl: "/ops",
+  });
+});
+
+/** Sao lưu JSON local — chỉ mainadmin (ghi disk). */
+app.post("/api/admin/system-backup", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const result = createLocalBackup({ by: me.username });
+  if (!result.ok) {
+    res.status(500).json(result);
+    return;
+  }
+  auditStore.log({
+    actorId: me.id,
+    actorName: me.username,
+    action: "system.backup",
+    detail: `backup ${result.backup.id} files=${result.backup.fileCount}`,
+  });
+  res.json({ ok: true, backup: result.backup, ...opsSnapshot() });
+});
+
 app.get("/api/cards", (_req, res) => {
   res.json(CARDS);
 });
@@ -578,7 +1009,10 @@ app.post("/api/auth/gift-xu", (req, res) => {
   io.emit("giftFly", {
     fromName: fromLabel,
     toName: toLabel,
+    fromUserId: result.from.id,
+    toUserId: result.to.id,
     amount: result.amount,
+    currency: "xu",
     giftKey: giftMeta?.key || giftKey || undefined,
     giftEmoji: giftMeta?.emoji,
     giftNameVi: giftMeta?.nameVi,
@@ -604,6 +1038,86 @@ app.post("/api/auth/gift-xu", (req, res) => {
     from: result.from,
     to: result.to,
     giftKey: giftMeta?.key || giftKey || undefined,
+    fly: {
+      id: fly.id,
+      label: fly.label,
+      style: fly.style,
+      durationMs: fly.durationMs,
+    },
+  });
+});
+
+app.post("/api/auth/gift-gem", (req, res) => {
+  const me = requireAuth(req, res);
+  if (!me) return;
+  const ip = clientIp(req);
+  if (
+    !rateLimit(`giftgem:${me.id}`, 20, 60_000) ||
+    !rateLimit(`giftgemip:${ip}`, 40, 60_000)
+  ) {
+    return res
+      .status(429)
+      .json({ ok: false, reason: "Tặng Gem quá nhanh — thử lại sau" });
+  }
+  const toUserId = String(req.body?.toUserId ?? "").trim();
+  const toCode = String(req.body?.toCode ?? "").trim();
+  const toUsername = String(req.body?.toUsername ?? "").trim();
+  if (!toUserId && !toCode && !toUsername) {
+    return res.status(400).json({ ok: false, reason: "Thiếu người nhận" });
+  }
+  const result = authStore.giftGem(
+    me.id,
+    {
+      userId: toUserId || undefined,
+      code: toCode || undefined,
+      username: toUsername || undefined,
+    },
+    req.body?.amount,
+  );
+  if (!result.ok) return res.status(400).json(result);
+
+  const note = String(req.body?.note ?? "").trim().slice(0, 80);
+  audit(me, "gift_gem", {
+    targetId: result.to.id,
+    targetName: result.to.username,
+    detail: `gem=${result.amount}${note ? ` note=${note}` : ""}`,
+  });
+
+  // Fly: map Gem amount ~ như xu (boost nhẹ theo bậc Quý tộc người gửi)
+  const nobleBoost = 1 + Math.max(0, result.from.nobilityTier ?? 0) * 0.15;
+  const flyAmount = Math.floor(result.amount * 100 * nobleBoost);
+  const fly = giftStore.resolveFlyTier(flyAmount);
+  const fromLabel =
+    result.from.displayName?.trim() || result.from.username;
+  const toLabel = result.to.displayName?.trim() || result.to.username;
+  io.emit("giftFly", {
+    id: fly.id,
+    fromName: fromLabel,
+    toName: toLabel,
+    fromUserId: result.from.id,
+    toUserId: result.to.id,
+    amount: result.amount,
+    currency: "gem",
+    label: fly.label,
+    style: fly.style,
+    durationMs: fly.durationMs,
+    giftEmoji: "💎",
+    giftNameVi: "Gem",
+    note: note || undefined,
+    fly: {
+      id: fly.id,
+      label: fly.label,
+      style: fly.style,
+      durationMs: fly.durationMs,
+    },
+  });
+
+  res.json({
+    ok: true,
+    amount: result.amount,
+    from: result.from,
+    to: result.to,
+    currency: "gem",
     fly: {
       id: fly.id,
       label: fly.label,
@@ -844,6 +1358,17 @@ app.post("/api/auth/avatar", (req, res) => {
   res.json(result);
 });
 
+app.post("/api/auth/accept-terms", (req, res) => {
+  const user = requireAuth(req, res);
+  if (!user) return;
+  if (!rateLimit(`terms:${user.id}`, 10, 60_000)) {
+    return res.status(429).json({ ok: false, reason: "Thử lại sau" });
+  }
+  const result = authStore.acceptTerms(user.id);
+  if (!result.ok) return res.status(400).json(result);
+  res.json(result);
+});
+
 app.post("/api/auth/rename", (req, res) => {
   const user = requireAuth(req, res);
   if (!user) return;
@@ -989,13 +1514,10 @@ app.post("/api/auth/redeem-coupon", (req, res) => {
   });
 });
 
-/** Admin/eco: tạo / cập nhật coupon (audit không đụng). */
+/** Eco / main: tạo / cập nhật coupon (audit không đụng). */
 app.post("/api/admin/coupons", (req, res) => {
-  const me = requireAdmin(req, res);
+  const me = requireCapability(req, res, "coupon_ops", "Cần quyền coupon (eco)");
   if (!me) return;
-  if (me.role === "audit") {
-    return res.status(403).json({ ok: false, reason: "Audit không quản lý coupon" });
-  }
   const result = couponStore.upsert({
     code: String(req.body?.code ?? ""),
     amount: Number(req.body?.amount),
@@ -1023,13 +1545,10 @@ app.post("/api/admin/coupons", (req, res) => {
   });
 });
 
-/** Admin/eco: bật/tắt coupon. */
+/** Eco / main: bật/tắt coupon. */
 app.post("/api/admin/coupons/toggle", (req, res) => {
-  const me = requireAdmin(req, res);
+  const me = requireCapability(req, res, "coupon_ops", "Cần quyền coupon (eco)");
   if (!me) return;
-  if (me.role === "audit") {
-    return res.status(403).json({ ok: false, reason: "Audit không quản lý coupon" });
-  }
   const code = String(req.body?.code ?? "");
   const enabled = !!req.body?.enabled;
   const result = couponStore.setEnabled(code, enabled);
@@ -1969,35 +2488,51 @@ app.get("/api/mainadmin/arcana/spins", (req, res) => {
 
 /** Player: bàn Bánh xe Arcana */
 app.get("/api/arcana-wheel", (req, res) => {
-  const user = requireAuth(req, res);
-  if (!user) return;
+  const actor = resolveArcanaActor(req, res);
+  if (!actor) return;
+  if (actor.kind === "guest") {
+    const state = arcanaWheelStore.getPublicStateForGuest(actor.guestId);
+    return res.json({
+      ok: true,
+      ...state,
+      balance: state.balance,
+    });
+  }
   res.json({
     ok: true,
-    ...arcanaWheelStore.getPublicState(user.id),
-    balance: user.balance,
+    ...arcanaWheelStore.getPublicState(actor.user.id),
+    balance: actor.user.balance,
   });
 });
 
 app.get("/api/arcana-wheel/history", (req, res) => {
-  const user = requireAuth(req, res);
-  if (!user) return;
+  const actor = resolveArcanaActor(req, res);
+  if (!actor) return;
   const limit = Number(req.query.limit ?? 50);
   res.json({
     ok: true,
-    spins: arcanaWheelStore.listSpins(limit, user.id),
+    spins: arcanaWheelStore.listSpins(
+      limit,
+      actor.kind === "guest" ? `guest:${actor.guestId}` : actor.user.id,
+    ),
   });
 });
 
 app.post("/api/arcana-wheel/spin", (req, res) => {
-  const user = requireAuth(req, res);
-  if (!user) return;
-  if (!rateLimit(`arcana-spin:${user.id}`, 60, 60_000)) {
+  const actor = resolveArcanaActor(req, res);
+  if (!actor) return;
+  if (!rateLimit(
+    `arcana-spin:${actor.kind === "guest" ? `guest:${actor.guestId}` : actor.user.id}`,
+    60,
+    60_000,
+  )) {
     return res
       .status(429)
       .json({ ok: false, reason: "Quay quá nhanh — thử lại sau" });
   }
   const result = arcanaWheelStore.spin({
-    userId: user.id,
+    userId: actor.kind === "auth" ? actor.user.id : undefined,
+    guestId: actor.kind === "guest" ? actor.guestId : undefined,
     stake: Number(req.body?.stake),
     pickIds: req.body?.pickIds,
     pickId: req.body?.pickId,
@@ -2005,10 +2540,16 @@ app.post("/api/arcana-wheel/spin", (req, res) => {
     outerPick: req.body?.outerPick,
   });
   if (!result.ok) return res.status(400).json(result);
-  const live = engine.applyAuthBalance(user.id, result.balance);
-  for (const sid of live.socketIds) {
-    io.to(sid).emit("balanceUpdate", { balance: live.balance });
+  if (actor.kind === "auth") {
+    const live = engine.applyAuthBalance(actor.user.id, result.balance);
+    for (const sid of live.socketIds) {
+      io.to(sid).emit("balanceUpdate", { balance: live.balance });
+    }
   }
+  const publicState =
+    actor.kind === "guest"
+      ? arcanaWheelStore.getPublicStateForGuest(actor.guestId)
+      : arcanaWheelStore.getPublicState(actor.user.id);
   res.json({
     ok: true,
     spin: result.spin,
@@ -2016,8 +2557,11 @@ app.post("/api/arcana-wheel/spin", (req, res) => {
     balance: result.balance,
     luckStreak: result.luckStreak,
     streakBonus: result.streakBonus,
-    recent: arcanaWheelStore.getPublicState(user.id).recent,
-    mission: arcanaMissionStore.getProgress(user.id),
+    recent: publicState.recent,
+    mission:
+      actor.kind === "auth"
+        ? arcanaMissionStore.getProgress(actor.user.id)
+        : undefined,
   });
 });
 
@@ -3041,7 +3585,11 @@ app.get("/api/platform/games", (_req, res) => {
 app.get("/api/admin/platform/games", (req, res) => {
   const me = requireAuth(req, res);
   if (!me) return;
-  if (!isStaff(me) && !isMainAdmin(me) && !hasCapability(me, "pm_assets")) {
+  if (
+    !hasCapability(me, "games_registry") &&
+    !hasCapability(me, "pm_assets") &&
+    !isMainAdmin(me)
+  ) {
     return res.status(403).json({ ok: false, reason: "Không có quyền" });
   }
   res.json({ ok: true, ...platformGamesStore.snapshot() });
@@ -3050,7 +3598,7 @@ app.get("/api/admin/platform/games", (req, res) => {
 app.post("/api/admin/platform/games", (req, res) => {
   const me = requireAuth(req, res);
   if (!me) return;
-  const canFull = isMainAdmin(me);
+  const canFull = hasCapability(me, "games_registry");
   const canCover = canFull || hasCapability(me, "pm_assets");
   if (!canCover) {
     return res.status(403).json({ ok: false, reason: "Không đủ quyền" });
@@ -3191,11 +3739,13 @@ app.post("/api/admin/boi/cosmetics", (req, res) => {
 });
 
 app.post("/api/admin/platform/games/upsert", (req, res) => {
-  const me = requireAuth(req, res);
+  const me = requireCapability(
+    req,
+    res,
+    "games_registry",
+    "Cần quyền Games registry",
+  );
   if (!me) return;
-  if (!isMainAdmin(me)) {
-    return res.status(403).json({ ok: false, reason: "Chỉ mainadmin" });
-  }
   const result = platformGamesStore.upsert(req.body?.game ?? req.body);
   if (!result.ok) return res.status(400).json(result);
   audit(me, "platform_game_upsert", { detail: result.game.id });
@@ -3251,11 +3801,12 @@ app.post("/api/oracle/record", (req, res) => {
   if (!cards.length || cards.length > 10) {
     return res.status(400).json({ ok: false, reason: "cards 1–10" });
   }
-  const spread = String(req.body?.spread ?? cards.length).trim().slice(0, 8);
+  const spread = String(req.body?.spread ?? cards.length).trim().slice(0, 48);
   const question = String(req.body?.question ?? "").trim().slice(0, 120);
   const notes = String(req.body?.notes ?? "").trim().slice(0, 2000);
   const title = String(req.body?.title ?? "").trim().slice(0, 120);
   const mantraClose = String(req.body?.mantraClose ?? "").trim().slice(0, 280);
+  const timingHint = String(req.body?.timingHint ?? "").trim().slice(0, 280);
   const drawId = `od_${Date.now().toString(36)}_${randomBytes(3).toString("hex")}`;
   const row = {
     id: drawId,
@@ -3267,6 +3818,7 @@ app.post("/api/oracle/record", (req, res) => {
     notes: notes || undefined,
     title: title || undefined,
     mantraClose: mantraClose || undefined,
+    timingHint: timingHint || undefined,
   };
   oracleStore.recordDrawHistory(me.id, row);
   void import("./db/dualWrite.js").then(({ dualWriteOracleDraw }) =>
@@ -3325,7 +3877,9 @@ app.get("/api/admin/oracle", (req, res) => {
   if (
     !isMainAdmin(me) &&
     !isStaff(me) &&
-    !hasCapability(me, "oracle_manage")
+    !hasCapability(me, "oracle_manage") &&
+    !hasCapability(me, "oracle_library") &&
+    !hasCapability(me, "oracle_cards")
   ) {
     return res.status(403).json({ ok: false, reason: "Không đủ quyền" });
   }
@@ -3333,7 +3887,7 @@ app.get("/api/admin/oracle", (req, res) => {
 });
 
 app.post("/api/admin/oracle/deck", (req, res) => {
-  const me = requireCapability(req, res, "oracle_manage");
+  const me = requireCapability(req, res, "oracle_cards", "Cần quyền Oracle Cards");
   if (!me) return;
   const result = oracleStore.upsertDeck(req.body?.deck ?? req.body);
   if (!result.ok) return res.status(400).json(result);
@@ -3342,7 +3896,7 @@ app.post("/api/admin/oracle/deck", (req, res) => {
 });
 
 app.post("/api/admin/oracle/card", (req, res) => {
-  const me = requireCapability(req, res, "oracle_manage");
+  const me = requireCapability(req, res, "oracle_cards", "Cần quyền Oracle Cards");
   if (!me) return;
   const result = oracleStore.upsertCard(req.body?.card ?? req.body);
   if (!result.ok) return res.status(400).json(result);
@@ -3353,7 +3907,7 @@ app.post("/api/admin/oracle/card", (req, res) => {
 });
 
 app.post("/api/admin/oracle/batch", (req, res) => {
-  const me = requireCapability(req, res, "oracle_manage");
+  const me = requireCapability(req, res, "oracle_cards", "Cần quyền Oracle Cards");
   if (!me) return;
   const rows = req.body?.cards ?? req.body;
   const result = oracleStore.batchUpsertCards(rows);
@@ -3414,6 +3968,50 @@ app.post("/api/admin/oracle/reset-seed", (req, res) => {
   const result = oracleStore.resetToSeed();
   audit(me, "oracle_reset_seed", { detail: `cards=${result.count}` });
   res.json({ ...result, ...oracleStore.adminCatalog() });
+});
+
+app.post("/api/admin/oracle/spread", (req, res) => {
+  const me = requireCapability(req, res, "oracle_manage");
+  if (!me) return;
+  const result = oracleStore.upsertSpread(req.body?.spread ?? req.body);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "oracle_spread_upsert", { detail: result.spread.id });
+  res.json({ ok: true, spread: result.spread, ...oracleStore.adminCatalog() });
+});
+
+app.post("/api/admin/oracle/spread/toggle", (req, res) => {
+  const me = requireCapability(req, res, "oracle_manage");
+  if (!me) return;
+  const result = oracleStore.setSpreadEnabled(
+    req.body?.id,
+    req.body?.enabled !== false && req.body?.enabled !== "0",
+  );
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "oracle_spread_toggle", { detail: result.spread.id });
+  res.json({ ok: true, spread: result.spread, ...oracleStore.adminCatalog() });
+});
+
+app.post("/api/admin/oracle/timing", (req, res) => {
+  const me = requireCapability(req, res, "oracle_manage");
+  if (!me) return;
+  const rules = Array.isArray(req.body?.rules) ? req.body.rules : req.body;
+  const result = oracleStore.setTimingRules(rules);
+  audit(me, "oracle_timing_set", { detail: `count=${result.count}` });
+  res.json({ ok: true, count: result.count, ...oracleStore.adminCatalog() });
+});
+
+app.post("/api/admin/oracle/library", (req, res) => {
+  const me = requireCapability(
+    req,
+    res,
+    "oracle_library",
+    "Cần quyền Oracle Library",
+  );
+  if (!me) return;
+  const result = oracleStore.upsertLibraryDoc(req.body?.doc ?? req.body);
+  if (!result.ok) return res.status(400).json(result);
+  audit(me, "oracle_library_upsert", { detail: result.doc.id });
+  res.json({ ok: true, doc: result.doc, ...oracleStore.adminCatalog() });
 });
 
 app.get("/api/auth/ring-status", (req, res) => {
@@ -3878,12 +4476,14 @@ app.post("/api/mainadmin/user-role", (req, res) => {
       role !== "audit" &&
       role !== "sgift" &&
       role !== "ring" &&
-      role !== "pm")
+      role !== "pm" &&
+      role !== "tarot78" &&
+      role !== "book78")
   ) {
     return res.status(400).json({
       ok: false,
       reason:
-        "Thiếu userId hoặc role (user|deal|admin|onl|tutien|mod|eco|audit|sgift|ring|pm)",
+        "Thiếu userId hoặc role (user|deal|admin|onl|tutien|mod|eco|audit|sgift|ring|pm|tarot78|book78)",
     });
   }
   const result = authStore.setUserRole(userId, role);
@@ -3918,6 +4518,143 @@ app.get("/api/mainadmin/leaderboard-config", (req, res) => {
   const me = requireMainAdmin(req, res);
   if (!me) return;
   res.json({ ok: true, config: leaderboardConfigStore.get() });
+});
+
+/** Olympus ZEUS% — economy + snapshot can thiệp (mainadmin). */
+app.get("/api/mainadmin/olympus-economy", async (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const snap = await olympusAdminSnapshot();
+  res.json({ ok: true, ...snap });
+});
+
+/** Mức xu tuỳ chọn — tất cả game (mainadmin). */
+app.get("/api/xu-levels", (_req, res) => {
+  res.json(xuLevelsStore.publicView());
+});
+
+app.get("/api/mainadmin/xu-levels", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const snap = xuLevelsStore.get();
+  res.json({
+    ok: true,
+    ...snap,
+    gameLabels: XU_GAME_LABEL,
+    gameIds: XU_GAME_IDS,
+  });
+});
+
+app.post("/api/mainadmin/xu-levels", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const out = xuLevelsStore.patch({
+    presets: req.body?.presets,
+    quickAdds: req.body?.quickAdds,
+    byGame: req.body?.byGame,
+    reset: req.body?.reset === true,
+    updatedBy: me.username,
+  });
+  // Sync into game-specific stores so existing panels stay consistent
+  try {
+    const oly = out.byGame.olympus;
+    if (oly?.length) olympusEconomyStore.patch({ bets: oly });
+  } catch {
+    /* ignore */
+  }
+  try {
+    const ludo = out.byGame.ludo;
+    if (ludo?.length) ludoEconomyStore.patch({ stakePresets: ludo });
+  } catch {
+    /* ignore */
+  }
+  try {
+    const arc = out.byGame.arcana;
+    if (arc?.length) {
+      arcanaWheelStore.updateConfig({ stakeTiers: arc }, me.username);
+    }
+  } catch {
+    /* ignore */
+  }
+  audit(me, "xu_levels_save", {
+    detail: `presets=${out.presets.join(",")} games=${Object.keys(out.byGame).join("+")}`,
+  });
+  res.json({
+    ok: true,
+    ...out,
+    gameLabels: XU_GAME_LABEL,
+    gameIds: XU_GAME_IDS,
+  });
+});
+
+app.post("/api/mainadmin/olympus-economy", (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  if (req.body?.reset === true) {
+    olympusEconomyStore.resetDefaults();
+    audit(me, "olympus_economy_reset", { detail: "defaults" });
+    void olympusAdminSnapshot().then((snap) => {
+      res.json({ ok: true, ...snap });
+    });
+    return;
+  }
+  const out = olympusEconomyStore.patch({
+    pay: req.body?.pay,
+    payPct: req.body?.payPct,
+    bets: req.body?.bets,
+    buyBonusMult: req.body?.buyBonusMult,
+    comboLightningAt: req.body?.comboLightningAt,
+    rageLightningAt: req.body?.rageLightningAt,
+    payModeDefault: req.body?.payModeDefault,
+    tier10Mult: req.body?.tier10Mult,
+    tier12Mult: req.body?.tier12Mult,
+    jackpotFeedRate: req.body?.jackpotFeedRate,
+    jackpotFloor: req.body?.jackpotFloor,
+    fsAward: req.body?.fsAward,
+    fsRetrigger: req.body?.fsRetrigger,
+    holdTriggerCrowns: req.body?.holdTriggerCrowns,
+  });
+  if ("error" in out) {
+    res.status(400).json({ ok: false, reason: out.error });
+    return;
+  }
+  audit(me, "olympus_economy", {
+    detail: `bets=${out.bets.join(",")} buy=${out.buyBonusMult}`,
+  });
+  void olympusAdminSnapshot().then((snap) => {
+    res.json({ ok: true, ...snap });
+  });
+});
+
+/** Olympus can thiệp runtime — force FS / hold / hũ / xu / rage. */
+app.post("/api/mainadmin/olympus-ops", async (req, res) => {
+  const me = requireMainAdmin(req, res);
+  if (!me) return;
+  const action = String(req.body?.action || "").trim();
+  if (!action) {
+    res.status(400).json({ ok: false, reason: "Thiếu action" });
+    return;
+  }
+  const out = await olympusAdminAct(action, req.body || {});
+  if (!out.ok) {
+    res.status(400).json(out);
+    return;
+  }
+  audit(me, `olympus_ops_${action}`, {
+    targetId: String(req.body?.userId || req.body?.username || ""),
+    targetName: String(
+      (out.user as { username?: string } | undefined)?.username ||
+        req.body?.guestId ||
+        "",
+    ),
+    detail: JSON.stringify({
+      action,
+      pool: out.jackpotPool,
+      delta: out.delta,
+      rage: out.rage,
+    }).slice(0, 200),
+  });
+  res.json(out);
 });
 
 /** Public — chỉ cosmetic role rail. */
@@ -4989,10 +5726,35 @@ io.on("connection", (socket) => {
 
 mountOlympusRoutes(app);
 mountLudoRoutes(app);
+mountOanQuanRoutes(app);
+mountUnoRoutes(app);
+
+/** Emergency ops UI — sống khi client/dist hỏng; đăng ký trước SPA catch-all. */
+const SERVER_PUBLIC = join(__dirname, "..", "public");
+if (existsSync(SERVER_PUBLIC)) {
+  app.use(express.static(SERVER_PUBLIC, { index: false, maxAge: 0 }));
+}
+app.get(["/ops", "/ops.html"], (_req, res) => {
+  const html = join(SERVER_PUBLIC, "ops.html");
+  if (!existsSync(html)) {
+    res.status(503).type("text").send("Ops page missing — check server/public/ops.html");
+    return;
+  }
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(html);
+});
 
 if (existsSync(CLIENT_DIST)) {
   app.use(express.static(CLIENT_DIST));
-  app.get("*", (_req, res) => {
+  app.get("*", (req, res) => {
+    if (
+      req.path === "/ops" ||
+      req.path === "/ops.html" ||
+      req.path === "/ops.js"
+    ) {
+      res.status(404).end();
+      return;
+    }
     res.sendFile(join(CLIENT_DIST, "index.html"));
   });
 }

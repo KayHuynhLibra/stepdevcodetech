@@ -41,11 +41,7 @@ import {
   type RingHubTarget,
 } from "../components/RingHubSheet";
 import type { UserBondSnippet } from "../rings";
-import {
-  GiftFlyOverlay,
-  type GiftFlyQueueItem,
-} from "../components/GiftFlyOverlay";
-import { findDemoGift, type GiftFlyEvent } from "../gifts";
+import { findDemoGift } from "../gifts";
 import { ShoutBar } from "../components/ShoutBar";
 import { ShoutMarquee } from "../components/ShoutMarquee";
 import { SaintOverlay } from "../components/SaintOverlay";
@@ -69,15 +65,32 @@ import {
   getToken,
   getStoredUser,
   homePath,
+  giftShopPath,
   isBalanceOperator,
   isStaff,
   canSeeOnline,
   saveSession,
   userDisplayName,
   userShowsVip,
-  VIP_ROUNDS_REQUIRED,
   type AuthUser,
 } from "../auth";
+import {
+  computeVipTier,
+  nextVipRoundsThreshold,
+  vipLabel,
+} from "../vip";
+import {
+  nobilityLabel,
+  nobilityTierOf,
+  nextNobilityGemThreshold,
+} from "../nobility";
+import {
+  isPlayerIgnored,
+  loadIgnoredPlayers,
+  saveIgnoredPlayers,
+  toggleIgnorePlayer,
+  type SocialIgnoreTarget,
+} from "../playerSocial";
 import {
   clearGuestBalanceAfterLimit,
   ensureGuestCode,
@@ -95,6 +108,7 @@ import { IdentityBadge } from "../components/IdentityBadge";
 import { GameChrome } from "../components/GameChrome";
 import { PlayToolsBar } from "../components/PlayToolsBar";
 import { PlayPrefsSheet } from "../components/PlayPrefsSheet";
+import { VirtualPlayFooter } from "../components/VirtualPlayFooter";
 import { useApplyPlayMediaPresets } from "../hooks/useApplyPlayMediaPresets";
 import { StaffNotiPopup } from "../components/StaffNotiPopup";
 import { FeedbackPopup } from "../components/FeedbackPopup";
@@ -173,7 +187,6 @@ export default function GamePage() {
   );
   const [giftBusy, setGiftBusy] = useState(false);
   const [giftPreset, setGiftPreset] = useState<GiftHubTarget | null>(null);
-  const [giftFlyQueue, setGiftFlyQueue] = useState<GiftFlyQueueItem[]>([]);
   const [ringBusy, setRingBusy] = useState(false);
   const [ringPreset, setRingPreset] = useState<RingHubTarget | null>(null);
   const [pendingBondId, setPendingBondId] = useState<string | null>(null);
@@ -184,6 +197,9 @@ export default function GamePage() {
     (ShoutEvent & { key: string }) | null
   >(null);
   const [chatLines, setChatLines] = useState<ShoutEvent[]>([]);
+  const [ignoredPlayers, setIgnoredPlayers] = useState<SocialIgnoreTarget[]>(
+    () => loadIgnoredPlayers(),
+  );
   const [shoutBusy, setShoutBusy] = useState(false);
   /** Mode chat: no | vip | saint */
   const [chatMode, setChatMode] = useState<ChatMode>("no");
@@ -488,34 +504,6 @@ export default function GamePage() {
       }, 4800);
     };
 
-    const onGiftReceived = (payload: {
-      amount?: number;
-      fromName?: string;
-      giftKey?: string;
-      giftEmoji?: string;
-      giftNameVi?: string;
-      note?: string;
-    }) => {
-      // Fly overlay covers most styles; keep a brief recipient toast for toast-tier or missing fly.
-      const gift = payload.giftKey ? findDemoGift(payload.giftKey) : undefined;
-      const label =
-        payload.giftEmoji && payload.giftNameVi
-          ? `${payload.giftEmoji} ${payload.giftNameVi}`
-          : gift
-            ? `${gift.emoji} ${gift.nameVi}`
-            : `${formatXu(payload.amount ?? 0)} xu`;
-      const from = payload.fromName?.trim() || "Ai đó";
-      showToast(`${from} tặng bạn ${label}`);
-    };
-
-    const onGiftFly = (payload: GiftFlyEvent) => {
-      if (!payload?.fly?.style) return;
-      const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      setGiftFlyQueue((prev) =>
-        [...prev, { ...payload, key }].slice(-6),
-      );
-    };
-
     const onRingProposed = (payload: {
       fromName?: string;
       ringNameVi?: string;
@@ -608,8 +596,6 @@ export default function GamePage() {
     s.on("levelLeaderboardData", onLevelLeaderboardData);
     s.on("tarotStarsData", onTarotStarsData);
     s.on("shout", onShout);
-    s.on("giftReceived", onGiftReceived);
-    s.on("giftFly", onGiftFly);
     s.on("ringProposed", onRingProposed);
     s.on("ringAccepted", onRingAccepted);
     s.on("ringBroken", onRingBroken);
@@ -636,8 +622,6 @@ export default function GamePage() {
       s.off("levelLeaderboardData", onLevelLeaderboardData);
       s.off("tarotStarsData", onTarotStarsData);
       s.off("shout", onShout);
-      s.off("giftReceived", onGiftReceived);
-      s.off("giftFly", onGiftFly);
       s.off("ringProposed", onRingProposed);
       s.off("ringAccepted", onRingAccepted);
       s.off("ringBroken", onRingBroken);
@@ -1139,13 +1123,124 @@ export default function GamePage() {
 
   const openChatPlayer = useCallback(
     (line: ShoutEvent) => {
+      const online = (state?.onlinePlayers ?? []).find(
+        (p) =>
+          (!!line.userId && p.userId === line.userId) ||
+          (!!line.name && p.name === line.name && !p.isBot),
+      );
       openPlayerInfo({
         name: line.name,
-        avatar: line.avatar,
+        avatar: line.avatar || online?.avatar || "",
+        userId: line.userId || online?.userId,
+        code: online?.code,
+        isGuest: online
+          ? !online.isBot && !online.code && !online.userId
+          : !line.userId,
+        isVip: online?.isVip,
+        roundsPlayed: online?.roundsPlayed,
+        winToday: online?.winToday,
+        guessesToday: online?.guessesToday,
+        cultivationRank: online?.cultivationRank,
+        socketId: online?.id,
+        guestCode: online?.guestCode,
       });
     },
-    [openPlayerInfo],
+    [openPlayerInfo, state?.onlinePlayers],
   );
+
+  const visibleChatLines = useMemo(
+    () =>
+      chatLines.filter(
+        (line) =>
+          !isPlayerIgnored(
+            { userId: line.userId, name: line.name },
+            ignoredPlayers,
+          ),
+      ),
+    [chatLines, ignoredPlayers],
+  );
+
+  const profileIgnored = !!(
+    profile &&
+    isPlayerIgnored(
+      {
+        userId: profile.userId,
+        code: profile.code,
+        name: profile.name,
+      },
+      ignoredPlayers,
+    )
+  );
+
+  const toggleProfileIgnore = () => {
+    if (!profile) return;
+    const next = toggleIgnorePlayer(
+      {
+        userId: profile.userId,
+        code: profile.code,
+        name: profile.name,
+      },
+      ignoredPlayers,
+    );
+    setIgnoredPlayers(next);
+    saveIgnoredPlayers(next);
+    const nowIgnored = isPlayerIgnored(
+      {
+        userId: profile.userId,
+        code: profile.code,
+        name: profile.name,
+      },
+      next,
+    );
+    showToast(
+      nowIgnored
+        ? `Đã ẩn chat của ${profile.name}`
+        : `Đã hiện lại chat của ${profile.name}`,
+    );
+  };
+
+  const mentionFromProfile = () => {
+    if (!profile?.name) return;
+    setSheet(null);
+    setProfile(null);
+    setMentionInsert(profile.name);
+    showToast(`Đã gắn @${profile.name}`);
+  };
+
+  const copyProfileId = async () => {
+    if (!profile) return;
+    const text = profile.code || profile.userId || profile.name;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast(`Đã copy ${text}`);
+    } catch {
+      showToast(text);
+    }
+  };
+
+  const reportFromProfile = async () => {
+    if (!profile) return;
+    if (!sessionAuthed) {
+      showToast("Đăng nhập để báo cáo");
+      return;
+    }
+    try {
+      await api("/api/chat/report", {
+        method: "POST",
+        body: JSON.stringify({
+          text: `[Hồ sơ] Báo cáo người chơi ${profile.name}${
+            profile.code ? ` · ID ${profile.code}` : ""
+          }`,
+          targetName: profile.name,
+          targetUserId: profile.userId,
+          mode: "profile",
+        }),
+      });
+      showToast("Đã gửi báo cáo hồ sơ");
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Lỗi báo cáo");
+    }
+  };
 
   const adminSetOutcome = async (
     userId: string,
@@ -1401,6 +1496,7 @@ export default function GamePage() {
     toUsername?: string;
     amount: number;
     giftKey?: string;
+    giftLabel?: string;
     note?: string;
   }) => {
     if (giftBusy) return;
@@ -1431,9 +1527,9 @@ export default function GamePage() {
       if (token) saveSession(token, r.from);
       setMe(r.from);
       const gift = opts.giftKey ? findDemoGift(opts.giftKey) : undefined;
-      const label = gift
-        ? `${gift.emoji} ${gift.nameVi}`
-        : `${formatXu(r.amount)} xu`;
+      const label =
+        opts.giftLabel ||
+        (gift ? `${gift.emoji} ${gift.nameVi}` : `${formatXu(r.amount)} xu`);
       showToast(
         `Đã tặng ${label} cho ${r.to.displayName ?? r.to.username}`,
       );
@@ -1510,6 +1606,7 @@ export default function GamePage() {
       toUsername: opts.toUsername,
       amount: opts.gift.price,
       giftKey: opts.gift.key,
+      giftLabel: `${opts.gift.emoji} ${opts.gift.nameVi}`,
       note: opts.note
         ? `${opts.gift.nameVi}: ${opts.note}`.slice(0, 80)
         : opts.gift.nameVi,
@@ -1875,7 +1972,7 @@ export default function GamePage() {
               muted={muted}
               showBalance={showLbBalance}
               jackpotLabel={`Hũ ${formatXu(state?.jackpotPool ?? 0)}`}
-              jackpotHint="Hũ tăng theo cược · nổ khi đủ điều kiện (pool ≥5k, stake thắng ≥500, ~8%) · trả ~18% pool"
+              jackpotHint="Hũ tăng theo mức chơi · nổ khi đủ điều kiện (pool ≥5k, lượt thắng ≥500 xu, ~8%) · trả ~18% pool"
               voiceLabel={
                 voiceStatus.inRoom && voiceStatus.roomId
                   ? `Room ${voiceStatus.roomId}${voiceStatus.isHost ? " · H" : ""}`
@@ -1931,16 +2028,38 @@ export default function GamePage() {
             />
             {me && (
               <div className="mt-1 flex flex-wrap items-center gap-2 px-0.5">
-                {!userShowsVip(me) ? (
-                  <p className="text-[10px] font-semibold tabular-nums text-amber-200/90">
-                    VIP {(me.roundsPlayed ?? 0).toLocaleString("vi-VN")}/
-                    {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván
-                  </p>
-                ) : (
-                  <p className="text-[10px] font-extrabold text-amber-300">
-                    VIP
-                  </p>
-                )}
+                {(() => {
+                  const vt = computeVipTier(me);
+                  const next = nextVipRoundsThreshold(vt);
+                  const rounds = me.roundsPlayed ?? 0;
+                  const nt = nobilityTierOf(me);
+                  const nextGem = nextNobilityGemThreshold(nt);
+                  const spent = me.gemSpentLifetime ?? 0;
+                  return (
+                    <>
+                      {!userShowsVip(me) || vt < 5 ? (
+                        <p className="text-[10px] font-semibold tabular-nums text-amber-200/90">
+                          {vt >= 1 ? vipLabel(vt) : "VIP"}{" "}
+                          {next != null
+                            ? `${rounds.toLocaleString("vi-VN")}/${next.toLocaleString("vi-VN")} ván`
+                            : `${rounds.toLocaleString("vi-VN")} ván`}
+                        </p>
+                      ) : (
+                        <p className="text-[10px] font-extrabold text-amber-300">
+                          {vipLabel(vt)}
+                        </p>
+                      )}
+                      {nt > 0 || spent > 0 ? (
+                        <p className="text-[10px] font-semibold tabular-nums text-violet-200/90">
+                          {nt > 0 ? nobilityLabel(nt) : "Quý tộc"}{" "}
+                          {nextGem != null
+                            ? `${spent.toLocaleString("vi-VN")}/${nextGem.toLocaleString("vi-VN")} Gem`
+                            : `${spent.toLocaleString("vi-VN")} Gem`}
+                        </p>
+                      ) : null}
+                    </>
+                  );
+                })()}
               </div>
             )}
             <p
@@ -2314,7 +2433,7 @@ export default function GamePage() {
         <ShoutBar
           disabled={!connected || !sessionAuthed}
           busy={shoutBusy}
-          lines={chatLines}
+          lines={visibleChatLines}
           selfAvatar={
             me
               ? normalizeAvatar(me.avatar)
@@ -2363,6 +2482,7 @@ export default function GamePage() {
                 body: JSON.stringify({
                   text: line.text,
                   targetName: line.name,
+                  targetUserId: line.userId,
                   mode: line.mode,
                 }),
               });
@@ -2748,6 +2868,7 @@ export default function GamePage() {
           </ul>
         </section>
         )}
+        <VirtualPlayFooter className="mt-4 px-1" />
       </div>
 
       <RevealPopup
@@ -2792,6 +2913,7 @@ export default function GamePage() {
       <PlayersSheet
         open={sheet === "players"}
         players={state?.onlinePlayers ?? []}
+        ignoredList={ignoredPlayers}
         onClose={() => setSheet(null)}
         onSelectPlayer={(p) => {
           setSheet(null);
@@ -2816,6 +2938,21 @@ export default function GamePage() {
         onMention={(p) => {
           setSheet(null);
           setMentionInsert(p.name);
+        }}
+        onToggleIgnore={(p) => {
+          const next = toggleIgnorePlayer(
+            { userId: p.userId, code: p.code, name: p.name },
+            ignoredPlayers,
+          );
+          setIgnoredPlayers(next);
+          saveIgnoredPlayers(next);
+          const nowIgnored = isPlayerIgnored(
+            { userId: p.userId, code: p.code, name: p.name },
+            next,
+          );
+          showToast(
+            nowIgnored ? `Đã ẩn chat của ${p.name}` : `Đã hiện lại ${p.name}`,
+          );
         }}
       />
       )}
@@ -2915,14 +3052,22 @@ export default function GamePage() {
               }
             : undefined
         }
+        onMention={mentionFromProfile}
+        onCopyId={
+          profile?.code || profile?.userId ? copyProfileId : undefined
+        }
+        onReportPlayer={sessionAuthed ? reportFromProfile : undefined}
+        ignored={profileIgnored}
+        onToggleIgnore={toggleProfileIgnore}
         viewerBonded={!!me?.bond}
       />
 
       <GiftHubSheet
         open={sheet === "giftHub"}
-        balance={me?.balance ?? state?.yourBalance}
+        balance={me?.balances?.social ?? 0}
         busy={giftBusy}
         preset={giftPreset}
+        shopHref={me ? giftShopPath(me) : null}
         onlineHints={(state?.onlinePlayers ?? [])
           .filter(
             (p) =>
@@ -2981,13 +3126,6 @@ export default function GamePage() {
           setRingPreset(null);
         }}
         onPropose={proposeRing}
-      />
-
-      <GiftFlyOverlay
-        queue={giftFlyQueue}
-        onDone={(key) =>
-          setGiftFlyQueue((prev) => prev.filter((x) => x.key !== key))
-        }
       />
 
       <HistorySheet

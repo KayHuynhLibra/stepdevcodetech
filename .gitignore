@@ -1,12 +1,34 @@
 node_modules
 dist
+client/dist
 *.tsbuildinfo
 .DS_Store
 *.log
+coverage/
+.nyc_output/
+
+# Secrets — never commit
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*
+*secret*.local.*
+
+# Production / player data
 server/data/
+
+# Temp / caches
 .tmp-img/
+.tmp-*
+.cache/
+
+# IDE / local agent
+.cursor/
+agent-transcripts/
 
 # Tài liệu học tập nội bộ — không commit / không push
 studying/
@@ -23,6 +45,10 @@ hackmyapp/*
 version 1/
 version 2/
 version 3/
+version 4/
 
 .asset-backup/
 
+# OS junk
+Thumbs.db
+Desktop.ini

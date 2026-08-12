@@ -61,8 +61,8 @@ const SEED: GameManifest[] = [
   },
   {
     id: "olympus",
-    nameVi: "Olympus",
-    blurb: "Slot tumble 6×5 — xu chơi · demo giáo dục SOFIAORE.",
+    nameVi: "BoltPeak",
+    blurb: "Slot tumble 6×5 · xu chơi · demo giáo dục SOFIAORE (original).",
     status: "live",
     pathSuffix: "olympus",
     kind: "spin",
@@ -72,27 +72,51 @@ const SEED: GameManifest[] = [
     enabled: true,
   },
   {
+    id: "ludo",
+    nameVi: "Cờ cá ngựa",
+    blurb: "Bàn 2D/3D · 1v3 bot · lobby · demo SOFIAORE.",
+    status: "live",
+    pathSuffix: "ludo",
+    kind: "other",
+    spendLane: "play",
+    coverUrl: "/assets/lobby/ludo.svg",
+    sort: 28,
+    enabled: true,
+  },
+  {
+    id: "oan-quan",
+    nameVi: "Ô ăn quan",
+    blurb: "Dân gian Việt — PvP / vs bot · rải dân ăn quan.",
+    status: "live",
+    pathSuffix: "oan-quan",
+    kind: "other",
+    spendLane: "play",
+    coverUrl: "/assets/lobby/oan-quan.svg",
+    sort: 27,
+    enabled: true,
+  },
+  {
+    id: "uno",
+    nameVi: "HueRush",
+    blurb: "Bài 4 màu · 112 lá · 2–10 người · chồng +2/+4 · demo SOFIAORE.",
+    status: "live",
+    pathSuffix: "uno",
+    kind: "other",
+    spendLane: "play",
+    coverUrl: "/assets/lobby/uno.svg",
+    sort: 26,
+    enabled: true,
+  },
+  {
     id: "boi",
     nameVi: "Bói bài",
-    blurb: "Tarot & chiêm tinh — tra nghĩa, không cược.",
+    blurb: "Theatre 78 lá — xào/rút thật, không cược · giải trí only.",
     status: "live",
     pathSuffix: "boi-bai",
     kind: "oracle",
     spendLane: "play",
     coverUrl: "/assets/lobby/boi.svg",
     sort: 30,
-    enabled: true,
-  },
-  {
-    id: "ludo",
-    nameVi: "Ludo",
-    blurb: "Cờ cá ngựa isometric — 1v3 bot · demo.",
-    status: "beta",
-    pathSuffix: "ludo",
-    kind: "other",
-    spendLane: "play",
-    coverUrl: "/assets/lobby/ludo.svg",
-    sort: 28,
     enabled: true,
   },
   {
@@ -197,9 +221,20 @@ function mergeSeed(existing: GameManifest[]): GameManifest[] {
       byId.set(s.id, s);
       continue;
     }
-    if (!cur.coverUrl && s.coverUrl) {
-      byId.set(s.id, { ...cur, coverUrl: s.coverUrl });
+    // Đồng bộ cover + blurb + status từ seed khi seed đã live (nâng cấp manifest)
+    const next: GameManifest = {
+      ...cur,
+      coverUrl: cur.coverUrl || s.coverUrl,
+      blurb: s.blurb || cur.blurb,
+      nameVi: s.nameVi || cur.nameVi,
+      pathSuffix: s.pathSuffix || cur.pathSuffix,
+      kind: s.kind || cur.kind,
+      sort: s.sort ?? cur.sort,
+    };
+    if (s.status === "live" && cur.status === "beta") {
+      next.status = "live";
     }
+    byId.set(s.id, next);
   }
   return [...byId.values()].sort((a, b) => a.sort - b.sort || a.id.localeCompare(b.id));
 }

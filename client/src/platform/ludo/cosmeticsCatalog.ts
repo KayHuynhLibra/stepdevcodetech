@@ -23,7 +23,7 @@ export const LUDO_VIEW_MODE_LABEL: Record<
   orbit: {
     short: "XOAY",
     title: "Mở xoay",
-    hint: "Kéo xoay bàn tự do · zoom được",
+    hint: "Bấm XOAY → bảng điều hướng xoay / zoom / khóa góc",
     locked: false,
   },
   screen: {
@@ -196,4 +196,55 @@ export function seatFacingRotationDeg(
     default:
       return 0;
   }
+}
+
+export type LudoBoardCorner = "tl" | "tr" | "bl" | "br";
+
+/** Board-space corner for each yard (unrotated). */
+export const LUDO_BOARD_CORNER_BY_COLOR: Record<string, LudoBoardCorner> = {
+  green: "tl",
+  yellow: "tr",
+  red: "bl",
+  blue: "br",
+};
+
+const CORNER_CW: LudoBoardCorner[] = ["tl", "tr", "br", "bl"];
+
+/** Quarter-turns clockwise matching `seatFacingRotationDeg`. */
+export function seatFacingTurnsCw(
+  facingColor: string | null | undefined,
+): number {
+  switch (facingColor) {
+    case "green":
+      return -1;
+    case "yellow":
+      return 2;
+    case "blue":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+export function rotateBoardCorner(
+  corner: LudoBoardCorner,
+  turnsCw: number,
+): LudoBoardCorner {
+  const i = CORNER_CW.indexOf(corner);
+  if (i < 0) return corner;
+  const n = ((turnsCw % 4) + 4) % 4;
+  return CORNER_CW[(i + n) % 4]!;
+}
+
+/**
+ * Screen corner for a yard after seat-facing (2D rotate / 3D camera).
+ * Own seat always lands at bottom-left (bl).
+ */
+export function screenCornerForColor(
+  yardColor: string | null | undefined,
+  facingColor: string | null | undefined,
+): LudoBoardCorner {
+  const board =
+    LUDO_BOARD_CORNER_BY_COLOR[yardColor || ""] || ("bl" as LudoBoardCorner);
+  return rotateBoardCorner(board, seatFacingTurnsCw(facingColor));
 }

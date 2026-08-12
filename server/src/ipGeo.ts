@@ -7,6 +7,7 @@ const TTL_MS = 24 * 60 * 60 * 1000;
 export interface IpGeoInfo {
   local?: boolean;
   country?: string;
+  countryCode?: string;
   regionName?: string;
   city?: string;
   isp?: string;
@@ -92,7 +93,7 @@ function saveCache() {
 }
 
 async function fetchFromApi(ip: string): Promise<IpGeoInfo | null> {
-  const url = `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,message,country,regionName,city,isp,org,as,proxy,hosting,query`;
+  const url = `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,message,country,countryCode,regionName,city,isp,org,as,proxy,hosting,query`;
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 4000);
   try {
@@ -102,6 +103,8 @@ async function fetchFromApi(ip: string): Promise<IpGeoInfo | null> {
     if (data.status !== "success") return null;
     return {
       country: typeof data.country === "string" ? data.country : undefined,
+      countryCode:
+        typeof data.countryCode === "string" ? data.countryCode : undefined,
       regionName:
         typeof data.regionName === "string" ? data.regionName : undefined,
       city: typeof data.city === "string" ? data.city : undefined,

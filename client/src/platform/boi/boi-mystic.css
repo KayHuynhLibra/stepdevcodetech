@@ -1,0 +1,693 @@
+/**
+ * Bói bài — giao diện tâm linh huyền bí, tím chủ đạo.
+ * Scope: .boi-mystic (hub) + .boi-ritual.boi-mystic (nghi thức).
+ */
+
+.boi-mystic {
+  --boi-void: #0a0614;
+  --boi-night: #12081f;
+  --boi-plum: #1c0f33;
+  --boi-amethyst: #6d28d9;
+  --boi-violet: #8b5cf6;
+  --boi-orchid: #a855f7;
+  --boi-lilac: #c4b5fd;
+  --boi-mist: #ede9fe;
+  --boi-moon: #f3e8ff;
+  --boi-silver: #d8b4fe;
+  --boi-glow: rgba(167, 139, 250, 0.55);
+  --boi-ink: #f5f0ff;
+  --boi-muted: rgba(221, 214, 254, 0.62);
+  --boi-line: rgba(196, 181, 253, 0.22);
+  --boi-panel: rgba(28, 15, 51, 0.72);
+  --boi-panel-solid: #1a1030;
+  --boi-display: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --boi-ui: "Syne", "Be Vietnam Pro", system-ui, sans-serif;
+  position: relative;
+  color: var(--boi-ink);
+  font-family: var(--boi-ui);
+  isolation: isolate;
+}
+
+.boi-mystic__veil {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 90% 55% at 50% -10%, rgba(109, 40, 217, 0.38), transparent 58%),
+    radial-gradient(ellipse 50% 40% at 100% 20%, rgba(168, 85, 247, 0.18), transparent 50%),
+    radial-gradient(ellipse 45% 35% at 0% 70%, rgba(91, 33, 182, 0.22), transparent 55%),
+    linear-gradient(180deg, #0b0616 0%, #140a24 45%, #0a0612 100%);
+}
+
+.boi-mystic__stars {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.55;
+  background-image:
+    radial-gradient(1.5px 1.5px at 12% 18%, rgba(245, 232, 255, 0.9), transparent),
+    radial-gradient(1px 1px at 28% 62%, rgba(196, 181, 253, 0.8), transparent),
+    radial-gradient(1.5px 1.5px at 44% 28%, rgba(255, 255, 255, 0.75), transparent),
+    radial-gradient(1px 1px at 63% 74%, rgba(216, 180, 254, 0.85), transparent),
+    radial-gradient(1.5px 1.5px at 78% 22%, rgba(245, 232, 255, 0.7), transparent),
+    radial-gradient(1px 1px at 88% 58%, rgba(196, 181, 253, 0.7), transparent),
+    radial-gradient(1px 1px at 8% 84%, rgba(255, 255, 255, 0.55), transparent),
+    radial-gradient(1.5px 1.5px at 52% 88%, rgba(216, 180, 254, 0.65), transparent);
+  animation: boi-stars-drift 18s linear infinite;
+}
+
+.boi-mystic__content {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes boi-stars-drift {
+  from { transform: translateY(0); }
+  to { transform: translateY(-12px); }
+}
+
+@keyframes boi-mystic-breathe {
+  0%, 100% { opacity: 0.45; transform: scale(1); }
+  50% { opacity: 0.95; transform: scale(1.08); }
+}
+
+@keyframes boi-mystic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.35), 0 12px 36px rgba(76, 29, 149, 0.45); }
+  50% { box-shadow: 0 0 0 10px rgba(139, 92, 246, 0), 0 16px 42px rgba(109, 40, 217, 0.55); }
+}
+
+@keyframes boi-sigil-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* —— Page chrome / tabs —— */
+.boi-mystic .boi-tabs button {
+  border-radius: 999px;
+  border: 1px solid var(--boi-line);
+  background: rgba(18, 8, 31, 0.65);
+  color: var(--boi-lilac);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: background 0.25s, color 0.25s, border-color 0.25s, transform 0.2s;
+}
+
+.boi-mystic .boi-tabs button:hover {
+  border-color: rgba(167, 139, 250, 0.45);
+  color: var(--boi-moon);
+}
+
+.boi-mystic .boi-tabs button.boi-tab--on,
+.boi-mystic .boi-tabs button[data-on="1"] {
+  background: linear-gradient(135deg, #7c3aed, #4c1d95);
+  color: var(--boi-moon);
+  border-color: transparent;
+}
+
+.boi-mystic .boi-chrome-btn {
+  border-radius: 0.65rem;
+  border: 1px solid var(--boi-line);
+  background: rgba(28, 15, 51, 0.8);
+  color: var(--boi-lilac);
+  font-weight: 700;
+}
+
+.boi-mystic .boi-chrome-btn.is-muted {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+/* —— Hub —— */
+.boi-mystic .boi-hub {
+  gap: 1.15rem;
+}
+
+.boi-mystic .boi-hub__hero {
+  position: relative;
+  overflow: hidden;
+  min-height: 13.5rem;
+  border-radius: 1.35rem;
+  padding: 1.9rem 1.35rem 1.55rem;
+  border: 1px solid rgba(196, 181, 253, 0.28);
+  background:
+    radial-gradient(ellipse 80% 70% at 50% -5%, rgba(168, 85, 247, 0.45), transparent 55%),
+    radial-gradient(circle at 85% 70%, rgba(91, 33, 182, 0.4), transparent 40%),
+    linear-gradient(165deg, #1a0b2e 0%, #2e1065 42%, #0f0720 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(245, 232, 255, 0.12),
+    0 18px 48px rgba(46, 16, 101, 0.45);
+  color: var(--boi-moon);
+}
+
+.boi-mystic .boi-hub__glow {
+  inset: -25% 10% auto;
+  height: 70%;
+  background: radial-gradient(circle, rgba(192, 132, 252, 0.35), transparent 70%);
+  animation: boi-mystic-breathe 6s ease-in-out infinite;
+}
+
+.boi-mystic .boi-hub__fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1.5px 1.5px at 18% 30%, rgba(255, 255, 255, 0.85), transparent),
+    radial-gradient(1px 1px at 72% 24%, rgba(237, 233, 254, 0.8), transparent),
+    radial-gradient(1.5px 1.5px at 58% 68%, rgba(216, 180, 254, 0.7), transparent),
+    radial-gradient(1px 1px at 34% 78%, rgba(255, 255, 255, 0.55), transparent);
+  opacity: 0.7;
+}
+
+.boi-mystic .boi-hub__orb {
+  position: absolute;
+  right: -1.2rem;
+  top: -1.4rem;
+  width: 7.5rem;
+  height: 7.5rem;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 35% 35%, rgba(245, 232, 255, 0.55), transparent 28%),
+    radial-gradient(circle at 50% 50%, rgba(167, 139, 250, 0.35), rgba(76, 29, 149, 0.05) 70%);
+  border: 1px solid rgba(216, 180, 254, 0.25);
+  filter: blur(0.2px);
+  animation: boi-mystic-breathe 7s ease-in-out infinite;
+}
+
+.boi-mystic .boi-hub__eyebrow {
+  position: relative;
+  margin: 0 0 0.35rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(216, 180, 254, 0.75);
+}
+
+.boi-mystic .boi-hub__brand {
+  font-family: var(--boi-display);
+  font-size: clamp(1.85rem, 8vw, 2.45rem);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #faf5ff;
+  text-shadow:
+    0 0 24px rgba(167, 139, 250, 0.55),
+    0 2px 16px rgba(0, 0, 0, 0.45);
+}
+
+.boi-mystic .boi-hub__mantra {
+  font-family: var(--boi-display);
+  font-size: 1.02rem;
+  font-style: italic;
+  font-weight: 500;
+  color: rgba(237, 233, 254, 0.92);
+  max-width: 26rem;
+}
+
+.boi-mystic .boi-hub__sub {
+  color: rgba(196, 181, 253, 0.55);
+  letter-spacing: 0.08em;
+}
+
+.boi-mystic .boi-hub__deck {
+  background: linear-gradient(180deg, rgba(49, 28, 82, 0.85), rgba(24, 12, 42, 0.9));
+  border: 1px solid var(--boi-line);
+  color: var(--boi-moon);
+  box-shadow: 0 8px 20px rgba(10, 6, 20, 0.35);
+}
+
+.boi-mystic .boi-hub__deck.on {
+  border-color: rgba(167, 139, 250, 0.7);
+  background: linear-gradient(160deg, rgba(109, 40, 217, 0.55), rgba(46, 16, 101, 0.95));
+  box-shadow: 0 0 0 1px rgba(196, 181, 253, 0.25), 0 10px 28px rgba(109, 40, 217, 0.4);
+}
+
+.boi-mystic .boi-hub__sigil {
+  background:
+    conic-gradient(from 120deg, #7c3aed, #c4b5fd, #4c1d95, #a855f7, #7c3aed);
+  color: #faf5ff;
+  box-shadow: 0 0 16px rgba(139, 92, 246, 0.45);
+  animation: boi-sigil-spin 14s linear infinite;
+}
+
+.boi-mystic .boi-hub__deck-name {
+  color: var(--boi-moon);
+}
+
+.boi-mystic .boi-hub__deck-meta {
+  color: rgba(196, 181, 253, 0.55);
+}
+
+.boi-mystic .boi-hub__intent {
+  color: rgba(196, 181, 253, 0.7);
+}
+
+.boi-mystic .boi-hub__pool,
+.boi-mystic .boi-hub__preset,
+.boi-mystic .boi-ritual__pool {
+  background: rgba(28, 15, 51, 0.85);
+  border-color: var(--boi-line);
+  color: var(--boi-lilac);
+}
+
+.boi-mystic .boi-hub__pool.on,
+.boi-mystic .boi-ritual__pool.on {
+  background: linear-gradient(135deg, #8b5cf6, #5b21b6);
+  border-color: transparent;
+  color: #faf5ff;
+}
+
+.boi-mystic .boi-hub__preset {
+  background: rgba(46, 16, 101, 0.55);
+}
+
+.boi-mystic .boi-hub__intent .app-input,
+.boi-mystic .app-input {
+  background: rgba(12, 6, 24, 0.75) !important;
+  border: 1px solid var(--boi-line) !important;
+  color: var(--boi-moon) !important;
+  border-radius: 0.85rem !important;
+}
+
+.boi-mystic .boi-hub__intent .app-input::placeholder,
+.boi-mystic .app-input::placeholder {
+  color: rgba(196, 181, 253, 0.4);
+}
+
+.boi-mystic .boi-hub__cta {
+  background: linear-gradient(135deg, #a855f7 0%, #6d28d9 48%, #4c1d95 100%);
+  color: #faf5ff;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: var(--boi-ui);
+  animation: boi-mystic-pulse 3.6s ease-in-out infinite;
+}
+
+.boi-mystic .boi-hub__cta:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.boi-mystic .boi-hub__disc {
+  color: rgba(196, 181, 253, 0.45);
+}
+
+.boi-mystic .boi-msg {
+  border-radius: 0.85rem;
+  background: rgba(127, 29, 29, 0.35);
+  border: 1px solid rgba(252, 165, 165, 0.35);
+  color: #fecaca;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* —— Panels (journal / theory / lab) —— */
+.boi-mystic .app-panel,
+.boi-mystic .boi-panel {
+  background: var(--boi-panel) !important;
+  border: 1px solid var(--boi-line) !important;
+  border-radius: 1.1rem !important;
+  color: var(--boi-ink) !important;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 40px rgba(8, 4, 18, 0.4);
+}
+
+.boi-mystic .play-heading {
+  font-family: var(--boi-display);
+  color: var(--boi-moon);
+  letter-spacing: 0.03em;
+}
+
+.boi-mystic .text-\[var\(--play-muted\)\],
+.boi-mystic [class*="text-[var(--play-muted)]"] {
+  color: var(--boi-muted) !important;
+}
+
+/* —— Reading desk —— */
+.boi-mystic .boi-reading {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 0%, rgba(139, 92, 246, 0.18), transparent 55%),
+    linear-gradient(180deg, #1d1238 0%, #140a28 100%);
+  border: 1px solid rgba(196, 181, 253, 0.28);
+  color: var(--boi-moon);
+  box-shadow: 0 16px 40px rgba(10, 6, 20, 0.45);
+}
+
+.boi-mystic .boi-reading__eyebrow,
+.boi-mystic .boi-reading__meta,
+.boi-mystic .boi-reading__pos,
+.boi-mystic .boi-reading__kw,
+.boi-mystic .boi-reading__disc,
+.boi-mystic .boi-reading__notes {
+  color: var(--boi-muted);
+}
+
+.boi-mystic .boi-reading__title {
+  font-family: var(--boi-display);
+  color: #faf5ff;
+}
+
+.boi-mystic .boi-reading__question,
+.boi-mystic .boi-reading__card {
+  background: rgba(12, 6, 24, 0.45);
+  border: 1px solid rgba(196, 181, 253, 0.12);
+}
+
+.boi-mystic .boi-reading__face {
+  background: #0f0820;
+  box-shadow: 0 0 0 1px rgba(196, 181, 253, 0.2);
+}
+
+.boi-mystic .boi-reading__close {
+  border-left-color: #a855f7;
+  background: rgba(109, 40, 217, 0.18);
+  color: var(--boi-mist);
+  font-family: var(--boi-display);
+}
+
+.boi-mystic .boi-reading__notes textarea {
+  background: rgba(10, 6, 20, 0.65);
+  border-color: var(--boi-line);
+  color: var(--boi-moon);
+}
+
+.boi-mystic .boi-reading__cta {
+  background: linear-gradient(135deg, #8b5cf6, #5b21b6);
+  color: #faf5ff;
+}
+
+.boi-mystic .boi-reading__cta--ghost {
+  background: transparent;
+  border: 1px solid var(--boi-line);
+  color: var(--boi-lilac);
+}
+
+.boi-mystic .boi-reading__x {
+  border-color: var(--boi-line);
+  color: var(--boi-lilac);
+}
+
+/* —— Journal —— */
+.boi-mystic .boi-journal__row {
+  background: rgba(18, 8, 31, 0.65);
+  border: 1px solid var(--boi-line);
+  border-radius: 0.85rem;
+  color: var(--boi-moon);
+}
+
+.boi-mystic .boi-journal__main span,
+.boi-mystic .boi-journal__chev,
+.boi-mystic .boi-journal__time,
+.boi-mystic .boi-journal__date {
+  color: var(--boi-muted);
+}
+
+.boi-mystic .boi-journal__banner {
+  color: rgba(216, 180, 254, 0.7);
+  font-size: 0.68rem;
+  margin: 0 0 0.55rem;
+}
+
+.boi-mystic .boi-journal--empty {
+  text-align: center;
+  padding: 1.5rem 1rem;
+  border: 1px dashed var(--boi-line);
+  border-radius: 1rem;
+  background: rgba(18, 8, 31, 0.4);
+}
+
+.boi-mystic .boi-journal__empty-title {
+  font-family: var(--boi-display);
+  font-size: 1.2rem;
+  color: var(--boi-moon);
+  margin: 0;
+}
+
+.boi-mystic .boi-journal__empty-hint {
+  margin: 0.45rem 0 0;
+  font-size: 0.78rem;
+  color: var(--boi-muted);
+  line-height: 1.45;
+}
+
+/* Soften GameChrome on mystic page — giữ Lobby/tab đọc được, tone theo game */
+.boi-mystic .game-chrome {
+  border-color: rgba(196, 181, 253, 0.45);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 252, 245, 0.94) 0%,
+    rgba(243, 232, 255, 0.9) 100%
+  );
+}
+
+.boi-mystic .game-chrome__lobby {
+  color: #3a2210 !important;
+  background: #fffef8 !important;
+  border-color: rgba(139, 92, 246, 0.45);
+}
+
+.boi-mystic .game-chrome__lobby-arrow {
+  color: #7c3aed;
+}
+
+.boi-mystic .game-chrome__title .play-heading {
+  color: #1e1238 !important;
+}
+
+.boi-mystic .game-chrome__title .text-\[var\(--play-muted\)\],
+.boi-mystic .game-chrome [class*="text-[var(--play-muted)]"] {
+  color: #6b5344 !important;
+}
+
+.boi-mystic .game-chrome [class*="text-[var(--wood-deep)]"] {
+  color: #7c3aed !important;
+}
+
+.boi-mystic .game-chrome__nav .form-tab--game {
+  /* tone từ inline --tab-* — không ép tím đồng loạt */
+  opacity: 1;
+}
+
+/* —— Theory cards —— */
+.boi-mystic .boi-theory-card {
+  border-radius: 1rem;
+  background: linear-gradient(165deg, rgba(49, 28, 82, 0.7), rgba(18, 8, 31, 0.85));
+  border: 1px solid var(--boi-line);
+  padding: 0.95rem 1rem;
+  box-shadow: 0 10px 28px rgba(8, 4, 18, 0.35);
+}
+
+.boi-mystic .boi-theory-card h3 {
+  font-family: var(--boi-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #faf5ff;
+  margin: 0;
+}
+
+.boi-mystic .boi-theory-card p {
+  margin: 0.4rem 0 0;
+  color: rgba(237, 233, 254, 0.88);
+  line-height: 1.5;
+  font-size: 0.82rem;
+}
+
+.boi-mystic .boi-theory-card ul {
+  margin: 0.55rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--boi-muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.boi-mystic .boi-theory-card li + li {
+  margin-top: 0.35rem;
+}
+
+/* —— Lab browse —— */
+.boi-mystic .boi-lab-card {
+  background: rgba(18, 8, 31, 0.7);
+  border: 1px solid var(--boi-line);
+  border-radius: 0.85rem;
+  color: var(--boi-moon);
+}
+
+.boi-mystic .boi-lab-card.on {
+  border-color: rgba(167, 139, 250, 0.65);
+  box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.35), 0 8px 24px rgba(76, 29, 149, 0.4);
+}
+
+/* —— Ritual overlay mystic —— */
+.boi-ritual.boi-mystic {
+  --boi-void: #0a0614;
+  --boi-moon: #f3e8ff;
+  --boi-lilac: #c4b5fd;
+  --boi-line: rgba(196, 181, 253, 0.22);
+  --boi-display: "Cormorant Garamond", Georgia, serif;
+  color: var(--boi-moon);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__backdrop {
+  background:
+    radial-gradient(ellipse 70% 45% at 50% 15%, rgba(139, 92, 246, 0.35), transparent 60%),
+    radial-gradient(circle at 20% 80%, rgba(91, 33, 182, 0.28), transparent 40%),
+    linear-gradient(180deg, rgba(8, 4, 18, 0.92), rgba(12, 6, 28, 0.96));
+  backdrop-filter: blur(8px);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__fx {
+  background-image:
+    radial-gradient(1.5px 1.5px at 20% 30%, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1px 1px at 70% 20%, rgba(216, 180, 254, 0.8), transparent),
+    radial-gradient(1.5px 1.5px at 40% 75%, rgba(196, 181, 253, 0.7), transparent),
+    radial-gradient(1px 1px at 85% 60%, rgba(255, 255, 255, 0.55), transparent);
+  opacity: 0.55;
+}
+
+.boi-ritual.boi-mystic .boi-ritual__shell {
+  background:
+    linear-gradient(180deg, rgba(28, 15, 51, 0.92), rgba(12, 6, 24, 0.96));
+  border: 1px solid rgba(196, 181, 253, 0.22);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__eyebrow {
+  color: rgba(216, 180, 254, 0.7);
+  letter-spacing: 0.18em;
+}
+
+.boi-ritual.boi-mystic .boi-ritual__title {
+  font-family: var(--boi-display);
+  color: #faf5ff;
+}
+
+.boi-ritual.boi-mystic .boi-ritual__close {
+  border-color: rgba(196, 181, 253, 0.35);
+  color: var(--boi-lilac);
+  background: rgba(18, 8, 31, 0.55);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__mantra {
+  font-family: var(--boi-display);
+  color: #e9d5ff;
+  text-shadow: 0 0 20px rgba(167, 139, 250, 0.35);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__hint {
+  color: rgba(196, 181, 253, 0.55);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__intent {
+  background: rgba(109, 40, 217, 0.15);
+  border-color: rgba(167, 139, 250, 0.35);
+  color: rgba(245, 232, 255, 0.92);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__intent span {
+  color: rgba(216, 180, 254, 0.6);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__pilebar {
+  background: rgba(10, 6, 20, 0.55);
+  border-color: rgba(167, 139, 250, 0.3);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__mini-stack span {
+  background: linear-gradient(155deg, #6d28d9, #2e1065);
+  border-color: rgba(196, 181, 253, 0.45);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__pile-count {
+  color: rgba(237, 233, 254, 0.85);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__pile-count strong,
+.boi-ritual.boi-mystic .boi-ritual__deck-n {
+  color: #e9d5ff;
+}
+
+.boi-ritual.boi-mystic .boi-ritual__pile-hint {
+  color: rgba(196, 181, 253, 0.45);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__reshuffle {
+  border-color: rgba(167, 139, 250, 0.45);
+  color: #e9d5ff;
+}
+
+.boi-ritual.boi-mystic .boi-ritual__deck-glow {
+  background: radial-gradient(circle, rgba(167, 139, 250, 0.45), transparent 70%);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__deck-stack span,
+.boi-ritual.boi-mystic .boi-ritual__card-back--css {
+  background: linear-gradient(155deg, #7c3aed, #2e1065 55%, #1e1b4b);
+  border-color: rgba(196, 181, 253, 0.4);
+  box-shadow: 0 10px 28px rgba(76, 29, 149, 0.45);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__sigil {
+  color: #f5e9ff;
+  text-shadow: 0 0 12px rgba(192, 132, 252, 0.8);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__spread {
+  background: rgba(18, 8, 31, 0.7);
+  border: 1px solid rgba(196, 181, 253, 0.22);
+  color: var(--boi-lilac);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__spread.on {
+  border-color: rgba(167, 139, 250, 0.7);
+  background: linear-gradient(160deg, rgba(109, 40, 217, 0.45), rgba(30, 16, 60, 0.95));
+  color: #faf5ff;
+}
+
+.boi-ritual.boi-mystic .boi-ritual__spread strong {
+  font-family: var(--boi-display);
+  color: #faf5ff;
+}
+
+.boi-ritual.boi-mystic .boi-ritual__cta {
+  background: linear-gradient(135deg, #a855f7, #6d28d9 55%, #4c1d95);
+  color: #faf5ff;
+  box-shadow: 0 12px 32px rgba(109, 40, 217, 0.45);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__cta--ghost {
+  background: transparent;
+  border: 1px solid rgba(196, 181, 253, 0.35);
+  color: #e9d5ff;
+}
+
+.boi-ritual.boi-mystic .boi-ritual__fly {
+  background: linear-gradient(155deg, #8b5cf6, #4c1d95);
+  border: 1px solid rgba(216, 180, 254, 0.4);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__pos {
+  color: rgba(216, 180, 254, 0.75);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__meta strong {
+  color: #faf5ff;
+}
+
+.boi-ritual.boi-mystic .boi-ritual__meta span,
+.boi-ritual.boi-mystic .boi-ritual__meaning {
+  color: rgba(221, 214, 254, 0.75);
+}
+
+.boi-ritual.boi-mystic .boi-ritual__aura {
+  background: radial-gradient(circle, rgba(167, 139, 250, 0.35), transparent 70%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boi-mystic__stars,
+  .boi-mystic .boi-hub__glow,
+  .boi-mystic .boi-hub__orb,
+  .boi-mystic .boi-hub__sigil,
+  .boi-mystic .boi-hub__cta {
+    animation: none !important;
+  }
+}

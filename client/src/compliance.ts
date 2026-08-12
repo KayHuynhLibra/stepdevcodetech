@@ -4,7 +4,7 @@
  */
 
 const AGE_KEY = "sofiaore_age_ok_v2";
-const TERMS_KEY = "sofiaore_terms_ok_v2";
+const TERMS_KEY = "sofiaore_terms_ok_v5";
 
 export function hasAgeAck(): boolean {
   try {

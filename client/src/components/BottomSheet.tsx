@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
+import { AdminPopupHead } from "./admin/AdminPopupHead";
 
 interface BottomSheetProps {
   open: boolean;
   title: string;
+  subtitle?: string;
   onClose: () => void;
   children: ReactNode;
   heightClass?: string;
@@ -15,6 +17,7 @@ interface BottomSheetProps {
 export function BottomSheet({
   open,
   title,
+  subtitle,
   onClose,
   children,
   heightClass = "max-h-[80vh]",
@@ -36,27 +39,15 @@ export function BottomSheet({
         role="dialog"
         aria-modal="true"
       >
-        <div className="form-popup__head flex items-center justify-between px-4 py-3">
-          <div className="form-popup__grip absolute left-1/2 top-2 -translate-x-1/2" />
-          <h2 className="font-display text-base font-bold text-[var(--gold-soft)]">
-            {title}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full px-2 py-1 text-sm text-[var(--gold-soft)]/70 hover:text-[var(--gold-soft)]"
-          >
-            Đóng
-          </button>
-        </div>
+        <AdminPopupHead title={title} subtitle={subtitle} onClose={onClose} />
         <div
           className="overflow-y-auto px-4 py-3"
           style={{
             maxHeight: heightClass.includes("90vh")
-              ? "calc(90vh - 52px)"
+              ? "calc(90vh - 56px)"
               : heightClass.includes("88vh")
-                ? "calc(88vh - 52px)"
-                : "calc(80vh - 52px)",
+                ? "calc(88vh - 56px)"
+                : "calc(80vh - 56px)",
           }}
         >
           {children}

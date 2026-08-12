@@ -71,16 +71,40 @@ export function globalHttpRateLimit(opts?: {
   max?: number;
   windowMs?: number;
   skipPaths?: string[];
+  /** Prefixes skipped (e.g. /api/auth/ so login still works when polls flood the bucket). */
+  skipPrefixes?: string[];
+  /** GET-only prefixes skipped (poll loops: Ludo room state, …). */
+  skipGetPrefixes?: string[];
 }) {
   const max = opts?.max ?? 160;
   const windowMs = opts?.windowMs ?? 60_000;
   const skip = new Set(opts?.skipPaths ?? ["/health"]);
+  const skipPrefixes = opts?.skipPrefixes ?? [];
+  const skipGetPrefixes = opts?.skipGetPrefixes ?? [];
   return (req: Request, res: Response, next: NextFunction) => {
     const path = req.path || "/";
     if (skip.has(path)) return next();
+    if (
+      skipPrefixes.some(
+        (p) => path === p || path.startsWith(p.endsWith("/") ? p : `${p}/`),
+      )
+    ) {
+      return next();
+    }
+    if (
+      req.method === "GET" &&
+      skipGetPrefixes.some(
+        (p) => path === p || path.startsWith(p.endsWith("/") ? p : `${p}/`),
+      )
+    ) {
+      return next();
+    }
     const ip = clientIp(req);
     if (!rateLimit(`http:${ip}`, max, windowMs)) {
-      return res.status(429).json({ ok: false, reason: "Quá nhiều yêu cầu" });
+      return res.status(429).json({
+        ok: false,
+        reason: "Quá nhiều yêu cầu — đợi ~1 phút rồi thử lại",
+      });
     }
     next();
   };

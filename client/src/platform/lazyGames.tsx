@@ -11,6 +11,8 @@ export const LazyOlympusCasinoPage = lazy(
   () => import("../pages/OlympusCasinoPage"),
 );
 export const LazyLudoPage = lazy(() => import("../pages/LudoPage"));
+export const LazyOanQuanPage = lazy(() => import("../pages/OanQuanPage"));
+export const LazyUnoPage = lazy(() => import("../pages/UnoPage"));
 
 const PREFETCH: Record<string, () => Promise<{ default: ComponentType }>> = {
   tarot: () => import("../pages/GamePage"),
@@ -23,6 +25,8 @@ const PREFETCH: Record<string, () => Promise<{ default: ComponentType }>> = {
     );
     return import("../pages/LudoPage");
   },
+  "oan-quan": () => import("../pages/OanQuanPage"),
+  uno: () => import("../pages/UnoPage"),
 };
 
 const warmed = new Set<string>();
@@ -40,7 +44,7 @@ export function GameChunkFallback() {
   return (
     <div className="flex min-h-[50dvh] items-center justify-center px-4">
       <p className="text-sm font-semibold text-[var(--play-muted)]">
-        Đang vào bàn…
+        Đang tải trò chơi…
       </p>
     </div>
   );

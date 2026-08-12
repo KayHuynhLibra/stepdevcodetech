@@ -4,6 +4,7 @@ import {
   userHasAnyRole,
   userHasRole,
 } from "./grants";
+import { ensureGuestCode, getGuestCode } from "./guest";
 
 export type UserRole =
   | "user"
@@ -17,7 +18,9 @@ export type UserRole =
   | "audit"
   | "sgift"
   | "ring"
-  | "pm";
+  | "pm"
+  | "tarot78"
+  | "book78";
 
 export interface AuthUser {
   id: string;
@@ -39,6 +42,12 @@ export interface AuthUser {
   displayTotal?: number;
   /** Ví Gem (Kim Cương) — tách xu */
   gemBalance?: number;
+  /** Gem đã tiêu lifetime → Quý tộc */
+  gemSpentLifetime?: number;
+  /** 0–5 VIP theo ván / grant */
+  vipTier?: number;
+  /** 0–6 Quý tộc theo Gem */
+  nobilityTier?: number;
   winToday: number;
   guessesToday: number;
   stakeWeek?: number;
@@ -56,7 +65,7 @@ export interface AuthUser {
   claimedLevelRewards?: number[];
   /** Admin cấp VIP */
   vipGranted?: boolean;
-  /** VIP hiệu lực (admin hoặc đủ 10k ván) */
+  /** VIP hiệu lực (vipTier >= 1) */
   isVip?: boolean;
   banned?: boolean;
   banReason?: string;
@@ -88,6 +97,8 @@ export interface AuthUser {
   idFrame?: string;
   /** Huy hiệu cosmetic — không liên quan role */
   displayBadges?: string[];
+  /** ms khi xác nhận 18+ / Terms trên server */
+  termsAcceptedAt?: number;
   /** Cặp đôi / nhẫn */
   bond?: {
     partnerId: string;
@@ -117,6 +128,9 @@ export interface AuthUser {
 }
 
 export {
+  ASSIGNABLE_STAFF_ROLES,
+  CAP_LABELS,
+  capsForPrimaryRole,
   effectiveRoles,
   effectiveStaffGrantLevel,
   GRANT_LEVEL_LABELS,
@@ -127,9 +141,12 @@ export {
   userHasAnyRole,
   userHasRole,
   type GrantCapability,
+  type UserRoleForGrant,
 } from "./grants";
 
-/** Ngưỡng VIP tự động — đồng bộ server */
+import { computeVipTier } from "./vip";
+
+/** Ngưỡng VIP3 tự động (legacy) — đồng bộ server */
 export const VIP_ROUNDS_REQUIRED = 10_000;
 
 export const USERNAME_RENAME_MAX = 5;
@@ -154,14 +171,15 @@ export function postAuthPath(
 
 export function userShowsVip(
   user:
-    | Pick<AuthUser, "isVip" | "vipGranted" | "roundsPlayed">
+    | Pick<AuthUser, "isVip" | "vipGranted" | "roundsPlayed" | "vipTier">
     | null
     | undefined,
 ): boolean {
   if (!user) return false;
+  if (typeof user.vipTier === "number" && user.vipTier >= 1) return true;
   if (user.isVip) return true;
   if (user.vipGranted) return true;
-  return (user.roundsPlayed ?? 0) >= VIP_ROUNDS_REQUIRED;
+  return computeVipTier(user) >= 1;
 }
 
 /** Tên chính trên bàn — nickname hoặc username. */
@@ -338,6 +356,9 @@ export function homePath(
   if (user.role === "sgift") return `/sgift/${code}`;
   if (user.role === "ring") return `/ring/${code}`;
   if (user.role === "pm") return `/pm/${code}`;
+  if (user.role === "tarot78") return `/tarot78/${code}`;
+  if (user.role === "book78") return `/book78/${code}`;
+  if (user.role === "onl") return `/onl/${code}`;
   if (user.role === "deal") return `/deal/${code}`;
   if (user.role === "tutien") return `/tutien/${code}`;
   if (user.role === "mod") return `/mod/${code}`;
@@ -366,6 +387,14 @@ export function boiBaiPath(
 ): string {
   if (!user) return "/login";
   return `${homePath(user)}/boi-bai`;
+}
+
+/** Shop quà (xu social) theo role + mã user. */
+export function giftShopPath(
+  user: { role: UserRole; code?: string; id: string } | null | undefined,
+): string {
+  if (!user) return "/login";
+  return `${homePath(user)}/gifts`;
 }
 
 export function getToken(): string | null {
@@ -453,6 +482,9 @@ export async function api<T>(
     headers.set("Content-Type", "application/json");
   }
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  else if (!headers.has("x-guest-id")) {
+    headers.set("x-guest-id", getGuestCode() || ensureGuestCode());
+  }
 
   let res: Response;
   try {

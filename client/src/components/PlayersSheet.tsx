@@ -1,5 +1,9 @@
 import { useMemo, useState } from "react";
 import type { OnlinePlayerPublic } from "../cards";
+import {
+  isPlayerIgnored,
+  type SocialIgnoreTarget,
+} from "../playerSocial";
 import { BottomSheet } from "./BottomSheet";
 import { CultivationChip } from "./CultivationChip";
 import { PlayLevelBadge } from "./PlayLevelBadge";
@@ -12,6 +16,8 @@ interface PlayersSheetProps {
   onGift?: (p: OnlinePlayerPublic) => void;
   onRing?: (p: OnlinePlayerPublic) => void;
   onMention?: (p: OnlinePlayerPublic) => void;
+  ignoredList?: SocialIgnoreTarget[];
+  onToggleIgnore?: (p: OnlinePlayerPublic) => void;
 }
 
 export function PlayersSheet({
@@ -22,6 +28,8 @@ export function PlayersSheet({
   onGift,
   onRing,
   onMention,
+  ignoredList = [],
+  onToggleIgnore,
 }: PlayersSheetProps) {
   const [q, setQ] = useState("");
 
@@ -44,7 +52,7 @@ export function PlayersSheet({
       heightClass="max-h-[80vh]"
     >
       <p className="-mt-1 mb-2 text-[11px] text-[var(--jade-soft)]/70">
-        {humans.length} người · hồ sơ / quà / nhẫn / @chat
+        {humans.length} người · hồ sơ · quà · @chat · ẩn tin
       </p>
       <input
         value={q}
@@ -59,83 +67,103 @@ export function PlayersSheet({
             {q.trim() ? "Không khớp" : "Chưa có ai trong phòng"}
           </li>
         )}
-        {humans.map((p) => (
-          <li key={p.id} className="form-row form-row--dark">
-            <button
-              type="button"
-              onClick={() => onSelectPlayer(p)}
-              className="flex w-full items-center gap-2.5 text-left transition active:scale-[0.99]"
-            >
-              <img
-                src={p.avatar || "/assets/ui/avatar-default.png"}
-                alt=""
-                className="h-9 w-9 shrink-0 rounded-full object-cover ring-1 ring-[var(--gold)]/35"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="flex flex-wrap items-center gap-1 truncate text-sm font-semibold text-white/95">
-                  <span className="truncate">{p.name}</span>
-                  {p.isVip ? (
-                    <span className="text-[10px] text-amber-300">VIP</span>
-                  ) : null}
-                </p>
-                <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                  <span className="text-[10px] text-white/45">
-                    {p.code ? `ID ${p.code}` : "Khách"}
-                  </span>
-                  {p.roundsPlayed != null ? (
-                    <PlayLevelBadge rounds={p.roundsPlayed} size="sm" />
-                  ) : p.playLevel != null ? (
-                    <span className="text-[10px] font-bold text-[var(--gold-soft)]">
-                      Lv{p.playLevel}
-                    </span>
-                  ) : null}
-                  {p.cultivationRank ? (
-                    <CultivationChip
-                      rank={p.cultivationRank}
-                      className="!px-1.5 !py-0 !text-[8px]"
-                    />
-                  ) : null}
-                </div>
-              </div>
-            </button>
-            <div className="mt-1.5 flex flex-wrap gap-1">
+        {humans.map((p) => {
+          const ignored = isPlayerIgnored(
+            { userId: p.userId, code: p.code, name: p.name },
+            ignoredList,
+          );
+          return (
+            <li key={p.id} className="form-row form-row--dark">
               <button
                 type="button"
-                className="form-pill"
                 onClick={() => onSelectPlayer(p)}
+                className="flex w-full items-center gap-2.5 text-left transition active:scale-[0.99]"
               >
-                Hồ sơ
+                <img
+                  src={p.avatar || "/assets/ui/avatar-default.png"}
+                  alt=""
+                  className="h-9 w-9 shrink-0 rounded-full object-cover ring-1 ring-[var(--gold)]/35"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-1 truncate text-sm font-semibold text-white/95">
+                    <span className="truncate">{p.name}</span>
+                    {p.isVip ? (
+                      <span className="text-[10px] text-amber-300">VIP</span>
+                    ) : null}
+                    {ignored ? (
+                      <span className="rounded bg-rose-500/25 px-1 text-[9px] font-bold text-rose-200">
+                        Ẩn
+                      </span>
+                    ) : null}
+                  </p>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                    <span className="text-[10px] text-white/45">
+                      {p.code ? `ID ${p.code}` : "Khách"}
+                    </span>
+                    {p.roundsPlayed != null ? (
+                      <PlayLevelBadge rounds={p.roundsPlayed} size="sm" />
+                    ) : p.playLevel != null ? (
+                      <span className="text-[10px] font-bold text-[var(--gold-soft)]">
+                        Lv{p.playLevel}
+                      </span>
+                    ) : null}
+                    {p.cultivationRank ? (
+                      <CultivationChip
+                        rank={p.cultivationRank}
+                        className="!px-1.5 !py-0 !text-[8px]"
+                      />
+                    ) : null}
+                  </div>
+                </div>
               </button>
-              {onGift && (
-                <button
-                  type="button"
-                  className="form-pill form-pill--jade"
-                  onClick={() => onGift(p)}
-                >
-                  Quà
-                </button>
-              )}
-              {onRing && (
-                <button
-                  type="button"
-                  className="form-pill form-pill--gold"
-                  onClick={() => onRing(p)}
-                >
-                  Nhẫn
-                </button>
-              )}
-              {onMention && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
                 <button
                   type="button"
                   className="form-pill"
-                  onClick={() => onMention(p)}
+                  onClick={() => onSelectPlayer(p)}
                 >
-                  @Chat
+                  Hồ sơ
                 </button>
-              )}
-            </div>
-          </li>
-        ))}
+                {onGift && (
+                  <button
+                    type="button"
+                    className="form-pill form-pill--jade"
+                    onClick={() => onGift(p)}
+                  >
+                    Quà
+                  </button>
+                )}
+                {onRing && (
+                  <button
+                    type="button"
+                    className="form-pill form-pill--gold"
+                    onClick={() => onRing(p)}
+                  >
+                    Nhẫn
+                  </button>
+                )}
+                {onMention && (
+                  <button
+                    type="button"
+                    className="form-pill"
+                    onClick={() => onMention(p)}
+                  >
+                    @Chat
+                  </button>
+                )}
+                {onToggleIgnore && (
+                  <button
+                    type="button"
+                    className={`form-pill ${ignored ? "!text-rose-200 !ring-rose-400/40" : ""}`}
+                    onClick={() => onToggleIgnore(p)}
+                  >
+                    {ignored ? "Hiện" : "Ẩn"}
+                  </button>
+                )}
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </BottomSheet>
   );

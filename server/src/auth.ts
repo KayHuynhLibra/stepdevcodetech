@@ -17,7 +17,16 @@ import {
   ACCOUNT_GEM_MAX,
   STARTING_GEM,
   clampGem,
+  ITEM_GEM_MAX,
+  MIN_GEM_GIFT,
+  GIFT_GEM_MAX,
 } from "./gem.js";
+import { computeNobilityTier } from "./nobilityRanks.js";
+import {
+  giftGemMaxForNobility,
+  giftXuMaxForNobility,
+} from "./statusBenefits.js";
+import { computeVipTier } from "./vipTiers.js";
 import {
   demoteRank,
   isCultivationRank,
@@ -93,7 +102,11 @@ export type UserRole =
   | "audit"
   | "sgift"
   | "ring"
-  | "pm";
+  | "pm"
+  /** CMS nghĩa 78 lá + thư viện Bói bài */
+  | "tarot78"
+  /** Thư viện tài liệu Bói bài (ingest / extend) */
+  | "book78";
 
 /** Đủ số ván lifetime → VIP tự động */
 export const VIP_ROUNDS_REQUIRED = 10_000;
@@ -129,6 +142,8 @@ export interface UserRecord {
   socialBalance?: number;
   /** Ví Gem (Kim Cương) — tách xu; bàn Gem để sau */
   gemBalance?: number;
+  /** Gem đã tiêu lifetime (shop + tặng sender) — Quý tộc; admin trừ không giảm */
+  gemSpentLifetime?: number;
   winToday: number;
   guessesToday: number;
   dayKey: string;
@@ -203,6 +218,11 @@ export interface UserRecord {
   idFrame?: string;
   /** Huy hiệu cosmetic (không liên quan role) — tối đa 4 */
   displayBadges?: string[];
+  /**
+   * Timestamp ms khi user xác nhận 18+ / Terms (register hoặc ComplianceGate).
+   * Thiếu trên account cũ → set khi ack lần đầu.
+   */
+  termsAcceptedAt?: number;
 }
 
 /** Lịch sử IP theo user — không lộ ra PublicUser / client player */
@@ -260,6 +280,12 @@ export interface PublicUser {
   displayTotal: number;
   /** Ví Gem (Kim Cương) */
   gemBalance: number;
+  /** Gem đã tiêu lifetime → Quý tộc */
+  gemSpentLifetime: number;
+  /** 0–5 theo ván / vipGranted */
+  vipTier: number;
+  /** 0–6 theo gemSpentLifetime */
+  nobilityTier: number;
   winToday: number;
   guessesToday: number;
   stakeWeek: number;
@@ -274,7 +300,7 @@ export interface PublicUser {
   /** Mốc level đã nhận thưởng */
   claimedLevelRewards?: number[];
   vipGranted: boolean;
-  /** vipGranted || roundsPlayed >= VIP_ROUNDS_REQUIRED */
+  /** vipTier >= 1 (ván / grant) */
   isVip: boolean;
   banned: boolean;
   banReason?: string;
@@ -309,6 +335,8 @@ export interface PublicUser {
   idFrame?: string;
   /** Huy hiệu cosmetic — không liên quan role */
   displayBadges?: string[];
+  /** ms khi xác nhận 18+ / Terms (nếu đã ack) */
+  termsAcceptedAt?: number;
   /** Cặp đôi / nhẫn — active công khai; pending chỉ self */
   bond?: {
     partnerId: string;
@@ -337,8 +365,12 @@ export interface PublicUser {
   };
 }
 
-/** Trần xu mang từ guest → account */
-export const GUEST_MERGE_BALANCE_CAP = 500_000;
+/** Trần xu mang từ guest → account (thấp để hạn chế farm client-hint). */
+export const GUEST_MERGE_BALANCE_CAP = (() => {
+  const raw = Number(process.env.GUEST_MERGE_BALANCE_CAP);
+  if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
+  return 100_000;
+})();
 
 interface UsersFile {
   version: 1;
@@ -364,6 +396,17 @@ const IS_PROD = process.env.NODE_ENV === "production";
 const STAFF_SEED_FALLBACKS: Record<string, string> = {
   mainadmin: "mainadmin123",
   admin: "admin123",
+  tarot78: "tarot78123",
+  book78: "book78123",
+  eco: "eco12345",
+  audit: "audit12345",
+  sgift: "sgift12345",
+  ring: "ring12345",
+  pm: "pm123456",
+  onl: "onl12345",
+  deal: "deal12345",
+  mod: "mod12345",
+  tutien: "tutien123",
 };
 
 interface TokenEntry {
@@ -469,6 +512,14 @@ function ensureDay(u: UserRecord) {
   } else {
     u.gemBalance = clampGem(u.gemBalance);
   }
+  if (
+    typeof u.gemSpentLifetime !== "number" ||
+    !Number.isFinite(u.gemSpentLifetime)
+  ) {
+    u.gemSpentLifetime = 0;
+  } else {
+    u.gemSpentLifetime = Math.max(0, Math.floor(u.gemSpentLifetime));
+  }
   // Legacy isVip → vipGranted (một lần)
   if (u.isVip && !u.vipGranted) {
     u.vipGranted = true;
@@ -477,8 +528,17 @@ function ensureDay(u: UserRecord) {
 }
 
 function computeIsVip(u: UserRecord): boolean {
-  const rounds = Math.max(0, Math.floor(u.roundsPlayed ?? 0));
-  return !!u.vipGranted || rounds >= VIP_ROUNDS_REQUIRED;
+  return computeVipTier(u) >= 1;
+}
+
+function gemSpentOf(u: UserRecord): number {
+  return Math.max(0, Math.floor(u.gemSpentLifetime ?? 0));
+}
+
+function bumpGemSpent(u: UserRecord, amount: number) {
+  const add = Math.max(0, Math.floor(amount || 0));
+  if (add <= 0) return;
+  u.gemSpentLifetime = gemSpentOf(u) + add;
 }
 
 function makeRecoveryCode(): string {
@@ -564,6 +624,9 @@ function toPublic(
     balances,
     displayTotal: balances.play + balances.social,
     gemBalance: clampGem(u.gemBalance),
+    gemSpentLifetime: gemSpentOf(u),
+    vipTier: computeVipTier(u),
+    nobilityTier: computeNobilityTier(gemSpentOf(u)),
     winToday: u.winToday,
     guessesToday: u.guessesToday,
     stakeWeek: u.stakeWeek,
@@ -587,6 +650,8 @@ function toPublic(
     usernameRenamesUsed: renamesUsed,
     usernameRenamesLeft: Math.max(0, USERNAME_RENAME_MAX - renamesUsed),
   };
+  const termsAt = Math.max(0, Math.floor(u.termsAcceptedAt ?? 0));
+  if (termsAt > 0) pub.termsAcceptedAt = termsAt;
   // Persist normalized extras on record (migrate missing → [])
   u.extraRoles = pub.extraRoles;
   if (u.cultivationRank && isCultivationRank(u.cultivationRank)) {
@@ -690,7 +755,9 @@ function isAssignableStaffRole(role: string): role is UserRole {
     role === "audit" ||
     role === "sgift" ||
     role === "ring" ||
-    role === "pm"
+    role === "pm" ||
+    role === "tarot78" ||
+    role === "book78"
   );
 }
 
@@ -707,6 +774,8 @@ export const EXTRA_ROLE_ALLOWED: UserRole[] = [
   "sgift",
   "ring",
   "pm",
+  "tarot78",
+  "book78",
 ];
 
 /** Chuẩn hóa extraRoles: bỏ mainadmin, bỏ trùng primary, unique. */
@@ -743,7 +812,9 @@ function isUserRecord(u: unknown): u is UserRecord {
     r.role === "audit" ||
     r.role === "sgift" ||
     r.role === "ring" ||
-    r.role === "pm";
+    r.role === "pm" ||
+    r.role === "tarot78" ||
+    r.role === "book78";
   return (
     typeof r.id === "string" &&
     typeof r.username === "string" &&
@@ -884,6 +955,14 @@ export class AuthStore {
         } else {
           rec.gemBalance = clampGem(rec.gemBalance);
         }
+        if (
+          typeof rec.gemSpentLifetime !== "number" ||
+          !Number.isFinite(rec.gemSpentLifetime)
+        ) {
+          rec.gemSpentLifetime = 0;
+        } else {
+          rec.gemSpentLifetime = Math.max(0, Math.floor(rec.gemSpentLifetime));
+        }
         ensureWallet(rec);
         if (rec.isVip && !rec.vipGranted) {
           rec.vipGranted = true;
@@ -922,6 +1001,72 @@ export class AuthStore {
           fallback: "demo123",
           role: "user",
         },
+        {
+          user: "tarot78",
+          env: "SEED_TAROT78_PASSWORD",
+          fallback: STAFF_SEED_FALLBACKS.tarot78!,
+          role: "tarot78",
+        },
+        {
+          user: "book78",
+          env: "SEED_BOOK78_PASSWORD",
+          fallback: STAFF_SEED_FALLBACKS.book78!,
+          role: "book78",
+        },
+        {
+          user: "eco",
+          env: "SEED_ECO_PASSWORD",
+          fallback: STAFF_SEED_FALLBACKS.eco!,
+          role: "eco",
+        },
+        {
+          user: "audit",
+          env: "SEED_AUDIT_PASSWORD",
+          fallback: STAFF_SEED_FALLBACKS.audit!,
+          role: "audit",
+        },
+        {
+          user: "sgift",
+          env: "SEED_SGIFT_PASSWORD",
+          fallback: STAFF_SEED_FALLBACKS.sgift!,
+          role: "sgift",
+        },
+        {
+          user: "ring",
+          env: "SEED_RING_PASSWORD",
+          fallback: STAFF_SEED_FALLBACKS.ring!,
+          role: "ring",
+        },
+        {
+          user: "pm",
+          env: "SEED_PM_PASSWORD",
+          fallback: STAFF_SEED_FALLBACKS.pm!,
+          role: "pm",
+        },
+        {
+          user: "onl",
+          env: "SEED_ONL_PASSWORD",
+          fallback: STAFF_SEED_FALLBACKS.onl!,
+          role: "onl",
+        },
+        {
+          user: "deal",
+          env: "SEED_DEAL_PASSWORD",
+          fallback: STAFF_SEED_FALLBACKS.deal!,
+          role: "deal",
+        },
+        {
+          user: "mod",
+          env: "SEED_MOD_PASSWORD",
+          fallback: STAFF_SEED_FALLBACKS.mod!,
+          role: "mod",
+        },
+        {
+          user: "tutien",
+          env: "SEED_TUTIEN_PASSWORD",
+          fallback: STAFF_SEED_FALLBACKS.tutien!,
+          role: "tutien",
+        },
       ];
     for (const s of seeds) {
       if (this.users.has(s.user)) continue;
@@ -944,6 +1089,61 @@ export class AuthStore {
         console.log(`[auth] Seeded ${s.user} from ${s.env}`);
       }
     }
+    this.ensureLudoPlayerSeeds();
+  }
+
+  /** 4 demo players for Ludo self-play (local / SEED_PLAYER_PASSWORD). */
+  private ensureLudoPlayerSeeds() {
+    const players: {
+      user: string;
+      nickname: string;
+      avatar: string;
+    }[] = [
+      {
+        user: "player1",
+        nickname: "Đỏ",
+        avatar: "/assets/avatars/ludo-p1.svg",
+      },
+      {
+        user: "player2",
+        nickname: "Lục",
+        avatar: "/assets/avatars/ludo-p2.svg",
+      },
+      {
+        user: "player3",
+        nickname: "Vàng",
+        avatar: "/assets/avatars/ludo-p3.svg",
+      },
+      {
+        user: "player4",
+        nickname: "Lam",
+        avatar: "/assets/avatars/ludo-p4.svg",
+      },
+    ];
+    const fromEnv = process.env.SEED_PLAYER_PASSWORD?.trim();
+    const password = fromEnv || (IS_PROD ? "" : "player123");
+    if (!password) {
+      console.warn(
+        "[auth] Skip seed player1–4: set SEED_PLAYER_PASSWORD in production",
+      );
+      return;
+    }
+    if (IS_PROD && password === "player123") {
+      console.warn(
+        "[auth] Skip seed player1–4: SEED_PLAYER_PASSWORD trùng mặc định yếu",
+      );
+      return;
+    }
+    for (const p of players) {
+      if (this.users.has(p.user)) continue;
+      this.seed(p.user, password, "user");
+      const u = this.users.get(p.user);
+      if (u) {
+        u.nickname = p.nickname;
+        u.avatar = p.avatar;
+      }
+    }
+    this.scheduleSave();
   }
 
   private seed(username: string, password: string, role: UserRole) {
@@ -960,6 +1160,7 @@ export class AuthStore {
       balance: isStaffRole(role) ? 100_000 : STARTING_BALANCE,
       socialBalance: isStaffRole(role) ? 50_000 : 0,
       gemBalance: STARTING_GEM,
+      gemSpentLifetime: 0,
       winToday: 0,
       guessesToday: 0,
       dayKey: todayKey(),
@@ -1059,6 +1260,7 @@ export class AuthStore {
 
     const salt = randomBytes(16).toString("hex");
     const id = randomBytes(8).toString("hex");
+    const now = Date.now();
     const user: UserRecord = {
       id,
       code: this.allocateCode(),
@@ -1070,14 +1272,17 @@ export class AuthStore {
       balance: STARTING_BALANCE,
       socialBalance: 0,
       gemBalance: STARTING_GEM,
+      gemSpentLifetime: 0,
       winToday: 0,
       guessesToday: 0,
       dayKey: todayKey(),
       stakeWeek: 0,
       weekKey: weekKey(),
-      createdAt: Date.now(),
+      createdAt: now,
       roundsPlayed: 0,
       recoveryCode: makeRecoveryCode(),
+      /** Register UI yêu cầu đồng ý Terms trước khi tạo tài khoản */
+      termsAcceptedAt: now,
     };
     this.indexUser(user);
     this.scheduleSave();
@@ -1241,7 +1446,9 @@ export class AuthStore {
       | "audit"
       | "sgift"
       | "ring"
-      | "pm",
+      | "pm"
+      | "tarot78"
+      | "book78",
   ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
     const user = this.byId.get(userId);
     if (!user) return { ok: false, reason: "Không tìm thấy user" };
@@ -1259,7 +1466,9 @@ export class AuthStore {
       role === "audit" ||
       role === "sgift" ||
       role === "ring" ||
-      role === "pm"
+      role === "pm" ||
+      role === "tarot78" ||
+      role === "book78"
     ) {
       user.mustChangePassword = user.mustChangePassword ?? true;
     }
@@ -1893,6 +2102,9 @@ export class AuthStore {
         avatar: string;
         isVip: boolean;
         vipGranted: boolean;
+        vipTier: number;
+        nobilityTier: number;
+        gemSpentLifetime: number;
         roundsPlayed: number;
         playLevel: number;
         cultivationRank?: CultivationRank;
@@ -1924,6 +2136,9 @@ export class AuthStore {
       avatar: string;
       isVip: boolean;
       vipGranted: boolean;
+      vipTier: number;
+      nobilityTier: number;
+      gemSpentLifetime: number;
       roundsPlayed: number;
       playLevel: number;
       cultivationRank?: CultivationRank;
@@ -1942,6 +2157,9 @@ export class AuthStore {
       avatar: normalizeAvatar(user.avatar),
       isVip: computeIsVip(user),
       vipGranted: !!user.vipGranted,
+      vipTier: computeVipTier(user),
+      nobilityTier: computeNobilityTier(gemSpentOf(user)),
+      gemSpentLifetime: gemSpentOf(user),
       roundsPlayed: Math.max(0, Math.floor(user.roundsPlayed ?? 0)),
       playLevel: playLevelFromRounds(user.roundsPlayed),
     };
@@ -2074,6 +2292,26 @@ export class AuthStore {
     }
     user.avatar = avatar;
     this.scheduleSave();
+    return { ok: true, user: toPublic(user) };
+  }
+
+  /**
+   * Ghi nhận xác nhận 18+ / Terms (idempotent).
+   * Account cũ thiếu field → set lần đầu; không ghi đè timestamp cũ.
+   */
+  acceptTerms(
+    userId: string,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    if (user.banned) {
+      return { ok: false, reason: "Tài khoản bị khóa" };
+    }
+    const existing = Math.max(0, Math.floor(user.termsAcceptedAt ?? 0));
+    if (existing <= 0) {
+      user.termsAcceptedAt = Date.now();
+      this.scheduleSave();
+    }
     return { ok: true, user: toPublic(user) };
   }
 
@@ -2244,7 +2482,7 @@ export class AuthStore {
     return { ok: true, user: toPublic(user), lane };
   }
 
-  /** Cộng/trừ Gem (Kim Cương) — không đụng xu. */
+  /** Cộng/trừ Gem (Kim Cương) — không đụng xu. Không đổi gemSpentLifetime. */
   adjustGem(
     userId: string,
     delta: number,
@@ -2264,6 +2502,56 @@ export class AuthStore {
     user.gemBalance = next;
     this.scheduleSave();
     return { ok: true, user: toPublic(user) };
+  }
+
+  /** Hoàn Gem shop fail — cộng lại ví và giảm gemSpentLifetime. */
+  refundShopGem(
+    userId: string,
+    amountRaw: unknown,
+  ): { ok: true; user: PublicUser } | { ok: false; reason: string } {
+    const amount = Math.max(0, Math.floor(Number(amountRaw) || 0));
+    if (amount <= 0) {
+      const u = this.byId.get(userId);
+      if (!u) return { ok: false, reason: "Không tìm thấy user" };
+      return { ok: true, user: toPublic(u) };
+    }
+    const adj = this.adjustGem(userId, amount);
+    if (!adj.ok) return adj;
+    const user = this.byId.get(userId);
+    if (user) {
+      user.gemSpentLifetime = Math.max(0, gemSpentOf(user) - amount);
+      this.scheduleSave();
+      return { ok: true, user: toPublic(user) };
+    }
+    return adj;
+  }
+
+  /**
+   * Trừ Gem — shop skin / MXH gem — không đụng xu chơi / xu quà.
+   */
+  spendGem(
+    userId: string,
+    amountRaw: unknown,
+  ):
+    | { ok: true; user: PublicUser; amount: number }
+    | { ok: false; reason: string } {
+    const amount = Math.floor(Number(amountRaw));
+    if (!Number.isFinite(amount) || amount < 1) {
+      return { ok: false, reason: "Số Gem không hợp lệ" };
+    }
+    if (amount > ITEM_GEM_MAX) {
+      return {
+        ok: false,
+        reason: `Tối đa ${ITEM_GEM_MAX.toLocaleString("vi-VN")} Gem / lần`,
+      };
+    }
+    const user = this.byId.get(userId);
+    if (!user) return { ok: false, reason: "Không tìm thấy user" };
+    const adj = this.adjustGem(userId, -amount);
+    if (!adj.ok) return adj;
+    bumpGemSpent(user, amount);
+    this.scheduleSave();
+    return { ok: true, user: toPublic(user), amount };
   }
 
   setGemBalance(userId: string, gemBalance: number) {
@@ -2443,14 +2731,18 @@ export class AuthStore {
     if (!Number.isFinite(amount) || amount < MIN_STAKE) {
       return { ok: false, reason: `Tối thiểu ${MIN_STAKE} xu` };
     }
-    if (amount > GIFT_XU_MAX) {
+    const fromEarly = this.byId.get(fromId);
+    if (!fromEarly) return { ok: false, reason: "Không tìm thấy người gửi" };
+    const xuCap = giftXuMaxForNobility(
+      computeNobilityTier(gemSpentOf(fromEarly)),
+    );
+    if (amount > xuCap) {
       return {
         ok: false,
-        reason: `Tối đa ${GIFT_XU_MAX.toLocaleString("vi-VN")} xu / lần`,
+        reason: `Tối đa ${xuCap.toLocaleString("vi-VN")} xu / lần`,
       };
     }
-    const from = this.byId.get(fromId);
-    if (!from) return { ok: false, reason: "Không tìm thấy người gửi" };
+    const from = fromEarly;
     if (from.banned) return { ok: false, reason: "Tài khoản bị khóa" };
 
     let to: UserRecord | undefined;
@@ -2479,6 +2771,73 @@ export class AuthStore {
 
     from.socialBalance = (from.socialBalance ?? 0) - amount;
     to.socialBalance = (to.socialBalance ?? 0) + amount;
+    this.scheduleSave();
+    return {
+      ok: true,
+      from: toPublic(from),
+      to: toPublic(to),
+      amount,
+    };
+  }
+
+  /**
+   * Tặng Gem P2P — zero-sum, không đụng xu chơi / xu quà / vault.
+   */
+  giftGem(
+    fromId: string,
+    toRef: { userId?: string; code?: string; username?: string },
+    amountRaw: unknown,
+  ):
+    | {
+        ok: true;
+        from: PublicUser;
+        to: PublicUser;
+        amount: number;
+      }
+    | { ok: false; reason: string } {
+    const amount = Math.floor(Number(amountRaw));
+    if (!Number.isFinite(amount) || amount < MIN_GEM_GIFT) {
+      return { ok: false, reason: `Tối thiểu ${MIN_GEM_GIFT} Gem` };
+    }
+    const from = this.byId.get(fromId);
+    if (!from) return { ok: false, reason: "Không tìm thấy người gửi" };
+    if (from.banned) return { ok: false, reason: "Tài khoản bị khóa" };
+    const gemCap = giftGemMaxForNobility(
+      computeNobilityTier(gemSpentOf(from)),
+    );
+    if (amount > gemCap) {
+      return {
+        ok: false,
+        reason: `Tối đa ${gemCap.toLocaleString("vi-VN")} Gem / lần`,
+      };
+    }
+
+    let to: UserRecord | undefined;
+    const tid = String(toRef.userId ?? "").trim();
+    const code = String(toRef.code ?? "").trim();
+    const username = String(toRef.username ?? "").trim().toLowerCase();
+    if (tid) to = this.byId.get(tid);
+    else if (code) to = this.getByCode(code);
+    else if (username) to = this.users.get(username);
+    if (!to) return { ok: false, reason: "Không tìm thấy người nhận" };
+    if (to.banned) return { ok: false, reason: "Người nhận bị khóa" };
+    if (to.id === from.id) {
+      return { ok: false, reason: "Không thể tự tặng Gem" };
+    }
+
+    const fromGem = clampGem(from.gemBalance);
+    const toGem = clampGem(to.gemBalance);
+    if (fromGem < amount) return { ok: false, reason: "Gem không đủ" };
+    if (toGem + amount > ACCOUNT_GEM_MAX) {
+      return {
+        ok: false,
+        reason: `Người nhận đã gần trần ${ACCOUNT_GEM_MAX.toLocaleString("vi-VN")} Gem`,
+      };
+    }
+
+    from.gemBalance = fromGem - amount;
+    to.gemBalance = toGem + amount;
+    bumpGemSpent(from, amount);
     this.scheduleSave();
     return {
       ok: true,

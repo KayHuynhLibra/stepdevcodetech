@@ -27,6 +27,7 @@ export function BoiReadingDesk({
   row,
   deckName,
   mode = "live",
+  showDeep = false,
   onSave,
   onNotesChange,
   onClose,
@@ -35,6 +36,7 @@ export function BoiReadingDesk({
   row: OracleDrawHistoryRow;
   deckName?: string;
   mode?: "live" | "journal";
+  showDeep?: boolean;
   onSave?: () => void | Promise<void>;
   onNotesChange?: (notes: string) => void | Promise<void>;
   onClose?: () => void;
@@ -45,17 +47,26 @@ export function BoiReadingDesk({
   const [busy, setBusy] = useState(false);
   const mantraClose =
     row.mantraClose || pickMantra("closeReading", row.id || row.at);
+  const spreadCount = row.cards.length;
+  const spreadMeta = (() => {
+    const raw = String(row.spread ?? "").trim();
+    if (!raw) return `${spreadCount} lá`;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return `${n} lá`;
+    return `${raw} · ${spreadCount} lá`;
+  })();
 
   const copy = async () => {
     const text = formatReadingPlain({
       title: row.title,
       question: row.question,
       deckName,
-      spread: row.spread ?? String(row.cards.length),
+      spread: row.spread ?? String(spreadCount),
       at: row.at,
       mantraClose,
       cards: row.cards,
       notes,
+      timingHint: row.timingHint,
     });
     try {
       await navigator.clipboard.writeText(text);
@@ -87,7 +98,7 @@ export function BoiReadingDesk({
           <p className="boi-reading__meta">
             {new Date(row.at).toLocaleString("vi-VN")}
             {deckName ? ` · ${deckName}` : ""}
-            {row.spread ? ` · ${row.spread} lá` : ""}
+            {row.spread ? ` · ${spreadMeta}` : ""}
           </p>
           {row.question ? (
             <p className="boi-reading__question">
@@ -119,6 +130,11 @@ export function BoiReadingDesk({
                 </span>
               </p>
               <p className="boi-reading__meaning">{c.meaning}</p>
+              {showDeep && c.theoryNotes ? (
+                <p className="boi-reading__kw whitespace-pre-wrap opacity-90">
+                  {c.theoryNotes}
+                </p>
+              ) : null}
               {c.keywords?.length ? (
                 <p className="boi-reading__kw">
                   {c.keywords.slice(0, 6).join(" · ")}
@@ -133,6 +149,14 @@ export function BoiReadingDesk({
         <span>Lời khép vòng</span>
         {mantraClose}
       </blockquote>
+
+      {row.timingHint ? (
+        <blockquote className="boi-reading__close boi-reading__timing">
+          <span>Gợi ý thời gian</span>
+          <p>{row.timingHint}</p>
+          <small>Chỉ là gợi ý giải trí.</small>
+        </blockquote>
+      ) : null}
 
       <label className="boi-reading__notes">
         <span>Ghi chú của bạn</span>

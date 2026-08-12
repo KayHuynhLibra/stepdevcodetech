@@ -1,4 +1,4 @@
-import type { RitualSpread } from "./oracleDeck";
+import type { RitualSpreadCount } from "./oracleDeck";
 
 export type MantraPhase =
   | "center"
@@ -52,8 +52,9 @@ const POOLS: Record<MantraPhase, string[]> = {
   ],
 };
 
-const SPREAD_HINT: Record<RitualSpread, string> = {
+const SPREAD_HINT: Partial<Record<RitualSpreadCount, string>> = {
   1: "Một lá — câu hỏi thẳng, một câu trả lời đủ nặng.",
+  2: "Hai lá — năng lượng và lời khuyên.",
   3: "Quá khứ · Hiện tại · Tương lai — dòng chảy thời gian.",
   5: "Bạn · Đối phương · Quan hệ · Thách thức · Lời khuyên.",
   10: "Celtic Cross — thập tự trung tâm và cột staff chín–mười.",
@@ -83,8 +84,16 @@ export function pickMantra(
   return pool[i]!;
 }
 
-export function spreadMantraHint(spread: RitualSpread): string {
-  return SPREAD_HINT[spread] ?? "";
+export function spreadMantraHint(
+  spread: RitualSpreadCount | number | string,
+  blurb?: string,
+): string {
+  if (blurb) return blurb;
+  const n = typeof spread === "number" ? spread : Number(spread);
+  if (Number.isFinite(n) && SPREAD_HINT[n as RitualSpreadCount]) {
+    return SPREAD_HINT[n as RitualSpreadCount]!;
+  }
+  return "Chọn khung trải vừa với độ sâu câu hỏi.";
 }
 
 export function formatReadingPlain(opts: {
@@ -94,6 +103,7 @@ export function formatReadingPlain(opts: {
   spread?: string;
   at?: number;
   mantraClose?: string;
+  timingHint?: string;
   cards: {
     position?: string;
     nameVi: string;
@@ -109,7 +119,14 @@ export function formatReadingPlain(opts: {
     lines.push(new Date(opts.at).toLocaleString("vi-VN"));
   }
   if (opts.deckName) lines.push(`Bộ: ${opts.deckName}`);
-  if (opts.spread) lines.push(`Trải: ${opts.spread} lá`);
+  if (opts.spread) {
+    const n = Number(opts.spread);
+    lines.push(
+      Number.isFinite(n) && n > 0
+        ? `Trải: ${n} lá`
+        : `Trải: ${opts.spread} (${opts.cards.length} lá)`,
+    );
+  }
   if (opts.question) lines.push(`Câu hỏi: ${opts.question}`);
   lines.push("");
   for (const c of opts.cards) {
@@ -124,6 +141,10 @@ export function formatReadingPlain(opts: {
   }
   if (opts.mantraClose) {
     lines.push(`Khép vòng: ${opts.mantraClose}`);
+    lines.push("");
+  }
+  if (opts.timingHint) {
+    lines.push(`Gợi ý thời gian: ${opts.timingHint}`);
     lines.push("");
   }
   if (opts.notes) {

@@ -15,7 +15,7 @@ export const SFX_STYLES: {
 }[] = [
   { id: "classic", label: "Cổ điển", hint: "Bài gỗ · dày lớp" },
   { id: "mystic", label: "Huyền bí", hint: "Pad · chuông nghi lễ" },
-  { id: "casino", label: "Sòng bài", hint: "Chip · dứt · rõ" },
+  { id: "casino", label: "Arcade", hint: "Chip · dứt · rõ" },
   { id: "fortune", label: "Tài vận", hint: "Chuông may · fanfare" },
 ];
 
@@ -75,7 +75,7 @@ export const OLYMPUS_SFX_SLOT_META: Record<
   spin: { label: "Quay", hint: "Bắt đầu spin" },
   land: { label: "Dừng ô", hint: "Reel / ô dừng" },
   thunder: { label: "Sấm", hint: "Zeus / bolt" },
-  oly_win: { label: "Thắng", hint: "Win Olympus" },
+  oly_win: { label: "Thắng", hint: "Win BoltPeak" },
 };
 
 export const BOI_SFX_SLOTS = ["flip", "shuffle", "ui"] as const;

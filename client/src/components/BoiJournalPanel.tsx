@@ -1,18 +1,35 @@
-import type { OracleDrawHistoryRow, OracleDeckMeta } from "../oracle";
+import type { OracleDrawHistoryRow, OracleDeckMeta, OracleSpread } from "../oracle";
 
 export function BoiJournalPanel({
   rows,
   decks,
+  spreads,
   guestHint,
   onOpen,
 }: {
   rows: OracleDrawHistoryRow[];
   decks: OracleDeckMeta[];
+  spreads?: OracleSpread[];
   guestHint?: boolean;
   onOpen: (row: OracleDrawHistoryRow) => void;
 }) {
   const nameOf = (id: string) =>
     decks.find((d) => d.id === id)?.nameVi ?? id;
+  const spreadLabel = (spread?: string, fallbackCards = 0) => {
+    if (!spread) return fallbackCards ? `${fallbackCards} lá` : "";
+    const byId = spreads?.find((s) => s.id === spread);
+    if (byId) return `${byId.nameVi} · ${byId.cardCount} lá`;
+    if (spread.includes(":")) {
+      const [id, count] = spread.split(":");
+      const named = spreads?.find((s) => s.id === id);
+      if (named) return `${named.nameVi} · ${named.cardCount} lá`;
+      const n = Number(count);
+      if (Number.isFinite(n) && n > 0) return `${n} lá`;
+    }
+    const n = Number(spread);
+    if (Number.isFinite(n) && n > 0) return `${n} lá`;
+    return spread;
+  };
 
   if (!rows.length) {
     return (
@@ -50,10 +67,12 @@ export function BoiJournalPanel({
                 })}
               </span>
               <span className="boi-journal__main">
-                <strong>{r.title || `Trải ${r.spread ?? r.cards.length} lá`}</strong>
+                <strong>
+                  {r.title || `Trải ${spreadLabel(r.spread, r.cards.length)}`}
+                </strong>
                 <span>
                   {nameOf(r.deckId)}
-                  {r.spread ? ` · ${r.spread} lá` : ""}
+                  {r.spread ? ` · ${spreadLabel(r.spread, r.cards.length)}` : ""}
                   {r.question ? ` · ${r.question}` : ""}
                 </span>
               </span>

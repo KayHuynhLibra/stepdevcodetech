@@ -1,5 +1,15 @@
 import { FormEvent, useEffect, useState } from "react";
-import { VIP_ROUNDS_REQUIRED, userShowsVip } from "../auth";
+import { userShowsVip } from "../auth";
+import {
+  nextNobilityGemThreshold,
+  nobilityLabel,
+  nobilityTierOf,
+} from "../nobility";
+import {
+  computeVipTier,
+  nextVipRoundsThreshold,
+  vipLabel as formatVipTier,
+} from "../vip";
 import { formatXu } from "../cards";
 import { CoupleAvatar } from "./CoupleAvatar";
 import { ColoredName } from "./ColoredName";
@@ -45,6 +55,9 @@ export interface PlayerInfoView {
   roundsPlayed?: number;
   playLevel?: number;
   vipGranted?: boolean;
+  vipTier?: number;
+  nobilityTier?: number;
+  gemSpentLifetime?: number;
   cultivationRank?: string | null;
   nameColor?: string | null;
   nameEffect?: string | null;
@@ -81,6 +94,12 @@ interface PlayerInfoSheetProps {
   }) => void;
   onOpenGiftHub?: () => void;
   onOpenRingPropose?: () => void;
+  /** Hành vi MXH / chat online */
+  onMention?: () => void;
+  onCopyId?: () => void;
+  onReportPlayer?: () => void;
+  ignored?: boolean;
+  onToggleIgnore?: () => void;
   viewerBonded?: boolean;
 }
 
@@ -101,6 +120,11 @@ export function PlayerInfoSheet({
   onGiftXu,
   onOpenGiftHub,
   onOpenRingPropose,
+  onMention,
+  onCopyId,
+  onReportPlayer,
+  ignored,
+  onToggleIgnore,
   viewerBonded,
 }: PlayerInfoSheetProps) {
   const [delta, setDelta] = useState("");
@@ -133,12 +157,25 @@ export function PlayerInfoSheet({
   const vipLabel = resolveRoleLabel("vip", rd.roleLabels);
 
   const rounds = player.roundsPlayed ?? 0;
-  const autoVip = rounds >= VIP_ROUNDS_REQUIRED;
+  const vipTier = computeVipTier({
+    roundsPlayed: rounds,
+    vipGranted: player.vipGranted,
+    vipTier: player.vipTier,
+  });
+  const autoVip = vipTier >= 3 && !player.vipGranted;
   const showVip = userShowsVip({
     isVip: player.isVip,
     vipGranted: player.vipGranted,
     roundsPlayed: rounds,
+    vipTier,
   });
+  const nextVipRounds = nextVipRoundsThreshold(vipTier);
+  const gemSpent = Math.max(0, Math.floor(player.gemSpentLifetime ?? 0));
+  const nobleTier = nobilityTierOf({
+    nobilityTier: player.nobilityTier,
+    gemSpentLifetime: gemSpent,
+  });
+  const nextNobleGem = nextNobilityGemThreshold(nobleTier);
 
   const canManageUser = !!(staff && player.userId && !player.isBot);
   const canBalanceUser = !!(
@@ -175,6 +212,46 @@ export function PlayerInfoSheet({
     !viewerBonded &&
     !targetBonded
   );
+
+  const isSelf = !!(meId && player.userId && player.userId === meId);
+  const showPersonal = !player.isBot && !isSelf;
+  const personalActions = [
+    onMention
+      ? { id: "mention", label: "@Chat", hint: "Gắn tên vào khung chat", run: onMention }
+      : null,
+    onOpenGiftHub && showGift
+      ? { id: "gift", label: "Quà", hint: "Mở hub tặng quà", run: onOpenGiftHub }
+      : null,
+    showRingPropose
+      ? {
+          id: "ring",
+          label: "Nhẫn",
+          hint: "Cầu hôn / lên nhẫn",
+          run: onOpenRingPropose!,
+        }
+      : null,
+    onCopyId && (player.code || player.userId)
+      ? { id: "copy", label: "Copy ID", hint: "Sao chép mã người chơi", run: onCopyId }
+      : null,
+    onReportPlayer
+      ? {
+          id: "report",
+          label: "Báo cáo",
+          hint: "Gửi báo cáo tới mod",
+          run: onReportPlayer,
+        }
+      : null,
+    onToggleIgnore
+      ? {
+          id: "ignore",
+          label: ignored ? "Hiện chat" : "Ẩn chat",
+          hint: ignored
+            ? "Bỏ ẩn tin nhắn người này"
+            : "Ẩn tin chat của họ (chỉ bạn)",
+          run: onToggleIgnore,
+        }
+      : null,
+  ].filter(Boolean) as { id: string; label: string; hint: string; run: () => void }[];
 
   const submitDelta = (e: FormEvent) => {
     e.preventDefault();
@@ -380,7 +457,9 @@ export function PlayerInfoSheet({
                     <span className="role-pill__glyph" aria-hidden>
                       {resolveRoleGlyph("vip")}
                     </span>
-                    <span className="role-pill__text">{vipLabel}</span>
+                    <span className="role-pill__text">
+                      {formatVipTier(vipTier) || vipLabel}
+                    </span>
                   </span>
                 ) : null,
                 cult:
@@ -449,22 +528,37 @@ export function PlayerInfoSheet({
           </div>
 
           {player.userId && !player.isBot && (
-            <div className="profile-celestial__level w-full max-w-[16rem]">
+            <div className="profile-celestial__level w-full max-w-[16rem] space-y-1.5">
               <PlayLevelBadge
                 rounds={rounds}
                 size="md"
                 showTitle
                 showBar
               />
+              <p className="text-[10px] tabular-nums text-[#8A9EB8]">
+                {formatVipTier(vipTier) || "Chưa VIP"}
+                {nextVipRounds != null
+                  ? ` · ${rounds.toLocaleString("vi-VN")}/${nextVipRounds.toLocaleString("vi-VN")} ván`
+                  : ` · ${rounds.toLocaleString("vi-VN")} ván`}
+              </p>
+              <p className="text-[10px] tabular-nums text-[#8A9EB8]">
+                {nobleTier > 0
+                  ? nobilityLabel(nobleTier)
+                  : "Chưa Quý tộc"}
+                {nextNobleGem != null
+                  ? ` · ${gemSpent.toLocaleString("vi-VN")}/${nextNobleGem.toLocaleString("vi-VN")} Gem`
+                  : gemSpent > 0
+                    ? ` · ${gemSpent.toLocaleString("vi-VN")} Gem`
+                    : ""}
+              </p>
             </div>
           )}
 
-          {player.userId && !player.isBot && (
+          {player.userId && !player.isBot && nobleTier > 0 ? (
             <p className="profile-celestial__rounds">
-              Đã chơi {rounds.toLocaleString("vi-VN")} /{" "}
-              {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván (VIP)
+              Quý tộc {nobilityLabel(nobleTier)}
             </p>
-          )}
+          ) : null}
         </div>
 
         {!player.isBot && (
@@ -501,6 +595,45 @@ export function PlayerInfoSheet({
           </div>
         )}
 
+        {showPersonal && personalActions.length > 0 ? (
+          <div className="relative z-[1] mx-4 mt-3 rounded-2xl border border-[#2A3E5C] bg-[#0E1A2B]/90 px-3 py-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-[#E5C158]">
+                Hành vi MXH
+              </p>
+              {ignored ? (
+                <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[9px] font-bold text-rose-200 ring-1 ring-rose-400/40">
+                  Đang ẩn chat
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-0.5 text-[10px] text-[#7A8EA8]">
+              Chat online · quà · nhẫn · ẩn tin (chỉ trên máy bạn)
+            </p>
+            <div className="mt-2 grid grid-cols-3 gap-1.5">
+              {personalActions.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  title={a.hint}
+                  onClick={() => {
+                    a.run();
+                  }}
+                  className={`rounded-xl border px-1.5 py-2 text-center text-[10px] font-extrabold transition active:scale-[0.98] ${
+                    a.id === "ignore" && ignored
+                      ? "border-rose-400/50 bg-rose-500/15 text-rose-100"
+                      : a.id === "report"
+                        ? "border-amber-500/40 bg-amber-500/10 text-amber-100"
+                        : "border-[#5A7A9A]/55 bg-[#121D2D] text-[#E3D8C4] hover:border-[#C8A968]/55"
+                  }`}
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {showRingPropose && (
           <div className="relative z-[1] mx-4 mt-3 rounded-2xl border border-[#8C764D]/60 bg-[#0E1A2B]/90 px-3 py-3">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#E5C158]">
@@ -528,7 +661,7 @@ export function PlayerInfoSheet({
                 onClick={onOpenGiftHub}
                 className="w-full rounded-lg border border-[#5A7A9A] bg-[#121D2D] px-3 py-2 text-xs font-bold text-[#E3D8C4] disabled:opacity-45"
               >
-                Mở hub quà demo
+                Mở hub quà
               </button>
             )}
             <div className="flex flex-wrap gap-1">
@@ -624,17 +757,13 @@ export function PlayerInfoSheet({
                 </div>
 
                 <div>
-                  <p className="mb-1.5 text-[10px] text-[#7A8EA8]">VIP10K</p>
+                  <p className="mb-1.5 text-[10px] text-[#7A8EA8]">
+                    VIP (grant = VIP3+)
+                  </p>
                   <p className="mb-1.5 text-[10px] tabular-nums text-[#7A8EA8]">
-                    {rounds.toLocaleString("vi-VN")} /{" "}
-                    {VIP_ROUNDS_REQUIRED.toLocaleString("vi-VN")} ván
-                    {showVip
-                      ? localGranted
-                        ? " · VIP10K"
-                        : autoVip
-                          ? " · VIP"
-                          : " · VIP"
-                      : ""}
+                    {formatVipTier(vipTier) || "—"} ·{" "}
+                    {rounds.toLocaleString("vi-VN")} ván
+                    {localGranted ? " · VIP10K" : autoVip ? " · auto" : ""}
                   </p>
                   <button
                     type="button"

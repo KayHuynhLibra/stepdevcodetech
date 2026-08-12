@@ -368,7 +368,7 @@ export default function LoginPage({ page }: { page: AuthPage }) {
                     >
                       Điều khoản
                     </Link>{" "}
-                    (học tập · cấm ăn cắp code · Iowa/Mỹ) &{" "}
+                    (Hoa Kỳ · xu không đổi tiền) &{" "}
                     <Link
                       to="/privacy"
                       className="font-bold text-[var(--wood-deep)] underline"
@@ -464,13 +464,17 @@ export default function LoginPage({ page }: { page: AuthPage }) {
           </div>
 
           <p className="mt-3 text-center text-[10px] leading-relaxed text-[var(--play-muted)]">
-            Demo học tập &amp; nghiên cứu · 18+ · xu ảo ·{" "}
+            18+ · xu ảo ·{" "}
             <Link to="/terms" className="underline-offset-2 hover:underline">
               Điều khoản
             </Link>
             {" · "}
             <Link to="/privacy" className="underline-offset-2 hover:underline">
               Bảo mật
+            </Link>
+            {" · "}
+            <Link to="/responsible" className="underline-offset-2 hover:underline">
+              Chơi có trách nhiệm
             </Link>
           </p>
         </div>

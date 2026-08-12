@@ -1,22 +1,20 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
+import { FormEvent, useCallback, useEffect, useState, lazy, Suspense } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   api,
-  arcanaPath,
-  boiBaiPath,
   canAccessRoomAdmin,
   canAccessStaffDashboard,
   canManageCultivation,
   clearSession,
   getStoredUser,
   getToken,
+  giftShopPath,
   hasCapability,
   homePath,
   isMainAdmin,
   isMod,
   isStaff,
   isTutien,
-  playPath,
   saveSession,
   VIP_ROUNDS_REQUIRED,
   effectiveStaffGrantLevel,
@@ -31,7 +29,6 @@ import {
   roundsToReachLevel,
   PLAY_LEVEL_MAX,
 } from "../playLevel";
-import { formatGem } from "../gem";
 import {
   parseXuFromDetail,
   xuHitLevel,
@@ -47,10 +44,25 @@ import { CelestialProfilePreview } from "../components/CelestialProfilePreview";
 import { ImageUploadPopup } from "../components/ImageUploadPopup";
 import { CoupleAvatar } from "../components/CoupleAvatar";
 import { uploadAvatarFromFile } from "../uploadAvatar";
+import {
+  fetchPlatformGames,
+  getCachedPlatformGames,
+  type GameManifest,
+} from "../platform/games";
 
 const LazyOracleAdminPanel = lazy(() =>
   import("../components/OracleAdminPanel").then((m) => ({
     default: m.OracleAdminPanel,
+  })),
+);
+const LazyRolesAdminPanel = lazy(() =>
+  import("../components/RolesAdminPanel").then((m) => ({
+    default: m.RolesAdminPanel,
+  })),
+);
+const LazyArcanaAdminPanel = lazy(() =>
+  import("../components/ArcanaAdminPanel").then((m) => ({
+    default: m.ArcanaAdminPanel,
   })),
 );
 const LazyAdminRingsPanel = lazy(() =>
@@ -68,6 +80,21 @@ const LazyPmAssetsPanel = lazy(() =>
     default: m.PmAssetsPanel,
   })),
 );
+const LazyLudoAdminPanel = lazy(() =>
+  import("../components/LudoAdminPanel").then((m) => ({
+    default: m.LudoAdminPanel,
+  })),
+);
+const LazyOanQuanAdminPanel = lazy(() =>
+  import("../components/OanQuanAdminPanel").then((m) => ({
+    default: m.OanQuanAdminPanel,
+  })),
+);
+const LazyUnoAdminPanel = lazy(() =>
+  import("../components/UnoAdminPanel").then((m) => ({
+    default: m.UnoAdminPanel,
+  })),
+);
 const LazyFeedbackAdminPanel = lazy(() =>
   import("../components/FeedbackAdminPanel").then((m) => ({
     default: m.FeedbackAdminPanel,
@@ -76,6 +103,21 @@ const LazyFeedbackAdminPanel = lazy(() =>
 const LazyMessAdminPanel = lazy(() =>
   import("../components/MessAdminPanel").then((m) => ({
     default: m.MessAdminPanel,
+  })),
+);
+const LazyUsersAdminPanel = lazy(() =>
+  import("../components/admin/panels/UsersAdminPanel").then((m) => ({
+    default: m.UsersAdminPanel,
+  })),
+);
+const LazyInterAdminPanel = lazy(() =>
+  import("../components/admin/panels/InterAdminPanel").then((m) => ({
+    default: m.InterAdminPanel,
+  })),
+);
+const LazyVaultAdminPanel = lazy(() =>
+  import("../components/admin/panels/VaultAdminPanel").then((m) => ({
+    default: m.VaultAdminPanel,
   })),
 );
 import { AdminOpsMap } from "../components/AdminOpsMap";
@@ -91,7 +133,14 @@ import {
 import { CultivationChip } from "../components/CultivationChip";
 import { LevelPartPopup, type LevelPartAdmin } from "../components/LevelPartPopup";
 import { TrafficPanel, type TrafficPayload } from "../components/TrafficPanel";
-import { onArcanaImgError } from "../lib/arcanaImages";
+import { SystemSecurityPanel } from "../components/SystemSecurityPanel";
+import { OlympusZeusPctPanel } from "../components/OlympusZeusPctPanel";
+import { XuLevelsAdminPanel } from "../components/admin/panels/XuLevelsAdminPanel";
+import { GiftsAdminPanel } from "../components/admin/panels/GiftsAdminPanel";
+import { DeleteAccAdminPanel } from "../components/admin/panels/DeleteAccAdminPanel";
+import { ModAdminPanel } from "../components/admin/panels/ModAdminPanel";
+import { ChatAdminPanel } from "../components/admin/panels/ChatAdminPanel";
+import { InvitesAdminPanel } from "../components/admin/panels/InvitesAdminPanel";
 import {
   REVEAL_STYLE_IDS,
   REVEAL_STYLE_LABELS,
@@ -110,13 +159,6 @@ import {
   displayBadgeDef,
   type DisplayBadgeId,
 } from "../displayBadges";
-import {
-  GIFT_CATEGORIES,
-  type GiftCategory,
-  type GiftFlyStyle,
-  type GiftFlyTier,
-  type GiftItem,
-} from "../gifts";
 import {
   COUPLE_BORDER_LABELS,
   COUPLE_BORDERS,
@@ -174,6 +216,14 @@ import {
   type IdFrameId,
 } from "../profileStyles";
 import { ColoredName } from "../components/ColoredName";
+import { BottomSheet } from "../components/BottomSheet";
+import { AdminChrome } from "../components/admin/AdminChrome";
+import { AdminPlayPicker } from "../components/admin/AdminPlayPicker";
+import { AdminGameSwitch } from "../components/admin/AdminTabBar";
+import { AdminHubNav } from "../components/admin/AdminHubNav";
+import { TAB_LABELS } from "../components/admin/adminHubs";
+import { IpWorldAdminPanel } from "../components/admin/panels/IpWorldAdminPanel";
+import "../styles/admin.css";
 
 type CultBenefitDraft = Record<
   CultivationRank,
@@ -220,16 +270,6 @@ function vaultLabel(g: ManagedGame): string {
   return "Kho Tarot";
 }
 
-function vaultApiBase(g: ManagedGame): string {
-  if (g === "arcana") return "/api/mainadmin/vault-arcana";
-  if (g === "gem") return "/api/mainadmin/vault-gem";
-  return "/api/mainadmin/vault";
-}
-
-function vaultKeyOf(g: ManagedGame): "tarot" | "arcana" | "gem" {
-  return g;
-}
-
 function pickVault(
   g: ManagedGame,
   data: { vault?: VaultSnapshot; vaultArcana?: VaultSnapshot; vaultGem?: VaultSnapshot } | null,
@@ -251,10 +291,18 @@ type TabId =
   | "inter"
   | "mod"
   | "ips"
+  | "ipWorld"
   | "chat"
   | "tools"
+  | "system"
+  | "zeusPct"
+  | "xuLevels"
+  | "ludo"
+  | "oanQuan"
+  | "uno"
   | "arcana"
   | "rolead"
+  | "roles"
   | "tutien"
   | "level"
   | "gifts"
@@ -332,6 +380,7 @@ interface IpRow {
   geo?: {
     local?: boolean;
     country?: string;
+    countryCode?: string;
     regionName?: string;
     city?: string;
     isp?: string;
@@ -484,66 +533,6 @@ type RotateStep =
   | "smartai";
 
 type InterMode = "all" | PackMode | RotateStep | ForceCardMode;
-
-const PACK_MODES: PackMode[] = ["pack1", "pack2", "pack3", "pack4"];
-
-const FALLBACK_ROTATE_CATALOG: { id: RotateStep; label: string }[] = [
-  { id: "auto", label: "Auto — weight gốc" },
-  { id: "small", label: "Small — ưu tiên lá 1–4" },
-  { id: "big", label: "Big — ưu tiên lá 5–8" },
-  { id: "flat", label: "Flat — ~12.5% mỗi lá" },
-  { id: "cool", label: "Cool — giảm 3 lá thắng gần nhất" },
-  { id: "hot", label: "Hot — tăng lá vừa thắng gần đây" },
-  { id: "mid", label: "Mid — ưu tiên lá 3–6" },
-  { id: "lowmult", label: "LowMult — thiên hệ số thấp (1–4)" },
-  { id: "highmult", label: "HighMult — thiên hệ số cao (5–8)" },
-  { id: "app", label: "App — hút xu (mềm)" },
-  { id: "softapp", label: "SoftApp — hút xu rất nhẹ" },
-  { id: "hedge", label: "Hedge — lệch profit² nhà" },
-  { id: "softfed", label: "SoftFed — giữ xu vừa phải" },
-  { id: "fed", label: "Fed — lá nhà lời tối đa" },
-  { id: "user", label: "User — nhả xu (đặt cao)" },
-  { id: "softuser", label: "SoftUser — nhả xu nhẹ" },
-  { id: "contrarian", label: "Contrarian — ưu tiên lá ít người đặt" },
-  { id: "momentum", label: "Momentum — theo lá nhiều người đặt" },
-  { id: "sparse", label: "Sparse — boost lá chưa ai đánh" },
-  { id: "dense", label: "Dense — boost lá đông người đặt" },
-  { id: "wild", label: "Wild — ngẫu nhiên 2 lá trọng số cao" },
-  { id: "vaultguard", label: "VaultGuard — kho lỗ→hút, lãi→nhả nhẹ (xu)" },
-  { id: "vaultpct", label: "VaultPct — theo % edge kho Tarot" },
-  { id: "flowguard", label: "FlowGuard — theo % dòng tiền 1h/24h" },
-  { id: "moneysteer", label: "MoneySteer — gộp % cả 2 kho + flow" },
-  { id: "crowdcap", label: "CrowdCap — giảm lá bị đám đông pile" },
-  {
-    id: "fogbreak",
-    label: "FogBreak — bẻ cầu mềm (nhiễu, không lộ)",
-  },
-  {
-    id: "smartai",
-    label: "SmartAI — học online từ cầu/stake/kho (nhẹ)",
-  },
-];
-
-const DEFAULT_ALL_ROTATION: RotateStep[] = [
-  "auto",
-  "small",
-  "big",
-  "flat",
-  "app",
-  "hedge",
-  "vaultguard",
-  "vaultpct",
-  "moneysteer",
-  "fed",
-  "cool",
-  "fogbreak",
-  "user",
-  "crowdcap",
-];
-
-function isInterRotating(mode: string): mode is "all" | PackMode {
-  return mode === "all" || PACK_MODES.includes(mode as PackMode);
-}
 
 interface InterProb {
   cardId: number;
@@ -1352,6 +1341,9 @@ export default function AdminDashboard() {
   const nav = useNavigate();
   const loc = useLocation();
   const [me, setMe] = useState<AuthUser | null>(getStoredUser());
+  const [lobbyGames, setLobbyGames] = useState<GameManifest[]>(() =>
+    getCachedPlatformGames(),
+  );
   const [data, setData] = useState<Overview | null>(null);
   const [tab, setTab] = useState<TabId>(() => {
     const u = getStoredUser();
@@ -1359,6 +1351,8 @@ export default function AdminDashboard() {
     if (u?.role === "sgift") return "gifts";
     if (u?.role === "ring") return "rings";
     if (u?.role === "pm") return "pm";
+    if (u?.role === "tarot78" || u?.role === "book78") return "oracle";
+    if (u?.role === "onl") return "overview";
     return "overview";
   });
   const [managedGame, setManagedGame] = useState<ManagedGame>(() => {
@@ -1370,8 +1364,9 @@ export default function AdminDashboard() {
       return "tarot";
     }
   });
-  const [botCount, setBotCount] = useState(25);
   const [msg, setMsg] = useState<string | null>(null);
+  const [avatarOpen, setAvatarOpen] = useState(false);
+  const [playPickerOpen, setPlayPickerOpen] = useState(false);
   const [cultivationColors, setCultivationColors] =
     useState<CultivationColorMap>(() =>
       structuredClone(DEFAULT_CULTIVATION_COLORS),
@@ -1380,29 +1375,6 @@ export default function AdminDashboard() {
     defaultBenefitDraft,
   );
   const [cultMaint, setCultMaint] = useState<CultMaintDraft>(defaultMaintDraft);
-  const [winBiasDraft, setWinBiasDraft] = useState("0");
-  const [vaultLinkDraft, setVaultLinkDraft] = useState({
-    enabled: false,
-    lossThresholdXu: "50000",
-    profitThresholdXu: "50000",
-    onLossMode: "small",
-    onProfitMode: "big",
-    combine: "any" as "any" | "weighted" | "priority",
-    idleMode: "" as string,
-  });
-  const [vaultFlagsDraft, setVaultFlagsDraft] = useState<VaultInterFlags>({
-    interSignal: true,
-    interWeightPct: 100,
-    interPriority: 10,
-    lossThresholdXu: 0,
-    profitThresholdXu: 0,
-    onLossMode: "",
-    onProfitMode: "",
-    usePercent: true,
-    lossPct: 8,
-    profitPct: 12,
-  });
-  const [vaultFlagsBusy, setVaultFlagsBusy] = useState(false);
   const [cashflowPopup, setCashflowPopup] = useState<CashflowPopup | null>(
     null,
   );
@@ -1412,10 +1384,6 @@ export default function AdminDashboard() {
     filteredCount: number;
     busy: boolean;
   }>({ rows: [], sumAbs: 0, filteredCount: 0, busy: false });
-  const [vaultLedgerFilter, setVaultLedgerFilter] = useState<string>("all");
-  const [vaultRowDetail, setVaultRowDetail] = useState<VaultLedgerRow | null>(
-    null,
-  );
   const [lbFlagsDraft, setLbFlagsDraft] = useState({
     winToday: true,
     balance: true,
@@ -1468,87 +1436,6 @@ export default function AdminDashboard() {
     do_kiep: 50_000_000,
   }));
   const [tutienMaxBusy, setTutienMaxBusy] = useState(false);
-  const [adjust, setAdjust] = useState<{
-    userId: string;
-    delta: string;
-    lane: "play" | "social";
-  }>({
-    userId: "",
-    delta: "100",
-    lane: "play",
-  });
-  const [guestAdjust, setGuestAdjust] = useState<{ key: string; delta: string }>(
-    { key: "", delta: "" },
-  );
-  const [vaultDelta, setVaultDelta] = useState("10000");
-  const [vaultSet, setVaultSet] = useState("");
-  const [vaultNote, setVaultNote] = useState("");
-  const [vaultUser, setVaultUser] = useState({
-    userId: "",
-    amount: "1000",
-  });
-  const [interBusy, setInterBusy] = useState(false);
-  const [interSubTab, setInterSubTab] = useState<"live" | "room" | "userWin">(
-    "live",
-  );
-  const [interLive, setInterLive] = useState<{
-    at: number;
-    phase: string;
-    roundNumber: number;
-    storedMode: string;
-    primaryTier?: string;
-    effectiveMode: string;
-    winBiasPct: number;
-    vaultNet: number;
-    authStake: number;
-    displayStake: number;
-    alerts: { level: string; code: string; message: string }[];
-    cards: {
-      cardId: number;
-      nameVi: string;
-      authStake: number;
-      liability: number;
-      houseProfit: number;
-      percent: number;
-    }[];
-    hint: {
-      bestHouseCard: number;
-      bestHouseProfit: number;
-      worstHouseCard: number;
-      worstHouseProfit: number;
-    };
-    rolling: {
-      rounds: number;
-      authStakeSum: number;
-      houseProfitSum: number;
-      playerPayoutApprox: number;
-      rtpPct: number | null;
-      byMode: {
-        mode: string;
-        rounds: number;
-        authStake: number;
-        houseProfit: number;
-        rtpPct: number | null;
-      }[];
-    };
-    recent: {
-      at: number;
-      round: number;
-      effectiveMode: string;
-      winCard: number;
-      authStake: number;
-      houseProfit: number;
-      vaultNet: number;
-    }[];
-  } | null>(null);
-  const [interLiveBusy, setInterLiveBusy] = useState(false);
-  const [winPctDrafts, setWinPctDrafts] = useState<Record<string, string>>({});
-  const [winPctFilter, setWinPctFilter] = useState("");
-  const [allSlotMinutes, setAllSlotMinutes] = useState("5");
-  const [rotationDraft, setRotationDraft] = useState<RotateStep[]>([
-    ...DEFAULT_ALL_ROTATION,
-  ]);
-  const [rotationAddMode, setRotationAddMode] = useState<RotateStep>("auto");
   const [couponForm, setCouponForm] = useState({
     code: "",
     amount: "10000",
@@ -1566,25 +1453,6 @@ export default function AdminDashboard() {
     null,
   );
   const [couponUserFilter, setCouponUserFilter] = useState("");
-  const [inviteForm, setInviteForm] = useState({
-    code: "",
-    maxUses: "10",
-    note: "",
-  });
-  const [inviteBusy, setInviteBusy] = useState(false);
-  const [giftRows, setGiftRows] = useState<GiftItem[]>([]);
-  const [flyTierRows, setFlyTierRows] = useState<GiftFlyTier[]>([]);
-  const [giftBusy, setGiftBusy] = useState(false);
-  const [giftDraft, setGiftDraft] = useState({
-    key: "",
-    nameVi: "",
-    emoji: "🎁",
-    image: "",
-    price: "100",
-    category: "warm" as GiftCategory,
-    blurb: "",
-    enabled: true,
-  });
   const [ringRows, setRingRows] = useState<RingItem[]>([]);
   const [bondRows, setBondRows] = useState<BondAdminRow[]>([]);
   const [ringBusy, setRingBusy] = useState(false);
@@ -1611,7 +1479,7 @@ export default function AdminDashboard() {
     ringFrameScale: "md" as RingFrameScale,
   });
   const [catalogUpload, setCatalogUpload] = useState<{
-    kind: "gift" | "ring";
+    kind: "ring";
     itemKey: string;
     bondId?: string;
   } | null>(null);
@@ -1624,8 +1492,6 @@ export default function AdminDashboard() {
   const [extraStakeBusy, setExtraStakeBusy] = useState(false);
   const [feedbackOpenCount, setFeedbackOpenCount] = useState(0);
   const [messUnreadCount, setMessUnreadCount] = useState(0);
-  const [codeDrafts, setCodeDrafts] = useState<Record<string, string>>({});
-  const [codeBusyId, setCodeBusyId] = useState<string | null>(null);
   const [selfNickDraft, setSelfNickDraft] = useState<string | null>(null);
   const [selfNickBusy, setSelfNickBusy] = useState(false);
   const [cosmeticsEditUserId, setCosmeticsEditUserId] = useState<string | null>(
@@ -1637,12 +1503,6 @@ export default function AdminDashboard() {
   const [ipRows, setIpRows] = useState<IpRow[]>([]);
   const [ipBusy, setIpBusy] = useState(false);
   const [userFilter, setUserFilter] = useState("");
-  const [deleteTargetId, setDeleteTargetId] = useState("");
-  const [deleteConfirmName, setDeleteConfirmName] = useState("");
-  const [deleteBusy, setDeleteBusy] = useState(false);
-  const [userQuick, setUserQuick] = useState<
-    "all" | "vip" | "banned" | "muted"
-  >("all");
   const [ipFilter, setIpFilter] = useState("");
   const [ipQuick, setIpQuick] = useState<
     "all" | "online" | "cluster" | "blocked"
@@ -1688,22 +1548,6 @@ export default function AdminDashboard() {
       clusters: number;
     };
   } | null>(null);
-  const [arcanaSpins, setArcanaSpins] = useState<
-    {
-      id: string;
-      at: number;
-      username: string;
-      stake: number;
-      pickId: number;
-      pickIds?: number[];
-      winId: number;
-      won: boolean;
-      profit: number;
-      seed: string;
-    }[]
-  >([]);
-  const [arcanaBusy, setArcanaBusy] = useState(false);
-  const [arcanaSpinFilter, setArcanaSpinFilter] = useState("");
   const [roomLobby, setRoomLobby] = useState<VoiceRoomAdmin[]>([]);
   const [roomBusy, setRoomBusy] = useState(false);
   const [lixiPctDraft, setLixiPctDraft] = useState("100");
@@ -1728,16 +1572,6 @@ export default function AdminDashboard() {
     }>("/api/room/overview");
     setRoomLobby(r.rooms);
     if (r.lixi) setLixiPctDraft(String(r.lixi.payoutPct));
-  }, []);
-
-  const loadGiftConfig = useCallback(async () => {
-    const r = await api<{
-      ok: true;
-      gifts: GiftItem[];
-      flyTiers: GiftFlyTier[];
-    }>("/api/sgift/config");
-    setGiftRows(r.gifts ?? []);
-    setFlyTierRows(r.flyTiers ?? []);
   }, []);
 
   const loadRingConfig = useCallback(async () => {
@@ -1780,7 +1614,6 @@ export default function AdminDashboard() {
         ? await api<Overview>("/api/tutien/overview")
         : await api<Overview>("/api/admin/overview");
     setData(overview);
-    setBotCount(overview.stats.botTarget);
     if (typeof overview.feedbackOpenCount === "number") {
       setFeedbackOpenCount(overview.feedbackOpenCount);
     }
@@ -1828,74 +1661,6 @@ export default function AdminDashboard() {
         }
         return next;
       });
-    }
-    if (overview.inter?.winBiasPct != null) {
-      setWinBiasDraft(String(overview.inter.winBiasPct));
-    }
-    if (overview.inter?.vaultInterLink) {
-      const v = overview.inter.vaultInterLink;
-      setVaultLinkDraft({
-        enabled: !!v.enabled,
-        lossThresholdXu: String(v.lossThresholdXu),
-        profitThresholdXu: String(v.profitThresholdXu),
-        onLossMode: v.onLossMode || "small",
-        onProfitMode: v.onProfitMode || "big",
-        combine: v.combine === "weighted" || v.combine === "priority" ? v.combine : "any",
-        idleMode: v.idleMode ?? "",
-      });
-    }
-    const activeVault = pickVault(managedGame, overview);
-    if (activeVault) {
-      setVaultSet(String(activeVault.balance));
-      if (activeVault.interFlags) {
-        setVaultFlagsDraft({
-          usePercent: true,
-          lossPct: 8,
-          profitPct: 12,
-          ...activeVault.interFlags,
-        });
-      } else {
-        setVaultFlagsDraft(
-          managedGame === "arcana"
-            ? {
-                interSignal: false,
-                interWeightPct: 50,
-                interPriority: 5,
-                lossThresholdXu: 0,
-                profitThresholdXu: 0,
-                onLossMode: "",
-                onProfitMode: "",
-                usePercent: true,
-                lossPct: 10,
-                profitPct: 15,
-              }
-            : managedGame === "gem"
-              ? {
-                  interSignal: false,
-                  interWeightPct: 0,
-                  interPriority: 0,
-                  lossThresholdXu: 0,
-                  profitThresholdXu: 0,
-                  onLossMode: "",
-                  onProfitMode: "",
-                  usePercent: true,
-                  lossPct: 10,
-                  profitPct: 15,
-                }
-              : {
-                  interSignal: true,
-                  interWeightPct: 100,
-                  interPriority: 10,
-                  lossThresholdXu: 0,
-                  profitThresholdXu: 0,
-                  onLossMode: "",
-                  onProfitMode: "",
-                  usePercent: true,
-                  lossPct: 8,
-                  profitPct: 12,
-                },
-        );
-      }
     }
     if (overview.me.role === "mainadmin" || overview.me.role === "audit") {
       try {
@@ -2004,6 +1769,10 @@ export default function AdminDashboard() {
         if (r.user.role === "sgift") setTab("gifts");
         if (r.user.role === "ring") setTab("rings");
         if (r.user.role === "pm") setTab("pm");
+        if (r.user.role === "tarot78" || r.user.role === "book78") {
+          setTab("oracle");
+        }
+        if (r.user.role === "onl") setTab("overview");
         const token = getToken();
         if (token) saveSession(token, r.user);
         return load();
@@ -2024,14 +1793,6 @@ export default function AdminDashboard() {
   }, [tab, me, loadRooms]);
 
   useEffect(() => {
-    if (tab !== "gifts" || !me) return;
-    if (!isMainAdmin(me) && !hasCapability(me, "gift_manage")) return;
-    void loadGiftConfig().catch((e) =>
-      setMsg(e instanceof Error ? e.message : "Lỗi tải catalog quà"),
-    );
-  }, [tab, me, loadGiftConfig]);
-
-  useEffect(() => {
     if (tab !== "rings" || !me) return;
     if (!isMainAdmin(me) && !hasCapability(me, "ring_manage")) return;
     void loadRingConfig().catch((e) =>
@@ -2040,63 +1801,8 @@ export default function AdminDashboard() {
   }, [tab, me, loadRingConfig]);
 
   useEffect(() => {
-    if (data?.inter?.allSlotMinutes != null) {
-      setAllSlotMinutes(String(data.inter.allSlotMinutes));
-    }
-  }, [data?.inter?.allSlotMinutes]);
-
-  useEffect(() => {
-    const r = data?.inter?.allRotation;
-    if (r?.length) {
-      setRotationDraft(r.filter((x): x is RotateStep => isRotateStep(x)));
-    }
-  }, [data?.inter?.allRotation]);
-
-  function isRotateStep(v: string): v is RotateStep {
-    return FALLBACK_ROTATE_CATALOG.some((o) => o.id === v);
-  }
-
-  const interRotateOptions = useMemo(
-    () =>
-      data?.inter?.rotateCatalog?.length
-        ? data.inter.rotateCatalog
-        : FALLBACK_ROTATE_CATALOG,
-    [data?.inter?.rotateCatalog],
-  );
-
-  // ALL / Bộ mode: refresh countdown / effective slot
-  useEffect(() => {
-    if (tab !== "inter" || !isInterRotating(data?.inter?.mode ?? "")) return;
-    const id = window.setInterval(() => {
-      void load();
-    }, 15_000);
-    return () => window.clearInterval(id);
-  }, [tab, data?.inter?.mode, load]);
-
-  const loadInterLive = useCallback(async () => {
-    if (!hasCapability(me, "inter_control")) return;
-    setInterLiveBusy(true);
-    try {
-      const r = await api<{ ok: true; live: NonNullable<typeof interLive> }>(
-        "/api/mainadmin/inter/live",
-      );
-      setInterLive(r.live);
-    } catch {
-      /* ignore poll errors */
-    } finally {
-      setInterLiveBusy(false);
-    }
-  }, [me]);
-
-  // Inter live observe — poll ~2.5s
-  useEffect(() => {
-    if (tab !== "inter" || interSubTab !== "live" || !hasCapability(me, "inter_control")) return;
-    void loadInterLive();
-    const id = window.setInterval(() => {
-      void loadInterLive();
-    }, 2500);
-    return () => window.clearInterval(id);
-  }, [tab, interSubTab, me, loadInterLive]);
+    void fetchPlatformGames(true).then(setLobbyGames);
+  }, []);
 
   useEffect(() => {
     if (!isMainAdmin(me) && tutienSub === "benefits") setTutienSub("players");
@@ -2138,140 +1844,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const applyBots = async () => {
-    try {
-      await api("/api/admin/bots", {
-        method: "POST",
-        body: JSON.stringify({ count: botCount }),
-      });
-      setMsg(`Đã đặt ${botCount} bot`);
-      await load();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi");
-    }
-  };
-
-  const applyAdjust = async (e: FormEvent) => {
-    e.preventDefault();
-    try {
-      await api("/api/admin/adjust-balance", {
-        method: "POST",
-        body: JSON.stringify({
-          userId: adjust.userId,
-          delta: Number(adjust.delta),
-          lane: adjust.lane,
-        }),
-      });
-      setMsg(
-        `Đã cập nhật ${adjust.lane === "social" ? "xu quà" : "xu chơi"} user`,
-      );
-      await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi");
-    }
-  };
-
-  const applyGuestAdjust = async (e: FormEvent) => {
-    e.preventDefault();
-    const key = guestAdjust.key.trim();
-    const delta = Number(guestAdjust.delta);
-    if (!key || !Number.isFinite(delta) || delta === 0) {
-      setMsg("Chọn khách và nhập delta");
-      return;
-    }
-    try {
-      await api("/api/admin/guest/adjust-balance", {
-        method: "POST",
-        body: JSON.stringify({ socketId: key, delta }),
-      });
-      setMsg("Đã cập nhật số dư khách (bàn Tarot)");
-      setGuestAdjust({ key: "", delta: "" });
-      await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi");
-    }
-  };
-
-  const setUserOutcome = async (
-    userId: string,
-    mode: "normal" | "win" | "lose",
-    winPct?: number,
-  ) => {
-    try {
-      await api("/api/admin/user-outcome", {
-        method: "POST",
-        body: JSON.stringify({
-          userId,
-          mode,
-          ...(mode === "win" && winPct != null ? { winPct } : {}),
-        }),
-      });
-      setMsg(
-        mode === "normal"
-          ? "Đã về Normal"
-          : mode === "win"
-            ? `User: WIN ${winPct ?? 100}%`
-            : "User: ưu tiên LOSE",
-      );
-      await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi");
-    }
-  };
-
-  const setUserWinPct = async (userId: string, winPct: number) => {
-    try {
-      await api("/api/admin/user-outcome", {
-        method: "POST",
-        body: JSON.stringify({ userId, winPct }),
-      });
-      setMsg(`Win % → ${Math.max(80, Math.min(100, Math.floor(winPct)))}%`);
-      await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi");
-    }
-  };
-
-  const setUserVip = async (userId: string, isVip: boolean) => {
-    try {
-      await api("/api/admin/user-vip", {
-        method: "POST",
-        body: JSON.stringify({ userId, isVip }),
-      });
-      setMsg(isVip ? "Đã cấp VIP10K" : "Đã tắt VIP10K");
-      await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi");
-    }
-  };
-
-  const setUserCode = async (userId: string, code: string) => {
-    if (codeBusyId) return;
-    setCodeBusyId(userId);
-    try {
-      const r = await api<{ ok: true; user: AuthUser }>("/api/admin/user-code", {
-        method: "POST",
-        body: JSON.stringify({ userId, code }),
-      });
-      setMsg(`Đã đổi ID → ${r.user.code}`);
-      setCodeDrafts((d) => {
-        const next = { ...d };
-        delete next[userId];
-        return next;
-      });
-      if (me && me.id === userId) {
-        const token = getToken();
-        if (token) saveSession(token, { ...me, ...r.user });
-        setMe((prev) => (prev ? { ...prev, ...r.user } : prev));
-      }
-      await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi đổi ID");
-    } finally {
-      setCodeBusyId(null);
-    }
-  };
-
   const setUserRole = async (
     userId: string,
     role:
@@ -2285,7 +1857,9 @@ export default function AdminDashboard() {
       | "audit"
       | "sgift"
       | "ring"
-      | "pm",
+      | "pm"
+      | "tarot78"
+      | "book78",
   ) => {
     try {
       await api("/api/mainadmin/user-role", {
@@ -2313,7 +1887,11 @@ export default function AdminDashboard() {
                           ? "Đã cấp role Ring (nhẫn)"
                           : role === "pm"
                             ? "Đã cấp role P+M (ảnh / SFX)"
-                            : "Đã chuyển về user",
+                            : role === "tarot78"
+                              ? "Đã cấp role Tarot78 (CMS 78 lá / library)"
+                              : role === "book78"
+                                ? "Đã cấp role Book78 (thư viện Bói bài)"
+                                : "Đã chuyển về user",
       );
       await load();
     } catch (err) {
@@ -2354,7 +1932,9 @@ export default function AdminDashboard() {
       | "audit"
       | "sgift"
       | "ring"
-      | "pm",
+      | "pm"
+      | "tarot78"
+      | "book78",
   ) => {
     if (user.role === role || user.role === "mainadmin") return;
     const cur = new Set(user.extraRoles ?? []);
@@ -2645,52 +2225,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const saveWinBiasAndVaultLink = async () => {
-    setInterBusy(true);
-    try {
-      await api("/api/mainadmin/inter", {
-        method: "POST",
-        body: JSON.stringify({
-          winBiasPct: Number(winBiasDraft),
-          vaultInterLink: {
-            enabled: vaultLinkDraft.enabled,
-            lossThresholdXu: Number(vaultLinkDraft.lossThresholdXu),
-            profitThresholdXu: Number(vaultLinkDraft.profitThresholdXu),
-            onLossMode: vaultLinkDraft.onLossMode,
-            onProfitMode: vaultLinkDraft.onProfitMode,
-            combine: vaultLinkDraft.combine,
-            idleMode: vaultLinkDraft.idleMode || null,
-          },
-        }),
-      });
-      setMsg("Đã lưu winBias + Vault→Inter link");
-      await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi lưu Inter bias");
-    } finally {
-      setInterBusy(false);
-    }
-  };
-
-  const saveVaultInterFlags = async () => {
-    setVaultFlagsBusy(true);
-    try {
-      await api("/api/mainadmin/vault-flags", {
-        method: "POST",
-        body: JSON.stringify({
-          vaultKey: vaultKeyOf(managedGame),
-          flags: vaultFlagsDraft,
-        }),
-      });
-      setMsg(`Đã lưu flag Inter · ${vaultLabel(managedGame)}`);
-      await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi lưu flag kho");
-    } finally {
-      setVaultFlagsBusy(false);
-    }
-  };
-
   const setUserLeaderboardHide = async (userId: string, hidden: boolean) => {
     try {
       await api("/api/mainadmin/user-leaderboard-hide", {
@@ -2833,85 +2367,6 @@ export default function AdminDashboard() {
       setMsg(err instanceof Error ? err.message : "Lỗi lưu nickname");
     } finally {
       setSelfNickBusy(false);
-    }
-  };
-
-  const setUserBan = async (userId: string, banned: boolean) => {
-    try {
-      const reason = banned
-        ? window.prompt("Lý do khóa (tuỳ chọn)", "Vi phạm") ?? "Vi phạm"
-        : "";
-      await api("/api/admin/user-ban", {
-        method: "POST",
-        body: JSON.stringify({ userId, banned, reason }),
-      });
-      setMsg(banned ? "Đã khóa tài khoản" : "Đã mở khóa");
-      await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi");
-    }
-  };
-
-  const deleteUserAccount = async () => {
-    if (!deleteTargetId || !deleteConfirmName.trim()) {
-      setMsg("Chọn user và gõ đúng username để xác nhận");
-      return;
-    }
-    const target = data?.users.find((u) => u.id === deleteTargetId);
-    if (!target) {
-      setMsg("Không tìm thấy user");
-      return;
-    }
-    if (
-      !window.confirm(
-        `XÓA VĨNH VIỄN «${target.username}» (ID ${target.code})?\nKhông hoàn tác được.`,
-      )
-    ) {
-      return;
-    }
-    setDeleteBusy(true);
-    try {
-      await api("/api/mainadmin/user-delete", {
-        method: "POST",
-        body: JSON.stringify({
-          userId: deleteTargetId,
-          confirmUsername: deleteConfirmName.trim(),
-        }),
-      });
-      setMsg(`Đã xóa tài khoản ${target.username}`);
-      setDeleteTargetId("");
-      setDeleteConfirmName("");
-      await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi xóa");
-    } finally {
-      setDeleteBusy(false);
-    }
-  };
-
-  const setUserMute = async (
-    userId: string,
-    opts: { minutes?: number; permanent?: boolean; off?: boolean },
-  ) => {
-    try {
-      await api("/api/admin/user-mute", {
-        method: "POST",
-        body: JSON.stringify({
-          userId,
-          minutes: opts.off ? 0 : opts.minutes ?? 0,
-          permanent: !!opts.permanent,
-        }),
-      });
-      setMsg(
-        opts.off
-          ? "Đã unmute"
-          : opts.permanent
-            ? "Mute vĩnh viễn"
-            : `Mute ${opts.minutes} phút`,
-      );
-      await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi");
     }
   };
 
@@ -3098,76 +2553,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const createInvite = async (e: FormEvent) => {
-    e.preventDefault();
-    setInviteBusy(true);
-    try {
-      const r = await api<{ ok: true; invite: InviteRow; invites: InviteRow[] }>(
-        "/api/mainadmin/invites",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            code: inviteForm.code.trim() || undefined,
-            maxUses: Number(inviteForm.maxUses),
-            note: inviteForm.note.trim() || undefined,
-          }),
-        },
-      );
-      setMsg(`Đã tạo mã thành viên ${r.invite.code}`);
-      setInviteForm({ code: "", maxUses: "10", note: "" });
-      await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi mã thành viên");
-    } finally {
-      setInviteBusy(false);
-    }
-  };
-
-  const toggleInvite = async (code: string, enabled: boolean) => {
-    setInviteBusy(true);
-    try {
-      await api("/api/mainadmin/invites/toggle", {
-        method: "POST",
-        body: JSON.stringify({ code, enabled }),
-      });
-      setMsg(enabled ? `Đã bật ${code}` : `Đã tắt ${code}`);
-      await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi toggle mã");
-    } finally {
-      setInviteBusy(false);
-    }
-  };
-
-  const setRequireInviteMode = async (enabled: boolean) => {
-    setInviteBusy(true);
-    try {
-      await api("/api/mainadmin/invites/require", {
-        method: "POST",
-        body: JSON.stringify({ enabled }),
-      });
-      setMsg(
-        enabled
-          ? "Đã BẬT bắt buộc mã thành viên khi đăng ký"
-          : "Đã TẮT — đăng ký không cần mã mời",
-      );
-      await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi chế độ mã mời");
-    } finally {
-      setInviteBusy(false);
-    }
-  };
-
-  const randomInviteCode = () => {
-    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    let out = "";
-    for (let i = 0; i < 8; i++) {
-      out += alphabet[Math.floor(Math.random() * alphabet.length)];
-    }
-    setInviteForm((f) => ({ ...f, code: out }));
-  };
-
   const toggleCoupon = async (code: string, enabled: boolean) => {
     setCouponBusy(true);
     try {
@@ -3216,325 +2601,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const vaultAdjust = async (delta: number) => {
-    try {
-      await api(`${vaultApiBase(managedGame)}/adjust`, {
-        method: "POST",
-        body: JSON.stringify({ delta, note: vaultNote }),
-      });
-      setMsg(
-        delta > 0
-          ? `Đã bơm ${vaultLabel(managedGame)}`
-          : `Đã rút ${vaultLabel(managedGame)}`,
-      );
-      await load();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi");
-    }
-  };
-
-  const vaultSetBalance = async (e: FormEvent) => {
-    e.preventDefault();
-    try {
-      await api(`${vaultApiBase(managedGame)}/set`, {
-        method: "POST",
-        body: JSON.stringify({
-          balance: Number(vaultSet),
-          note: vaultNote,
-        }),
-      });
-      setMsg(`Đã đặt số dư ${vaultLabel(managedGame)}`);
-      await load();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Lỗi");
-    }
-  };
-
-  const vaultGrant = async () => {
-    if (managedGame === "arcana") {
-      setMsg("Cấp/thu xu chỉ dùng Kho Tarot (ví vận hành chung)");
-      return;
-    }
-    try {
-      const unit = managedGame === "gem" ? "Gem" : "xu";
-      await api(`${vaultApiBase(managedGame)}/grant`, {
-        method: "POST",
-        body: JSON.stringify({
-          userId: vaultUser.userId,
-          amount: Number(vaultUser.amount),
-          note: vaultNote,
-        }),
-      });
-      setMsg(`Đã cấp ${unit} từ kho cho user`);
-      await load();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi");
-    }
-  };
-
-  const interModeLabel = (mode: string) => {
-    const fromServer = data?.inter?.labels?.[mode];
-    if (fromServer) return fromServer.split(" — ")[0] ?? fromServer;
-    if (mode === "all") return "ALL (xoay slot)";
-    if (PACK_MODES.includes(mode as PackMode)) return mode.toUpperCase();
-    if (mode.startsWith("pack")) return mode;
-    return `Ép lá #${mode}`;
-  };
-
-  const setInterMode = async (mode: InterMode) => {
-    if (interBusy) return;
-    setInterBusy(true);
-    try {
-      await api("/api/mainadmin/inter", {
-        method: "POST",
-        body: JSON.stringify({ mode }),
-      });
-      setMsg(`Inter → ${interModeLabel(mode)}`);
-      await load();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi Inter");
-    } finally {
-      setInterBusy(false);
-    }
-  };
-
-  const setInterPrimaryTier = async (tier: "mode1" | "mode2" | "mode3") => {
-    if (interBusy) return;
-    setInterBusy(true);
-    try {
-      await api("/api/mainadmin/inter", {
-        method: "POST",
-        body: JSON.stringify({ primaryTier: tier }),
-      });
-      setMsg(
-        tier === "mode3"
-          ? "MODE3 — % lá 4–8 ×1/4 (áp ALL + mode đơn)"
-          : tier === "mode2"
-            ? "MODE2 — % lá 4–8 ×1/2 (áp ALL + mode đơn)"
-            : "MODE1 — bình thường",
-      );
-      await load();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi MODE tier");
-    } finally {
-      setInterBusy(false);
-    }
-  };
-
-  const applyAllSlotMinutes = async () => {
-    if (interBusy) return;
-    const m = Math.floor(Number(allSlotMinutes));
-    if (!Number.isFinite(m) || m < 1 || m > 9) {
-      setMsg("Chọn 1–9 phút mỗi slot ALL (< 10 phút)");
-      return;
-    }
-    setInterBusy(true);
-    try {
-      await api("/api/mainadmin/inter", {
-        method: "POST",
-        body: JSON.stringify({ allSlotMinutes: m }),
-      });
-      setMsg(`ALL: mỗi slot ${m} phút`);
-      await load();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi cấu hình ALL");
-    } finally {
-      setInterBusy(false);
-    }
-  };
-
-  const saveAllRotation = async () => {
-    if (interBusy) return;
-    if (rotationDraft.length < 2) {
-      setMsg("Chuỗi xoay cần ít nhất 2 bước");
-      return;
-    }
-    if (rotationDraft.length > 20) {
-      setMsg("Chuỗi xoay tối đa 20 bước");
-      return;
-    }
-    setInterBusy(true);
-    try {
-      await api("/api/mainadmin/inter", {
-        method: "POST",
-        body: JSON.stringify({ rotation: rotationDraft }),
-      });
-      setMsg("Đã lưu chuỗi xoay ALL");
-      await load();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi lưu chuỗi xoay");
-    } finally {
-      setInterBusy(false);
-    }
-  };
-
-  const resetAllRotationDefault = async () => {
-    const def =
-      (data?.inter?.defaultRotation?.filter((x): x is RotateStep =>
-        isRotateStep(x),
-      ) as RotateStep[] | undefined) ?? DEFAULT_ALL_ROTATION;
-    setRotationDraft([...def]);
-    if (interBusy) return;
-    setInterBusy(true);
-    try {
-      await api("/api/mainadmin/inter", {
-        method: "POST",
-        body: JSON.stringify({ rotation: def }),
-      });
-      setMsg("Đã khôi phục chuỗi xoay mặc định");
-      await load();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi khôi phục chuỗi");
-    } finally {
-      setInterBusy(false);
-    }
-  };
-
-  const moveRotationStep = (index: number, dir: -1 | 1) => {
-    const next = index + dir;
-    if (next < 0 || next >= rotationDraft.length) return;
-    setRotationDraft((steps) => {
-      const copy = [...steps];
-      const t = copy[index]!;
-      copy[index] = copy[next]!;
-      copy[next] = t;
-      return copy;
-    });
-  };
-
-  const removeRotationStep = (index: number) => {
-    setRotationDraft((steps) => steps.filter((_, i) => i !== index));
-  };
-
-  const addRotationStep = () => {
-    if (rotationDraft.length >= 20) {
-      setMsg("Tối đa 20 bước");
-      return;
-    }
-    setRotationDraft((steps) => [...steps, rotationAddMode]);
-  };
-
-  const vaultSeize = async () => {
-    if (managedGame === "arcana") {
-      setMsg("Cấp/thu xu chỉ dùng Kho Tarot (ví vận hành chung)");
-      return;
-    }
-    try {
-      const unit = managedGame === "gem" ? "Gem" : "xu";
-      await api(`${vaultApiBase(managedGame)}/seize`, {
-        method: "POST",
-        body: JSON.stringify({
-          userId: vaultUser.userId,
-          amount: Number(vaultUser.amount),
-          note: vaultNote,
-        }),
-      });
-      setMsg(`Đã thu ${unit} user về kho`);
-      await load();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi");
-    }
-  };
-
-  const loadArcanaSpins = async (filterRaw?: string) => {
-    try {
-      const q = (filterRaw ?? arcanaSpinFilter).trim();
-      let userId = "";
-      if (q) {
-        const match = data?.users.find(
-          (u) =>
-            u.id === q ||
-            u.code?.toUpperCase() === q.toUpperCase() ||
-            u.username.toLowerCase() === q.toLowerCase(),
-        );
-        if (!match) {
-          setMsg("Không tìm thấy user/code để lọc spins");
-          return;
-        }
-        userId = match.id;
-      }
-      const url = userId
-        ? `/api/mainadmin/arcana/spins?limit=80&userId=${encodeURIComponent(userId)}`
-        : "/api/mainadmin/arcana/spins?limit=80";
-      const r = await api<{
-        ok: true;
-        spins: typeof arcanaSpins;
-      }>(url);
-      setArcanaSpins(r.spins);
-      setMsg(
-        userId
-          ? `Đã tải ${r.spins.length} spin của user`
-          : `Đã tải ${r.spins.length} spin gần đây`,
-      );
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi tải spin");
-    }
-  };
-
-  const toggleArcanaEnabled = async () => {
-    if (!data?.arcanaConfig) return;
-    setArcanaBusy(true);
-    try {
-      await api("/api/mainadmin/arcana/config", {
-        method: "PATCH",
-        body: JSON.stringify({ enabled: !data.arcanaConfig.enabled }),
-      });
-      setMsg(
-        data.arcanaConfig.enabled
-          ? "Đã khóa bàn Bánh xe Arcana"
-          : "Đã mở bàn Bánh xe Arcana",
-      );
-      await load();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi");
-    } finally {
-      setArcanaBusy(false);
-    }
-  };
-
-  const saveArcanaSlot = async (slot: ArcanaSlotAdmin) => {
-    setArcanaBusy(true);
-    try {
-      await api("/api/mainadmin/arcana/config", {
-        method: "PATCH",
-        body: JSON.stringify({
-          slots: [{ id: slot.id, ratio: slot.ratio, weight: slot.weight }],
-        }),
-      });
-      setMsg(`Đã lưu ${slot.nameVi}`);
-      await load();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi");
-    } finally {
-      setArcanaBusy(false);
-    }
-  };
-
-  const saveArcanaPayoutScale = async () => {
-    if (!data?.arcanaConfig) return;
-    const el = document.getElementById(
-      "arcana-payout-scale",
-    ) as HTMLInputElement | null;
-    const payoutScale = Number(el?.value);
-    if (!Number.isFinite(payoutScale)) {
-      setMsg("payoutScale không hợp lệ");
-      return;
-    }
-    setArcanaBusy(true);
-    try {
-      await api("/api/mainadmin/arcana/config", {
-        method: "PATCH",
-        body: JSON.stringify({ payoutScale }),
-      });
-      setMsg("Đã lưu hệ số thưởng (payoutScale)");
-      await load();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi");
-    } finally {
-      setArcanaBusy(false);
-    }
-  };
-
   const saveTutienMaxByRank = async () => {
     const tutienMaxByRank: Record<string, number> = {};
     for (const rank of CULTIVATION_RANKS) {
@@ -3568,105 +2634,6 @@ export default function AdminDashboard() {
       setMsg(e instanceof Error ? e.message : "Lỗi");
     } finally {
       setTutienMaxBusy(false);
-    }
-  };
-
-  const persistGiftDraft = async (
-    draft: typeof giftDraft,
-    opts?: { clearForm?: boolean; quietMsg?: string },
-  ) => {
-    const key = draft.key.trim().toLowerCase();
-    if (!key) {
-      setMsg("Thiếu key quà");
-      return false;
-    }
-    setGiftBusy(true);
-    try {
-      await api("/api/sgift/gifts", {
-        method: "POST",
-        body: JSON.stringify({
-          key,
-          nameVi: draft.nameVi.trim() || key,
-          emoji: draft.emoji.trim() || "🎁",
-          image: draft.image.trim() || undefined,
-          price: Math.floor(Number(draft.price)),
-          category: draft.category,
-          blurb: draft.blurb.trim() || undefined,
-          enabled: draft.enabled,
-        }),
-      });
-      setMsg(opts?.quietMsg ?? `Đã lưu quà ${key}`);
-      if (opts?.clearForm !== false) {
-        setGiftDraft({
-          key: "",
-          nameVi: "",
-          emoji: "🎁",
-          image: "",
-          price: "100",
-          category: "warm",
-          blurb: "",
-          enabled: true,
-        });
-      }
-      await loadGiftConfig();
-      return true;
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi lưu quà");
-      return false;
-    } finally {
-      setGiftBusy(false);
-    }
-  };
-
-  const saveGiftUpsert = async () => {
-    await persistGiftDraft(giftDraft, { clearForm: true });
-  };
-
-  const toggleGiftRow = async (key: string, enabled: boolean) => {
-    setGiftBusy(true);
-    try {
-      await api("/api/sgift/gifts/toggle", {
-        method: "POST",
-        body: JSON.stringify({ key, enabled }),
-      });
-      await loadGiftConfig();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi bật/tắt quà");
-    } finally {
-      setGiftBusy(false);
-    }
-  };
-
-  const removeGiftRow = async (key: string) => {
-    if (!window.confirm(`Xóa quà ${key}?`)) return;
-    setGiftBusy(true);
-    try {
-      await api("/api/sgift/gifts/remove", {
-        method: "POST",
-        body: JSON.stringify({ key }),
-      });
-      setMsg(`Đã xóa ${key}`);
-      await loadGiftConfig();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi xóa quà");
-    } finally {
-      setGiftBusy(false);
-    }
-  };
-
-  const saveFlyTiers = async () => {
-    setGiftBusy(true);
-    try {
-      await api("/api/sgift/fly-tiers", {
-        method: "POST",
-        body: JSON.stringify({ flyTiers: flyTierRows }),
-      });
-      setMsg("Đã lưu fly tiers");
-      await loadGiftConfig();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi lưu fly tiers");
-    } finally {
-      setGiftBusy(false);
     }
   };
 
@@ -3994,47 +2961,6 @@ export default function AdminDashboard() {
     setExtraStakeAdd("");
   };
 
-  const saveArcanaStreakBonus = async () => {
-    if (!data?.arcanaConfig) return;
-    const enabled = (
-      document.getElementById("arcana-streak-enabled") as HTMLInputElement | null
-    )?.checked;
-    const minStreak = Number(
-      (document.getElementById("arcana-streak-min") as HTMLInputElement | null)
-        ?.value,
-    );
-    const perStep = Number(
-      (document.getElementById("arcana-streak-step") as HTMLInputElement | null)
-        ?.value,
-    );
-    const cap = Number(
-      (document.getElementById("arcana-streak-cap") as HTMLInputElement | null)
-        ?.value,
-    );
-    if (!Number.isFinite(minStreak) || minStreak < 1) {
-      setMsg("Chuỗi tối thiểu phải >= 1");
-      return;
-    }
-    setArcanaBusy(true);
-    try {
-      await api("/api/mainadmin/arcana/config", {
-        method: "PATCH",
-        body: JSON.stringify({
-          streakBonusEnabled: enabled,
-          streakBonusMinStreak: minStreak,
-          streakBonusPercentPerStep: perStep,
-          streakBonusCapPercent: cap,
-        }),
-      });
-      setMsg("Đã lưu cấu hình chuỗi vận");
-      await load();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Lỗi");
-    } finally {
-      setArcanaBusy(false);
-    }
-  };
-
   if (!me || !data) {
     return (
       <AppShell center maxWidth="lg">
@@ -4053,6 +2979,9 @@ export default function AdminDashboard() {
   const sgiftOnly = me?.role === "sgift";
   const ringOnly = me?.role === "ring";
   const pmOnly = me?.role === "pm";
+  const oracleDocOnly = me?.role === "tarot78" || me?.role === "book78";
+  const onlOnly = me?.role === "onl";
+  const narrowOnly = pmOnly || oracleDocOnly;
   const canVault = hasCapability(me, "vault_ops");
   const canTraffic = hasCapability(me, "traffic_view");
   const canInter = hasCapability(me, "inter_control");
@@ -4065,6 +2994,10 @@ export default function AdminDashboard() {
   const canRingManage = hasCapability(me, "ring_manage");
   const canPmAssets = hasCapability(me, "pm_assets");
   const canOracleManage = hasCapability(me, "oracle_manage");
+  const canGamesRegistry = hasCapability(me, "games_registry");
+  const canCouponOps = hasCapability(me, "coupon_ops");
+  const canOracleCards = hasCapability(me, "oracle_cards");
+  const canOracleLibrary = hasCapability(me, "oracle_library");
   const canInboxOps = main || hasCapability(me, "staff_dashboard");
   const canGameSwitch = canVault || canArcanaCfg || canInter;
   const canCultivation = canManageCultivation(me);
@@ -4074,26 +3007,72 @@ export default function AdminDashboard() {
     {
       id: "overview",
       label: "Tổng quan",
-      show: !tutienOnly && !modOnly && !sgiftOnly && !ringOnly && !pmOnly,
+      show:
+        onlOnly ||
+        (!tutienOnly &&
+          !modOnly &&
+          !sgiftOnly &&
+          !ringOnly &&
+          !narrowOnly),
     },
-    { id: "tools", label: "Tra cứu", show: canTools && !pmOnly },
+    { id: "tools", label: "Tra cứu", show: canTools && !narrowOnly && !onlOnly },
+    {
+      id: "system",
+      label: "Hệ thống",
+      show:
+        (main || canInboxOps) &&
+        !narrowOnly &&
+        !onlOnly &&
+        !tutienOnly &&
+        !modOnly,
+    },
+    {
+      id: "xuLevels",
+      label: TAB_LABELS.xuLevels,
+      show: main && !narrowOnly && !onlOnly && !tutienOnly && !modOnly,
+    },
+    {
+      id: "zeusPct",
+      label: TAB_LABELS.zeusPct,
+      show: main && !narrowOnly && !onlOnly && !tutienOnly && !modOnly,
+    },
+    {
+      id: "ludo",
+      label: "Cờ cá ngựa",
+      show: main && !narrowOnly && !onlOnly && !tutienOnly && !modOnly,
+    },
+    {
+      id: "oanQuan",
+      label: "Ô ăn quan",
+      show: main && !narrowOnly && !onlOnly && !tutienOnly && !modOnly,
+    },
+    {
+      id: "uno",
+      label: "HueRush",
+      show: main && !narrowOnly && !onlOnly && !tutienOnly && !modOnly,
+    },
     {
       id: "traffic",
       label: "Lưu lượng",
-      show: canTraffic && managedGame === "tarot" && !pmOnly,
+      show: canTraffic && managedGame === "tarot" && !narrowOnly && !onlOnly,
     },
     {
       id: "inter",
-      label: "Inter",
-      show: canInter && managedGame === "tarot" && !pmOnly,
+      label: TAB_LABELS.inter,
+      show: canInter && managedGame === "tarot" && !narrowOnly && !onlOnly,
     },
     {
       id: "arcana",
       label: "Bánh xe",
-      show: canArcanaCfg && managedGame === "arcana" && !pmOnly,
+      show: canArcanaCfg && managedGame === "arcana" && !narrowOnly && !onlOnly,
     },
-    { id: "ips", label: "IP", show: canIp && !pmOnly },
-    { id: "chat", label: "Chat", show: canChat && !pmOnly },
+    { id: "ips", label: "IP", show: canIp && !narrowOnly && !onlOnly },
+    {
+      id: "ipWorld",
+      label: TAB_LABELS.ipWorld,
+      show: canIp && !narrowOnly && !onlOnly,
+    },
+    { id: "chat", label: "Chat", show: canChat && !narrowOnly && !onlOnly },
     {
       id: "users",
       label: "User & Bot",
@@ -4104,15 +3083,21 @@ export default function AdminDashboard() {
         !auditOnly &&
         !sgiftOnly &&
         !ringOnly &&
-        !pmOnly,
+        !narrowOnly &&
+        !onlOnly,
     },
-    { id: "rolead", label: "RoleAD", show: main },
+    {
+      id: "roles",
+      label: "Roles",
+      show: main && !narrowOnly && !onlOnly,
+    },
+    { id: "rolead", label: "RoleAD", show: main && !narrowOnly && !onlOnly },
     {
       id: "deleteAcc",
       label: "Xóa acc",
-      show: main,
+      show: main && !narrowOnly && !onlOnly,
     },
-    { id: "room", label: "Room", show: canRoom && !pmOnly },
+    { id: "room", label: "Room", show: canRoom && !narrowOnly && !onlOnly },
     {
       id: "mod",
       label: "Mod",
@@ -4123,51 +3108,48 @@ export default function AdminDashboard() {
         !auditOnly &&
         !sgiftOnly &&
         !ringOnly &&
-        !pmOnly,
+        !narrowOnly &&
+        !onlOnly,
     },
     {
       id: "coupons",
       label: "Coupon ẩn",
-      show:
-        !tutienOnly &&
-        !modOnly &&
-        !auditOnly &&
-        !sgiftOnly &&
-        !ringOnly &&
-        !pmOnly,
+      show: canCouponOps && !narrowOnly && !onlOnly,
     },
-    { id: "invites", label: "Đăng ký", show: canInvites && !pmOnly },
+    { id: "invites", label: "Đăng ký", show: canInvites && !narrowOnly && !onlOnly },
     {
       id: "vault",
       label: vaultLabel(managedGame),
-      show: canVault && !pmOnly,
+      show: canVault && !narrowOnly && !onlOnly,
     },
-    { id: "tutien", label: "Tu Tiên", show: canCultivation && !pmOnly },
-    { id: "level", label: "Level", show: main },
+    { id: "tutien", label: "Tu Tiên", show: canCultivation && !narrowOnly && !onlOnly },
+    { id: "level", label: "Level", show: main && !narrowOnly && !onlOnly },
     {
       id: "gifts",
       label: "Quà",
-      show: (main || canGiftManage) && !pmOnly,
+      show: (main || canGiftManage) && !narrowOnly && !onlOnly,
     },
     {
       id: "rings",
       label: "Nhẫn",
-      show: (main || canRingManage) && !pmOnly,
+      show: (main || canRingManage) && !narrowOnly && !onlOnly,
     },
     {
       id: "pm",
       label: "P+M",
-      show: main || canPmAssets,
+      show: (main || canPmAssets) && !oracleDocOnly && !onlOnly,
     },
     {
       id: "oracle",
       label: "Bói bài / Lab",
-      show: main || isStaff(me) || canOracleManage,
+      show:
+        !onlOnly &&
+        (main || isStaff(me) || canOracleManage || canOracleCards || canOracleLibrary),
     },
     {
       id: "games",
       label: "Games",
-      show: (main || isStaff(me)) && !pmOnly,
+      show: canGamesRegistry && !narrowOnly && !onlOnly,
     },
     {
       id: "feedback",
@@ -4175,20 +3157,17 @@ export default function AdminDashboard() {
         feedbackOpenCount > 0
           ? `Feedback (${feedbackOpenCount})`
           : "Feedback",
-      show: canInboxOps,
+      show: canInboxOps && !narrowOnly && !onlOnly,
     },
     {
       id: "mess",
       label:
         messUnreadCount > 0 ? `Mess (${messUnreadCount})` : "Mess",
-      show: canInboxOps,
+      show: canInboxOps && !narrowOnly && !onlOnly,
     },
   ];
 
   const filteredUsers = data.users.filter((u) => {
-    if (userQuick === "vip" && !u.isVip) return false;
-    if (userQuick === "banned" && !u.banned) return false;
-    if (userQuick === "muted" && !u.muted) return false;
     const q = userFilter.trim().toLowerCase();
     if (!q) return true;
     return `${u.username} ${u.code} ${u.id} ${u.role} ${u.cultivationRank ?? ""}`
@@ -4227,154 +3206,48 @@ export default function AdminDashboard() {
 
   return (
     <AppShell maxWidth="lg">
-      <header className="platform-head app-frame mb-3 px-2.5 py-2 sm:px-3 sm:py-2.5">
-        <div className="flex items-start gap-2">
-          <div className="min-w-0 flex-1">
-            <p className="play-heading text-base text-[var(--wood-deep)] sm:text-lg">
-              Quản trị
-            </p>
-            <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
-              Panel staff · thao tác trong khung form
-            </p>
-          </div>
-          <div className="platform-head__xu shrink-0">
-            <div className="platform-head__xu-cell">
-              <span>Chơi</span>
-              <strong>
-                {formatXu(me.balances?.play ?? me.balance ?? 0)}
-              </strong>
-            </div>
-            <div className="platform-head__xu-cell">
-              <span>Quà</span>
-              <strong>{formatXu(me.balances?.social ?? 0)}</strong>
-            </div>
-          </div>
-        </div>
-        <div className="platform-head__actions mt-1.5">
-          <Link to={playPath(me)} className="form-tab text-[10px]">
-            Vào bàn
-          </Link>
-          <button
-            type="button"
-            className="form-tab text-[10px]"
-            onClick={logout}
-          >
-            Thoát
-          </button>
-        </div>
-        <div className="mt-2 border-t border-[var(--gold)]/35 pt-2">
-          <IdentityBadge
-            user={me}
-            compact
-            showPath={false}
-            onAvatarClick={() => {
-              document
-                .getElementById("avatar-picker")
-                ?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }}
-          />
-        </div>
-      </header>
-
-      {canGameSwitch && (
-        <div className="app-frame mt-3 p-2">
-          <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--play-muted)]">
-            Chọn game quản lý
-          </p>
-          <div className="form-tabs">
-            {(
-              [
-                ["tarot", "Bàn Tarot"],
-                ["arcana", "Bánh xe Arcana"],
-                ["gem", "Gem"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => selectManagedGame(id)}
-                className={`form-tab flex-1 text-center ${managedGame === id ? "is-on" : ""}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <nav className="form-tabs mt-4 sm:flex-nowrap sm:overflow-x-auto">
-        {tabs
-          .filter((t) => t.show)
-          .map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={`form-tab min-h-9 ${tab === t.id ? "is-on" : ""}`}
-            >
-              {t.label}
-            </button>
-          ))}
-      </nav>
-
-      <section id="avatar-picker" className="app-panel mt-3 p-2.5">
-        <p className="mb-2 text-[11px] font-semibold text-[var(--play-muted)]">
-          Avatar của bạn
-        </p>
-        <label className="mb-2 flex cursor-pointer items-center justify-center rounded-lg bg-[var(--cream)]/80 px-2 py-1.5 text-[11px] font-bold text-[var(--wood-deep)] ring-1 ring-[var(--amber)]/40">
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/*"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = "";
-              if (file) void uploadFromDevice(file);
-            }}
-          />
-          Chọn ảnh từ máy
-        </label>
-        <div className="flex flex-wrap gap-1.5">
-          {isCustomAvatar(me.avatar) && (
+      <div className="admin-page">
+        <AdminChrome
+          user={me}
+          onPlayClick={() => setPlayPickerOpen(true)}
+          onLogout={logout}
+          onAvatarClick={() => setAvatarOpen(true)}
+          extraActions={
             <button
               type="button"
-              className="rounded-full p-0.5 ring-2 ring-[var(--amber)]"
-              title="Avatar từ máy"
+              className="admin-chrome__btn"
+              onClick={() => setAvatarOpen(true)}
             >
-              <img
-                src={normalizeAvatar(me.avatar)}
-                alt=""
-                className="h-8 w-8 rounded-full object-cover"
-              />
+              Avatar
             </button>
-          )}
-          {AVATARS.map((src) => {
-            const selected = src === normalizeAvatar(me.avatar);
-            return (
-              <button
-                key={src}
-                type="button"
-                onClick={() => pickAvatar(src)}
-                className={`rounded-full p-0.5 ${
-                  selected ? "ring-2 ring-[var(--amber)]" : "opacity-80"
-                }`}
-              >
-                <img
-                  src={src}
-                  alt=""
-                  className="h-8 w-8 rounded-full object-cover"
-                />
-              </button>
-            );
-          })}
-        </div>
-      </section>
+          }
+        />
 
-      {msg && (
-        <p className="mt-3 text-center text-xs font-semibold text-[var(--wood-deep)]">
-          {msg}
-        </p>
-      )}
+        {canGameSwitch ? (
+          <AdminGameSwitch
+            value={managedGame}
+            onChange={selectManagedGame}
+          />
+        ) : null}
+
+        <AdminHubNav
+          visibleTabs={tabs}
+          activeTab={tab}
+          onSelectTab={setTab}
+          tabLabelOverrides={{
+            vault: vaultLabel(managedGame),
+            feedback:
+              feedbackOpenCount > 0
+                ? `Feedback (${feedbackOpenCount})`
+                : TAB_LABELS.feedback,
+            mess:
+              messUnreadCount > 0
+                ? `Mess (${messUnreadCount})`
+                : TAB_LABELS.mess,
+          }}
+        />
+
+        {msg ? <p className="admin-toast">{msg}</p> : null}
 
       {tab === "tools" && canTools && (
         <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
@@ -4420,7 +3293,6 @@ export default function AdminDashboard() {
                 className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/20"
                 onClick={() => {
                   setTab("users");
-                  setUserQuick(key);
                   setUserFilter("");
                   setMsg(`Đã mở User & Bot · lọc ${label}`);
                 }}
@@ -4516,7 +3388,6 @@ export default function AdminDashboard() {
                         onClick={() => {
                           setTab("users");
                           setUserFilter(u.username);
-                          setUserQuick("all");
                         }}
                       >
                         Mở User
@@ -4610,6 +3481,38 @@ export default function AdminDashboard() {
             </>
           )}
         </section>
+      )}
+
+      {tab === "system" && canInboxOps && <SystemSecurityPanel />}
+
+      {tab === "xuLevels" && main && (
+        <XuLevelsAdminPanel onMsg={setMsg} />
+      )}
+
+      {tab === "zeusPct" && main && (
+        <OlympusZeusPctPanel onMsg={setMsg} />
+      )}
+
+      {tab === "ludo" && main && (
+        <Suspense fallback={<p className="text-sm opacity-60">Đang tải Ludo…</p>}>
+          <LazyLudoAdminPanel
+            canEdit={main}
+            main={main}
+            onMsg={setMsg}
+          />
+        </Suspense>
+      )}
+
+      {tab === "oanQuan" && main && (
+        <Suspense fallback={<p className="text-sm opacity-60">Đang tải Ô ăn quan…</p>}>
+          <LazyOanQuanAdminPanel main={main} onMsg={setMsg} />
+        </Suspense>
+      )}
+
+      {tab === "uno" && main && (
+        <Suspense fallback={<p className="text-sm opacity-60">Đang tải HueRush…</p>}>
+          <LazyUnoAdminPanel main={main} onMsg={setMsg} />
+        </Suspense>
       )}
 
       {tab === "overview" && (
@@ -5469,474 +4372,24 @@ export default function AdminDashboard() {
       )}
 
       {tab === "users" && (
-        <>
-          <section className="app-frame mt-4 px-3 py-3">
-            <p className="play-heading text-sm">Số lượng bot</p>
-            <div className="mt-2 flex items-center gap-2">
-              <input
-                type="range"
-                min={0}
-                max={50}
-                value={botCount}
-                onChange={(e) => setBotCount(Number(e.target.value))}
-                className="flex-1 accent-[var(--amber)]"
-              />
-              <input
-                type="number"
-                min={0}
-                max={50}
-                value={botCount}
-                onChange={(e) => setBotCount(Number(e.target.value))}
-                className="app-input w-16 !px-2 !py-1 text-center"
-              />
-              <button
-                type="button"
-                onClick={applyBots}
-                className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white"
-              >
-                Áp dụng
-              </button>
-            </div>
-          </section>
-
-          <section className="app-panel mt-4 p-3">
-            <p className="play-heading text-sm">
-              Cộng / trừ xu user (chọn làn chơi / quà)
-            </p>
-            <form onSubmit={applyAdjust} className="mt-2 space-y-2">
-              <select
-                value={adjust.userId}
-                onChange={(e) =>
-                  setAdjust((a) => ({ ...a, userId: e.target.value }))
-                }
-                className="app-input"
-                required
-              >
-                <option value="">Chọn user…</option>
-                {data.users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.username} · ID {u.code || "—"} (chơi{" "}
-                    {formatXu(u.balances?.play ?? u.balance)}
-                    {" · quà "}
-                    {formatXu(u.balances?.social ?? 0)}) — {u.role}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={adjust.lane}
-                onChange={(e) =>
-                  setAdjust((a) => ({
-                    ...a,
-                    lane: e.target.value === "social" ? "social" : "play",
-                  }))
-                }
-                className="app-input"
-              >
-                <option value="play">Xu chơi (cược/game)</option>
-                <option value="social">Xu quà (MXH)</option>
-              </select>
-              <div className="flex gap-2">
-                <input
-                  value={adjust.delta}
-                  onChange={(e) =>
-                    setAdjust((a) => ({ ...a, delta: e.target.value }))
-                  }
-                  placeholder="Delta (+/-)"
-                  className="app-input flex-1"
-                />
-                <button
-                  type="submit"
-                  className="rounded-xl bg-[var(--wood-deep)] px-4 text-xs font-bold text-white"
-                >
-                  Cập nhật
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {[100, 1000, -100, -1000].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() =>
-                      setAdjust((a) => ({ ...a, delta: String(n) }))
-                    }
-                    className="app-btn-ghost !text-[10px]"
-                  >
-                    {n > 0 ? `+${formatXu(n)}` : formatXu(n)}
-                  </button>
-                ))}
-              </div>
-            </form>
-          </section>
-
-          <section className="app-panel mt-4 p-3">
-            <p className="play-heading text-sm">
-              Cộng / trừ xu khách (Tarot online)
-            </p>
-            <p className="mt-1 text-[10px] text-white/45">
-              Chỉ khách đang ở bàn hoặc orphan ván hiện tại. Arcana cần đăng
-              nhập.
-            </p>
-            <form onSubmit={applyGuestAdjust} className="mt-2 space-y-2">
-              <select
-                value={guestAdjust.key}
-                onChange={(e) =>
-                  setGuestAdjust((a) => ({ ...a, key: e.target.value }))
-                }
-                className="app-input"
-              >
-                <option value="">Chọn khách online…</option>
-                {(data.liveGuests ?? []).map((g) => (
-                  <option key={g.socketId} value={g.socketId}>
-                    {g.name}
-                    {g.guestCode ? ` · ${g.guestCode}` : ""} (
-                    {formatXu(g.balance)} xu)
-                    {g.inOrphan ? " · orphan" : ""}
-                  </option>
-                ))}
-              </select>
-              <div className="flex gap-2">
-                <input
-                  value={guestAdjust.delta}
-                  onChange={(e) =>
-                    setGuestAdjust((a) => ({ ...a, delta: e.target.value }))
-                  }
-                  placeholder="Delta (+/-)"
-                  className="app-input flex-1"
-                />
-                <button
-                  type="submit"
-                  className="rounded-xl bg-[var(--wood-deep)] px-4 text-xs font-bold text-white"
-                >
-                  Cập nhật
-                </button>
-              </div>
-            </form>
-            {(data.liveGuests?.length ?? 0) === 0 && (
-              <p className="mt-2 text-[11px] text-white/40">
-                Không có khách trên bàn Tarot.
-              </p>
-            )}
-          </section>
-
-          <section className="app-panel mt-4 p-3">
-            <p className="play-heading mb-1 text-sm">
-              Chỉnh ID user · Danh sách ({filteredUsers.length}/
-              {data.users.length})
-            </p>
-            <div className="mb-2 flex flex-wrap gap-1.5">
-              <input
-                value={userFilter}
-                onChange={(e) => setUserFilter(e.target.value)}
-                placeholder="Lọc username / ID…"
-                className="app-input !py-1.5 text-xs sm:!max-w-xs"
-              />
-              {(
-                [
-                  ["all", "Tất cả"],
-                  ["vip", "VIP"],
-                  ["banned", "Ban"],
-                  ["muted", "Mute"],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setUserQuick(id)}
-                  className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                    userQuick === id
-                      ? "bg-[var(--wood-deep)] text-white"
-                      : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <p className="mb-2 text-[11px] text-[var(--play-muted)]">
-              Mỗi user: ô ID + nút <strong>Lưu ID</strong> (3–8 chữ/số, không
-              trùng). Mode Lose/Normal/Win khi user có đặt xu. VIP hiện ID nền
-              vàng nổi.
-            </p>
-            <ul className="max-h-80 space-y-2 overflow-y-auto">
-              {filteredUsers.map((u) => {
-                const om = u.outcomeMode ?? "normal";
-                const granted = !!u.vipGranted;
-                const rounds = u.roundsPlayed ?? 0;
-                const vip = !!u.isVip;
-                const vipLabel = granted
-                  ? "VIP10K"
-                  : rounds >= VIP_ROUNDS_REQUIRED
-                    ? "đủ 10k ván"
-                    : null;
-                const draft =
-                  codeDrafts[u.id] !== undefined
-                    ? codeDrafts[u.id]!
-                    : u.code || "";
-                return (
-                  <li
-                    key={u.id}
-                    className="rounded-lg bg-white/70 px-2 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <img
-                          src={normalizeAvatar(u.avatar)}
-                          alt=""
-                          className="h-8 w-8 rounded-full object-cover"
-                          onError={(e) => {
-                            const el = e.currentTarget;
-                            if (el.src.includes("avatar-default")) return;
-                            el.src = "/assets/ui/avatar-default.png";
-                          }}
-                        />
-                        <div className="min-w-0">
-                          <p className="font-semibold text-[var(--play-ink)]">
-                            {u.username}{" "}
-                            <span className="text-[var(--wood-deep)]">{u.role}</span>
-                            {vip && (
-                              <span className="ml-1 text-amber-700">
-                                VIP{vipLabel ? ` · ${vipLabel}` : ""}
-                              </span>
-                            )}
-                          </p>
-                          <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                            <CultivationChip rank={u.cultivationRank} />
-                          </div>
-                          <p className="text-[10px] text-[var(--play-muted)]">
-                            <span
-                              className={`identity-chip identity-chip--code${
-                                vip ? " identity-chip--code-vip" : ""
-                              } !text-[9px]`}
-                            >
-                              ID {u.code || "—"}
-                            </span>{" "}
-                            · {rounds.toLocaleString("vi-VN")} ván · Thưởng:{" "}
-                            {formatXu(u.winToday)} · Đoán: {u.guessesToday}
-                          </p>
-                        </div>
-                      </div>
-                      <p className="shrink-0 font-play font-bold text-amber-700 tabular-nums">
-                        {formatXu(u.balance)}
-                      </p>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-1">
-                      <input
-                        value={draft}
-                        onChange={(e) =>
-                          setCodeDrafts((d) => ({
-                            ...d,
-                            [u.id]: e.target.value.toUpperCase(),
-                          }))
-                        }
-                        maxLength={8}
-                        placeholder="ID mới"
-                        className="app-input !w-24 !px-2 !py-1 !text-[11px] font-mono uppercase"
-                        title="ID riêng 3–8 chữ/số"
-                      />
-                      <button
-                        type="button"
-                        disabled={
-                          codeBusyId === u.id ||
-                          !draft.trim() ||
-                          draft.trim().toUpperCase() === (u.code || "")
-                        }
-                        onClick={() => setUserCode(u.id, draft)}
-                        className="rounded-full bg-[var(--wood-deep)] px-2.5 py-1 text-[10px] font-bold text-white disabled:opacity-40"
-                      >
-                        {codeBusyId === u.id ? "…" : "Lưu ID"}
-                      </button>
-                      {(
-                        [
-                          ["lose", "Lose"],
-                          ["normal", "Normal"],
-                          ["win", "Win"],
-                        ] as const
-                      ).map(([mode, label]) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          onClick={() => setUserOutcome(u.id, mode)}
-                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                            om === mode
-                              ? mode === "win"
-                                ? "bg-emerald-600 text-white"
-                                : mode === "lose"
-                                  ? "bg-rose-600 text-white"
-                                  : "bg-[var(--wood-deep)] text-white"
-                              : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
-                          }`}
-                        >
-                          {mode === "win" && om === "win"
-                            ? `Win ${u.outcomeWinPct ?? 100}%`
-                            : label}
-                        </button>
-                      ))}
-                      {om === "win" && (
-                        <span className="rounded-full bg-emerald-100 px-2 py-1 text-[9px] font-bold text-emerald-900 ring-1 ring-emerald-300/60">
-                          Inter → User Win % để chỉnh 80–100
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setUserVip(u.id, !granted)}
-                        className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                          granted
-                            ? "bg-amber-500 text-[#1a1208]"
-                            : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
-                        }`}
-                      >
-                        {granted ? "VIP10K ✓" : "VIP10K"}
-                      </button>
-                      {data?.me.role === "mainadmin" && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setUserLeaderboardHide(u.id, !u.hideFromLeaderboard)
-                            }
-                            className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                              u.hideFromLeaderboard
-                                ? "bg-slate-700 text-white"
-                                : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
-                            }`}
-                          >
-                            {u.hideFromLeaderboard ? "BXH ẩn ✓" : "Ẩn BXH"}
-                          </button>
-                        )}
-                      {data?.me.role === "mainadmin" && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setUserHideNickname(u.id, !u.hideNickname)
-                            }
-                            className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                              u.hideNickname
-                                ? "bg-indigo-800 text-white"
-                                : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
-                            }`}
-                          >
-                            {u.hideNickname ? "Nick ẩn ✓" : "Ẩn nick"}
-                          </button>
-                        )}
-                      <button
-                        type="button"
-                        onClick={() => setUserBan(u.id, !u.banned)}
-                        className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                          u.banned
-                            ? "bg-rose-600 text-white"
-                            : "bg-white text-rose-700 ring-1 ring-rose-300/60"
-                        }`}
-                      >
-                        {u.banned ? "Mở khóa" : "Khóa"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          u.muted
-                            ? setUserMute(u.id, { off: true })
-                            : setUserMute(u.id, { minutes: 30 })
-                        }
-                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
-                      >
-                        {u.muted ? "Unmute" : "Mute 30p"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setUserMute(u.id, { permanent: true })}
-                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
-                      >
-                        Mute ∞
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openPwReset(u)}
-                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
-                      >
-                        Reset MK
-                      </button>
-                      {data?.me.role === "mainadmin" &&
-                        u.role !== "mainadmin" && (
-                          <>
-                            {u.role !== "deal" && (
-                              <button
-                                type="button"
-                                onClick={() => setUserRole(u.id, "deal")}
-                                className="rounded-full bg-teal-700 px-2.5 py-1 text-[10px] font-bold text-white"
-                              >
-                                Cấp Deal
-                              </button>
-                            )}
-                            {u.role === "deal" && (
-                              <button
-                                type="button"
-                                onClick={() => setUserRole(u.id, "user")}
-                                className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-teal-600/40"
-                              >
-                                Thu Deal
-                              </button>
-                            )}
-                            {u.role !== "onl" && (
-                              <button
-                                type="button"
-                                onClick={() => setUserRole(u.id, "onl")}
-                                className="rounded-full bg-sky-700 px-2.5 py-1 text-[10px] font-bold text-white"
-                              >
-                                Cấp Onl
-                              </button>
-                            )}
-                            {u.role === "onl" && (
-                              <button
-                                type="button"
-                                onClick={() => setUserRole(u.id, "user")}
-                                className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-sky-600/40"
-                              >
-                                Thu Onl
-                              </button>
-                            )}
-                            {u.role !== "tutien" && (
-                              <button
-                                type="button"
-                                onClick={() => setUserRole(u.id, "tutien")}
-                                className="rounded-full bg-violet-800 px-2.5 py-1 text-[10px] font-bold text-white"
-                              >
-                                Cấp Tu Tiên
-                              </button>
-                            )}
-                            {u.role === "tutien" && (
-                              <button
-                                type="button"
-                                onClick={() => setUserRole(u.id, "user")}
-                                className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-violet-700/40"
-                              >
-                                Thu Tu Tiên
-                              </button>
-                            )}
-                            {u.role !== "mod" && (
-                              <button
-                                type="button"
-                                onClick={() => setUserRole(u.id, "mod")}
-                                className="rounded-full bg-indigo-800 px-2.5 py-1 text-[10px] font-bold text-white"
-                              >
-                                Cấp Mod
-                              </button>
-                            )}
-                            {u.role === "mod" && (
-                              <button
-                                type="button"
-                                onClick={() => setUserRole(u.id, "user")}
-                                className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-indigo-700/40"
-                              >
-                                Thu Mod
-                              </button>
-                            )}
-                          </>
-                        )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        </>
+        <Suspense
+          fallback={
+        <p className="mt-4 text-[11px] text-[var(--play-muted)]">
+          Đang tải User & Bot…
+        </p>
+          }
+        >
+          <LazyUsersAdminPanel
+            users={data.users}
+            liveGuests={data.liveGuests}
+            me={me}
+            botTarget={data.stats.botTarget}
+            onMsg={setMsg}
+            onReload={load}
+            onOpenPwReset={openPwReset}
+            onMeUpdate={setMe}
+          />
+        </Suspense>
       )}
 
       {tab === "pm" && (main || canPmAssets) && (
@@ -5952,6 +4405,7 @@ export default function AdminDashboard() {
               me={me}
               main={main}
               onMsg={setMsg}
+              onOpenLudoAdmin={() => setTab("ludo")}
               onOpenCosmetics={(userId) => {
                 setCosmeticsInitialTab("color");
                 setCosmeticsEditUserId(userId);
@@ -5971,7 +4425,26 @@ export default function AdminDashboard() {
         >
           <LazyOracleAdminPanel
             main={main}
-            canEdit={main || canOracleManage}
+            canEdit={
+              main ||
+              canOracleManage ||
+              canOracleCards ||
+              canOracleLibrary
+            }
+            defaultTab={
+              me?.role === "book78"
+                ? "library"
+                : me?.role === "tarot78"
+                  ? "cards"
+                  : "cards"
+            }
+            focusMode={
+              me?.role === "book78"
+                ? "library"
+                : me?.role === "tarot78"
+                  ? "cards"
+                  : "full"
+            }
             onMsg={setMsg}
           />
         </Suspense>
@@ -5986,7 +4459,10 @@ export default function AdminDashboard() {
           }
         >
           <div className="mt-4">
-            <LazyPlatformGamesAdminPanel main={main} onMsg={setMsg} />
+            <LazyPlatformGamesAdminPanel
+              main={canGamesRegistry}
+              onMsg={setMsg}
+            />
           </div>
         </Suspense>
       )}
@@ -6034,79 +4510,34 @@ export default function AdminDashboard() {
       )}
 
       {tab === "deleteAcc" && main && data && (
-        <section className="app-panel mt-4 space-y-3 p-3 ring-2 ring-rose-500/40">
-          <div>
-            <p className="play-heading text-sm text-rose-800">
-              Xóa tài khoản (không hoàn tác)
+        <DeleteAccAdminPanel
+          users={data.users}
+          onMsg={setMsg}
+          onDeleted={load}
+        />
+      )}
+
+      {tab === "roles" && main && (
+        <Suspense
+          fallback={
+            <p className="mt-4 text-[11px] text-[var(--play-muted)]">
+              Đang tải Roles…
             </p>
-            <p className="mt-1 text-[11px] text-[var(--play-muted)]">
-              Tab riêng để tránh xóa nhầm. Khóa/mở khóa vẫn ở «User &amp; Bot».
-              Không xóa được mainadmin. Phải gõ đúng username để xác nhận.
-            </p>
-          </div>
-          <label className="block text-[11px] font-semibold text-[var(--play-muted)]">
-            Chọn tài khoản
-            <select
-              value={deleteTargetId}
-              onChange={(e) => {
-                setDeleteTargetId(e.target.value);
-                setDeleteConfirmName("");
-              }}
-              className="app-input mt-1"
-            >
-              <option value="">— Chọn user —</option>
-              {data.users
-                .filter((u) => u.role !== "mainadmin")
-                .slice()
-                .sort((a, b) => a.username.localeCompare(b.username, "vi"))
-                .map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.username} · ID {u.code || "—"} · {u.role}
-                    {u.banned ? " · ĐÃ KHÓA" : ""}
-                  </option>
-                ))}
-            </select>
-          </label>
-          {deleteTargetId && (
-            <>
-              <p className="rounded-lg bg-rose-50 px-2.5 py-2 text-[11px] font-semibold text-rose-900 ring-1 ring-rose-200">
-                Đang chọn:{" "}
-                <span className="font-mono">
-                  {data.users.find((u) => u.id === deleteTargetId)?.username}
-                </span>
-                {" · "}
-                Gõ đúng username bên dưới rồi bấm Xóa.
-              </p>
-              <label className="block text-[11px] font-semibold text-[var(--play-muted)]">
-                Gõ username để xác nhận
-                <input
-                  value={deleteConfirmName}
-                  onChange={(e) => setDeleteConfirmName(e.target.value)}
-                  placeholder="username chính xác"
-                  className="app-input mt-1 font-mono"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </label>
-              <button
-                type="button"
-                disabled={
-                  deleteBusy ||
-                  !deleteConfirmName.trim() ||
-                  deleteConfirmName.trim().toLowerCase() !==
-                    (
-                      data.users.find((u) => u.id === deleteTargetId)
-                        ?.username ?? ""
-                    ).toLowerCase()
-                }
-                onClick={() => void deleteUserAccount()}
-                className="w-full rounded-xl bg-rose-700 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-40"
-              >
-                {deleteBusy ? "Đang xóa…" : "Xóa vĩnh viễn tài khoản"}
-              </button>
-            </>
-          )}
-        </section>
+          }
+        >
+          <LazyRolesAdminPanel
+            users={data?.users ?? []}
+            busy={false}
+            onAssignPrimary={(userId, role) => {
+              if (role === "mainadmin") return;
+              void setUserRole(userId, role);
+            }}
+            onToggleExtra={(user, role) => {
+              if (role === "mainadmin") return;
+              toggleExtraRole(user, role);
+            }}
+          />
+        </Suspense>
       )}
 
       {tab === "rolead" && main && (
@@ -6483,9 +4914,10 @@ export default function AdminDashboard() {
             <p className="play-heading text-sm">Cấp / thu role</p>
             <p className="text-[11px] text-[var(--play-muted)]">
               Primary: user · deal · admin · onl · tutien · mod · eco · audit ·
-              sgift / ring / pm. Roles phụ cộng dồn quyền (không gồm mainadmin).
+              sgift / ring / pm / tarot78 / book78. Roles phụ cộng dồn quyền (không gồm mainadmin).
               Eco = kho/lưu lượng; Audit = IP/tra cứu; SGift = catalog quà / fly;
-              Ring = catalog nhẫn; P+M = ảnh lobby / SFX / cosmetics. Bậc L =
+              Ring = catalog nhẫn; P+M = ảnh lobby / SFX / cosmetics;
+              Tarot78 / Book78 = thư viện tài liệu Bói bài (Library + Lab). Bậc L =
               override capability; Room# = đóng phòng / đặt MK.
             </p>
             <input
@@ -6552,7 +4984,7 @@ export default function AdminDashboard() {
                         <span className="w-full text-[9px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
                           Role chính
                         </span>
-                        {(
+                        {                          (
                           [
                             ["user", "User"],
                             ["deal", "Deal"],
@@ -6562,6 +4994,8 @@ export default function AdminDashboard() {
                             ["sgift", "SGift"],
                             ["ring", "Ring"],
                             ["pm", "P+M"],
+                            ["tarot78", "Tarot78"],
+                            ["book78", "Book78"],
                             ["onl", "Onl"],
                             ["tutien", "Tu Tiên"],
                             ["mod", "Mod"],
@@ -6595,6 +5029,8 @@ export default function AdminDashboard() {
                               ["sgift", "SGift"],
                               ["ring", "Ring"],
                               ["pm", "P+M"],
+                              ["tarot78", "Tarot78"],
+                              ["book78", "Book78"],
                               ["onl", "Onl"],
                               ["tutien", "Tu Tiên"],
                               ["mod", "Mod"],
@@ -7521,354 +5957,7 @@ export default function AdminDashboard() {
       )}
 
       {tab === "gifts" && (main || canGiftManage) && (
-        <>
-          <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
-            <p className="play-heading text-sm">Catalog quà</p>
-            <p className="text-[11px] text-[var(--play-muted)]">
-              Giá clamp 10–{ITEM_XU_MAX.toLocaleString("vi-VN")} xu (tối đa 12
-              chữ số). Category: warm / prestige / legend / fun.
-            </p>
-            <ul className="max-h-80 space-y-2 overflow-y-auto">
-              {giftRows.map((g) => (
-                <li
-                  key={g.key}
-                  className="rounded-lg bg-white/70 px-2 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="flex items-center gap-1.5 font-semibold text-[var(--play-ink)]">
-                        {g.image ? (
-                          <img
-                            src={g.image}
-                            alt=""
-                            className="h-6 w-6 object-contain"
-                          />
-                        ) : (
-                          <span>{g.emoji}</span>
-                        )}{" "}
-                        {g.nameVi}{" "}
-                        <span className="font-mono text-[10px] text-[var(--play-muted)]">
-                          {g.key}
-                        </span>
-                      </p>
-                      <p className="text-[10px] text-[var(--play-muted)]">
-                        {g.category} · {formatXu(g.price)} xu
-                        {g.enabled ? "" : " · tắt"}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      <button
-                        type="button"
-                        disabled={giftBusy}
-                        onClick={() =>
-                          setGiftDraft({
-                            key: g.key,
-                            nameVi: g.nameVi,
-                            emoji: g.emoji,
-                            image: g.image ?? "",
-                            price: String(g.price),
-                            category: g.category,
-                            blurb: g.blurb ?? "",
-                            enabled: g.enabled,
-                          })
-                        }
-                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15"
-                      >
-                        Sửa
-                      </button>
-                      <button
-                        type="button"
-                        disabled={giftBusy}
-                        onClick={() => void toggleGiftRow(g.key, !g.enabled)}
-                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15"
-                      >
-                        {g.enabled ? "Tắt" : "Bật"}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={giftBusy}
-                        onClick={() => void removeGiftRow(g.key)}
-                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-red-800 ring-1 ring-red-300/60"
-                      >
-                        Xóa
-                      </button>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                Key
-                <input
-                  value={giftDraft.key}
-                  onChange={(e) =>
-                    setGiftDraft((d) => ({ ...d, key: e.target.value }))
-                  }
-                  className="app-input mt-0.5 w-full font-mono"
-                />
-              </label>
-              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                Tên
-                <input
-                  value={giftDraft.nameVi}
-                  onChange={(e) =>
-                    setGiftDraft((d) => ({ ...d, nameVi: e.target.value }))
-                  }
-                  className="app-input mt-0.5 w-full"
-                />
-              </label>
-              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                Emoji / ảnh
-                <div className="mt-0.5 flex gap-1">
-                  <input
-                    value={giftDraft.emoji}
-                    onChange={(e) =>
-                      setGiftDraft((d) => ({ ...d, emoji: e.target.value }))
-                    }
-                    className="app-input w-full"
-                    placeholder="🎁"
-                  />
-                  <button
-                    type="button"
-                    disabled={giftBusy}
-                    onClick={() =>
-                      setCatalogUpload({
-                        kind: "gift",
-                        itemKey: giftDraft.key.trim().toLowerCase(),
-                      })
-                    }
-                    className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15 disabled:opacity-45"
-                  >
-                    Tải ảnh
-                  </button>
-                </div>
-                {giftDraft.image ? (
-                  <span className="mt-1 flex items-center gap-1.5 text-[10px] text-[var(--play-muted)]">
-                    <img
-                      src={giftDraft.image}
-                      alt=""
-                      className="h-6 w-6 object-contain"
-                    />
-                    <span className="truncate font-mono">{giftDraft.image}</span>
-                  </span>
-                ) : null}
-              </label>
-              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                Giá (tối đa 12 chữ số)
-                <input
-                  type="number"
-                  min={10}
-                  max={ITEM_XU_MAX}
-                  value={giftDraft.price}
-                  onChange={(e) =>
-                    setGiftDraft((d) => ({ ...d, price: e.target.value }))
-                  }
-                  className="app-input mt-0.5 w-full"
-                />
-              </label>
-              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                Category
-                <select
-                  value={giftDraft.category}
-                  onChange={(e) =>
-                    setGiftDraft((d) => ({
-                      ...d,
-                      category: e.target.value as GiftCategory,
-                    }))
-                  }
-                  className="app-input mt-0.5 w-full"
-                >
-                  {GIFT_CATEGORIES.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-end gap-2 text-[10px] font-semibold text-[var(--play-muted)]">
-                <input
-                  type="checkbox"
-                  checked={giftDraft.enabled}
-                  onChange={(e) =>
-                    setGiftDraft((d) => ({ ...d, enabled: e.target.checked }))
-                  }
-                  className="h-4 w-4 accent-[var(--jade-deep)]"
-                />
-                Enabled
-              </label>
-            </div>
-            <label className="block text-[10px] font-semibold text-[var(--play-muted)]">
-              Blurb
-              <input
-                value={giftDraft.blurb}
-                onChange={(e) =>
-                  setGiftDraft((d) => ({ ...d, blurb: e.target.value }))
-                }
-                className="app-input mt-0.5 w-full"
-              />
-            </label>
-            <button
-              type="button"
-              disabled={giftBusy}
-              onClick={() => void saveGiftUpsert()}
-              className="rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
-            >
-              Lưu / thêm quà
-            </button>
-          </section>
-
-          <section className="app-panel mt-4 space-y-3 p-3 sm:p-4">
-            <p className="play-heading text-sm">Fly tiers</p>
-            <p className="text-[11px] text-[var(--play-muted)]">
-              Ngưỡng xu → toast / marquee / fly / fullscreen.
-            </p>
-            <ul className="space-y-2">
-              {flyTierRows.map((t, idx) => (
-                <li
-                  key={t.id}
-                  className="rounded-lg bg-white/70 px-2 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
-                >
-                  <div className="flex flex-wrap items-end gap-2">
-                    <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                      Id
-                      <input
-                        value={t.id}
-                        onChange={(e) =>
-                          setFlyTierRows((rows) =>
-                            rows.map((row, i) =>
-                              i === idx
-                                ? { ...row, id: e.target.value }
-                                : row,
-                            ),
-                          )
-                        }
-                        className="app-input mt-0.5 !w-24 font-mono"
-                      />
-                    </label>
-                    <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                      Label
-                      <input
-                        value={t.label}
-                        onChange={(e) =>
-                          setFlyTierRows((rows) =>
-                            rows.map((row, i) =>
-                              i === idx
-                                ? { ...row, label: e.target.value }
-                                : row,
-                            ),
-                          )
-                        }
-                        className="app-input mt-0.5 !w-28"
-                      />
-                    </label>
-                    <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                      minAmount
-                      <input
-                        type="number"
-                        value={t.minAmount}
-                        onChange={(e) =>
-                          setFlyTierRows((rows) =>
-                            rows.map((row, i) =>
-                              i === idx
-                                ? {
-                                    ...row,
-                                    minAmount: Math.floor(
-                                      Number(e.target.value),
-                                    ),
-                                  }
-                                : row,
-                            ),
-                          )
-                        }
-                        className="app-input mt-0.5 !w-28"
-                      />
-                    </label>
-                    <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                      durationMs
-                      <input
-                        type="number"
-                        value={t.durationMs}
-                        onChange={(e) =>
-                          setFlyTierRows((rows) =>
-                            rows.map((row, i) =>
-                              i === idx
-                                ? {
-                                    ...row,
-                                    durationMs: Math.floor(
-                                      Number(e.target.value),
-                                    ),
-                                  }
-                                : row,
-                            ),
-                          )
-                        }
-                        className="app-input mt-0.5 !w-24"
-                      />
-                    </label>
-                    <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                      Style
-                      <select
-                        value={t.style}
-                        onChange={(e) =>
-                          setFlyTierRows((rows) =>
-                            rows.map((row, i) =>
-                              i === idx
-                                ? {
-                                    ...row,
-                                    style: e.target.value as GiftFlyStyle,
-                                  }
-                                : row,
-                            ),
-                          )
-                        }
-                        className="app-input mt-0.5 !w-28"
-                      >
-                        {(
-                          [
-                            "toast",
-                            "marquee",
-                            "fly",
-                            "fullscreen",
-                          ] as GiftFlyStyle[]
-                        ).map((s) => (
-                          <option key={s} value={s}>
-                            {s}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="flex items-center gap-1 pb-1 text-[10px] font-semibold">
-                      <input
-                        type="checkbox"
-                        checked={t.enabled}
-                        onChange={(e) =>
-                          setFlyTierRows((rows) =>
-                            rows.map((row, i) =>
-                              i === idx
-                                ? { ...row, enabled: e.target.checked }
-                                : row,
-                            ),
-                          )
-                        }
-                        className="h-4 w-4 accent-[var(--jade-deep)]"
-                      />
-                      On
-                    </label>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <button
-              type="button"
-              disabled={giftBusy}
-              onClick={() => void saveFlyTiers()}
-              className="rounded-full bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-[var(--cream)] disabled:opacity-50"
-            >
-              Lưu fly tiers
-            </button>
-          </section>
-        </>
+        <GiftsAdminPanel onMsg={setMsg} />
       )}
 
       {tab === "rings" && (main || canRingManage) && false && (
@@ -8748,220 +6837,21 @@ export default function AdminDashboard() {
       )}
 
       {tab === "mod" && (
-        <>
-          <section className="app-panel mt-4 p-3 sm:p-4">
-            <p className="play-heading text-sm">Audit log</p>
-            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-              Thao tác staff gần đây (Inter, VIP, ban, vault…). Khoanh vàng ≥{" "}
-              {formatXu(XU_HIGHLIGHT_LARGE)} · đỏ ≥ {formatXu(XU_HIGHLIGHT_HUGE)}.
-            </p>
-            <ul className="mt-2 max-h-64 space-y-1.5 overflow-y-auto sm:max-h-80">
-              {(data.audit ?? []).length === 0 && (
-                <li className="text-[11px] text-[var(--play-muted)]">
-                  Chưa có bản ghi
-                </li>
-              )}
-              {(data.audit ?? []).map((a) => {
-                const amt = parseXuFromDetail(a.detail);
-                const hit = xuHitLevel(amt);
-                return (
-                  <li
-                    key={a.id}
-                    className={`rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10 ${xuHitRowClass(hit)}`}
-                    title={
-                      hit !== "normal"
-                        ? `Số lớn: ${formatXu(amt)}`
-                        : undefined
-                    }
-                  >
-                    <span className="font-semibold text-[var(--play-ink)]">
-                      {a.actorName}
-                    </span>{" "}
-                    · {a.action}
-                    {a.targetName ? ` → ${a.targetName}` : ""}
-                    {a.detail ? (
-                      <>
-                        {" · "}
-                        <span className="xu-hit__amt">{a.detail}</span>
-                      </>
-                    ) : null}
-                    {hit !== "normal" && (
-                      <span className="ml-1 text-[9px] font-extrabold uppercase opacity-80">
-                        {hit === "huge" ? "RẤT LỚN" : "LỚN"}
-                      </span>
-                    )}
-                    <span className="block text-[10px] text-[var(--play-muted)]">
-                      {new Date(a.at).toLocaleString("vi-VN")}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-          <section className="app-panel mt-4 p-3 sm:p-4">
-            <p className="play-heading text-sm">Báo cáo chat</p>
-            <ul className="mt-2 max-h-64 space-y-1.5 overflow-y-auto sm:max-h-80">
-              {(data.reports ?? []).length === 0 && (
-                <li className="text-[11px] text-[var(--play-muted)]">
-                  Chưa có báo cáo
-                </li>
-              )}
-              {(data.reports ?? []).map((r) => (
-                <li
-                  key={r.id}
-                  className="rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
-                >
-                  <p>
-                    <span className="font-semibold">{r.reporterName}</span> báo{" "}
-                    <span className="font-semibold">{r.targetName}</span>
-                    {r.status === "done" ? " · xong" : " · mở"}
-                  </p>
-                  <p className="text-[var(--play-ink)]">“{r.text}”</p>
-                  <div className="mt-1 flex gap-1">
-                    <button
-                      type="button"
-                      className="rounded-full bg-[var(--wood-deep)] px-2 py-0.5 text-[10px] font-bold text-white"
-                      onClick={() =>
-                        markReport(
-                          r.id,
-                          r.status === "done" ? "open" : "done",
-                        )
-                      }
-                    >
-                      {r.status === "done" ? "Mở lại" : "Đánh dấu xong"}
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </>
+        <ModAdminPanel
+          audit={data.audit ?? []}
+          reports={data.reports ?? []}
+          onMarkReport={markReport}
+        />
       )}
 
       {tab === "chat" && canChat && (
-        <section className="app-panel mt-4 p-3 sm:p-4">
-          <p className="play-heading text-sm">Giá chat phòng Tarot</p>
-          <p className="mt-1 text-[11px] text-[var(--play-muted)]">
-            No = khung chat · VIP = bay marquee (cần VIP) · Saint = toàn màn +
-            CD 45s. Lịch sử khung chat reset mỗi ngày (UTC).
-          </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <label className="text-[11px] font-semibold text-[var(--play-muted)]">
-              No (xu / tin)
-              <input
-                id="mainadmin-chat-no-cost"
-                type="number"
-                min={1}
-                max={100000}
-                step={1}
-                defaultValue={data.chatConfig?.noCost ?? 10}
-                className="app-input mt-1 w-full !py-1.5 text-sm tabular-nums"
-              />
-            </label>
-            <label className="text-[11px] font-semibold text-[var(--play-muted)]">
-              VIP (xu / tin)
-              <input
-                id="mainadmin-chat-vip-cost"
-                type="number"
-                min={1}
-                max={100000}
-                step={1}
-                defaultValue={data.chatConfig?.vipCost ?? 50}
-                className="app-input mt-1 w-full !py-1.5 text-sm tabular-nums"
-              />
-            </label>
-            <label className="text-[11px] font-semibold text-[var(--play-muted)]">
-              Saint (xu / tin)
-              <input
-                id="mainadmin-chat-saint-cost"
-                type="number"
-                min={100}
-                max={1000000}
-                step={100}
-                defaultValue={data.chatConfig?.saintCost ?? 10_000}
-                className="app-input mt-1 w-full !py-1.5 text-sm tabular-nums"
-              />
-            </label>
-          </div>
-          <button
-            type="button"
-            className="app-btn-primary mt-4 !w-auto !px-4 !py-2 !text-xs"
-            onClick={async () => {
-              const noEl = document.getElementById(
-                "mainadmin-chat-no-cost",
-              ) as HTMLInputElement | null;
-              const vipEl = document.getElementById(
-                "mainadmin-chat-vip-cost",
-              ) as HTMLInputElement | null;
-              const saintEl = document.getElementById(
-                "mainadmin-chat-saint-cost",
-              ) as HTMLInputElement | null;
-              try {
-                await api("/api/mainadmin/chat-config", {
-                  method: "POST",
-                  body: JSON.stringify({
-                    noCost: Number(noEl?.value),
-                    vipCost: Number(vipEl?.value),
-                    saintCost: Number(saintEl?.value),
-                  }),
-                });
-                setMsg("Đã lưu giá chat No / VIP / Saint");
-                await load();
-              } catch (err) {
-                setMsg(
-                  err instanceof Error ? err.message : "Lỗi cấu hình chat",
-                );
-              }
-            }}
-          >
-            Áp dụng
-          </button>
-          {data.chatConfig?.updatedBy && (
-            <p className="mt-2 text-[10px] text-[var(--play-muted)]">
-              Cập nhật lần cuối: {data.chatConfig.updatedBy}
-              {data.chatConfig.updatedAt
-                ? ` · ${new Date(data.chatConfig.updatedAt).toLocaleString("vi-VN")}`
-                : ""}
-            </p>
-          )}
-          <section className="mt-4 border-t border-[var(--wood-deep)]/12 pt-3">
-            <p className="play-heading text-sm">Báo cáo chat</p>
-            <ul className="mt-2 max-h-64 space-y-1.5 overflow-y-auto sm:max-h-80">
-              {(data.reports ?? []).length === 0 && (
-                <li className="text-[11px] text-[var(--play-muted)]">
-                  Chưa có báo cáo
-                </li>
-              )}
-              {(data.reports ?? []).map((r) => (
-                <li
-                  key={r.id}
-                  className="rounded-lg bg-white/70 px-2 py-1.5 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
-                >
-                  <p>
-                    <span className="font-semibold">{r.reporterName}</span> báo{" "}
-                    <span className="font-semibold">{r.targetName}</span>
-                    {r.status === "done" ? " · xong" : " · mở"}
-                  </p>
-                  <p className="text-[var(--play-ink)]">“{r.text}”</p>
-                  <div className="mt-1 flex gap-1">
-                    <button
-                      type="button"
-                      className="rounded-full bg-[var(--wood-deep)] px-2 py-0.5 text-[10px] font-bold text-white"
-                      onClick={() =>
-                        markReport(
-                          r.id,
-                          r.status === "done" ? "open" : "done",
-                        )
-                      }
-                    >
-                      {r.status === "done" ? "Mở lại" : "Đánh dấu xong"}
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </section>
+        <ChatAdminPanel
+          chatConfig={data.chatConfig}
+          reports={data.reports ?? []}
+          onMsg={setMsg}
+          onSaved={load}
+          onMarkReport={markReport}
+        />
       )}
 
       {tab === "ips" && canIp && (
@@ -8974,14 +6864,23 @@ export default function AdminDashboard() {
                 {ipRows.length})
               </p>
             </div>
-            <button
-              type="button"
-              disabled={ipBusy}
-              className="app-btn-ghost !text-[10px]"
-              onClick={() => void load().then(() => setMsg("Đã làm mới IP"))}
-            >
-              Refresh
-            </button>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                className="app-btn-ghost !text-[10px]"
+                onClick={() => setTab("ipWorld")}
+              >
+                → IpWorld
+              </button>
+              <button
+                type="button"
+                disabled={ipBusy}
+                className="app-btn-ghost !text-[10px]"
+                onClick={() => void load().then(() => setMsg("Đã làm mới IP"))}
+              >
+                Refresh
+              </button>
+            </div>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <input
@@ -9283,186 +7182,43 @@ export default function AdminDashboard() {
         </section>
       )}
 
+      {tab === "ipWorld" && canIp && (
+        <IpWorldAdminPanel
+          rows={ipRows}
+          busy={ipBusy}
+          onRefresh={() =>
+            void load().then(() => setMsg("Đã làm mới IpWorld / geo"))
+          }
+          onOpenIpTab={(hint) => {
+            setTab("ips");
+            if (hint) setIpFilter(hint);
+          }}
+          onBlockIp={(ip, hours) =>
+            void runIpAction(
+              "/api/mainadmin/ips/block",
+              { ip, hours },
+              hours > 0 ? `Block ${hours}h ${ip}` : `Mở khóa ${ip}`,
+            )
+          }
+          onKickIp={(ip) =>
+            void runIpAction(
+              "/api/mainadmin/ips/kick",
+              { ip },
+              `Đã kick ${ip}`,
+            )
+          }
+          onOpenHis={(userId) => void openUserHis(userId)}
+          onMsg={setMsg}
+        />
+      )}
+
       {tab === "invites" && canInvites && (
-        <>
-          <section className="app-panel mt-4 border-2 border-[var(--wood-deep)]/25 p-3 sm:p-4">
-            <p className="play-heading text-sm sm:text-base">
-              Đăng ký · mã thành viên 8 ký tự
-            </p>
-            <p className="mt-1 text-[11px] leading-relaxed text-[var(--play-muted)]">
-              Mainadmin / Eco bật–tắt tại đây.{" "}
-              <strong className="text-[var(--play-ink)]">Bắt buộc</strong> =
-              form đăng ký bắt nhập mã 8 ký tự.{" "}
-              <strong className="text-[var(--play-ink)]">Tắt</strong> = đăng ký
-              mở, không cần mã (vẫn tạo mã bên dưới để phát tay).
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={inviteBusy}
-                onClick={() => void setRequireInviteMode(true)}
-                className={`min-w-[8.5rem] rounded-xl px-3 py-2.5 text-xs font-bold disabled:opacity-50 ${
-                  data.requireInvite !== false
-                    ? "bg-[var(--wood-deep)] text-[var(--gold-soft)] ring-2 ring-[var(--gold)]/50"
-                    : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
-                }`}
-              >
-                Bắt buộc mã 8 ký tự
-              </button>
-              <button
-                type="button"
-                disabled={inviteBusy}
-                onClick={() => void setRequireInviteMode(false)}
-                className={`min-w-[8.5rem] rounded-xl px-3 py-2.5 text-xs font-bold disabled:opacity-50 ${
-                  data.requireInvite === false
-                    ? "bg-emerald-700 text-white ring-2 ring-emerald-400/60"
-                    : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
-                }`}
-              >
-                Tắt — đăng ký mở
-              </button>
-            </div>
-            <p
-              className={`mt-3 rounded-lg px-2.5 py-2 text-[11px] font-bold ${
-                data.requireInvite !== false
-                  ? "bg-amber-50 text-amber-950 ring-1 ring-amber-200"
-                  : "bg-emerald-50 text-emerald-950 ring-1 ring-emerald-200"
-              }`}
-            >
-              Trạng thái live:{" "}
-              {data.requireInvite !== false
-                ? "ĐANG bắt buộc mã thành viên khi đăng ký"
-                : "Đăng ký MỞ — không bắt mã"}
-            </p>
-          </section>
-
-          <section className="app-panel mt-4 p-3">
-            <p className="play-heading text-sm">Tạo mã thành viên</p>
-            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-              Đúng 8 ký tự (A–Z / 0–9). Để trống mã → hệ thống random. Mỗi mã
-              dùng được nhiều lần tới max.
-            </p>
-            <form onSubmit={createInvite} className="mt-3 space-y-2">
-              <div className="flex flex-wrap gap-2">
-                <input
-                  value={inviteForm.code}
-                  onChange={(e) =>
-                    setInviteForm((f) => ({
-                      ...f,
-                      code: e.target.value
-                        .toUpperCase()
-                        .replace(/[^A-Z0-9]/g, "")
-                        .slice(0, 8),
-                    }))
-                  }
-                  placeholder="Mã 8 ký tự (tuỳ chọn)"
-                  maxLength={8}
-                  spellCheck={false}
-                  className="app-input !py-1.5 font-mono text-xs uppercase"
-                />
-                <button
-                  type="button"
-                  onClick={randomInviteCode}
-                  disabled={inviteBusy}
-                  className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20 disabled:opacity-45"
-                >
-                  Random
-                </button>
-                <input
-                  value={inviteForm.maxUses}
-                  onChange={(e) =>
-                    setInviteForm((f) => ({ ...f, maxUses: e.target.value }))
-                  }
-                  placeholder="Max lần dùng"
-                  type="number"
-                  min={1}
-                  max={1_000_000}
-                  className="app-input !w-28 !py-1.5 text-xs"
-                  required
-                />
-              </div>
-              <input
-                value={inviteForm.note}
-                onChange={(e) =>
-                  setInviteForm((f) => ({ ...f, note: e.target.value }))
-                }
-                placeholder="Ghi chú (tuỳ chọn)"
-                className="app-input !py-1.5 text-xs"
-              />
-              <button
-                type="submit"
-                disabled={inviteBusy || !inviteForm.maxUses.trim()}
-                className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white disabled:opacity-45"
-              >
-                Tạo mã
-              </button>
-            </form>
-          </section>
-
-          <section className="app-panel mt-4 p-3">
-            <p className="play-heading text-sm">Danh sách mã thành viên</p>
-            <ul className="mt-3 space-y-2">
-              {(data.invites ?? []).length === 0 ? (
-                <li className="text-xs text-[var(--play-muted)]">
-                  Chưa có mã — tạo mã trước khi mở đăng ký
-                </li>
-              ) : (
-                (data.invites ?? []).map((inv) => {
-                  const exhausted = inv.usedCount >= inv.maxUses;
-                  return (
-                    <li
-                      key={inv.code}
-                      className="rounded-lg bg-white/80 px-3 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-mono text-sm font-bold tracking-wide text-[var(--play-ink)]">
-                            {inv.code}
-                          </p>
-                          <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
-                            {inv.usedCount}/{inv.maxUses} lần
-                            {exhausted ? " · hết lượt" : ""}
-                            {inv.note ? ` · ${inv.note}` : ""}
-                            {inv.createdBy
-                              ? ` · bởi ${inv.createdBy}`
-                              : ""}
-                            {" · "}
-                            {new Date(inv.createdAt).toLocaleString("vi-VN")}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                              inv.enabled && !exhausted
-                                ? "bg-emerald-100 text-emerald-900"
-                                : "bg-rose-100 text-rose-800"
-                            }`}
-                          >
-                            {inv.enabled
-                              ? exhausted
-                                ? "Hết"
-                                : "Bật"
-                              : "Tắt"}
-                          </span>
-                          <button
-                            type="button"
-                            disabled={inviteBusy}
-                            onClick={() =>
-                              void toggleInvite(inv.code, !inv.enabled)
-                            }
-                            className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20 disabled:opacity-45"
-                          >
-                            {inv.enabled ? "Tắt" : "Bật"}
-                          </button>
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })
-              )}
-            </ul>
-          </section>
-        </>
+        <InvitesAdminPanel
+          requireInvite={data.requireInvite}
+          invites={data.invites ?? []}
+          onMsg={setMsg}
+          onReload={load}
+        />
       )}
 
       {tab === "coupons" && (
@@ -9886,2134 +7642,149 @@ export default function AdminDashboard() {
       )}
 
       {tab === "inter" && canInter && data.inter && (
-        <>
-          <div className="mt-4 flex flex-wrap gap-1.5">
-            {(
-              [
-                ["live", "Quan sát live"],
-                ["room", "Phòng Inter"],
-                ["userWin", "User Win %"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setInterSubTab(id)}
-                className={`rounded-full px-3 py-1.5 text-[11px] font-bold ${
-                  interSubTab === id
-                    ? "bg-[var(--wood-deep)] text-white"
-                    : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {interSubTab === "live" && (
-            <section className="app-panel mt-3 space-y-3 p-3 sm:p-4">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <p className="play-heading text-sm">Inter — quan sát realtime</p>
-                  <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-                    Liability / house profit theo lá · RTP ~50 ván · cảnh báo
-                    hút/nhả. Tự refresh ~2.5s.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled={interLiveBusy}
-                  onClick={() => void loadInterLive()}
-                  className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-50"
-                >
-                  Làm mới
-                </button>
-              </div>
-              {!interLive ? (
-                <p className="text-xs text-[var(--play-muted)]">Đang tải…</p>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {(
-                      [
-                        ["Phase", interLive.phase],
-                        ["Ván", `#${interLive.roundNumber}`],
-                        [
-                          "Mode",
-                          `${(interLive.primaryTier ?? "mode1").toUpperCase()}·${interLive.storedMode}→${interLive.effectiveMode}`,
-                        ],
-                        ["Kho net", formatXu(interLive.vaultNet)],
-                        ["Auth stake", formatXu(interLive.authStake)],
-                        ["Display stake", formatXu(interLive.displayStake)],
-                        ["Bias %", String(interLive.winBiasPct)],
-                        [
-                          "RTP~50",
-                          interLive.rolling.rtpPct != null
-                            ? `${interLive.rolling.rtpPct}%`
-                            : "—",
-                        ],
-                      ] as const
-                    ).map(([k, v]) => (
-                      <div
-                        key={k}
-                        className="rounded-lg bg-white/75 px-2.5 py-2 ring-1 ring-[var(--wood-deep)]/10"
-                      >
-                        <p className="text-[9px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
-                          {k}
-                        </p>
-                        <p className="mt-0.5 truncate font-play text-xs font-bold text-[var(--play-ink)]">
-                          {v}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                  {interLive.alerts.length > 0 && (
-                    <ul className="space-y-1">
-                      {interLive.alerts.map((a) => (
-                        <li
-                          key={a.code + a.message}
-                          className={`rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ${
-                            a.level === "critical"
-                              ? "bg-rose-50 text-rose-900 ring-rose-300"
-                              : a.level === "warn"
-                                ? "bg-amber-50 text-amber-950 ring-amber-300"
-                                : "bg-sky-50 text-sky-950 ring-sky-300"
-                          }`}
-                        >
-                          {a.message}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <p className="text-[10px] text-[var(--play-muted)]">
-                    Lá nhà lời max #{interLive.hint.bestHouseCard} (~
-                    {formatXu(interLive.hint.bestHouseProfit)}) · rủi ro #
-                    {interLive.hint.worstHouseCard} (~
-                    {formatXu(interLive.hint.worstHouseProfit)})
-                  </p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[32rem] text-left text-[11px]">
-                      <thead>
-                        <tr className="text-[9px] uppercase tracking-wide text-[var(--play-muted)]">
-                          <th className="py-1 pr-2">Lá</th>
-                          <th className="py-1 pr-2">Xu auth</th>
-                          <th className="py-1 pr-2">Liability</th>
-                          <th className="py-1 pr-2">House nếu thắng</th>
-                          <th className="py-1">P(mode)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {interLive.cards.map((c) => (
-                          <tr
-                            key={c.cardId}
-                            className="border-t border-[var(--wood-deep)]/10"
-                          >
-                            <td className="py-1.5 pr-2 font-semibold">
-                              #{c.cardId} {c.nameVi}
-                            </td>
-                            <td className="py-1.5 pr-2 tabular-nums">
-                              {formatXu(c.authStake)}
-                            </td>
-                            <td className="py-1.5 pr-2 tabular-nums">
-                              {formatXu(c.liability)}
-                            </td>
-                            <td
-                              className={`py-1.5 pr-2 font-play tabular-nums ${
-                                c.houseProfit >= 0
-                                  ? "text-emerald-700"
-                                  : "text-rose-700"
-                              }`}
-                            >
-                              {formatXu(Math.round(c.houseProfit))}
-                            </td>
-                            <td className="py-1.5 font-play tabular-nums">
-                              {c.percent}%
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <p className="text-[10px] font-bold uppercase text-[var(--play-muted)]">
-                        RTP theo mode (~50 ván)
-                      </p>
-                      <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-[11px]">
-                        {interLive.rolling.byMode.length === 0 ? (
-                          <li className="text-[var(--play-muted)]">
-                            Chưa có ván ghi nhận sau deploy
-                          </li>
-                        ) : (
-                          interLive.rolling.byMode.map((m) => (
-                            <li
-                              key={m.mode}
-                              className="flex justify-between gap-2 rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/10"
-                            >
-                              <span className="font-semibold">{m.mode}</span>
-                              <span className="tabular-nums text-[var(--play-muted)]">
-                                {m.rounds}v · RTP{" "}
-                                {m.rtpPct != null ? `${m.rtpPct}%` : "—"} · nhà{" "}
-                                {formatXu(m.houseProfit)}
-                              </span>
-                            </li>
-                          ))
-                        )}
-                      </ul>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold uppercase text-[var(--play-muted)]">
-                        Ván gần đây
-                      </p>
-                      <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-[11px]">
-                        {interLive.recent.length === 0 ? (
-                          <li className="text-[var(--play-muted)]">
-                            Chờ khóa ván đầu
-                          </li>
-                        ) : (
-                          interLive.recent.map((r) => (
-                            <li
-                              key={`${r.round}-${r.at}`}
-                              className="flex justify-between gap-2 rounded bg-white/70 px-2 py-1 ring-1 ring-[var(--wood-deep)]/10"
-                            >
-                              <span>
-                                #{r.round} · {r.effectiveMode} → lá {r.winCard}
-                              </span>
-                              <span
-                                className={`tabular-nums ${
-                                  r.houseProfit >= 0
-                                    ? "text-emerald-700"
-                                    : "text-rose-700"
-                                }`}
-                              >
-                                {formatXu(Math.round(r.houseProfit))}
-                              </span>
-                            </li>
-                          ))
-                        )}
-                      </ul>
-                    </div>
-                  </div>
-                </>
-              )}
-            </section>
-          )}
-
-          {interSubTab === "userWin" && (
-            <section className="app-panel mt-3 space-y-3 p-3 sm:p-4">
-              <div>
-                <p className="play-heading text-sm">User Win % — ép thắng theo xác suất</p>
-                <p className="mt-1 text-[11px] text-[var(--play-muted)]">
-                  Mode Win không còn luôn 100%. Chỉnh <strong>80–100%</strong>:
-                  mỗi ván user có đặt xu sẽ được ép thắng với xác suất đó; phần còn
-                  lại theo Inter phòng. 100% = như cũ.
-                </p>
-              </div>
-              <input
-                value={winPctFilter}
-                onChange={(e) => setWinPctFilter(e.target.value)}
-                placeholder="Lọc username / ID…"
-                className="app-input w-full !py-1.5 text-xs"
-              />
-              <ul className="max-h-[28rem] space-y-2 overflow-y-auto">
-                {[...data.users]
-                  .filter((u) => u.role !== "mainadmin")
-                  .filter((u) => {
-                    const q = winPctFilter.trim().toLowerCase();
-                    if (!q) return true;
-                    return (
-                      u.username.toLowerCase().includes(q) ||
-                      (u.code || "").toLowerCase().includes(q) ||
-                      (u.displayName || "").toLowerCase().includes(q)
-                    );
-                  })
-                  .sort((a, b) => {
-                    const aw = (a.outcomeMode ?? "normal") === "win" ? 0 : 1;
-                    const bw = (b.outcomeMode ?? "normal") === "win" ? 0 : 1;
-                    if (aw !== bw) return aw - bw;
-                    return a.username.localeCompare(b.username, "vi");
-                  })
-                  .map((u) => {
-                    const om = u.outcomeMode ?? "normal";
-                    const pct =
-                      winPctDrafts[u.id] !== undefined
-                        ? winPctDrafts[u.id]!
-                        : String(u.outcomeWinPct ?? 100);
-                    const pctNum = Math.max(
-                      80,
-                      Math.min(100, Math.floor(Number(pct)) || 100),
-                    );
-                    return (
-                      <li
-                        key={u.id}
-                        className={`rounded-lg px-2.5 py-2 text-xs ring-1 ${
-                          om === "win"
-                            ? "bg-emerald-50 ring-emerald-300/70"
-                            : "bg-white/70 ring-[var(--wood-deep)]/10"
-                        }`}
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="font-semibold text-[var(--play-ink)]">
-                              {u.username}{" "}
-                              <span className="text-[10px] font-normal text-[var(--play-muted)]">
-                                ID {u.code || "—"} · {u.role}
-                              </span>
-                            </p>
-                            <p className="text-[10px] text-[var(--play-muted)]">
-                              {om === "win"
-                                ? `Đang WIN @ ${u.outcomeWinPct ?? 100}%`
-                                : om === "lose"
-                                  ? "Đang LOSE"
-                                  : "Normal (theo phòng)"}
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap gap-1">
-                            {(
-                              [
-                                ["lose", "Lose"],
-                                ["normal", "Normal"],
-                                ["win", "Win"],
-                              ] as const
-                            ).map(([mode, label]) => (
-                              <button
-                                key={mode}
-                                type="button"
-                                onClick={() =>
-                                  void setUserOutcome(
-                                    u.id,
-                                    mode,
-                                    mode === "win" ? pctNum : undefined,
-                                  )
-                                }
-                                className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                                  om === mode
-                                    ? mode === "win"
-                                      ? "bg-emerald-600 text-white"
-                                      : mode === "lose"
-                                        ? "bg-rose-600 text-white"
-                                        : "bg-[var(--wood-deep)] text-white"
-                                    : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
-                                }`}
-                              >
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-end gap-2">
-                          <label className="min-w-[10rem] flex-1 text-[10px] font-semibold text-[var(--play-muted)]">
-                            Win % ({pctNum}%)
-                            <input
-                              type="range"
-                              min={80}
-                              max={100}
-                              step={1}
-                              value={pctNum}
-                              onChange={(e) =>
-                                setWinPctDrafts((d) => ({
-                                  ...d,
-                                  [u.id]: e.target.value,
-                                }))
-                              }
-                              className="mt-1 w-full accent-emerald-600"
-                            />
-                          </label>
-                          <input
-                            type="number"
-                            min={80}
-                            max={100}
-                            value={pct}
-                            onChange={(e) =>
-                              setWinPctDrafts((d) => ({
-                                ...d,
-                                [u.id]: e.target.value,
-                              }))
-                            }
-                            className="app-input !w-16 !py-1 text-center text-[11px]"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => void setUserWinPct(u.id, pctNum)}
-                            className="rounded-full bg-emerald-700 px-3 py-1.5 text-[10px] font-bold text-white"
-                          >
-                            Lưu % (bật Win)
-                          </button>
-                        </div>
-                      </li>
-                    );
-                  })}
-              </ul>
-            </section>
-          )}
-
-          {interSubTab === "room" && (
-        <>
-          <section className="app-panel mt-3 space-y-3 p-3 sm:p-4">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <p className="play-heading text-sm">Inter — thuật toán lá thắng</p>
-                <p className="mt-1 text-[11px] text-[var(--play-muted)]">
-                  <strong>MODE1/2/3</strong> phủ toàn cục (ALL + mode đơn) →
-                  thuật toán phía sau → bias / vault.
-                </p>
-              </div>
-              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-900 ring-1 ring-amber-300/60">
-                {(data.inter.primaryTier ?? "mode1").toUpperCase()}
-                {data.inter.primaryTier === "mode3"
-                  ? " · ÷4#4–8"
-                  : data.inter.primaryTier === "mode2"
-                    ? " · ÷2#4–8"
-                    : ""}
-                {" · "}
-                {isInterRotating(data.inter.mode)
-                  ? `${data.inter.mode === "all" ? "ALL" : data.inter.mode.toUpperCase()}→${(data.inter.effectiveMode ?? data.inter.all?.effectiveMode ?? "?").toUpperCase()}`
-                  : interModeLabel(data.inter.mode)}
-              </span>
-            </div>
-
-            {/* ===== Cấp cao: MODE1/2/3 — phủ ALL + mode đơn ===== */}
-            <div className="space-y-1.5 rounded-xl bg-indigo-50/90 p-3 ring-1 ring-indigo-200/70">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-950">
-                1 · Cấp cao — MODE1 / MODE2 / MODE3 (áp mọi thuật toán)
-              </p>
-              <p className="text-[10px] text-indigo-900/75">
-                Độc lập với ALL / mode đơn / Bộ 3–4. MODE2{" "}
-                <strong>×1/2</strong>, MODE3 <strong>×1/4</strong> % lá 4–8 sau
-                mọi thuật toán — phần % đẩy về 1–3.
-              </p>
-              <div className="grid gap-2 sm:grid-cols-3">
-                {(
-                  data.inter.primaryTiers ?? [
-                    {
-                      id: "mode1" as const,
-                      label: "MODE1 — bình thường",
-                      highCardWeightMul: 1,
-                    },
-                    {
-                      id: "mode2" as const,
-                      label: "MODE2 — % lá 4–8 ×1/2",
-                      highCardWeightMul: 0.5,
-                    },
-                    {
-                      id: "mode3" as const,
-                      label: "MODE3 — % lá 4–8 ×1/4",
-                      highCardWeightMul: 0.25,
-                    },
-                  ]
-                ).map((tier) => {
-                  const active =
-                    (data.inter!.primaryTier ?? "mode1") === tier.id;
-                  const tone =
-                    tier.id === "mode3"
-                      ? "active-mode3"
-                      : tier.id === "mode2"
-                        ? "active-mode2"
-                        : "active-mode1";
-                  return (
-                    <button
-                      key={tier.id}
-                      type="button"
-                      disabled={interBusy}
-                      onClick={() => void setInterPrimaryTier(tier.id)}
-                      className={`rounded-xl px-3 py-3.5 text-left transition ring-2 ${
-                        active
-                          ? tone === "active-mode3"
-                            ? "bg-fuchsia-800 text-white ring-fuchsia-950 shadow-md"
-                            : tone === "active-mode2"
-                              ? "bg-rose-700 text-white ring-rose-800 shadow-md"
-                              : "bg-indigo-700 text-white ring-indigo-800 shadow-md"
-                          : "bg-white text-[var(--play-ink)] ring-indigo-200/80 hover:bg-indigo-50"
-                      } ${interBusy ? "opacity-60" : ""}`}
-                    >
-                      <p className="text-sm font-bold">
-                        {tier.id === "mode1"
-                          ? "MODE1"
-                          : tier.id === "mode2"
-                            ? "MODE2"
-                            : "MODE3"}
-                      </p>
-                      <p
-                        className={`mt-1 text-[10px] leading-snug ${
-                          active ? "text-white/85" : "text-[var(--play-muted)]"
-                        }`}
-                      >
-                        {tier.label}
-                      </p>
-                      <p
-                        className={`mt-1.5 font-mono text-[9px] ${
-                          active ? "text-white/70" : "text-[var(--play-muted)]"
-                        }`}
-                      >
-                        lá 4–8 ×{tier.highCardWeightMul}
-                        {" · phủ ALL / đơn / pack"}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="rounded-xl bg-white/80 px-3 py-2.5 ring-1 ring-[var(--wood-deep)]/15">
-              <p className="text-xs font-bold text-[var(--play-ink)]">
-                Win bias + Vault→Inter
-              </p>
-              <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
-                Bias + nghiêng Big (5–8), − nghiêng Small (1–4). Link gộp flag
-                từng kho (tab Kho · interSignal). Combine: any / weighted /
-                priority.
-              </p>
-              <div className="mt-2 flex flex-wrap items-end gap-2">
-                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                  winBiasPct (−50…50)
-                  <input
-                    value={winBiasDraft}
-                    onChange={(e) => setWinBiasDraft(e.target.value)}
-                    type="number"
-                    min={-50}
-                    max={50}
-                    className="app-input mt-0.5 !w-24 !py-1"
-                  />
-                </label>
-                <label className="flex items-center gap-1 text-[10px] font-semibold">
-                  <input
-                    type="checkbox"
-                    checked={vaultLinkDraft.enabled}
-                    onChange={(e) =>
-                      setVaultLinkDraft((d) => ({
-                        ...d,
-                        enabled: e.target.checked,
-                      }))
-                    }
-                  />
-                  Bật vault link
-                </label>
-                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                  Combine
-                  <select
-                    value={vaultLinkDraft.combine}
-                    onChange={(e) =>
-                      setVaultLinkDraft((d) => ({
-                        ...d,
-                        combine: e.target.value as
-                          | "any"
-                          | "weighted"
-                          | "priority",
-                      }))
-                    }
-                    className="app-input mt-0.5 !py-1"
-                  >
-                    <option value="any">any (lỗ ưu tiên)</option>
-                    <option value="weighted">weighted (gộp net)</option>
-                    <option value="priority">priority (kho ưu tiên)</option>
-                  </select>
-                </label>
-                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                  Ngưỡng lỗ
-                  <input
-                    value={vaultLinkDraft.lossThresholdXu}
-                    onChange={(e) =>
-                      setVaultLinkDraft((d) => ({
-                        ...d,
-                        lossThresholdXu: e.target.value,
-                      }))
-                    }
-                    className="app-input mt-0.5 !w-28 !py-1"
-                  />
-                </label>
-                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                  Ngưỡng lãi
-                  <input
-                    value={vaultLinkDraft.profitThresholdXu}
-                    onChange={(e) =>
-                      setVaultLinkDraft((d) => ({
-                        ...d,
-                        profitThresholdXu: e.target.value,
-                      }))
-                    }
-                    className="app-input mt-0.5 !w-28 !py-1"
-                  />
-                </label>
-                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                  Khi lỗ
-                  <select
-                    value={vaultLinkDraft.onLossMode}
-                    onChange={(e) =>
-                      setVaultLinkDraft((d) => ({
-                        ...d,
-                        onLossMode: e.target.value,
-                      }))
-                    }
-                    className="app-input mt-0.5 !py-1"
-                  >
-                    <option value="small">small</option>
-                    <option value="app">app</option>
-                    <option value="fed">fed</option>
-                    <option value="cool">cool</option>
-                    <option value="vaultguard">vaultguard</option>
-                    <option value="vaultpct">vaultpct</option>
-                    <option value="flowguard">flowguard</option>
-                    <option value="moneysteer">moneysteer</option>
-                    <option value="crowdcap">crowdcap</option>
-                    <option value="fogbreak">fogbreak</option>
-                    <option value="smartai">smartai</option>
-                  </select>
-                </label>
-                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                  Khi lãi
-                  <select
-                    value={vaultLinkDraft.onProfitMode}
-                    onChange={(e) =>
-                      setVaultLinkDraft((d) => ({
-                        ...d,
-                        onProfitMode: e.target.value,
-                      }))
-                    }
-                    className="app-input mt-0.5 !py-1"
-                  >
-                    <option value="big">big</option>
-                    <option value="user">user</option>
-                    <option value="softuser">softuser</option>
-                    <option value="hot">hot</option>
-                    <option value="auto">auto</option>
-                    <option value="moneysteer">moneysteer</option>
-                  </select>
-                </label>
-                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                  Idle (trung tính)
-                  <select
-                    value={vaultLinkDraft.idleMode}
-                    onChange={(e) =>
-                      setVaultLinkDraft((d) => ({
-                        ...d,
-                        idleMode: e.target.value,
-                      }))
-                    }
-                    className="app-input mt-0.5 !py-1"
-                  >
-                    <option value="">Giữ mode hiện tại</option>
-                    <option value="auto">auto</option>
-                    <option value="all">all</option>
-                    <option value="flat">flat</option>
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  disabled={interBusy}
-                  onClick={() => void saveWinBiasAndVaultLink()}
-                  className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-50"
-                >
-                  Lưu bias / link
-                </button>
-              </div>
-              {(data.vault?.interFlags || data.vaultArcana?.interFlags) && (
-                <p className="mt-2 text-[10px] text-[var(--play-muted)]">
-                  Tín hiệu: Tarot{" "}
-                  <strong>
-                    {data.vault?.interFlags?.interSignal ? "ON" : "OFF"}
-                  </strong>
-                  {data.vault?.interFlags
-                    ? ` w${data.vault.interFlags.interWeightPct} p${data.vault.interFlags.interPriority}`
-                    : ""}
-                  {" · "}
-                  Arcana{" "}
-                  <strong>
-                    {data.vaultArcana?.interFlags?.interSignal ? "ON" : "OFF"}
-                  </strong>
-                  {data.vaultArcana?.interFlags
-                    ? ` w${data.vaultArcana.interFlags.interWeightPct} p${data.vaultArcana.interFlags.interPriority}`
-                    : ""}
-                  {" — chỉnh chi tiết ở tab Kho."}
-                </p>
-              )}
-            </div>
-
-            {isInterRotating(data.inter.mode) && data.inter.all && (
-              <div className="rounded-xl bg-amber-50 px-3 py-2.5 ring-1 ring-amber-300/70">
-                <p className="text-xs font-bold text-amber-950">
-                  Đang chạy:{" "}
-                  <span className="uppercase">
-                    {data.inter.all.effectiveMode}
-                  </span>
-                  {" · "}
-                  tiếp theo{" "}
-                  <span className="uppercase">{data.inter.all.nextMode}</span>
-                  {" · "}
-                  còn{" "}
-                  {Math.floor(
-                    Math.max(0, data.inter.all.remainingMs) / 60000,
-                  )}
-                  :
-                  {String(
-                    Math.floor(
-                      (Math.max(0, data.inter.all.remainingMs) / 1000) % 60,
-                    ),
-                  ).padStart(2, "0")}
-                </p>
-                <div className="mt-2 h-2 overflow-hidden rounded-full bg-amber-200/80">
-                  <div
-                    className="h-full rounded-full bg-amber-600 transition-[width] duration-1000"
-                    style={{
-                      width: `${Math.max(
-                        2,
-                        Math.min(
-                          100,
-                          (1 -
-                            Math.max(0, data.inter.all.remainingMs) /
-                              Math.max(1, data.inter.all.slotMs)) *
-                            100,
-                        ),
-                      )}%`,
-                    }}
-                  />
-                </div>
-                <p className="mt-1 text-[10px] text-amber-900/80">
-                  Chuỗi: {data.inter.all.rotation.join(" → ")} (mỗi{" "}
-                  {data.inter.all.slotMinutes ??
-                    Math.round(data.inter.all.slotMs / 60000)}{" "}
-                  phút)
-                </p>
-              </div>
-            )}
-
-            <div className="flex flex-wrap items-end gap-2 rounded-xl bg-white/70 px-3 py-2.5 ring-1 ring-amber-200/80">
-              <label className="min-w-[8rem] flex-1 text-[11px] font-semibold text-[var(--play-ink)]">
-                ALL — phút mỗi slot
-                <select
-                  value={allSlotMinutes}
-                  onChange={(e) => setAllSlotMinutes(e.target.value)}
-                  className="app-input mt-1 w-full"
-                  disabled={interBusy}
-                >
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-                    <option key={n} value={String(n)}>
-                      {n} phút
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                disabled={interBusy}
-                onClick={() => void applyAllSlotMinutes()}
-                className="rounded-xl bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
-              >
-                Áp dụng
-              </button>
-              <p className="w-full text-[10px] text-[var(--play-muted)]">
-                Đang lưu: {data.inter.allSlotMinutes ?? 5} phút/slot. Đổi phút
-                khi đang ALL sẽ reset lại slot hiện tại.
-              </p>
-            </div>
-
-            <div className="space-y-2 rounded-xl bg-white/70 px-3 py-2.5 ring-1 ring-amber-200/80">
-              <p className="text-[11px] font-semibold text-[var(--play-ink)]">
-                Chuỗi xoay ALL (2–20 bước)
-              </p>
-              <p className="text-[10px] text-[var(--play-muted)]">
-                Thứ tự mode khi Inter = ALL. Lưu chuỗi sẽ reset slot hiện tại
-                nếu đang chạy ALL.
-              </p>
-              <ul className="space-y-1">
-                {rotationDraft.map((step, i) => (
-                  <li
-                    key={`${step}-${i}`}
-                    className="flex items-center gap-1.5 rounded-lg bg-amber-50/90 px-2 py-1.5 ring-1 ring-amber-200/60"
-                  >
-                    <span className="w-5 text-center text-[10px] font-bold tabular-nums text-amber-900">
-                      {i + 1}
-                    </span>
-                    <span className="min-w-0 flex-1 text-xs font-bold uppercase text-[var(--play-ink)]">
-                      {step}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={interBusy || i === 0}
-                      onClick={() => moveRotationStep(i, -1)}
-                      className="rounded px-1.5 py-0.5 text-[10px] font-bold text-[var(--wood-deep)] disabled:opacity-40"
-                      title="Lên"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      disabled={interBusy || i >= rotationDraft.length - 1}
-                      onClick={() => moveRotationStep(i, 1)}
-                      className="rounded px-1.5 py-0.5 text-[10px] font-bold text-[var(--wood-deep)] disabled:opacity-40"
-                      title="Xuống"
-                    >
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      disabled={interBusy || rotationDraft.length <= 2}
-                      onClick={() => removeRotationStep(i)}
-                      className="rounded px-1.5 py-0.5 text-[10px] font-bold text-rose-700 disabled:opacity-40"
-                      title="Xóa"
-                    >
-                      ✕
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <div className="flex flex-wrap items-end gap-2">
-                <label className="min-w-[7rem] flex-1 text-[11px] font-semibold text-[var(--play-ink)]">
-                  Thêm bước
-                  <select
-                    value={rotationAddMode}
-                    onChange={(e) =>
-                      setRotationAddMode(e.target.value as RotateStep)
-                    }
-                    className="app-input mt-1 w-full"
-                    disabled={interBusy}
-                  >
-                    {interRotateOptions.map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  disabled={interBusy || rotationDraft.length >= 20}
-                  onClick={addRotationStep}
-                  className="rounded-xl bg-amber-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
-                >
-                  Thêm
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={interBusy}
-                  onClick={() => void saveAllRotation()}
-                  className="rounded-xl bg-[var(--wood-deep)] px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
-                >
-                  Lưu chuỗi
-                </button>
-                <button
-                  type="button"
-                  disabled={interBusy}
-                  onClick={() => void resetAllRotationDefault()}
-                  className="rounded-xl bg-white px-4 py-2 text-xs font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/25 disabled:opacity-50"
-                >
-                  Khôi phục mặc định
-                </button>
-              </div>
-              <p className="text-[10px] text-[var(--play-muted)]">
-                Đang lưu trên server:{" "}
-                {(data.inter.allRotation ?? DEFAULT_ALL_ROTATION).join(" → ")}
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <p className="text-[11px] font-semibold text-[var(--play-ink)]">
-                2 · Tầng thuật toán — ALL / Bộ 3–4 / chuỗi bias
-              </p>
-              <p className="text-[10px] text-[var(--play-muted)]">
-                Chạy dưới MODE1/MODE2. Pack1/2 = chuỗi bias; Bộ 3–4 = chuỗi khác.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              disabled={interBusy}
-              onClick={() => setInterMode("all")}
-              className={`w-full rounded-xl px-3 py-3 text-left transition ring-1 ${
-                data.inter.mode === "all"
-                  ? "bg-[var(--wood-deep)] text-white ring-[var(--wood)] shadow-sm"
-                  : "bg-white/90 text-[var(--play-ink)] ring-amber-300/50 hover:bg-amber-50"
-              } ${interBusy ? "opacity-60" : ""}`}
-            >
-              <p className="text-sm font-bold">
-                ALL — xoay mode ({data.inter.allSlotMinutes ?? 5} phút/slot)
-                {data.inter.primaryTier === "mode3"
-                  ? " · +MODE3 ÷4#4–8"
-                  : data.inter.primaryTier === "mode2"
-                    ? " · +MODE2 ÷2#4–8"
-                    : ""}
-              </p>
-              <p
-                className={`mt-1 text-[10px] leading-snug ${
-                  data.inter.mode === "all"
-                    ? "text-white/80"
-                    : "text-[var(--play-muted)]"
-                }`}
-              >
-                {(data.inter.allRotation ?? DEFAULT_ALL_ROTATION).join(" → ")}
-              </p>
-            </button>
-
-            <div className="grid gap-2 sm:grid-cols-2">
-              {(data.inter.modePacks ?? [])
-                .filter(
-                  (p) =>
-                    p.id === "pack1" ||
-                    p.id === "pack2" ||
-                    p.id === "pack3" ||
-                    p.id === "pack4",
-                )
-                .map((pack) => {
-                  const active = data.inter!.mode === pack.id;
-                  return (
-                    <button
-                      key={pack.id}
-                      type="button"
-                      disabled={interBusy}
-                      onClick={() => setInterMode(pack.id)}
-                      className={`rounded-xl px-3 py-3 text-left transition ring-1 ${
-                        active
-                          ? "bg-slate-700 text-white ring-slate-800 shadow-sm"
-                          : "bg-white/90 text-[var(--play-ink)] ring-slate-200/60 hover:bg-slate-50"
-                      } ${interBusy ? "opacity-60" : ""}`}
-                    >
-                      <p className="text-sm font-bold">
-                        {pack.id === "pack1"
-                          ? "Pack1 · chuỗi bias"
-                          : pack.id === "pack2"
-                            ? "Pack2 · chuỗi bias"
-                            : pack.label}
-                      </p>
-                      <p
-                        className={`mt-1 text-[10px] leading-snug ${
-                          active ? "text-white/80" : "text-[var(--play-muted)]"
-                        }`}
-                      >
-                        {pack.rotation.length
-                          ? pack.rotation.join(" → ")
-                          : "—"}
-                      </p>
-                    </button>
-                  );
-                })}
-            </div>
-
-            <div className="space-y-1.5">
-              <p className="text-[11px] font-semibold text-[var(--play-ink)]">
-                3 · Thuật toán đơn — cố định một mode
-                {data.inter.primaryTier === "mode3"
-                  ? " (vẫn ÷4 lá 4–8)"
-                  : data.inter.primaryTier === "mode2"
-                    ? " (vẫn ÷2 lá 4–8)"
-                    : ""}
-              </p>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                {interRotateOptions.map((m) => {
-                  const active = data.inter!.mode === m.id;
-                  const stakeHint =
-                    m.id === "app" ||
-                    m.id === "softapp" ||
-                    m.id === "user" ||
-                    m.id === "fed" ||
-                    m.id === "softfed" ||
-                    m.id === "hedge" ||
-                    m.id === "contrarian" ||
-                    m.id === "momentum" ||
-                    m.id === "sparse" ||
-                    m.id === "dense" ||
-                    m.id === "crowdcap" ||
-                    m.id === "fogbreak" ||
-                    m.id === "smartai";
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      disabled={interBusy}
-                      onClick={() => setInterMode(m.id)}
-                      className={`rounded-xl px-3 py-2.5 text-left transition ring-1 ${
-                        active
-                          ? stakeHint
-                            ? "bg-rose-600 text-white ring-rose-700 shadow-sm"
-                            : m.id === "fogbreak" ||
-                                m.id === "smartai" ||
-                                m.id === "cool"
-                              ? "bg-indigo-700 text-white ring-indigo-800 shadow-sm"
-                              : "bg-[var(--wood-deep)] text-white ring-[var(--wood-deep)] shadow-sm"
-                          : "bg-white/90 text-[var(--play-ink)] ring-[var(--wood-deep)]/15 hover:bg-white"
-                      } ${interBusy ? "opacity-60" : ""}`}
-                    >
-                      <p className="text-xs font-bold uppercase">{m.id}</p>
-                      <p
-                        className={`mt-0.5 text-[10px] leading-snug ${
-                          active ? "text-white/80" : "text-[var(--play-muted)]"
-                        }`}
-                      >
-                        {m.label.replace(/^[^:]+:\s*/, "")}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-[11px] font-semibold text-[var(--play-ink)]">
-                Force — ép lá thắng (100%)
-              </p>
-              <div className="grid grid-cols-4 gap-2">
-                {CARDS.map((card) => {
-                  const id = String(card.id) as ForceCardMode;
-                  const active = data.inter!.mode === id;
-                  return (
-                    <button
-                      key={card.id}
-                      type="button"
-                      disabled={interBusy}
-                      onClick={() => setInterMode(id)}
-                      className={`rounded-xl px-2 py-2.5 text-left transition ring-1 ${
-                        active
-                          ? "bg-amber-500 text-white ring-amber-600 shadow-sm"
-                          : "bg-white/90 text-[var(--play-ink)] ring-[var(--wood-deep)]/15 hover:bg-white"
-                      } ${interBusy ? "opacity-60" : ""}`}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <img
-                          src={card.image}
-                          alt=""
-                          className="h-9 w-6 rounded object-cover"
-                        />
-                        <div className="min-w-0">
-                          <p className="text-sm font-bold">#{card.id}</p>
-                          <p
-                            className={`truncate text-[9px] leading-tight ${
-                              active ? "text-white/80" : "text-[var(--play-muted)]"
-                            }`}
-                          >
-                            {card.nameVi}
-                          </p>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <p className="text-[10px] text-[var(--play-muted)]">
-              {data.inter.labels[data.inter.mode] ??
-                interModeLabel(data.inter.mode)}
-              {data.inter.updatedBy ? (
-                <>
-                  {" "}
-                  · cập nhật bởi <strong>{data.inter.updatedBy}</strong>
-                  {data.inter.updatedAt
-                    ? ` · ${new Date(data.inter.updatedAt).toLocaleString("vi-VN")}`
-                    : null}
-                </>
-              ) : null}
-            </p>
-          </section>
-
-          <section className="app-panel mt-3 space-y-2 p-3">
-            <p className="play-heading text-sm">Cầu auth + lời nhà (ván này)</p>
-            <p className="text-[10px] text-[var(--play-muted)]">
-              Stake user đăng nhập · Lời ước lượng nếu lá đó thắng
-              {data.inter.recentWins && data.inter.recentWins.length > 0
-                ? ` · cool gần đây: #${data.inter.recentWins.join(", #")}`
-                : ""}
-            </p>
-            <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-8">
-              {CARDS.map((card, i) => {
-                const stake = data.inter!.authStakesRound?.[i] ?? 0;
-                const profit =
-                  data.inter!.probabilities.find((p) => p.cardId === card.id)
-                    ?.houseProfit ?? 0;
-                return (
-                  <div
-                    key={card.id}
-                    className="rounded-lg bg-white/80 px-1.5 py-1.5 text-center ring-1 ring-[var(--wood-deep)]/10"
-                  >
-                    <img
-                      src={card.image}
-                      alt=""
-                      className="mx-auto h-8 w-6 rounded object-cover"
-                    />
-                    <p className="mt-0.5 text-[9px] font-bold text-[var(--play-ink)]">
-                      #{card.id}
-                    </p>
-                    <p className="font-play text-[9px] tabular-nums text-[var(--play-muted)]">
-                      {formatXu(stake)}
-                    </p>
-                    <p
-                      className={`font-play text-[9px] font-bold tabular-nums ${
-                        profit >= 0
-                          ? "text-[var(--jade-deep)]"
-                          : "text-rose-600"
-                      }`}
-                    >
-                      {profit > 0 ? "+" : ""}
-                      {formatXu(Math.round(profit))}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="app-panel mt-3 space-y-2 p-3">
-            <p className="play-heading text-sm">
-              Xác suất hiệu dụng
-              {data.inter.effectiveMode
-                ? ` (${data.inter.effectiveMode})`
-                : ""}
-            </p>
-            {(data.inter.mode === "app" ||
-              data.inter.mode === "softapp" ||
-              data.inter.mode === "user" ||
-              data.inter.mode === "softuser" ||
-              data.inter.mode === "fed" ||
-              data.inter.mode === "softfed" ||
-              data.inter.mode === "hedge" ||
-              data.inter.mode === "contrarian" ||
-              data.inter.mode === "momentum" ||
-              data.inter.mode === "sparse" ||
-              data.inter.mode === "dense" ||
-              data.inter.mode === "vaultguard" ||
-              data.inter.mode === "vaultpct" ||
-              data.inter.mode === "flowguard" ||
-              data.inter.mode === "moneysteer" ||
-              data.inter.mode === "crowdcap" ||
-              data.inter.mode === "fogbreak" ||
-              data.inter.mode === "smartai" ||
-              data.inter.effectiveMode === "app" ||
-              data.inter.effectiveMode === "softapp" ||
-              data.inter.effectiveMode === "user" ||
-              data.inter.effectiveMode === "fed" ||
-              data.inter.effectiveMode === "softfed" ||
-              data.inter.effectiveMode === "hedge" ||
-              data.inter.effectiveMode === "contrarian" ||
-              data.inter.effectiveMode === "momentum" ||
-              data.inter.effectiveMode === "sparse" ||
-              data.inter.effectiveMode === "dense" ||
-              data.inter.effectiveMode === "vaultpct" ||
-              data.inter.effectiveMode === "flowguard" ||
-              data.inter.effectiveMode === "moneysteer" ||
-              data.inter.effectiveMode === "fogbreak" ||
-              data.inter.effectiveMode === "smartai") && (
-              <p className="text-[10px] text-[var(--play-muted)]">
-                Theo stake user đăng nhập · FogBreak/SmartAI nhìn lịch sử + nhiễu
-                · SmartAI học online nhẹ · Mode % kho: vaultpct / flowguard /
-                moneysteer
-              </p>
-            )}
-            {(() => {
-              const probs = data.inter!.probabilities;
-              const maxPct = Math.max(...probs.map((p) => p.percent), 0);
-              return (
-                <div className="space-y-1.5">
-                  {probs.map((p) => {
-                    const card = CARDS.find((c) => c.id === p.cardId);
-                    const forced = data.inter!.mode === String(p.cardId);
-                    const isMax = p.percent === maxPct && maxPct > 0;
-                    return (
-                      <div key={p.cardId} className="flex items-center gap-2">
-                        {card ? (
-                          <img
-                            src={card.image}
-                            alt=""
-                            className="h-7 w-5 shrink-0 rounded object-cover"
-                          />
-                        ) : null}
-                        <span className="w-16 shrink-0 truncate text-[10px] font-semibold">
-                          #{p.cardId}
-                        </span>
-                        <div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--wood-deep)]/10">
-                          <div
-                            className={`h-full rounded-full ${
-                              forced || isMax
-                                ? "bg-amber-500"
-                                : "bg-[var(--wood-deep)]/55"
-                            }`}
-                            style={{
-                              width: `${Math.min(100, Math.max(2, p.percent))}%`,
-                            }}
-                          />
-                        </div>
-                        <span className="font-play w-12 shrink-0 text-right text-xs font-bold tabular-nums text-[var(--wood-deep)]">
-                          {p.percent}%
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {data.inter.probabilities.map((p) => {
-                const card = CARDS.find((c) => c.id === p.cardId);
-                const forced = data.inter!.mode === String(p.cardId);
-                const eff = data.inter!.effectiveMode ?? data.inter!.mode;
-                const policy =
-                  eff === "app" ||
-                  eff === "user" ||
-                  eff === "fed" ||
-                  eff === "hedge";
-                const hot =
-                  forced ||
-                  (eff === "small" && p.group === "small") ||
-                  (eff === "big" && p.group === "big") ||
-                  (eff === "fed" && p.percent >= 50) ||
-                  (eff === "hedge" && p.percent >= 20) ||
-                  (policy && eff !== "fed" && p.percent >= 18);
-                return (
-                  <div
-                    key={p.cardId}
-                    className={`rounded-xl px-2 py-2 ring-1 ${
-                      forced
-                        ? "bg-amber-100 ring-amber-400"
-                        : (eff === "app" ||
-                              eff === "fed" ||
-                              eff === "hedge") &&
-                            hot
-                          ? "bg-rose-50 ring-rose-300/70"
-                          : eff === "user" && hot
-                            ? "bg-emerald-50 ring-emerald-300/70"
-                            : hot
-                              ? "bg-amber-50 ring-amber-300/70"
-                              : "bg-white/80 ring-[var(--wood-deep)]/10"
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      {card ? (
-                        <img
-                          src={card.image}
-                          alt=""
-                          className="h-8 w-6 rounded object-cover"
-                        />
-                      ) : null}
-                      <div className="min-w-0">
-                        <p className="truncate text-[10px] font-semibold">
-                          #{p.cardId} {p.nameVi}
-                        </p>
-                        <p className="font-play text-sm font-bold tabular-nums text-[var(--wood-deep)]">
-                          {p.percent}%
-                        </p>
-                      </div>
-                    </div>
-                    <p className="mt-1 text-[9px] leading-snug text-[var(--play-muted)]">
-                      {forced
-                        ? "Ép thẳng"
-                        : policy
-                          ? `Trả ${formatXu(p.liability ?? 0)} · App ${formatXu(p.houseProfit ?? 0)}`
-                          : p.group === "small"
-                            ? "Small 1–4"
-                            : "Big 5–8"}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="app-panel mt-3 space-y-2 p-3">
-            <p className="play-heading text-sm">Log Inter gần đây</p>
-            <ul className="max-h-40 space-y-1 overflow-y-auto text-[11px]">
-              {(data.botPanel?.logs ?? [])
-                .filter(
-                  (l) =>
-                    l.botId === "system" &&
-                    typeof l.message === "string" &&
-                    l.message.includes("Inter:"),
-                )
-                .slice(0, 5)
-                .map((l) => (
-                  <li
-                    key={l.id}
-                    className="rounded-lg bg-white/70 px-2 py-1.5 ring-1 ring-[var(--wood-deep)]/10"
-                  >
-                    <span className="font-semibold text-[var(--wood-deep)]">
-                      Ván #{l.round}
-                    </span>
-                    <span className="text-[var(--play-muted)]">
-                      {" "}
-                      · {new Date(l.at).toLocaleTimeString("vi-VN")}
-                    </span>
-                    <p className="mt-0.5 text-[10px] leading-snug text-[var(--play-ink)]">
-                      {l.message}
-                    </p>
-                  </li>
-                ))}
-              {(data.botPanel?.logs ?? []).filter(
-                (l) =>
-                  l.botId === "system" &&
-                  typeof l.message === "string" &&
-                  l.message.includes("Inter:"),
-              ).length === 0 && (
-                <li className="py-3 text-center text-[var(--play-muted)]">
-                  Chưa có log Inter — đợi khóa ván sau
-                </li>
-              )}
-            </ul>
-          </section>
-        </>
-          )}
-        </>
+        <Suspense
+          fallback={
+        <p className="mt-4 text-[11px] text-[var(--play-muted)]">
+          Đang tải Inter…
+        </p>
+          }
+        >
+          <LazyInterAdminPanel
+            inter={data.inter}
+            users={data.users}
+            vault={data.vault}
+            vaultArcana={data.vaultArcana}
+            botLogs={data.botPanel?.logs ?? []}
+            me={me}
+            active={tab === "inter"}
+            onMsg={setMsg}
+            onReload={load}
+          />
+        </Suspense>
       )}
 
       {tab === "vault" && canVault && activeVault && (
-        <>
-          <section className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
-            {[
-              [
-                vaultLabel(managedGame) + " hiện tại",
-                formatXu(activeVault.balance),
-                true,
-              ],
-              ["Tổng xu vào", formatXu(activeVault.totalStakeIn), false],
-              ["Tổng trả xu", formatXu(activeVault.totalPayoutOut), false],
-              ["Đã bơm (mint)", formatXu(activeVault.totalMinted), false],
-              ["Đã rút (burn)", formatXu(activeVault.totalBurned), false],
-              ["Net kho", formatXu(activeVault.netHouse), false],
-            ].map(([label, value, accent]) => (
-              <div
-                key={String(label)}
-                className={`app-panel p-3 ${accent ? "ring-2 ring-amber-300/50" : ""}`}
-              >
-                <p className="play-section-title !normal-case !tracking-wide">
-                  {label}
-                </p>
-                <p
-                  className={`font-play mt-1 text-sm font-bold tabular-nums ${
-                    accent ? "text-amber-700" : "text-[var(--play-ink)]"
-                  }`}
-                >
-                  {value}
-                </p>
-              </div>
-            ))}
-          </section>
-
-          {activeVault.health && (
-            <section className="app-panel mt-3 space-y-2 p-3">
-              <p className="play-heading text-sm">% lỗ / lãi kho</p>
-              <p className="text-[11px] text-[var(--play-muted)]">
-                Edge = (xu vào − trả) / xu vào. Band + intensity (−2
-                hút … +2 nhả) dùng cho mode{" "}
-                <strong>vaultpct / flowguard / moneysteer</strong>.
-              </p>
-              <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {(
-                  [
-                    ["Edge all-time", `${activeVault.health.edgePct}%`],
-                    ["Blend (ưu tiên)", `${activeVault.health.blendEdgePct}%`],
-                    ["Flow 1 giờ", `${activeVault.health.flowHourEdgePct}%`],
-                    ["Flow 24 giờ", `${activeVault.health.flowDayEdgePct}%`],
-                    [
-                      "Net / balance",
-                      `${activeVault.health.netVsBalancePct}%`,
-                    ],
-                    [
-                      "Band",
-                      `${activeVault.health.band} · i${activeVault.health.steerIntensity}`,
-                    ],
-                  ] as const
-                ).map(([label, value]) => (
-                  <div
-                    key={label}
-                    className={`rounded-lg bg-white/70 px-2.5 py-2 ring-1 ${
-                      activeVault.health!.band.includes("loss")
-                        ? "ring-rose-300/50"
-                        : activeVault.health!.band.includes("profit")
-                          ? "ring-emerald-300/50"
-                          : "ring-[var(--wood-deep)]/10"
-                    }`}
-                  >
-                    <p className="text-[9px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
-                      {label}
-                    </p>
-                    <p className="font-play mt-0.5 text-sm font-bold tabular-nums text-[var(--play-ink)]">
-                      {value}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          <section className="app-panel mt-3 space-y-2 p-3">
-            <p className="play-heading text-sm">Flag → Inter auto</p>
-            <p className="text-[11px] text-[var(--play-muted)]">
-              Bật <strong>interSignal</strong> để kho này tham gia vault-link.
-              Ưu tiên <strong>usePercent</strong> (edge %) — ngưỡng xu chỉ khi
-              tắt %. Weight / priority cho combine weighted / priority.
-            </p>
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="flex items-center gap-1 text-[11px] font-semibold">
-                <input
-                  type="checkbox"
-                  checked={vaultFlagsDraft.interSignal}
-                  onChange={(e) =>
-                    setVaultFlagsDraft((d) => ({
-                      ...d,
-                      interSignal: e.target.checked,
-                    }))
-                  }
-                />
-                interSignal
-              </label>
-              <label className="flex items-center gap-1 text-[11px] font-semibold">
-                <input
-                  type="checkbox"
-                  checked={!!vaultFlagsDraft.usePercent}
-                  onChange={(e) =>
-                    setVaultFlagsDraft((d) => ({
-                      ...d,
-                      usePercent: e.target.checked,
-                    }))
-                  }
-                />
-                usePercent
-              </label>
-              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                Loss %
-                <input
-                  type="number"
-                  min={0.5}
-                  max={80}
-                  step={0.5}
-                  value={vaultFlagsDraft.lossPct ?? 8}
-                  onChange={(e) =>
-                    setVaultFlagsDraft((d) => ({
-                      ...d,
-                      lossPct: Number(e.target.value) || 8,
-                    }))
-                  }
-                  className="app-input mt-0.5 !w-20 !py-1"
-                />
-              </label>
-              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                Profit %
-                <input
-                  type="number"
-                  min={0.5}
-                  max={80}
-                  step={0.5}
-                  value={vaultFlagsDraft.profitPct ?? 12}
-                  onChange={(e) =>
-                    setVaultFlagsDraft((d) => ({
-                      ...d,
-                      profitPct: Number(e.target.value) || 12,
-                    }))
-                  }
-                  className="app-input mt-0.5 !w-20 !py-1"
-                />
-              </label>
-              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                Weight %
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={vaultFlagsDraft.interWeightPct}
-                  onChange={(e) =>
-                    setVaultFlagsDraft((d) => ({
-                      ...d,
-                      interWeightPct: Number(e.target.value) || 0,
-                    }))
-                  }
-                  className="app-input mt-0.5 !w-20 !py-1"
-                />
-              </label>
-              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                Priority
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={vaultFlagsDraft.interPriority}
-                  onChange={(e) =>
-                    setVaultFlagsDraft((d) => ({
-                      ...d,
-                      interPriority: Number(e.target.value) || 0,
-                    }))
-                  }
-                  className="app-input mt-0.5 !w-20 !py-1"
-                />
-              </label>
-              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                Ngưỡng lỗ xu (0=global)
-                <input
-                  type="number"
-                  min={0}
-                  value={vaultFlagsDraft.lossThresholdXu}
-                  onChange={(e) =>
-                    setVaultFlagsDraft((d) => ({
-                      ...d,
-                      lossThresholdXu: Number(e.target.value) || 0,
-                    }))
-                  }
-                  className="app-input mt-0.5 !w-28 !py-1"
-                />
-              </label>
-              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                Ngưỡng lãi xu (0=global)
-                <input
-                  type="number"
-                  min={0}
-                  value={vaultFlagsDraft.profitThresholdXu}
-                  onChange={(e) =>
-                    setVaultFlagsDraft((d) => ({
-                      ...d,
-                      profitThresholdXu: Number(e.target.value) || 0,
-                    }))
-                  }
-                  className="app-input mt-0.5 !w-28 !py-1"
-                />
-              </label>
-              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                Mode khi lỗ
-                <select
-                  value={vaultFlagsDraft.onLossMode}
-                  onChange={(e) =>
-                    setVaultFlagsDraft((d) => ({
-                      ...d,
-                      onLossMode: e.target.value,
-                    }))
-                  }
-                  className="app-input mt-0.5 !py-1"
-                >
-                  <option value="">(global)</option>
-                  <option value="small">small</option>
-                  <option value="app">app</option>
-                  <option value="fed">fed</option>
-                  <option value="cool">cool</option>
-                  <option value="vaultguard">vaultguard</option>
-                  <option value="vaultpct">vaultpct</option>
-                  <option value="flowguard">flowguard</option>
-                  <option value="moneysteer">moneysteer</option>
-                  <option value="fogbreak">fogbreak</option>
-                  <option value="smartai">smartai</option>
-                </select>
-              </label>
-              <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                Mode khi lãi
-                <select
-                  value={vaultFlagsDraft.onProfitMode}
-                  onChange={(e) =>
-                    setVaultFlagsDraft((d) => ({
-                      ...d,
-                      onProfitMode: e.target.value,
-                    }))
-                  }
-                  className="app-input mt-0.5 !py-1"
-                >
-                  <option value="">(global)</option>
-                  <option value="big">big</option>
-                  <option value="user">user</option>
-                  <option value="softuser">softuser</option>
-                  <option value="hot">hot</option>
-                  <option value="auto">auto</option>
-                  <option value="moneysteer">moneysteer</option>
-                </select>
-              </label>
-              <button
-                type="button"
-                disabled={vaultFlagsBusy}
-                onClick={() => void saveVaultInterFlags()}
-                className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-50"
-              >
-                {vaultFlagsBusy ? "…" : "Lưu flag kho"}
-              </button>
-            </div>
-          </section>
-
-          <section className="app-panel mt-3 p-3">
-            <p className="play-heading text-sm">Phân loại ledger (gần đây)</p>
-            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-              Net từ chơi:{" "}
-              <span className="font-bold tabular-nums">
-                {formatXu(
-                  activeVault.netFromPlay ??
-                    activeVault.totalStakeIn - activeVault.totalPayoutOut,
-                )}
-              </span>
-              {" · "}
-              chat/fee/xu ghi rõ loại.
-            </p>
-            <ul className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-              {Object.entries(activeVault.breakdown ?? {}).map(
-                ([type, row]) => (
-                  <li
-                    key={type}
-                    className="rounded-lg bg-white/70 px-2 py-1.5 text-[10px] ring-1 ring-[var(--wood-deep)]/10"
-                  >
-                    <span className="font-semibold">
-                      {LEDGER_LABEL[type] ?? type}
-                    </span>
-                    <span className="mt-0.5 block tabular-nums text-[var(--play-muted)]">
-                      {row.count} GD · {formatXu(row.sum)}
-                    </span>
-                  </li>
-                ),
-              )}
-              {Object.keys(activeVault.breakdown ?? {}).length === 0 && (
-                <li className="text-[11px] text-[var(--play-muted)]">
-                  Chưa có breakdown
-                </li>
-              )}
-            </ul>
-          </section>
-
-          <section className="app-panel mt-4 space-y-3 p-3">
-            <p className="play-heading text-sm">
-              Can thiệp {vaultLabel(managedGame)}
-            </p>
-            <p className="text-[11px] text-[var(--play-muted)]">
-              {managedGame === "arcana"
-                ? "Chỉ xu/trả bánh xe ghi kho này. Coupon/cấp xu user dùng Kho Tarot."
-                : managedGame === "gem"
-                  ? "Kho Gem độc lập — cấp/thu Gem ví user. Bàn Gem (settle) để sau."
-                  : "Xu bàn Tarot + coupon/cấp/thu xu. Không lẫn Kho Arcana/Gem."}
-            </p>
-            <input
-              value={vaultNote}
-              onChange={(e) => setVaultNote(e.target.value)}
-              placeholder="Ghi chú (tuỳ chọn)"
-              className="app-input"
-            />
-            <div className="flex flex-wrap gap-2">
-              <input
-                value={vaultDelta}
-                onChange={(e) => setVaultDelta(e.target.value)}
-                className="app-input w-36"
-                placeholder="Số xu"
-              />
-              <button
-                type="button"
-                onClick={() => vaultAdjust(Math.abs(Number(vaultDelta) || 0))}
-                className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white"
-              >
-                Bơm kho
-              </button>
-              <button
-                type="button"
-                onClick={() => vaultAdjust(-Math.abs(Number(vaultDelta) || 0))}
-                className="rounded-full bg-rose-700 px-3 py-1.5 text-xs font-bold text-white"
-              >
-                Rút kho
-              </button>
-            </div>
-            <form onSubmit={vaultSetBalance} className="flex flex-wrap gap-2">
-              <input
-                value={vaultSet}
-                onChange={(e) => setVaultSet(e.target.value)}
-                className="app-input w-40"
-                placeholder="Đặt số dư tuyệt đối"
-              />
-              <button
-                type="submit"
-                className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white"
-              >
-                Đặt số dư kho
-              </button>
-            </form>
-          </section>
-
-          {managedGame !== "arcana" && (
-          <section className="app-panel mt-4 space-y-2 p-3">
-            <p className="play-heading text-sm">
-              {managedGame === "gem" ? "Gem kho ↔ user" : "Xu kho ↔ user"}
-            </p>
-            <select
-              value={vaultUser.userId}
-              onChange={(e) =>
-                setVaultUser((v) => ({ ...v, userId: e.target.value }))
-              }
-              className="app-input"
-            >
-              <option value="">Chọn user…</option>
-              {data.users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.username} ({formatXu(u.balance)} xu
-                  {typeof u.gemBalance === "number"
-                    ? ` · ${formatGem(u.gemBalance)} Gem`
-                    : ""}
-                  )
-                </option>
-              ))}
-            </select>
-            <div className="flex flex-wrap gap-2">
-              <input
-                value={vaultUser.amount}
-                onChange={(e) =>
-                  setVaultUser((v) => ({ ...v, amount: e.target.value }))
-                }
-                className="app-input w-36"
-                placeholder={managedGame === "gem" ? "Số Gem" : "Số xu"}
-              />
-              <button
-                type="button"
-                onClick={vaultGrant}
-                className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white"
-              >
-                Cấp từ kho
-              </button>
-              <button
-                type="button"
-                onClick={vaultSeize}
-                className="rounded-full bg-rose-700 px-3 py-1.5 text-xs font-bold text-white"
-              >
-                Thu về kho
-              </button>
-            </div>
-          </section>
-          )}
-
-          <section className="app-panel mt-4 p-3">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <p className="play-heading text-sm">Sổ kho (gần đây)</p>
-              <select
-                value={vaultLedgerFilter}
-                onChange={(e) => setVaultLedgerFilter(e.target.value)}
-                className="app-input !w-auto !py-1 text-[10px]"
-              >
-                <option value="all">Tất cả</option>
-                <option value="outflow">Hao hụt (xu ra)</option>
-                {Object.entries(LEDGER_LABEL).map(([id, label]) => (
-                  <option key={id} value={id}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {(() => {
-              const rows = (activeVault.ledger ?? []).filter((row) => {
-                if (vaultLedgerFilter === "all") return true;
-                if (vaultLedgerFilter === "outflow") {
-                  return (
-                    row.amount < 0 ||
-                    row.type === "payout_out" ||
-                    row.type === "coupon_mint" ||
-                    row.type === "grant_user" ||
-                    row.type === "burn" ||
-                    row.type === "stake_refund"
-                  );
-                }
-                return row.type === vaultLedgerFilter;
-              });
-              return (
-                <div className="max-h-72 overflow-auto">
-                  <table className="w-full min-w-[28rem] border-collapse text-left text-[10px]">
-                    <thead className="sticky top-0 bg-[rgba(255,248,235,0.96)] text-[var(--play-muted)]">
-                      <tr>
-                        <th className="px-1.5 py-1 font-semibold">Thời gian</th>
-                        <th className="px-1.5 py-1 font-semibold">Loại</th>
-                        <th className="px-1.5 py-1 font-semibold">User</th>
-                        <th className="px-1.5 py-1 text-right font-semibold">Xu</th>
-                        <th className="px-1.5 py-1 text-right font-semibold">
-                          Sau
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={5}
-                            className="px-1.5 py-3 text-[var(--play-muted)]"
-                          >
-                            Không có dòng khớp bộ lọc
-                          </td>
-                        </tr>
-                      ) : (
-                        rows.map((row) => (
-                          <tr
-                            key={row.id}
-                            className="cursor-pointer border-t border-[var(--wood-deep)]/8 hover:bg-white/80"
-                            onClick={() => setVaultRowDetail(row)}
-                          >
-                            <td className="px-1.5 py-1 tabular-nums text-[var(--play-muted)]">
-                              {new Date(row.at).toLocaleString("vi-VN")}
-                            </td>
-                            <td className="px-1.5 py-1 font-semibold">
-                              {LEDGER_LABEL[row.type] ?? row.type}
-                            </td>
-                            <td className="max-w-[6rem] truncate px-1.5 py-1">
-                              {row.username || "—"}
-                            </td>
-                            <td
-                              className={`px-1.5 py-1 text-right font-play font-bold tabular-nums ${
-                                row.amount < 0
-                                  ? "text-rose-600"
-                                  : "text-[var(--wood-deep)]"
-                              }`}
-                            >
-                              {row.amount >= 0 ? "+" : ""}
-                              {formatXu(row.amount)}
-                            </td>
-                            <td className="px-1.5 py-1 text-right tabular-nums text-[var(--play-muted)]">
-                              {formatXu(row.balanceAfter)}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })()}
-            <p className="mt-1.5 text-[9px] text-[var(--play-muted)]">
-              Bấm dòng để xem chi tiết. Bộ lọc chỉ trên {activeVault.ledger.length}{" "}
-              dòng snapshot — dùng popup Tổng quan để tải thêm theo loại.
-            </p>
-          </section>
-        </>
+        <Suspense
+          fallback={
+        <p className="mt-4 text-[11px] text-[var(--play-muted)]">
+          Đang tải Kho…
+        </p>
+          }
+        >
+          <LazyVaultAdminPanel
+            activeVault={activeVault}
+            managedGame={managedGame}
+            users={data.users}
+            onMsg={setMsg}
+            onReload={load}
+          />
+        </Suspense>
       )}
 
-      {tab === "arcana" && canArcanaCfg && data.arcanaConfig && (
-        <>
-          <section className="app-panel mt-4 space-y-3 p-3">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="play-heading text-sm">Bàn Bánh xe Arcana</p>
-                <p className="text-[11px] text-[var(--play-muted)]">
-                  Hệ số / weight riêng — không dùng Inter Tarot
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={arcanaBusy}
-                onClick={() => void toggleArcanaEnabled()}
-                className={`rounded-full px-3 py-1.5 text-xs font-bold text-white ${
-                  data.arcanaConfig.enabled
-                    ? "bg-[var(--jade-deep)]"
-                    : "bg-rose-700"
-                }`}
-              >
-                {data.arcanaConfig.enabled ? "Đang mở" : "Đang khóa"}
-              </button>
-            </div>
-            {data.arcanaStats && (
-              <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-                <div className="rounded-lg bg-white/70 p-2 ring-1 ring-[var(--wood-deep)]/10">
-                  <p className="text-[var(--play-muted)]">Spins</p>
-                  <p className="font-play font-bold">
-                    {data.arcanaStats.spinCount}
-                  </p>
-                </div>
-                <div className="rounded-lg bg-white/70 p-2 ring-1 ring-[var(--wood-deep)]/10">
-                  <p className="text-[var(--play-muted)]">Win rate</p>
-                  <p className="font-play font-bold">
-                    {data.arcanaStats.winRate}%
-                  </p>
-                </div>
-                <div className="rounded-lg bg-white/70 p-2 ring-1 ring-[var(--wood-deep)]/10">
-                  <p className="text-[var(--play-muted)]">Edge</p>
-                  <p className="font-play font-bold">
-                    {formatXu(data.arcanaStats.houseEdgeXu)}
-                  </p>
-                </div>
-                <div className="rounded-lg bg-white/70 p-2 ring-1 ring-[var(--wood-deep)]/10">
-                  <p className="text-[var(--play-muted)]">Kho Arcana</p>
-                  <p className="font-play font-bold">
-                    {formatXu(data.arcanaStats.vaultBalance)}
-                  </p>
-                </div>
-              </div>
-            )}
-          </section>
-          <section className="app-panel mt-3 space-y-2 p-3">
-            <p className="play-heading text-sm">Cân bằng RTP (v5)</p>
-            <p className="text-[11px] text-[var(--play-muted)]">
-              Thưởng khi trúng = xu × hệ số × payoutScale ÷ số ô chọn; có thể
-              +% chuỗi vận khi thắng liên tiếp. RTP % = kỳ vọng hoàn trả / xu đặt.
+      {tab === "arcana" && canArcanaCfg && (
+        <Suspense
+          fallback={
+            <p className="mt-4 text-[11px] text-[var(--play-muted)]">
+              Đang tải Arcana...
             </p>
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="text-xs font-semibold text-[var(--play-muted)]">
-                payoutScale
-                <input
-                  id="arcana-payout-scale"
-                  type="number"
-                  min={0.01}
-                  max={2}
-                  step={0.01}
-                  defaultValue={data.arcanaConfig.payoutScale ?? 0.3}
-                  className="app-input mt-1 w-28"
-                />
-              </label>
-              <button
-                type="button"
-                disabled={arcanaBusy}
-                onClick={() => void saveArcanaPayoutScale()}
-                className="rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-white"
-              >
-                Lưu scale
-              </button>
-            </div>
-            <div className="mt-3 rounded-lg bg-white/60 p-2.5 ring-1 ring-[var(--wood-deep)]/10">
-              <p className="text-xs font-bold text-[var(--play-ink)]">
-                Max xu Tu Tiên
-              </p>
-              <p className="mt-1 text-[10px] text-[var(--play-muted)]">
-                Trần / lá Tarot và chip Arcana theo 9 bậc chỉnh ở tab{" "}
-                <strong>Tu Tiên → Trần xu</strong> (tránh hai form lệch nhau).
-              </p>
-              {canCultivation && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTab("tutien");
-                    setTutienSub("caps");
-                  }}
-                  className="mt-2 rounded-full bg-[var(--wood-deep)] px-3 py-1.5 text-[10px] font-bold text-white"
-                >
-                  Mở Tu Tiên · Trần xu
-                </button>
-              )}
-            </div>
-            <div className="mt-3 rounded-lg bg-white/60 p-2.5 ring-1 ring-[var(--wood-deep)]/10">
-              <p className="text-xs font-bold text-[var(--play-ink)]">
-                Chuỗi vận — thưởng thêm khi thắng
-              </p>
-              <p className="mt-1 text-[10px] text-[var(--play-muted)]">
-                Chuỗi thắng trước lượt quay ≥ ngưỡng → thắng lượt đó +% trên
-                thưởng gốc. Chuỗi thua chỉ hiển thị.
-              </p>
-              <label className="mt-2 flex items-center gap-2 text-xs font-semibold">
-                <input
-                  id="arcana-streak-enabled"
-                  type="checkbox"
-                  defaultChecked={data.arcanaConfig.streakBonusEnabled !== false}
-                  className="h-4 w-4 accent-[var(--jade-deep)]"
-                />
-                Bật thưởng chuỗi vận
-              </label>
-              <div className="mt-2 flex flex-wrap items-end gap-2">
-                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                  Ngưỡng
-                  <input
-                    id="arcana-streak-min"
-                    type="number"
-                    min={1}
-                    max={20}
-                    defaultValue={data.arcanaConfig.streakBonusMinStreak ?? 3}
-                    className="app-input mt-0.5 w-20"
-                  />
-                </label>
-                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                  +% / bước
-                  <input
-                    id="arcana-streak-step"
-                    type="number"
-                    min={0}
-                    max={50}
-                    defaultValue={
-                      data.arcanaConfig.streakBonusPercentPerStep ?? 5
-                    }
-                    className="app-input mt-0.5 w-20"
-                  />
-                </label>
-                <label className="text-[10px] font-semibold text-[var(--play-muted)]">
-                  Trần %
-                  <input
-                    id="arcana-streak-cap"
-                    type="number"
-                    min={0}
-                    max={100}
-                    defaultValue={data.arcanaConfig.streakBonusCapPercent ?? 15}
-                    className="app-input mt-0.5 w-20"
-                  />
-                </label>
-                <button
-                  type="button"
-                  disabled={arcanaBusy}
-                  onClick={() => void saveArcanaStreakBonus()}
-                  className="rounded-lg bg-[var(--wood-deep)] px-3 py-1.5 text-xs font-bold text-[var(--gold-soft)]"
-                >
-                  Lưu chuỗi vận
-                </button>
-              </div>
-            </div>
-            {data.arcanaRtpPreview && data.arcanaRtpPreview.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="mt-2 w-full min-w-[20rem] text-left text-[10px]">
-                  <thead>
-                    <tr className="text-[var(--play-muted)]">
-                      <th className="py-1 pr-2">Số ô</th>
-                      <th className="py-1 pr-2">P thắng %</th>
-                      <th className="py-1 pr-2">RTP tối ưu %</th>
-                      <th className="py-1">RTP id 1..k %</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.arcanaRtpPreview.map((row) => {
-                      const warn =
-                        row.rtpOptimal > 105 || row.rtpOptimal < 85;
-                      return (
-                        <tr
-                          key={row.pickCount}
-                          className={
-                            warn
-                              ? "font-bold text-rose-700"
-                              : "text-[var(--play-ink)]"
-                          }
-                        >
-                          <td className="py-0.5 pr-2">{row.pickCount}</td>
-                          <td className="py-0.5 pr-2 tabular-nums">
-                            {row.winProbability}
-                          </td>
-                          <td className="py-0.5 pr-2 tabular-nums">
-                            {row.rtpOptimal}
-                          </td>
-                          <td className="py-0.5 tabular-nums">
-                            {row.rtpSequential}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                <p className="mt-1 text-[10px] text-[var(--play-muted)]">
-                  Đỏ: RTP tối ưu &lt;85% hoặc &gt;105%. Chỉnh payoutScale hoặc
-                  weight/ratio.
-                </p>
-              </div>
-            )}
-          </section>
-          <section className="app-panel mt-3 space-y-2 p-3">
-            <p className="play-heading text-sm">Hệ số & weight 8 lá</p>
-            <ul className="space-y-2">
-              {data.arcanaConfig.slots.map((slot) => (
-                <li
-                  key={slot.id}
-                  className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
-                >
-                  <img
-                    src={slot.image}
-                    alt=""
-                    className="h-10 w-7 rounded object-cover object-top"
-                    onError={(e) => onArcanaImgError(e, slot.id)}
-                  />
-                  <span className="min-w-[6rem] font-semibold">
-                    {slot.nameVi}
-                  </span>
-                  <label className="flex items-center gap-1">
-                    1:
-                    <input
-                      type="number"
-                      min={1}
-                      className="app-input w-16 py-1"
-                      defaultValue={slot.ratio}
-                      id={`arcana-ratio-${slot.id}`}
-                    />
-                  </label>
-                  <label className="flex items-center gap-1">
-                    w
-                    <input
-                      type="number"
-                      min={0}
-                      className="app-input w-16 py-1"
-                      defaultValue={slot.weight}
-                      id={`arcana-weight-${slot.id}`}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    disabled={arcanaBusy}
-                    className="rounded-full bg-[var(--wood-deep)] px-2.5 py-1 text-[10px] font-bold text-white"
-                    onClick={() => {
-                      const ratio = Number(
-                        (
-                          document.getElementById(
-                            `arcana-ratio-${slot.id}`,
-                          ) as HTMLInputElement | null
-                        )?.value,
-                      );
-                      const weight = Number(
-                        (
-                          document.getElementById(
-                            `arcana-weight-${slot.id}`,
-                          ) as HTMLInputElement | null
-                        )?.value,
-                      );
-                      void saveArcanaSlot({ ...slot, ratio, weight });
-                    }}
-                  >
-                    Lưu
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-          <section className="app-panel mt-3 p-3">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <p className="play-heading text-sm">Log quay gần đây</p>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <input
-                  value={arcanaSpinFilter}
-                  onChange={(e) => setArcanaSpinFilter(e.target.value)}
-                  placeholder="Lọc user / ID…"
-                  className="app-input !max-w-[9rem] !py-1 text-[11px]"
-                />
-                <button
-                  type="button"
-                  className="text-[11px] font-bold text-[var(--wood-deep)] underline"
-                  onClick={() => void loadArcanaSpins()}
-                >
-                  Tải
-                </button>
-              </div>
-            </div>
-            <ul className="max-h-56 space-y-1.5 overflow-y-auto text-[11px]">
-              {arcanaSpins.length === 0 ? (
-                <li className="text-[var(--play-muted)]">
-                  Bấm “Tải lại” để xem log
-                </li>
-              ) : (
-                arcanaSpins.map((sp) => (
-                  <li
-                    key={sp.id}
-                    className="rounded-lg bg-white/70 px-2 py-1.5 ring-1 ring-[var(--wood-deep)]/10"
-                  >
-                    <span className="font-semibold">{sp.username}</span>
-                    {" · "}
-                    {formatXu(sp.stake)} · picks [
-                    {(sp.pickIds?.length ? sp.pickIds : [sp.pickId]).join(", ")}
-                    ] → #{sp.winId}
-                    {" · "}
-                    <span
-                      className={
-                        sp.won ? "text-[var(--jade-deep)]" : "text-rose-600"
-                      }
-                    >
-                      {sp.won ? "win" : "lose"} {formatXu(sp.profit)}
-                    </span>
-                    <p className="text-[10px] text-[var(--play-muted)]">
-                      {new Date(sp.at).toLocaleString("vi-VN")} · seed {sp.seed}
-                    </p>
-                  </li>
-                ))
-              )}
-            </ul>
-          </section>
-        </>
+          }
+        >
+          <LazyArcanaAdminPanel onMsg={setMsg} />
+        </Suspense>
       )}
 
-      <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-        <Link to={playPath(me)} className="app-btn-primary flex-1 text-center">
-          Vào bàn Tarot
-        </Link>
-        <Link
-          to={arcanaPath(me)}
-          className="flex-1 rounded-xl bg-[var(--wood-deep)] px-4 py-3 text-center text-sm font-bold text-[var(--gold-soft)] ring-1 ring-[var(--gold)]/40"
-        >
-          Vào Bánh xe Arcana
-        </Link>
-        <Link
-          to={boiBaiPath(me)}
-          className="flex-1 rounded-xl bg-white px-4 py-3 text-center text-sm font-bold text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/20"
-        >
-          Vào bàn Bói bài
-        </Link>
+      <div className="admin-lobby app-frame mt-5 px-2.5 py-3 sm:px-3">
         <button
           type="button"
-          onClick={() => load().then(() => setMsg("Đã làm mới"))}
-          className="app-btn-ghost !rounded-xl !px-4 !py-3 !text-xs"
+          className="admin-chrome__btn admin-chrome__btn--ghost w-full !min-h-10 !text-xs"
+          onClick={() => setPlayPickerOpen(true)}
         >
-          Refresh
+          Vào bàn · chọn game
+        </button>
+        {me ? (
+          <Link
+            to={giftShopPath(me)}
+            className="mt-2 flex w-full items-center justify-center rounded-xl bg-[var(--wood-deep)] px-4 py-2.5 text-xs font-bold text-[var(--cream)]"
+          >
+            Shop quà
+          </Link>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => {
+            void fetchPlatformGames(true).then(setLobbyGames);
+            void load().then(() => setMsg("Đã làm mới"));
+          }}
+          className="app-btn-ghost mt-3 w-full !rounded-xl !px-4 !py-2.5 !text-xs"
+        >
+          Làm mới dữ liệu
         </button>
       </div>
+
+      <AdminPlayPicker
+        open={playPickerOpen}
+        onClose={() => setPlayPickerOpen(false)}
+        user={me}
+        games={lobbyGames}
+      />
+
+      <BottomSheet
+        open={avatarOpen}
+        title="Avatar của bạn"
+        subtitle="Chọn mẫu hoặc tải ảnh từ máy"
+        onClose={() => setAvatarOpen(false)}
+        shellClass="sheet-shell-light"
+        backdropClass="bg-black/40"
+        heightClass="max-h-[70vh]"
+      >
+        <label className="mb-3 flex cursor-pointer items-center justify-center rounded-lg bg-[var(--cream)]/80 px-2 py-2 text-[11px] font-bold text-[var(--wood-deep)] ring-1 ring-[var(--amber)]/40">
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void uploadFromDevice(file);
+            }}
+          />
+          Chọn ảnh từ máy
+        </label>
+        <div className="flex flex-wrap gap-1.5">
+          {isCustomAvatar(me.avatar) && (
+            <button
+              type="button"
+              className="rounded-full p-0.5 ring-2 ring-[var(--amber)]"
+              title="Avatar từ máy"
+            >
+              <img
+                src={normalizeAvatar(me.avatar)}
+                alt=""
+                className="h-10 w-10 rounded-full object-cover"
+              />
+            </button>
+          )}
+          {AVATARS.map((src) => {
+            const selected = src === normalizeAvatar(me.avatar);
+            return (
+              <button
+                key={src}
+                type="button"
+                onClick={() => pickAvatar(src)}
+                className={`rounded-full p-0.5 ${
+                  selected ? "ring-2 ring-[var(--amber)]" : "opacity-80"
+                }`}
+              >
+                <img
+                  src={src}
+                  alt=""
+                  className="h-10 w-10 rounded-full object-cover"
+                />
+              </button>
+            );
+          })}
+        </div>
+      </BottomSheet>
 
       <CosmeticsEditSheet
         open={!!cosmeticsEditUserId}
@@ -12566,63 +8337,12 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {vaultRowDetail && (
-        <div
-          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/45 p-3 sm:items-center"
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setVaultRowDetail(null)}
-        >
-          <div
-            className="app-panel w-full max-w-md p-3 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="play-heading text-sm">Chi tiết giao dịch kho</p>
-              <button
-                type="button"
-                className="app-btn-soft !px-2.5 !py-0.5 !text-[10px]"
-                onClick={() => setVaultRowDetail(null)}
-              >
-                Đóng
-              </button>
-            </div>
-            <dl className="space-y-1.5 text-[11px]">
-              {(
-                [
-                  ["Loại", LEDGER_LABEL[vaultRowDetail.type] ?? vaultRowDetail.type],
-                  ["Số xu", `${vaultRowDetail.amount >= 0 ? "+" : ""}${formatXu(vaultRowDetail.amount)}`],
-                  ["Số dư sau", formatXu(vaultRowDetail.balanceAfter)],
-                  ["Thời gian", new Date(vaultRowDetail.at).toLocaleString("vi-VN")],
-                  ["User", vaultRowDetail.username || "—"],
-                  ["User ID", vaultRowDetail.userId || "—"],
-                  ["Bởi", vaultRowDetail.byUsername],
-                  ["Ghi chú", vaultRowDetail.note || "—"],
-                  ["ID GD", vaultRowDetail.id],
-                ] as const
-              ).map(([k, v]) => (
-                <div
-                  key={k}
-                  className="flex justify-between gap-3 border-b border-[var(--wood-deep)]/8 py-1"
-                >
-                  <dt className="shrink-0 text-[var(--play-muted)]">{k}</dt>
-                  <dd className="text-right font-semibold text-[var(--play-ink)] break-all">
-                    {v}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        </div>
-      )}
-
       <ImageUploadPopup
         open={!!catalogUpload}
-        kind={catalogUpload?.kind ?? "gift"}
+        kind="ring"
         itemKey={catalogUpload?.itemKey ?? ""}
         onClose={() => setCatalogUpload(null)}
         onUploaded={(url) => {
-          const kind = catalogUpload?.kind ?? "gift";
           const bondId = catalogUpload?.bondId;
           if (bondId) {
             setBondUploadedImage({ bondId, url });
@@ -12630,23 +8350,15 @@ export default function AdminDashboard() {
             setMsg("Đã tải ảnh — nhấn «Lưu riêng & đeo» để áp dụng");
             return;
           }
-          if (kind === "ring") {
-            const next = { ...ringDraft, image: url };
-            setRingDraft(next);
-            void persistRingDraft(next, {
-              clearForm: false,
-              quietMsg: `Đã tải + lưu ảnh nhẫn ${next.key.trim() || "…"}`,
-            });
-          } else {
-            const next = { ...giftDraft, image: url };
-            setGiftDraft(next);
-            void persistGiftDraft(next, {
-              clearForm: false,
-              quietMsg: `Đã tải + lưu ảnh quà ${next.key.trim() || "…"}`,
-            });
-          }
+          const next = { ...ringDraft, image: url };
+          setRingDraft(next);
+          void persistRingDraft(next, {
+            clearForm: false,
+            quietMsg: `Đã tải + lưu ảnh nhẫn ${next.key.trim() || "…"}`,
+          });
         }}
       />
+      </div>
     </AppShell>
   );
 }

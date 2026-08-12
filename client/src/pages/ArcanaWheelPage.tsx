@@ -5,13 +5,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link } from "react-router-dom";
 import {
   api,
   getStoredUser,
   type AuthUser,
 } from "../auth";
-import { ensureGuestCode, guestHomePath } from "../guest";
+import { ensureGuestCode, getGuestCode } from "../guest";
 import { AppShell } from "../components/AppShell";
 import { GameChrome } from "../components/GameChrome";
 import { BottomSheet } from "../components/BottomSheet";
@@ -34,6 +33,7 @@ import { onArcanaImgError } from "../lib/arcanaImages";
 import { useApplyPlayMediaPresets } from "../hooks/useApplyPlayMediaPresets";
 import { useSfx } from "../hooks/useSfx";
 import { PlayPrefsSheet } from "../components/PlayPrefsSheet";
+import { VirtualPlayFooter } from "../components/VirtualPlayFooter";
 import {
   EU_WHEEL_ORDER,
   outerPickLabelVi,
@@ -319,6 +319,8 @@ export default function ArcanaWheelPage() {
   const playSock = usePlaySocket();
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
+  const guestCode = !user ? getGuestCode() || ensureGuestCode() : null;
+  const guestMode = !user;
   const [balance, setBalance] = useState(user?.balance ?? 0);
   const [enabled, setEnabled] = useState(true);
   const [stakeTiers, setStakeTiers] = useState<number[]>([
@@ -399,6 +401,7 @@ export default function ArcanaWheelPage() {
   const syncUserBalance = (bal: number) => {
     setBalance(bal);
     balanceRef.current = bal;
+    if (guestMode) return;
     const u = getStoredUser();
     if (u) {
       const next = { ...u, balance: bal };
@@ -602,7 +605,10 @@ export default function ArcanaWheelPage() {
         }),
       });
 
-      const animWinId = r.spin.wheelDisplayWinId ?? r.spin.winId;
+      // Always land on the true Arcana result (winId). Do not use
+      // wheelDisplayWinId — that near-miss override desynced the pointer
+      // from the hub image / result text on the double wheel.
+      const animWinId = r.spin.winId;
       const winIndex = slots.findIndex((s) => s.id === animWinId);
       const idx = winIndex >= 0 ? winIndex : 0;
       const nextInner = targetRotationDegOpposite(
@@ -630,7 +636,7 @@ export default function ArcanaWheelPage() {
         window.setTimeout(resolve, SPIN_MS_OUTER + 80);
       });
 
-      setDisplayWinId(r.spin.winId);
+      setDisplayWinId(animWinId);
       setDisplayOuter(outerNum);
       setLastResult(r.spin);
       playSfx("land");
@@ -722,33 +728,13 @@ export default function ArcanaWheelPage() {
     [slotById],
   );
 
-  if (!user) {
-    const lobby = guestHomePath(ensureGuestCode());
-    return (
-      <AppShell>
-        <p className="text-center text-sm">
-          Arcana cần tài khoản để quay xu chơi.
-        </p>
-        <Link to="/login" className="app-btn-primary mt-3 block text-center">
-          Đăng nhập
-        </Link>
-        <Link
-          to={lobby}
-          className="mt-2 block text-center text-xs font-semibold text-[var(--wood-deep)] underline-offset-2 hover:underline"
-        >
-          ← Lobby khách (Tarot / Olympus / Bói bài)
-        </Link>
-      </AppShell>
-    );
-  }
-
   const canSpin =
     !spinning &&
     enabled &&
     pickIds.length >= pickMin &&
     pickIds.length <= pickMax &&
     !loading &&
-    balance >= stake;
+    (useBonusSpin ? mission.bonusSpins > 0 : balance >= stake);
 
   return (
     <AppShell maxWidth="md">
@@ -756,6 +742,7 @@ export default function ArcanaWheelPage() {
         title="Arcana"
         active="arcana"
         user={user}
+        guestCode={guestCode}
         playBalance={balance}
         tools={
           <div className="flex items-center gap-1">
@@ -815,8 +802,14 @@ export default function ArcanaWheelPage() {
       />
 
       <p className="mt-1 text-center text-[10px] text-[var(--play-muted)]">
-        NV {mission.count}/{mission.target}
-        {mission.bonusSpins > 0 ? ` · ${mission.bonusSpins} thưởng` : ""}
+        {guestMode ? (
+          <>Khách · xu ảo phiên</>
+        ) : (
+          <>
+            NV {mission.count}/{mission.target}
+            {mission.bonusSpins > 0 ? ` · ${mission.bonusSpins} thưởng` : ""}
+          </>
+        )}
       </p>
 
       <div className="mt-1">
@@ -1019,16 +1012,18 @@ export default function ArcanaWheelPage() {
         </div>
 
         <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] font-semibold text-[var(--play-ink)]">
-          <label className="flex cursor-pointer items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={useBonusSpin}
-              disabled={spinning || mission.bonusSpins <= 0}
-              onChange={(e) => setUseBonusSpin(e.target.checked)}
-              className="h-3.5 w-3.5 accent-[var(--jade-deep)]"
-            />
-            Thưởng ({mission.bonusSpins})
-          </label>
+          {!guestMode && (
+            <label className="flex cursor-pointer items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={useBonusSpin}
+                disabled={spinning || mission.bonusSpins <= 0}
+                onChange={(e) => setUseBonusSpin(e.target.checked)}
+                className="h-3.5 w-3.5 accent-[var(--jade-deep)]"
+              />
+              Thưởng ({mission.bonusSpins})
+            </label>
+          )}
           <label className="flex cursor-pointer items-center gap-1.5">
             <input
               type="checkbox"
@@ -1205,6 +1200,7 @@ export default function ArcanaWheelPage() {
         open={prefsOpen}
         onClose={() => setPrefsOpen(false)}
       />
+      <VirtualPlayFooter className="mt-3 px-3 pb-3" />
     </AppShell>
   );
 }

@@ -1,16 +1,9 @@
+import { useMemo, type CSSProperties } from "react";
 import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
-import {
-  resolvePlayerColors,
+  resolveBoardPlayerColors,
   type LudoCosmetics,
 } from "../../hooks/useLudoCosmetics";
 import {
-  BASE_CR,
   BASE_PLATFORMS,
   GRID,
   SAFE_VISUAL,
@@ -19,6 +12,7 @@ import {
   isInBase,
   isOnCross,
   posToXy,
+  buildTokenStackMap,
   startTileColor,
   trackCell,
   type LudoColor,
@@ -27,15 +21,22 @@ import {
   seatFacingRotationDeg,
   type LudoPlayerColors,
 } from "./cosmeticsCatalog";
+import {
+  LudoCornerAvatars,
+  type LudoCornerDie,
+  type LudoCornerPlayer,
+} from "./LudoCornerAvatars";
+import { pawnDecorClass, pawnDecorGlyph } from "./pawnDecorVisual";
+import { LudoDiceThrow } from "./LudoDiceThrow";
+import { themeTrackColor, type LudoThemeId } from "./themes";
+import {
+  useAnimatedTokens,
+  type LudoTokenView,
+} from "./useAnimatedTokens";
 
-export type LudoTokenView = {
-  id: string;
-  color: string;
-  index: number;
-  pos: number;
-};
+export type { LudoTokenView };
 
-/** Cream track — matches common mobile Ludo 2D top-down. */
+/** Cream track — overridden per theme via themeTrackColor(). */
 const TRACK_CREAM = "#f3efe6";
 
 type CellPaint = {
@@ -45,7 +46,10 @@ type CellPaint = {
   kind: "base" | "track" | "start" | "home" | "center" | "empty";
 };
 
-function buildCells(colors: LudoPlayerColors): CellPaint[] {
+function buildCells(
+  colors: LudoPlayerColors,
+  trackFill: string = TRACK_CREAM,
+): CellPaint[] {
   const list: CellPaint[] = [];
   for (let row = 0; row < GRID; row++) {
     for (let col = 0; col < GRID; col++) {
@@ -69,7 +73,7 @@ function buildCells(colors: LudoPlayerColors): CellPaint[] {
         continue;
       }
       if (isOnCross(col, row)) {
-        list.push({ col, row, bg: TRACK_CREAM, kind: "track" });
+        list.push({ col, row, bg: trackFill, kind: "track" });
         continue;
       }
       let onTrack = false;
@@ -82,7 +86,7 @@ function buildCells(colors: LudoPlayerColors): CellPaint[] {
       }
       list.push(
         onTrack
-          ? { col, row, bg: TRACK_CREAM, kind: "track" }
+          ? { col, row, bg: trackFill, kind: "track" }
           : { col, row, bg: "transparent", kind: "empty" },
       );
     }
@@ -101,49 +105,55 @@ export function LudoBoardLite({
   onPick,
   myColor,
   cosmetics,
+  themeId = "classic",
+  players,
+  mySeat,
+  turnSeat,
+  dice,
+  diceFaces,
+  diceThrowKey = 0,
+  diceThrowColor,
+  turnDice,
+  selectedDieIndex = null,
+  diceSelectable = false,
+  onSelectDie,
+  onSelectPlayer,
 }: {
   tokens: LudoTokenView[];
   validTokenIds: string[];
   onPick: (tokenId: string) => void;
   myColor?: string | null;
   cosmetics?: LudoCosmetics;
+  themeId?: LudoThemeId;
+  players?: LudoCornerPlayer[];
+  mySeat?: number | null;
+  turnSeat?: number | null;
+  dice?: number | null;
+  diceFaces?: number[] | null;
+  diceThrowKey?: number;
+  diceThrowColor?: string | null;
+  turnDice?: LudoCornerDie[] | null;
+  selectedDieIndex?: number | null;
+  diceSelectable?: boolean;
+  onSelectDie?: (dieIndex: number) => void;
+  onSelectPlayer?: (player: LudoCornerPlayer) => void;
 }) {
   const valid = new Set(validTokenIds);
-  const [hopIds, setHopIds] = useState<Set<string>>(() => new Set());
-  const prevPos = useRef<Record<string, number>>({});
+  const animated = useAnimatedTokens(tokens, cosmetics?.reduceFx);
+  const stackMap = useMemo(() => buildTokenStackMap(animated), [animated]);
 
-  useEffect(() => {
-    const next: Record<string, number> = {};
-    const hops = new Set<string>();
-    for (const t of tokens) {
-      next[t.id] = t.pos;
-      const prev = prevPos.current[t.id];
-      if (prev !== undefined && prev !== t.pos && !cosmetics?.reduceFx) {
-        hops.add(t.id);
-      }
-    }
-    prevPos.current = next;
-    if (!hops.size) return;
-    setHopIds(hops);
-    const t = window.setTimeout(() => setHopIds(new Set()), 420);
-    return () => window.clearTimeout(t);
-  }, [tokens, cosmetics?.reduceFx]);
-
-  const boardUrl = cosmetics?.boardUrl?.trim() || "";
   const colors = useMemo(
-    () => resolvePlayerColors(cosmetics),
-    [cosmetics],
+    () => resolveBoardPlayerColors(themeId, cosmetics),
+    [themeId, cosmetics],
   );
-  const cells = useMemo(() => buildCells(colors), [colors]);
+  const trackFill = useMemo(() => themeTrackColor(themeId), [themeId]);
+  const cells = useMemo(
+    () => buildCells(colors, trackFill),
+    [colors, trackFill],
+  );
   const facingDeg = seatFacingRotationDeg(myColor);
   const faceStyle = {
-    ...(boardUrl
-      ? {
-          backgroundImage: `url(${boardUrl})`,
-          backgroundSize: "cover" as const,
-          backgroundPosition: "center" as const,
-        }
-      : {}),
+    background: "var(--ludo-board-bg)",
     ["--ludo-red" as string]: colors.red,
     ["--ludo-green" as string]: colors.green,
     ["--ludo-yellow" as string]: colors.yellow,
@@ -152,21 +162,6 @@ export function LudoBoardLite({
     ["--ludo-facing-inv" as string]: `${-facingDeg}deg`,
     transform: `rotate(${facingDeg}deg)`,
   };
-
-  const yardPads = useMemo(() => {
-    const pads: { key: string; x: number; y: number }[] = [];
-    for (const c of Object.keys(BASE_PLATFORMS) as LudoColor[]) {
-      for (let i = 0; i < 4; i++) {
-        const cr = BASE_CR[c]![i]!;
-        pads.push({
-          key: `${c}-${i}`,
-          x: ((cr[0] + 0.5) / GRID) * 100,
-          y: ((cr[1] + 0.5) / GRID) * 100,
-        });
-      }
-    }
-    return pads;
-  }, []);
 
   const yardInsets = useMemo(() => {
     return (Object.keys(BASE_PLATFORMS) as LudoColor[]).map((c) => {
@@ -182,12 +177,43 @@ export function LudoBoardLite({
     });
   }, [colors]);
 
+  const pawnDecorByColor = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const p of players || []) {
+      if (p.color && p.pawnDecorId) m[p.color] = p.pawnDecorId;
+    }
+    return m;
+  }, [players]);
+
   return (
     <div
       className="ludo-board ludo-board--topdown ludo-board--ref2d"
       aria-label="Bàn Ludo"
       data-facing={myColor || "red"}
+      data-theme={themeId}
     >
+      {players?.length ? (
+        <LudoCornerAvatars
+          players={players}
+          mySeat={mySeat}
+          turnSeat={turnSeat}
+          facingColor={myColor}
+          turnDice={turnDice}
+          selectedDieIndex={selectedDieIndex}
+          diceSelectable={diceSelectable}
+          onSelectDie={onSelectDie}
+          onSelectPlayer={onSelectPlayer}
+        />
+      ) : null}
+      <LudoDiceThrow
+        dice={dice}
+        faces={diceFaces}
+        throwKey={diceThrowKey}
+        fromColor={diceThrowColor}
+        facingColor={myColor}
+        diceUrl={cosmetics?.diceUrl}
+        reduceFx={cosmetics?.reduceFx}
+      />
       <div className="ludo-board__garden" aria-hidden>
         {Array.from({ length: 16 }, (_, i) => (
           <span
@@ -198,11 +224,10 @@ export function LudoBoardLite({
         ))}
       </div>
       <div
-        className={`ludo-board__face ${boardUrl ? "has-art" : ""}`}
+        className="ludo-board__face"
         style={faceStyle}
       >
-        {!boardUrl ? (
-          <>
+        <>
             <div className="ludo-board__motif" aria-hidden />
             <div className="ludo-board__grid" aria-hidden>
               {cells.map((cell) => (
@@ -229,21 +254,14 @@ export function LudoBoardLite({
                   top: y.top,
                   width: y.width,
                   height: y.height,
-                  background: `color-mix(in srgb, ${y.color} 22%, #f7f4ee)`,
+                  background: `linear-gradient(145deg, color-mix(in srgb, ${y.color} 72%, #fff), color-mix(in srgb, ${y.color} 55%, #0003))`,
+                  boxShadow: `inset 0 0 0 2px color-mix(in srgb, ${y.color} 40%, transparent)`,
                 }}
               />
             ))}
             <div className="ludo-board__home" aria-hidden />
             <div className="ludo-board__grid-lines" aria-hidden />
-            {yardPads.map((p) => (
-              <span
-                key={p.key}
-                className="ludo-yard-pad"
-                style={{ left: `${p.x}%`, top: `${p.y}%` }}
-              />
-            ))}
-          </>
-        ) : null}
+        </>
         {Array.from(SAFE_VISUAL).map((i) => {
           const xy = posToXy("red", i, 0);
           return (
@@ -257,40 +275,85 @@ export function LudoBoardLite({
             </span>
           );
         })}
-        {tokens.map((t) => {
-          const xy = posToXy(t.color, t.pos, t.index);
-          const can = valid.has(t.id);
-          const pawnUrl =
-            cosmetics?.pawnUrls?.[
-              t.color as keyof typeof cosmetics.pawnUrls
-            ];
+        {animated.map((t) => {
+          const stack = stackMap.get(t.id);
+          const xy = posToXy(t.color, t.pos, t.index, stack);
+          const can = valid.has(t.id) && !t.moving;
+          const decorId = pawnDecorByColor[t.color] || "pawn-classic";
+          const shopDecor = decorId !== "pawn-classic";
+          /* Shop decor beats demo/admin pawn art so equip is visible. */
+          const pawnUrl = shopDecor
+            ? undefined
+            : cosmetics?.pawnUrls?.[
+                t.color as keyof typeof cosmetics.pawnUrls
+              ];
           const hex = colors[t.color as LudoColor] ?? colors.red;
+          const decorCls = pawnDecorClass(decorId);
+          const glyph = pawnDecorGlyph(decorId);
+          const hopClass =
+            t.hopTick > 0 ? "is-hop" : can ? "is-idle" : "";
+          const stackZ =
+            3 + (stack ? stack.slot : t.index) + (can ? 2 : 0);
           return (
             <button
               key={t.id}
               type="button"
-              className={`ludo-token ludo-token--${t.color} ${can ? "is-valid" : ""} ${
+              className={`ludo-token ludo-token--${t.color} ${decorCls} ${can ? "is-valid" : ""} ${
                 myColor === t.color ? "is-mine" : ""
-              } ${hopIds.has(t.id) ? "is-hop" : ""} ${pawnUrl ? "has-art" : ""}`}
+              } ${t.moving ? "is-moving" : ""} ${pawnUrl ? "has-art" : ""} ${
+                stack && stack.count > 1 ? "is-stacked" : ""
+              } ${t.pos === -1 ? "is-yard" : ""}`}
+              data-decor={decorId}
               style={{
                 left: `${xy.x}%`,
                 top: `${xy.y}%`,
+                zIndex: t.moving ? 8 : stackZ,
                 ...(pawnUrl
                   ? {
-                      backgroundImage: `url(${pawnUrl})`,
-                      backgroundSize: "contain",
-                      backgroundPosition: "center",
-                      backgroundRepeat: "no-repeat",
+                      backgroundImage: "none",
                     }
                   : {
-                      background: `radial-gradient(circle at 35% 30%, rgba(255,255,255,0.5), transparent 48%), ${hex}`,
+                      background: "transparent",
                     }),
               }}
               disabled={!can}
               onClick={() => onPick(t.id)}
-              title={t.id}
+              title={`${t.id} · ${decorId}`}
             >
-              {pawnUrl ? "" : t.index + 1}
+              <span className="ludo-token__shadow" aria-hidden />
+              <span
+                key={t.hopTick}
+                className={`ludo-token__bob ${hopClass}`}
+                onAnimationEnd={(e) => {
+                  if (e.animationName !== "ludo-hop-bounce") return;
+                  e.currentTarget.classList.remove("is-hop");
+                  if (can) e.currentTarget.classList.add("is-idle");
+                }}
+                style={
+                  pawnUrl
+                    ? {
+                        backgroundImage: `url(${pawnUrl})`,
+                        backgroundSize: "contain",
+                        backgroundPosition: "center",
+                        backgroundRepeat: "no-repeat",
+                      }
+                    : ({
+                        ["--token-fill" as string]: hex,
+                      } as CSSProperties)
+                }
+              >
+                {pawnUrl ? null : (
+                  <span className="ludo-token__face">
+                    {glyph ? (
+                      <span className="ludo-token__glyph" aria-hidden>
+                        {glyph}
+                      </span>
+                    ) : (
+                      <span className="ludo-token__num">{t.index + 1}</span>
+                    )}
+                  </span>
+                )}
+              </span>
             </button>
           );
         })}

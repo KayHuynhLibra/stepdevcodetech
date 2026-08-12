@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../auth";
+import { AdminModal } from "./admin/AdminModal";
 import {
   fileToCatalogDataUrl,
   formatCatalogBytes,
@@ -106,38 +107,14 @@ export function ImageUploadPopup({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 sm:items-center sm:px-3"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Tải ảnh ${kindLabel}`}
-      onClick={onClose}
+    <AdminModal
+      open={open}
+      onClose={onClose}
+      title={`Tải ảnh ${kindLabel}`}
+      subtitle={`Key: ${itemKey.trim() || "—"} · tự nén WebP/JPEG ≤ ~700KB`}
+      maxWidthClass="max-w-md"
     >
-      <div
-        className="app-panel w-full max-w-md space-y-3 rounded-t-2xl p-4 shadow-2xl sm:rounded-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="play-heading text-sm">Tải ảnh {kindLabel}</p>
-            <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-              Key:{" "}
-              <span className="font-mono font-semibold text-[var(--play-ink)]">
-                {itemKey.trim() || "—"}
-              </span>
-              {" · "}tự nén WebP/JPEG ≤ ~700KB
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15 disabled:opacity-45"
-          >
-            Đóng
-          </button>
-        </div>
-
+      <div className="space-y-3">
         {!keyOk && (
           <p className="rounded-lg bg-amber-500/15 px-2.5 py-1.5 text-[11px] font-semibold text-amber-900 ring-1 ring-amber-400/35">
             Nhập key vật phẩm (≥ 2 ký tự) trước khi tải ảnh.
@@ -207,6 +184,6 @@ export function ImageUploadPopup({
           </button>
         </div>
       </div>
-    </div>
+    </AdminModal>
   );
 }

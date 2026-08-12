@@ -29,6 +29,11 @@ export interface GiftFlyEvent {
   fromName: string;
   toName: string;
   amount: number;
+  /** Người gửi / nhận — để FX bám ghế trên bàn nhiều người */
+  fromUserId?: string;
+  toUserId?: string;
+  /** xu | gem */
+  currency?: "xu" | "gem" | string;
   giftKey?: string;
   giftEmoji?: string;
   giftNameVi?: string;

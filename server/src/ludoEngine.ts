@@ -44,6 +44,9 @@ export type LudoPlayer = {
   isBot: boolean;
   strikes: number;
   connected: boolean;
+  avatar?: string | null;
+  avatarFrame?: string | null;
+  pawnDecorId?: string | null;
 };
 
 export type TurnPhase =
@@ -52,14 +55,54 @@ export type TurnPhase =
   | "animating"
   | "finished";
 
-export type LudoThemeId = "classic" | "soccer" | "arena";
+export type LudoThemeId =
+  | "classic"
+  | "soccer"
+  | "arena"
+  | "garden"
+  | "neon"
+  | "frost";
 
-export const LUDO_THEME_IDS: LudoThemeId[] = ["classic", "soccer", "arena"];
+export const LUDO_THEME_IDS: LudoThemeId[] = [
+  "classic",
+  "soccer",
+  "arena",
+  "garden",
+  "neon",
+  "frost",
+];
+
+/** Free at room create (no shop unlock). */
+export const LUDO_FREE_THEME_IDS: LudoThemeId[] = [
+  "classic",
+  "soccer",
+  "arena",
+];
+
+export function isLudoThemeId(raw: unknown): raw is LudoThemeId {
+  return LUDO_THEME_IDS.includes(String(raw ?? "").trim().toLowerCase() as LudoThemeId);
+}
 
 export function normalizeLudoThemeId(raw: unknown): LudoThemeId {
   const s = String(raw ?? "").trim().toLowerCase();
-  if (s === "soccer" || s === "arena" || s === "classic") return s;
+  if (isLudoThemeId(s)) return s;
   return "classic";
+}
+
+export function isFreeLudoTheme(id: LudoThemeId): boolean {
+  return LUDO_FREE_THEME_IDS.includes(id);
+}
+
+/** Shop item id for a board theme. */
+export function boardDecorIdForTheme(id: LudoThemeId): string {
+  return `board-${id}`;
+}
+
+export type LudoDiceMode = 1 | 2;
+
+export function normalizeLudoDiceMode(raw: unknown): LudoDiceMode {
+  const n = Math.floor(Number(raw));
+  return n === 2 ? 2 : 1;
 }
 
 export type LudoPublicState = {
@@ -69,14 +112,36 @@ export type LudoPublicState = {
   tokens: LudoToken[];
   turnSeat: number;
   phase: TurnPhase;
+  /** Active face for the current pick (1–6). */
   dice: number | null;
+  /** Last single face — FX / panel when dice cleared. */
+  lastDice: number | null;
+  /** Faces from the last roll (1 or 2). */
+  diceFaces: number[];
+  lastDiceFaces: number[];
+  /** Remaining faces still to play this roll (dual mode). */
+  pendingDice: number[];
+  /**
+   * Per-face legal tokens while wait_pick (especially dual-dice:
+   * client selects a die, then only that face’s tokens).
+   */
+  pendingMoves: { dieIndex: number; face: number; tokenIds: string[] }[];
+  /** 1 = classic · 2 = roll two dice, play each face. */
+  diceMode: LudoDiceMode;
+  /** Monotonic roll counter — bumps every roll for FX. */
+  rollSeq: number;
+  /** Seat that performed the last roll (for throw origin). */
+  lastRollSeat: number | null;
   validTokenIds: string[];
   consecutiveSixes: number;
   turnDeadline: number;
   winnerSeat: number | null;
   lastEvent: string | null;
   stake: number;
+  pot: number;
+  settled: boolean;
   themeId: LudoThemeId;
+  hostUserId?: string | null;
 };
 
 export function tokenId(color: LudoColor, index: number): string {

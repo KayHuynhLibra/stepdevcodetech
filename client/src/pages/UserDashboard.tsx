@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   api,
   changePassword,
@@ -7,6 +7,7 @@ import {
   fetchRecoveryCode,
   getStoredUser,
   getToken,
+  giftShopPath,
   homePath,
   isStaff,
   saveSession,
@@ -24,11 +25,15 @@ import {
 } from "../avatars";
 import { CARDS, formatXu, type StakeEntry } from "../cards";
 import { AppShell } from "../components/AppShell";
+import { ComplianceGate } from "../components/ComplianceGate";
 import { IdentityBadge } from "../components/IdentityBadge";
 import { PlatformShell } from "../components/PlatformShell";
+import { VirtualPlayFooter } from "../components/VirtualPlayFooter";
+import { hasPlayComplianceAck, setPlayComplianceAck } from "../compliance";
 import {
   fetchPlatformGames,
   getCachedPlatformGames,
+  LOBBY_PICK_TITLE,
   type GameManifest,
 } from "../platform/games";
 import { GameLobby } from "../platform/GameLobby";
@@ -97,6 +102,9 @@ export default function UserDashboard() {
   const [lobbyGames, setLobbyGames] = useState<GameManifest[]>(() =>
     getCachedPlatformGames(),
   );
+  const [complianceAck, setComplianceAck] = useState(() =>
+    hasPlayComplianceAck(),
+  );
 
   useEffect(() => {
     if (!getToken()) {
@@ -104,12 +112,19 @@ export default function UserDashboard() {
       return;
     }
     void ensureCultivationColors();
-    void fetchPlatformGames().then(setLobbyGames);
+    void fetchPlatformGames(true).then(setLobbyGames);
     api<{ ok: true; user: AuthUser }>("/api/auth/me")
       .then((r) => {
         setUser(r.user);
         const token = getToken();
         if (token) saveSession(token, r.user);
+        if (
+          typeof r.user.termsAcceptedAt === "number" &&
+          r.user.termsAcceptedAt > 0
+        ) {
+          setPlayComplianceAck();
+          setComplianceAck(true);
+        }
         if (isStaff(r.user) || r.user.role === "deal" || r.user.role === "tutien" || r.user.role === "mod") {
           nav(homePath(r.user), { replace: true });
           return;
@@ -293,6 +308,13 @@ export default function UserDashboard() {
               : null;
 
   return (
+    <>
+      {!complianceAck ? (
+        <ComplianceGate
+          title="Xác nhận trước khi chơi"
+          onAccepted={() => setComplianceAck(true)}
+        />
+      ) : null}
     <PlatformShell
       user={user}
       dense
@@ -340,15 +362,23 @@ export default function UserDashboard() {
       )}
 
       <div className="app-frame mt-2 px-2.5 py-2.5 sm:px-3 sm:py-3">
-        <p className="play-heading text-center text-sm">Chọn bàn</p>
+        <p className="play-heading text-center text-sm">{LOBBY_PICK_TITLE}</p>
         <GameLobby user={user} games={lobbyGames} />
+        <div className="mt-3 flex justify-center">
+          <Link
+            to={giftShopPath(user)}
+            className="rounded-full bg-[var(--wood-deep)] px-4 py-2 text-[11px] font-bold text-[var(--cream)] shadow-sm ring-1 ring-[var(--wood-deep)]/30"
+          >
+            Shop quà · xu MXH
+          </Link>
+        </div>
       </div>
 
       <section className="app-panel mt-5 p-3">
         <p className="play-heading text-sm">Lịch sử ván</p>
         <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
           {stakes.length === 0
-            ? "Chưa có ván nào — vào bàn để đặt xu."
+            ? "Chưa có ván nào — chọn trò chơi và dùng xu."
             : `${stakes.length} dòng gần nhất`}
         </p>
         {stakes.length > 0 && (
@@ -681,6 +711,8 @@ export default function UserDashboard() {
           )}
         </section>
       </details>
+      <VirtualPlayFooter className="mt-4 px-1" />
     </PlatformShell>
+    </>
   );
 }

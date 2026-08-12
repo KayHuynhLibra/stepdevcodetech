@@ -30,7 +30,16 @@ export function getPool(): pg.Pool | null {
           ? undefined
           : process.env.DATABASE_URL?.includes("localhost")
             ? undefined
-            : { rejectUnauthorized: false },
+            : {
+                // Mặc định false (Railway/managed thường self-signed).
+                // Set PG_SSL_REJECT_UNAUTHORIZED=1 khi có CA tin cậy.
+                rejectUnauthorized:
+                  String(process.env.PG_SSL_REJECT_UNAUTHORIZED ?? "").trim() ===
+                    "1" ||
+                  String(process.env.PG_SSL_REJECT_UNAUTHORIZED ?? "")
+                    .toLowerCase()
+                    .trim() === "true",
+              },
     });
     pool.on("error", (err) => {
       console.warn("[db] pool error:", err.message);

@@ -13,6 +13,7 @@ import { ensureGuestCode, getGuestCode, guestHomePath } from "../guest";
 import { TableNav } from "../components/TableNav";
 import { BottomSheet } from "../components/BottomSheet";
 import { PlayPrefsSheet } from "../components/PlayPrefsSheet";
+import { VirtualPlayFooter } from "../components/VirtualPlayFooter";
 import { usePlayPrefs } from "../hooks/usePlayPrefs";
 import {
   fetchGameHeroUrl,
@@ -24,7 +25,7 @@ import {
 import { useSfx } from "../hooks/useSfx";
 import "../platform/olympus.css";
 
-/** Mức cược nhanh — cùng tinh thần QUICK_ADDS Tarot, scale slot */
+/** Mức chơi nhanh — cùng tinh thần QUICK_ADDS Tarot, scale slot */
 const OLY_QUICK_ADDS = [20, 50, 100, 200, 500, 1_000, 2_000, 5_000] as const;
 
 /** Chip ngắn gọn: 1.000 → 1K (tránh cắt chữ trên lưới) */
@@ -137,7 +138,7 @@ const SYM_LABEL: Record<string, string> = {
   pearl: "Pearl",
   crown: "Crown",
   bolt: "Bolt ×",
-  zeus: "Zeus FS",
+  zeus: "Peak FS",
   wild: "Wild",
 };
 
@@ -350,7 +351,7 @@ export default function OlympusCasinoPage() {
   const [autoMode, setAutoMode] = useState<AutoMode>(0);
   const [sessionWin, setSessionWin] = useState(0);
   const [lastWin, setLastWin] = useState(0);
-  const [msg, setMsg] = useState("QUAY · reel · FS · hũ Olympus");
+  const [msg, setMsg] = useState("QUAY · reel · FS · hũ BoltPeak");
   const [jackpotPool, setJackpotPool] = useState(80_000);
   const [jackpotBoom, setJackpotBoom] = useState<{
     tier: string;
@@ -771,7 +772,7 @@ export default function OlympusCasinoPage() {
         ? `Free Spin · ×${freeSpins!.accumMult || 1}`
         : turboRef.current
           ? "Turbo reel…"
-          : "Zeus đang triệu hồi…",
+          : "Peak đang triệu hồi…",
     );
     try {
       const tok = getToken();
@@ -853,7 +854,7 @@ export default function OlympusCasinoPage() {
             ? `${j.mode === "free" ? "FS " : ""}Thắng ${j.totalWin.toLocaleString()} · Combo ×${maxCombo} · ×${j.accumMult || j.totalMult || 1}`
             : j.freeSpins?.left
               ? `FS còn ${j.freeSpins.left} · ×${j.freeSpins.accumMult || 1}`
-              : "Chưa trúng — Zeus chờ sấm…",
+              : "Chưa trúng — Peak chờ sấm…",
         );
       }
       return true;
@@ -1089,7 +1090,7 @@ export default function OlympusCasinoPage() {
       </div>
       <header className="oly-top oly-top--play">
         <Link to={lobbyTo} className="oly-brand oly-brand--compact">
-          ZEUS
+          BoltPeak
           <span>Lobby</span>
         </Link>
         <div className="oly-meters" aria-label="Số dư và hũ">
@@ -1186,7 +1187,7 @@ export default function OlympusCasinoPage() {
             </div>
             <div
               className={`oly-rage ${rageFull ? "oly-rage--full" : ""}`}
-              title="Zeus Rage"
+              title="Peak Rage"
             >
               <div className="oly-rage-label">
                 Rage {rage}
@@ -1319,7 +1320,7 @@ export default function OlympusCasinoPage() {
             <div className="oly-boom oly-boom-storm" role="status">
               <div className="oly-boom-card">
                 <p className="oly-boom-title">THUNDER STORM</p>
-                <p className="oly-boom-amt">Zeus nổi giận · SIÊU SẤM</p>
+                <p className="oly-boom-amt">Peak nổi giận · SIÊU SẤM</p>
               </div>
             </div>
           )}
@@ -1408,7 +1409,7 @@ export default function OlympusCasinoPage() {
             ) : (
               <div
                 className={`oly-reels ${reelSpinning ? "is-spinning" : ""}`}
-                aria-label="Olympus reels"
+                aria-label="BoltPeak reels"
               >
                 {Array.from({ length: COLS }, (_, c) => {
                   const spinning = !!(reelSpinning && reelStrips);
@@ -1523,9 +1524,9 @@ export default function OlympusCasinoPage() {
                 setCustomBetAmt(bet);
                 setCustomBetOpen(true);
               }}
-              aria-label="Mở đặt cược"
+              aria-label="Mở mức chơi"
             >
-              <span className="oly-dock-bet__lab">Cược</span>
+              <span className="oly-dock-bet__lab">Mức</span>
               <strong title={formatXu(bet)}>{formatXu(bet)}</strong>
               {lastWin > 0 ? (
                 <small className="oly-bal-last">+{formatXu(lastWin)}</small>
@@ -1581,7 +1582,7 @@ export default function OlympusCasinoPage() {
       <BottomSheet
         open={customBetOpen}
         onClose={() => setCustomBetOpen(false)}
-        title="Cược & chế độ"
+        title="Mức chơi & chế độ"
         backdropClass="bg-black/65"
         shellClass="oly-stake-sheet"
         heightClass="max-h-[88vh]"
@@ -1592,18 +1593,18 @@ export default function OlympusCasinoPage() {
             <strong>{formatXu(bet)}</strong>
           </p>
 
-          <p className="oly-stake-sec">Mức cược</p>
+          <p className="oly-stake-sec">Mức chơi</p>
           <div className="oly-bet-row oly-bet-row--sheet">
             <button
               type="button"
               className="oly-bet-step"
               disabled={busy || autoRunning || inFs || !!hold}
               onClick={betDown}
-              aria-label="Giảm cược"
+              aria-label="Giảm mức"
             >
               −
             </button>
-            <div className="oly-bets" role="group" aria-label="Mức cược">
+            <div className="oly-bets" role="group" aria-label="Mức chơi">
               {bets.map((b) => (
                 <button
                   key={b}
@@ -1625,7 +1626,7 @@ export default function OlympusCasinoPage() {
               className="oly-bet-step"
               disabled={busy || autoRunning || inFs || !!hold}
               onClick={betUp}
-              aria-label="Tăng cược"
+              aria-label="Tăng mức"
             >
               +
             </button>
@@ -1667,7 +1668,7 @@ export default function OlympusCasinoPage() {
             </button>
           </div>
           <label className="oly-stake-input-lab">
-            Số xu cược
+            Số xu mỗi lượt
             <input
               type="number"
               className="oly-stake-input"
@@ -1769,6 +1770,7 @@ export default function OlympusCasinoPage() {
         onClose={() => setPrefsOpen(false)}
         tone="dark"
       />
+      <VirtualPlayFooter className="oly-disclaimer px-3 pb-3" compact />
     </div>
   );
 }

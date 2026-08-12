@@ -1,13 +1,6 @@
-export type AdminOpsMapTab =
-  | "pm"
-  | "oracle"
-  | "games"
-  | "feedback"
-  | "mess"
-  | "gifts"
-  | "rings"
-  | "vault"
-  | "rolead";
+import type { AdminTabId } from "./admin/adminHubs";
+
+export type AdminOpsMapTab = AdminTabId;
 
 const ROWS: {
   what: string;
@@ -16,34 +9,196 @@ const ROWS: {
   who: string;
 }[] = [
   {
-    what: "Âm SFX (Tarot / Olympus / Arcana / Bói) + upload",
+    what: "Tra cứu username · ID · IP · guest",
+    where: "Tra cứu",
+    tab: "tools",
+    who: "main / audit",
+  },
+  {
+    what: "User · bot · role · ban · mute · VIP",
+    where: "User & Bot",
+    tab: "users",
+    who: "main / staff",
+  },
+  {
+    what: "Cấp / thu quyền Mod",
+    where: "Mod",
+    tab: "mod",
+    who: "main / staff",
+  },
+  {
+    what: "Level play · phần thưởng · set level user",
+    where: "Level",
+    tab: "level",
+    who: "mainadmin",
+  },
+  {
+    what: "Tu Tiên rank · cap · màu · benefit",
+    where: "Tu Tiên",
+    tab: "tutien",
+    who: "main / tutien",
+  },
+  {
+    what: "Xóa tài khoản vĩnh viễn",
+    where: "Xóa acc",
+    tab: "deleteAcc",
+    who: "mainadmin",
+  },
+  {
+    what: "Kho xu · edge · ledger",
+    where: "Kho xu",
+    tab: "vault",
+    who: "main / eco",
+  },
+  {
+    what: "Can thiệp Tarot · bias · signal vault",
+    where: "Can thiệp Tarot",
+    tab: "inter",
+    who: "main / inter",
+  },
+  {
+    what: "Coupon ẩn · lịch sử dùng",
+    where: "Coupon ẩn",
+    tab: "coupons",
+    who: "main / eco · coupon_ops",
+  },
+  {
+    what: "Mức xu tuỳ chọn · tất cả game",
+    where: "Mức xu",
+    tab: "xuLevels",
+    who: "mainadmin",
+  },
+  {
+    what: "BoltPeak combo · lightning · tier · pay mode",
+    where: "Kinh tế → BOLT% → Combo",
+    tab: "zeusPct",
+    who: "mainadmin",
+  },
+  {
+    what: "BoltPeak hũ · feed · FS · hold trigger",
+    where: "Kinh tế → BOLT% → Hũ & FS",
+    tab: "zeusPct",
+    who: "mainadmin",
+  },
+  {
+    what: "BoltPeak force FS · Hold · rage · ±xu player",
+    where: "Kinh tế → BOLT% → Can thiệp",
+    tab: "zeusPct",
+    who: "mainadmin",
+  },
+  {
+    what: "Ludo phòng live · đóng phòng",
+    where: "Ludo → Phòng",
+    tab: "ludo",
+    who: "mainadmin",
+  },
+  {
+    what: "Ludo stake · giá · economy",
+    where: "Ludo → Tiền bạc",
+    tab: "ludo",
+    who: "mainadmin",
+  },
+  {
+    what: "Ludo cosmetics bàn · quân",
+    where: "Ludo → Cosmetics",
+    tab: "ludo",
+    who: "mainadmin",
+  },
+  {
+    what: "Ô ăn quan · rooms · force close",
+    where: "Ô ăn quan",
+    tab: "oanQuan",
+    who: "mainadmin",
+  },
+  {
+    what: "HueRush · rooms · force close",
+    where: "HueRush",
+    tab: "uno",
+    who: "mainadmin",
+  },
+  {
+    what: "Âm SFX (Tarot / BoltPeak / Arcana / Bói) + upload",
     where: "P+M → SFX",
     tab: "pm",
     who: "main / P+M",
   },
   {
     what: "Cosmetics Bói (úp bài · nền · FX)",
-    where: "P+M → Cosmetics Bói",
+    where: "P+M → Bói",
     tab: "pm",
     who: "main / P+M",
   },
   {
-    what: "Cover lobby · hero bàn",
-    where: "P+M",
+    what: "Cover lobby · hero · symbol BoltPeak / Cờ cá ngựa",
+    where: "P+M → Ảnh",
     tab: "pm",
     who: "main / P+M",
   },
   {
-    what: "Bộ bài / Lab lá (deck · tags)",
+    what: "CMS 78 lá · Library · Lab (theo role)",
     where: "Bói bài / Lab",
     tab: "oracle",
-    who: "main / oracle_manage",
+    who: "main / tarot78 (cards) / book78 (library)",
   },
   {
-    what: "Bật/tắt lane Games",
+    what: "Games registry · pathSuffix · cover · enabled",
     where: "Games",
     tab: "games",
-    who: "main / staff",
+    who: "main / admin · games_registry",
+  },
+  {
+    what: "Ma trận role · showcase · gán primary/extra",
+    where: "Roles",
+    tab: "roles",
+    who: "mainadmin",
+  },
+  {
+    what: "Bánh xe Arcana · config spin",
+    where: "Bánh xe",
+    tab: "arcana",
+    who: "main / arcana_config",
+  },
+  {
+    what: "An ninh mạng · health · CORS · rate-limit",
+    where: "Hệ thống",
+    tab: "system",
+    who: "main / staff_dashboard",
+  },
+  {
+    what: "IP online · block · cụm",
+    where: "IP",
+    tab: "ips",
+    who: "main / ip_audit",
+  },
+  {
+    what: "IpWorld · theo quốc gia · proxy/hosting",
+    where: "IpWorld",
+    tab: "ipWorld",
+    who: "main / ip_audit",
+  },
+  {
+    what: "Chat config · filter · slow mode",
+    where: "Chat",
+    tab: "chat",
+    who: "main / chat_config",
+  },
+  {
+    what: "Voice room admin · ghế · mute",
+    where: "Room",
+    tab: "room",
+    who: "main / mod",
+  },
+  {
+    what: "Lưu lượng online · stake · edge",
+    where: "Lưu lượng",
+    tab: "traffic",
+    who: "main / traffic_view",
+  },
+  {
+    what: "Mã đăng ký · bắt buộc invite",
+    where: "Đăng ký",
+    tab: "invites",
+    who: "main / invite_ops",
   },
   {
     what: "Góp ý ticket",
@@ -59,7 +214,7 @@ const ROWS: {
   },
   {
     what: "Catalog quà",
-    where: "Gifts",
+    where: "Quà",
     tab: "gifts",
     who: "main / SGift",
   },
@@ -70,13 +225,7 @@ const ROWS: {
     who: "main / Ring",
   },
   {
-    what: "Kho xu / edge",
-    where: "Vault",
-    tab: "vault",
-    who: "main / eco",
-  },
-  {
-    what: "Role rail cosmetic",
+    what: "Role rail cosmetic · labels · màu",
     where: "RoleAD",
     tab: "rolead",
     who: "mainadmin",
@@ -100,7 +249,7 @@ export function AdminOpsMap({
       <div>
         <p className="play-heading text-sm">Bản đồ quản lí</p>
         <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-          Âm / ảnh / inbox / catalog nằm tab nào — bấm để nhảy tới.
+          Mọi tính năng staff — bấm để nhảy tới hub/tab tương ứng.
         </p>
       </div>
       <ul className="divide-y divide-[var(--wood-deep)]/10">

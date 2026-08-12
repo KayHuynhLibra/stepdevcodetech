@@ -15,16 +15,15 @@ import {
   type AuthUser,
 } from "../auth";
 import { VoiceRoomHub } from "../components/VoiceRoomHub";
+import { SocialFxLayer } from "../components/SocialFxLayer";
 
 const SOCKET_URL =
   import.meta.env.VITE_SOCKET_URL ??
   (import.meta.env.DEV ? "http://localhost:3001" : undefined);
 
-/** Tarot play / Arcana / guest play — giữ 1 socket + voice khi đổi bàn. */
+/** Tarot / Arcana / bàn nhiều người — giữ 1 socket + voice + FX quà. */
 export function isPlayPath(pathname: string): boolean {
-  if (/\/guest\/[^/]+\/play\/?$/.test(pathname)) return true;
-  if (/\/(play|arcana)\/?$/.test(pathname)) return true;
-  return false;
+  return /\/(play|arcana|uno|ludo|oan-quan|olympus)\/?$/.test(pathname);
 }
 
 export type VoiceHeaderStatus = {
@@ -140,16 +139,19 @@ export function PlaySocketProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={value}>
       {children}
       {active && (
-        <VoiceRoomHub
-          open={voiceOpen}
-          socket={socket}
-          me={me}
-          sessionAuthed={sessionAuthed}
-          onClose={() => setVoiceOpen(false)}
-          onOpen={() => setVoiceOpen(true)}
-          onNeedLogin={() => setVoiceOpen(false)}
-          onStatus={setVoiceStatus}
-        />
+        <>
+          <SocialFxLayer />
+          <VoiceRoomHub
+            open={voiceOpen}
+            socket={socket}
+            me={me}
+            sessionAuthed={sessionAuthed}
+            onClose={() => setVoiceOpen(false)}
+            onOpen={() => setVoiceOpen(true)}
+            onNeedLogin={() => setVoiceOpen(false)}
+            onStatus={setVoiceStatus}
+          />
+        </>
       )}
     </Ctx.Provider>
   );

@@ -47,23 +47,23 @@ export function warnOpenCorsIfProd(allowedOrigins: string[]) {
     !!process.env.RAILWAY_ENVIRONMENT;
   if (isProd && allowedOrigins.length === 0) {
     console.warn(
-      "[security] ALLOWED_ORIGINS trống trên production — sẽ fallback PUBLIC_ORIGIN " +
-        "(mặc định https://stepkay.codes). Nên set ALLOWED_ORIGINS rõ ràng.",
+      "[security] ALLOWED_ORIGINS trống trên production — set ALLOWED_ORIGINS " +
+        "hoặc PUBLIC_ORIGIN (vd https://YOUR_DOMAIN). Không hardcode domain trong code.",
     );
   }
 }
 
-/** Origin CORS được phép (kèm fallback prod khi env trống). */
+/** Origin CORS được phép. Prod: ưu tiên ALLOWED_ORIGINS; fallback PUBLIC_ORIGIN nếu có. */
 export function resolveAllowedOrigins(raw: string[]): string[] {
   if (raw.length > 0) return raw;
   const isProd =
     process.env.NODE_ENV === "production" ||
     !!process.env.RAILWAY_ENVIRONMENT;
   if (!isProd) return [];
-  const pub = String(process.env.PUBLIC_ORIGIN || "https://stepkay.codes")
+  const pub = String(process.env.PUBLIC_ORIGIN || "")
     .trim()
     .replace(/\/$/, "");
-  return pub ? [pub] : ["https://stepkay.codes"];
+  return pub ? [pub] : [];
 }
 
 export function corsOriginOk(

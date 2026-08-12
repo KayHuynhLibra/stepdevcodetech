@@ -6,6 +6,8 @@ import {
   type OracleCard,
   type OracleDeckMeta,
   type OracleDrawHistoryRow,
+  type OracleSpread,
+  type OracleTimingHint,
 } from "../oracle";
 import {
   dealFromTop,
@@ -14,9 +16,9 @@ import {
   spreadLayoutClass,
   type DeckPool,
   type PileCard,
-  type RitualSpread,
 } from "../oracleDeck";
 import { pickMantra, spreadMantraHint } from "../oracleMantras";
+import { pickTimingHint } from "../oracleTiming";
 import { makeReadingTitle } from "../boiJournal";
 import { BoiReadingDesk } from "./BoiReadingDesk";
 import { useSfx } from "../hooks/useSfx";
@@ -24,8 +26,60 @@ import type {
   BoiBgFx,
   BoiCardBackMode,
 } from "../hooks/useBoiCosmetics";
+import "../platform/boi/boi-mystic.css";
 
-export type { RitualSpread, DeckPool };
+const LEGACY_SPREADS: OracleSpread[] = [
+  {
+    id: "timeline-1",
+    nameVi: "Lá chủ",
+    blurb: "Một lá — câu hỏi thẳng, một câu trả lời đủ nặng.",
+    cardCount: 1,
+    positions: ["Lá chủ"],
+    enabled: true,
+    sort: 1,
+  },
+  {
+    id: "timeline-3",
+    nameVi: "Thời gian",
+    blurb: "Quá khứ · Hiện tại · Tương lai — dòng chảy thời gian.",
+    cardCount: 3,
+    positions: ["Quá khứ", "Hiện tại", "Tương lai"],
+    enabled: true,
+    sort: 3,
+  },
+  {
+    id: "timeline-5",
+    nameVi: "Quan hệ",
+    blurb: "Bạn · Đối phương · Quan hệ · Thách thức · Lời khuyên.",
+    cardCount: 5,
+    positions: ["Bạn", "Đối phương", "Quan hệ", "Thách thức", "Lời khuyên"],
+    enabled: true,
+    sort: 5,
+  },
+  {
+    id: "timeline-10",
+    nameVi: "Celtic Cross",
+    blurb: "Celtic Cross — thập tự trung tâm và cột staff chín–mười.",
+    cardCount: 10,
+    positions: [
+      "1 · Hiện tại",
+      "2 · Thách thức (chéo)",
+      "3 · Nền / gốc",
+      "4 · Gần đây",
+      "5 · Vương miện / mục tiêu",
+      "6 · Sắp tới",
+      "7 · Bản thân",
+      "8 · Môi trường",
+      "9 · Hy vọng / sợ",
+      "10 · Kết quả",
+    ],
+    enabled: true,
+    sort: 10,
+  },
+];
+
+export type RitualSpread = number;
+export type { DeckPool };
 
 type RitualPhase = "center" | "shuffle" | "ready" | "reveal" | "reading";
 
@@ -95,7 +149,8 @@ function Face({
 export type RitualDealtPayload = {
   cards: DrawnOracleCard[];
   remaining: number;
-  spread: RitualSpread;
+  spread: number;
+  spreadId?: string;
   reading: OracleDrawHistoryRow;
 };
 
@@ -105,6 +160,8 @@ export function BoiRitualOverlay({
   catalog,
   question,
   deckPool = "full",
+  spreads,
+  timingRules,
   flipStyle = "olympus",
   flipFxOff = false,
   cardBackMode = "css",
@@ -121,6 +178,8 @@ export function BoiRitualOverlay({
   catalog: OracleCard[];
   question?: string;
   deckPool?: DeckPool;
+  spreads?: OracleSpread[];
+  timingRules?: OracleTimingHint[];
   flipStyle?: "olympus" | "cosmic" | "alchemy";
   flipFxOff?: boolean;
   cardBackMode?: BoiCardBackMode;
@@ -140,7 +199,8 @@ export function BoiRitualOverlay({
   const [phase, setPhase] = useState<RitualPhase>("center");
   const [pile, setPile] = useState<PileCard[]>([]);
   const [dealt, setDealt] = useState<DrawnOracleCard[] | null>(null);
-  const [spread, setSpread] = useState<RitualSpread>(3);
+  const [selectedSpreadId, setSelectedSpreadId] =
+    useState<string>("timeline-3");
   const [pool, setPool] = useState<DeckPool>(deckPool);
   const [flipped, setFlipped] = useState<Set<number>>(() => new Set());
   const [dealReady, setDealReady] = useState(false);
@@ -154,6 +214,37 @@ export function BoiRitualOverlay({
 
   const q = (question ?? "").trim().slice(0, 120);
   const poolSize = filterDeckPool(catalog, pool).length;
+  const enabledSpreads = useMemo(() => {
+    const deckId = deck?.id ?? catalog[0]?.deckId ?? "tarot";
+    const all = (spreads ?? [])
+      .filter((s) => s.enabled)
+      .slice()
+      .sort((a, b) => a.sort - b.sort || a.id.localeCompare(b.id));
+    if (!all.length) return all;
+    const forDeck = all.filter((s) => {
+      const tags = s.tags ?? [];
+      const source = s.source ?? "";
+      if (deckId === "lenormand") {
+        return tags.includes("lenormand") || source === "lenormand";
+      }
+      if (deckId === "tea") {
+        return tags.includes("tea") || source === "tea";
+      }
+      return (
+        !tags.includes("lenormand") &&
+        !tags.includes("tea") &&
+        source !== "lenormand" &&
+        source !== "tea"
+      );
+    });
+    return forDeck.length ? forDeck : all;
+  }, [spreads, deck?.id, catalog]);
+  const defaultSpreadId = enabledSpreads[0]?.id ?? "timeline-3";
+  const spreadChoices = enabledSpreads.length ? enabledSpreads : LEGACY_SPREADS;
+  const selectedSpread =
+    spreadChoices.find((s) => s.id === selectedSpreadId) ??
+    spreadChoices.find((s) => s.id === defaultSpreadId) ??
+    spreadChoices[0]!;
 
   const runShuffle = () => {
     const next = shuffleFullDeck(catalog, { pool });
@@ -171,6 +262,7 @@ export function BoiRitualOverlay({
   useEffect(() => {
     if (!open) return;
     setPool(deckPool);
+    setSelectedSpreadId(defaultSpreadId);
     setPhase("center");
     setPile([]);
     setDealt(null);
@@ -179,7 +271,7 @@ export function BoiRitualOverlay({
     setReadingRow(null);
     setSaved(false);
     setShuffleRound(0);
-  }, [open, catalog, deckPool]);
+  }, [open, catalog, deckPool, defaultSpreadId]);
 
   useEffect(() => {
     if (!open || phase !== "shuffle") return;
@@ -220,17 +312,23 @@ export function BoiRitualOverlay({
     `${sessionSeed}-${shuffleRound}-${phase}`,
   );
 
-  const deal = (count: RitualSpread) => {
-    if (pile.length < count) return;
+  const deal = (spreadId: string) => {
+    const spread = spreadChoices.find((s) => s.id === spreadId);
+    if (!spread || pile.length < spread.cardCount) return;
     playSfx("ui");
-    const { dealt: nextDealt, remaining } = dealFromTop(pile, count);
+    const { dealt: nextDealt, remaining } = dealFromTop(
+      pile,
+      spread.cardCount,
+      spread,
+    );
     setPile(remaining);
     setDealt(nextDealt);
-    setSpread(count);
+    setSelectedSpreadId(spread.id);
     const mantraClose = pickMantra(
       "closeReading",
       `${sessionSeed}-${shuffleRound}-close`,
     );
+    const timingHint = pickTimingHint(nextDealt, timingRules ?? []);
     const at = Date.now();
     const id = `od_${at.toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
     const reading: OracleDrawHistoryRow = {
@@ -238,17 +336,19 @@ export function BoiRitualOverlay({
       at,
       deckId: deck?.id ?? nextDealt[0]?.deckId ?? "tarot",
       cards: nextDealt,
-      spread: String(count),
+      spread: spread.id,
       question: q || undefined,
-      title: makeReadingTitle(q, count),
+      title: makeReadingTitle(q, spread.cardCount),
       mantraClose,
+      timingHint: timingHint ?? undefined,
     };
     setReadingRow(reading);
     setSaved(false);
     onDealt({
       cards: nextDealt,
       remaining: remaining.length,
-      spread: count,
+      spread: spread.cardCount,
+      spreadId: spread.id,
       reading,
     });
   };
@@ -270,6 +370,10 @@ export function BoiRitualOverlay({
 
   const allFlipped = !!dealt?.length && flipped.size >= dealt.length;
   const total = poolSize || pile.length;
+  const activeSpreadHint = spreadMantraHint(
+    selectedSpread.cardCount,
+    selectedSpread.blurb,
+  );
 
   const openReading = () => {
     if (readingRow) setPhase("reading");
@@ -277,7 +381,7 @@ export function BoiRitualOverlay({
 
   return (
     <div
-      className={`boi-ritual boi-ritual--theatre boi-fx--${bgFx} boi-back--${cardBackMode}${flipFxOff ? " boi-ritual--no-flip-fx" : ""}`}
+      className={`boi-ritual boi-mystic boi-ritual--theatre boi-fx--${bgFx} boi-back--${cardBackMode}${flipFxOff ? " boi-ritual--no-flip-fx" : ""}`}
       role="dialog"
       aria-modal="true"
       style={
@@ -408,37 +512,22 @@ export function BoiRitualOverlay({
               </div>
             </div>
             <p className="boi-ritual__mantra">{mantra}</p>
-            <p className="boi-ritual__hint">{spreadMantraHint(spread)}</p>
+            <p className="boi-ritual__hint">{activeSpreadHint}</p>
             <div className="boi-ritual__spreads">
-              {(
-                [
-                  [1, "1 lá · Lá chủ"],
-                  [3, "3 lá · Thời gian"],
-                  [5, "5 lá · Quan hệ"],
-                  [10, "10 lá · Celtic Cross"],
-                ] as const
-              ).map(([n, label]) => (
+              {spreadChoices.map((s) => (
                 <button
-                  key={n}
+                  key={s.id}
                   type="button"
-                  className={`boi-ritual__spread ${spread === n ? "on" : ""}`}
-                  disabled={pile.length < n}
-                  onClick={() => setSpread(n)}
+                  className={`boi-ritual__spread ${selectedSpreadId === s.id ? "on" : ""}`}
+                  disabled={pile.length < s.cardCount}
+                  onClick={() => deal(s.id)}
                 >
-                  <strong>{n}</strong>
-                  <span>{label}</span>
+                  <strong>{s.cardCount}</strong>
+                  <span>{s.nameVi}</span>
                 </button>
               ))}
             </div>
-            <button
-              type="button"
-              className="boi-ritual__cta"
-              disabled={pile.length < spread}
-              onClick={() => deal(spread)}
-            >
-              Rải {spread} lá lên bàn
-            </button>
-            {pile.length < spread ? (
+            {pile.length < selectedSpread.cardCount ? (
               <p className="boi-ritual__hint">Không đủ lá — hãy xào lại</p>
             ) : null}
           </div>
@@ -523,6 +612,7 @@ export function BoiRitualOverlay({
               deckName={deck?.nameVi}
               mode="live"
               saved={saved}
+              showDeep={false}
               onClose={onClose}
               onSave={
                 onSaveReading

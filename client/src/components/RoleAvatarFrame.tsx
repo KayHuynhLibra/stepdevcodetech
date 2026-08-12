@@ -22,6 +22,10 @@ interface RoleAvatarFrameProps
   size?: RoleAvatarSize;
   className?: string;
   isVip?: boolean;
+  /** VIP tier — ≥3 ưu tiên khung VIP fantasy nếu chưa có frame */
+  vipTier?: number;
+  /** Quý tộc — rim màu theo bậc */
+  nobilityTier?: number;
   bonded?: boolean;
   /** Staff / account role — dùng gợi ý khung khi frame = none */
   accountRole?: string | null;
@@ -34,13 +38,16 @@ export function RoleAvatarFrame({
   size = "md",
   className = "",
   isVip = false,
+  vipTier = 0,
+  nobilityTier = 0,
   bonded = false,
   accountRole = null,
   alt = "",
   ...imgProps
 }: RoleAvatarFrameProps) {
+  const treatVip = isVip || vipTier >= 1;
   const id = resolveDisplayAvatarFrame(frame, {
-    isVip,
+    isVip: treatVip && vipTier >= 3,
     bonded,
     role: accountRole,
   });
@@ -51,6 +58,13 @@ export function RoleAvatarFrame({
     imgProps.onError?.(e);
   };
 
+  const nobleRim =
+    nobilityTier > 0
+      ? {
+          boxShadow: `0 0 0 2px ${nobilityBorder(nobilityTier)}`,
+        }
+      : undefined;
+
   /** VIP fantasy aura khi khung hiển thị là VIP */
   if (id === "vip") {
     const vipSize = size === "sm" ? "sm" : size === "md" ? "md" : "lg";
@@ -59,6 +73,8 @@ export function RoleAvatarFrame({
         className={`role-avatar-frame role-avatar-frame--vip role-avatar-frame--aura inline-flex shrink-0 items-center justify-center ${className}`}
         data-frame="vip"
         data-size={size}
+        data-nobility={nobilityTier || undefined}
+        style={nobleRim}
       >
         <VipFantasyAvatar
           {...imgProps}
@@ -76,6 +92,8 @@ export function RoleAvatarFrame({
       className={`role-avatar-frame role-avatar-frame--${id} inline-flex shrink-0 items-center justify-center ${className}`}
       data-frame={id}
       data-size={size}
+      data-nobility={nobilityTier || undefined}
+      style={nobleRim}
     >
       <span className="role-avatar-frame__rim" aria-hidden />
       <span className="role-avatar-frame__glow" aria-hidden />
@@ -88,4 +106,16 @@ export function RoleAvatarFrame({
       />
     </span>
   );
+}
+
+function nobilityBorder(tier: number): string {
+  const map: Record<number, string> = {
+    1: "#90a4ae",
+    2: "#66bb6a",
+    3: "#42a5f5",
+    4: "#ffb300",
+    5: "#ab47bc",
+    6: "#ffc107",
+  };
+  return map[Math.max(0, Math.min(6, Math.floor(tier)))] ?? "#90a4ae";
 }

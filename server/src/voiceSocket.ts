@@ -8,6 +8,9 @@ import {
 import { auditStore } from "./auditStore.js";
 import { normalizeAvatar } from "./avatars.js";
 import { cultivationStore } from "./cultivationStore.js";
+import { voicePriority } from "./statusBenefits.js";
+import { computeVipTier } from "./vipTiers.js";
+import { computeNobilityTier } from "./nobilityRanks.js";
 import { rateLimit } from "./rateLimit.js";
 import { feePocketStore } from "./feePocketStore.js";
 import { voiceLixiStore } from "./voiceLixiStore.js";
@@ -210,6 +213,10 @@ export function attachVoiceSocket(io: Server) {
         const benefit = cultivationStore.getBenefit(
           auth.user.cultivationRank ?? null,
         );
+        const vipTier = computeVipTier(auth.user);
+        const nobilityTier = computeNobilityTier(
+          auth.user.gemSpentLifetime ?? 0,
+        );
         const result = voiceRoomStore.join({
           socketId: socket.id,
           roomId: payload?.roomId,
@@ -217,7 +224,11 @@ export function attachVoiceSocket(io: Server) {
           userId: auth.user.id,
           name: userDisplayName(auth.user),
           avatar: normalizeAvatar(auth.user.avatar),
-          voiceSeatPriority: benefit.voiceSeatPriority,
+          voiceSeatPriority: voicePriority(
+            vipTier,
+            nobilityTier,
+            benefit.voiceSeatPriority,
+          ),
           password: payload?.password,
         });
         if (!result.ok) {

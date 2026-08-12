@@ -1,8 +1,13 @@
-import type { DrawnOracleCard, OracleCard } from "./oracle";
+import type {
+  DrawnOracleCard,
+  OracleCard,
+  OracleSpread,
+} from "./oracle";
 
-export type RitualSpread = 1 | 3 | 5 | 10;
+/** Legacy numeric spreads — fallback khi CMS trống */
+export type RitualSpreadCount = 1 | 2 | 3 | 5 | 10;
 
-/** Full 78 · Major 22 · Minor 56 */
+/** Full 78 · Major 22 · Minor 56 · (lenormand/tea = full) */
 export type DeckPool = "full" | "major" | "minor";
 
 /** Lá trong chồng đã xào — hướng xuôi/ngược cố định lúc xào */
@@ -24,16 +29,21 @@ export function filterDeckPool(
   pool: DeckPool = "full",
 ): OracleCard[] {
   const base = cards.filter((c) => c.enabled !== false && !c.draft);
+  const deckId = base[0]?.deckId;
+  if (deckId === "lenormand" || deckId === "tea" || deckId === "zodiac") {
+    return base;
+  }
   if (pool === "major") {
     return base.filter((c) => (c.suit ?? "major") === "major");
   }
   if (pool === "minor") {
-    return base.filter((c) => (c.suit ?? "") !== "major" && c.suit !== "zodiac");
+    return base.filter(
+      (c) => (c.suit ?? "") !== "major" && c.suit !== "zodiac",
+    );
   }
   return base;
 }
 
-/** Xào bộ theo pool — giữ thứ tự sau xào, mỗi lá gán xuôi/ngược một lần */
 export function shuffleFullDeck(
   cards: OracleCard[],
   opts?: { pool?: DeckPool },
@@ -45,36 +55,57 @@ export function shuffleFullDeck(
   }));
 }
 
-/** Vị trí chuẩn theo chất bói bài */
-export function spreadPositions(count: RitualSpread): string[] {
+export function legacySpreadPositions(count: number): string[] {
   if (count === 1) return ["Lá chủ"];
+  if (count === 2) return ["Năng lượng", "Lời khuyên"];
   if (count === 3) return ["Quá khứ", "Hiện tại", "Tương lai"];
   if (count === 5) {
     return ["Bạn", "Đối phương", "Quan hệ", "Thách thức", "Lời khuyên"];
   }
-  return [
-    "1 · Hiện tại",
-    "2 · Thách thức (chéo)",
-    "3 · Nền / gốc",
-    "4 · Gần đây",
-    "5 · Vương miện / mục tiêu",
-    "6 · Sắp tới",
-    "7 · Bản thân",
-    "8 · Môi trường",
-    "9 · Hy vọng / sợ",
-    "10 · Kết quả",
-  ];
+  if (count === 10) {
+    return [
+      "1 · Hiện tại",
+      "2 · Thách thức (chéo)",
+      "3 · Nền / gốc",
+      "4 · Gần đây",
+      "5 · Vương miện / mục tiêu",
+      "6 · Sắp tới",
+      "7 · Bản thân",
+      "8 · Môi trường",
+      "9 · Hy vọng / sợ",
+      "10 · Kết quả",
+    ];
+  }
+  return Array.from({ length: count }, (_, i) => `Vị trí ${i + 1}`);
 }
 
-/** Rút từ đỉnh chồng (index 0 = đỉnh) — không xào lại */
+export function resolveSpreadPositions(
+  spread: OracleSpread | null | undefined,
+  count: number,
+): string[] {
+  if (spread?.positions?.length) {
+    const pos = [...spread.positions];
+    while (pos.length < count) pos.push(`Vị trí ${pos.length + 1}`);
+    return pos.slice(0, count);
+  }
+  return legacySpreadPositions(count);
+}
+
+/** @deprecated use resolveSpreadPositions */
+export function spreadPositions(count: RitualSpreadCount): string[] {
+  return legacySpreadPositions(count);
+}
+
 export function dealFromTop(
   pile: PileCard[],
-  count: RitualSpread,
+  count: number,
+  spread?: OracleSpread | null,
+  opts?: { includeTheoryNotes?: boolean },
 ): { dealt: DrawnOracleCard[]; remaining: PileCard[] } {
   const n = Math.min(count, pile.length);
   const taken = pile.slice(0, n);
   const remaining = pile.slice(n);
-  const positions = spreadPositions(count);
+  const positions = resolveSpreadPositions(spread, count);
   const dealt: DrawnOracleCard[] = taken.map((c, i) => ({
     key: c.key,
     deckId: c.deckId,
@@ -91,13 +122,16 @@ export function dealFromTop(
     reversedDraw: c.reversedDraw,
     meaning: c.reversedDraw ? c.reversed : c.upright,
     position: positions[i] ?? `Vị trí ${i + 1}`,
+    theoryNotes: opts?.includeTheoryNotes
+      ? c.notes || undefined
+      : undefined,
   }));
   return { dealt, remaining };
 }
 
-/** Layout class cho bàn trải chuẩn */
 export function spreadLayoutClass(count: number): string {
   if (count === 1) return "boi-spread--1";
+  if (count === 2) return "boi-spread--3";
   if (count === 3) return "boi-spread--3";
   if (count === 5) return "boi-spread--5";
   if (count === 10) return "boi-spread--celtic";

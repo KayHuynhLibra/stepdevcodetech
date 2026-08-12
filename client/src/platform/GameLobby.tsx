@@ -1,15 +1,18 @@
+import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import type { AuthUser } from "../auth";
+import { GameMark } from "../components/GameMark";
 import {
   gamePath,
   isGameOpen,
   lobbyCtaLabel,
   type GameManifest,
 } from "./games";
+import { gameTone } from "./gameTones";
 import { prefetchGame } from "./lazyGames";
 
 /**
- * Lobby chọn bàn — lưới card rõ ràng (mobile + desktop), thấy hết game đang mở.
+ * Lobby chọn trò chơi — GameMark mặc định; coverUrl tùy chọn nếu có.
  */
 export function GameLobby({
   user,
@@ -26,29 +29,49 @@ export function GameLobby({
     <ul className="game-lobby-grid">
       {sorted.map((g) => {
         const open = isGameOpen(g);
-        const cover = g.coverUrl || "/assets/lobby/soon.svg";
         const href = getPath
           ? getPath(g)
           : user
             ? gamePath(user, g)
             : "#";
+        const tone = gameTone(g.id);
+        const style = {
+          "--card-accent": tone.accent,
+          "--card-ink": tone.ink,
+          "--card-soft": tone.soft,
+          "--card-deep": tone.deep,
+          "--card-on": tone.onDeep,
+        } as CSSProperties;
+        const cover = g.coverUrl?.trim();
+
         const inner = (
           <>
             <div
-              className={`game-lobby-card__art ${open ? "" : "is-soon"}`}
+              className={`game-lobby-card__art game-lobby-card__art--${g.id} ${
+                open ? "" : "is-soon"
+              }`}
+              aria-hidden
             >
-              <img
-                src={cover}
-                alt=""
-                width={96}
-                height={96}
-                loading="lazy"
-                decoding="async"
-                className="h-full w-full object-cover"
-              />
+              {cover ? (
+                <img
+                  src={cover}
+                  alt=""
+                  className="game-lobby-card__cover"
+                  loading="lazy"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              ) : null}
+              <GameMark gameId={g.id} className="game-mark--hero" />
+              <span className="game-lobby-card__watermark">{g.nameVi}</span>
             </div>
             <div className="game-lobby-card__meta">
-              <span className="game-lobby-card__name">
+              <span
+                className={`game-lobby-card__name ${
+                  tone.display === "serif" ? "is-serif" : ""
+                }`}
+              >
                 {g.nameVi}
                 {!open ? (
                   <span className="game-lobby-card__badge">Sắp mở</span>
@@ -66,7 +89,12 @@ export function GameLobby({
         if (!open) {
           return (
             <li key={g.id}>
-              <div className="game-lobby-card game-lobby-card--muted">{inner}</div>
+              <div
+                className={`game-lobby-card game-lobby-card--muted game-lobby-card--${g.id}`}
+                style={style}
+              >
+                {inner}
+              </div>
             </li>
           );
         }
@@ -74,7 +102,8 @@ export function GameLobby({
           <li key={g.id}>
             <Link
               to={href}
-              className="game-lobby-card"
+              className={`game-lobby-card game-lobby-card--${g.id}`}
+              style={style}
               onMouseEnter={() => prefetchGame(g.pathSuffix)}
               onFocus={() => prefetchGame(g.pathSuffix)}
               onTouchStart={() => prefetchGame(g.pathSuffix)}

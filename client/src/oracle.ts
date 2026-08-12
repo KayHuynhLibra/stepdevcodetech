@@ -7,6 +7,8 @@ export type OracleSuit =
   | "swords"
   | "pentacles"
   | "zodiac"
+  | "lenormand"
+  | "tea"
   | string;
 
 export type OracleTradition =
@@ -15,6 +17,15 @@ export type OracleTradition =
   | "thoth"
   | "custom"
   | "zodiac";
+
+export type OracleCardLevel = "public" | "deep";
+
+export type OracleCardDomains = {
+  love?: string;
+  work?: string;
+  money?: string;
+  health?: string;
+};
 
 export interface OracleDeckMeta {
   id: OracleDeckId;
@@ -45,6 +56,41 @@ export interface OracleCard {
   notes?: string;
   citations?: string;
   draft?: boolean;
+  domains?: OracleCardDomains;
+  level?: OracleCardLevel;
+  sourceDoc?: string;
+}
+
+export interface OracleSpread {
+  id: string;
+  nameVi: string;
+  blurb: string;
+  cardCount: number;
+  positions: string[];
+  enabled: boolean;
+  sort: number;
+  tags?: string[];
+  source?: string;
+  draft?: boolean;
+}
+
+export interface OracleTimingHint {
+  id: string;
+  labelVi: string;
+  suit?: string;
+  number?: number;
+  key?: string;
+  hint: string;
+  sort: number;
+}
+
+export interface OracleLibraryDoc {
+  id: string;
+  title: string;
+  pages?: number;
+  ingestedAt: number;
+  version: string;
+  notes?: string;
 }
 
 export interface DrawnOracleCard {
@@ -63,6 +109,8 @@ export interface DrawnOracleCard {
   reversedDraw: boolean;
   meaning: string;
   position?: string;
+  /** Chỉ staff / lab — không có trên catalog public */
+  theoryNotes?: string;
 }
 
 export interface OracleDrawHistoryRow {
@@ -75,6 +123,7 @@ export interface OracleDrawHistoryRow {
   notes?: string;
   title?: string;
   mantraClose?: string;
+  timingHint?: string;
 }
 
 export function isOracleEmoji(image: string | undefined | null): boolean {
@@ -93,6 +142,8 @@ export const ORACLE_SUIT_LABEL: Record<string, string> = {
   swords: "Kiếm",
   pentacles: "Tiền",
   zodiac: "Cung",
+  lenormand: "Lenormand",
+  tea: "Trà",
 };
 
 export const ORACLE_TRADITION_LABEL: Record<OracleTradition, string> = {
@@ -110,6 +161,8 @@ export const ORACLE_SUIT_PRESETS = [
   "swords",
   "pentacles",
   "zodiac",
+  "lenormand",
+  "tea",
 ] as const;
 
 export const ORACLE_TRADITION_PRESETS: OracleTradition[] = [

@@ -289,7 +289,7 @@ export function SfxAdminPanel({
       <div>
         <p className="play-heading text-sm">SFX · Tuỳ chọn âm thanh</p>
         <p className="mt-0.5 text-[11px] text-[var(--play-muted)]">
-          Đủ 5 bàn: Tarot · Olympus · Arcana · Bói · Ludo. Gói âm khác chất liệu
+          Đủ 5 bàn: Tarot · BoltPeak · Arcana · Bói · Cờ cá ngựa. Gói âm khác chất liệu
           (không phải chỉnh êm·sắc). Nghe thử = synth thật / file upload.
         </p>
       </div>
@@ -297,7 +297,7 @@ export function SfxAdminPanel({
         {(
           [
             ["tarot", "Tarot 8 lá"],
-            ["olympus", "Olympus"],
+            ["olympus", "BoltPeak"],
             ["arcana", "Arcana"],
             ["boi", "Bói bài"],
             ["ludo", "Ludo"],

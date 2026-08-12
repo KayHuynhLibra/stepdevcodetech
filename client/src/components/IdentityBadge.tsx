@@ -22,6 +22,12 @@ import {
   getCultivationColor,
   isCultivationRank,
 } from "../cultivation";
+import {
+  nobilityColors,
+  nobilityLabel,
+  nobilityTierOf,
+} from "../nobility";
+import { computeVipTier, vipLabel as vipTierLabel } from "../vip";
 import { PlayLevelBadge } from "./PlayLevelBadge";
 import { coupleWithLabel } from "../rings";
 import type { RoleDisplayPublic } from "../roleDisplay";
@@ -79,6 +85,14 @@ export function IdentityBadge({
   const path = user ? homePath(user) : guestCode ? `/guest/${guestCode}` : "/play";
   const play = user ? playPath(user) : guestCode ? `/guest/${guestCode}/play` : "/play";
   const isVip = userShowsVip(user);
+  const vipTier = user ? computeVipTier(user) : 0;
+  const vipPillText =
+    vipTier >= 1 ? vipTierLabel(vipTier) || vipLabel : vipLabel;
+  const nobleTier = user ? nobilityTierOf(user) : 0;
+  const nobleName =
+    nobleTier > 0 && !user?.nameColor
+      ? nobilityColors(nobleTier).name
+      : undefined;
   const bondActive = user?.bond?.status === "active";
 
   const [showLoginHint, setShowLoginHint] = useState(false);
@@ -185,6 +199,8 @@ export function IdentityBadge({
       size={avatarSize}
       frame={user?.avatarFrame}
       isVip={isVip}
+      vipTier={vipTier}
+      nobilityTier={nobleTier}
       bonded={bondActive}
       accountRole={isGuest ? "guest" : role}
       decoding="async"
@@ -222,6 +238,7 @@ export function IdentityBadge({
       colorId={user?.nameColor}
       effectId={user?.nameEffect}
       className={`${nameClass} block w-full text-left`}
+      style={nobleName ? { color: nobleName } : undefined}
       title="Đổi tên"
       onClick={onNameClick}
     />
@@ -232,6 +249,7 @@ export function IdentityBadge({
       colorId={user?.nameColor}
       effectId={user?.nameEffect}
       className={nameClass}
+      style={nobleName ? { color: nobleName } : undefined}
     />
   );
 
@@ -305,18 +323,36 @@ export function IdentityBadge({
           vip: isVip ? (
             <span
               className="role-pill role-pill--vip"
-              title={vipLabel}
+              title={vipPillText}
               style={resolveRoleColorStyle("vip", rd.roleColors)}
             >
               <span className="role-pill__glyph" aria-hidden>
                 {resolveRoleGlyph("vip")}
               </span>
-              <span className="role-pill__text">{vipLabel}</span>
+              <span className="role-pill__text">{vipPillText}</span>
             </span>
           ) : null,
           badges:
             user?.displayBadges && user.displayBadges.length > 0 ? (
               <>
+                {nobleTier > 0 ? (
+                  <span
+                    className="role-pill role-pill--nobility"
+                    title={nobilityLabel(nobleTier)}
+                    style={{
+                      background: nobilityColors(nobleTier).bg,
+                      color: nobilityColors(nobleTier).text,
+                      borderColor: nobilityColors(nobleTier).border,
+                    }}
+                  >
+                    <span className="role-pill__glyph" aria-hidden>
+                      ♛
+                    </span>
+                    <span className="role-pill__text">
+                      {nobilityLabel(nobleTier)}
+                    </span>
+                  </span>
+                ) : null}
                 {user.displayBadges.map((bid) => {
                   const def = displayBadgeDef(bid);
                   if (!def) return null;
@@ -335,6 +371,23 @@ export function IdentityBadge({
                   );
                 })}
               </>
+            ) : nobleTier > 0 ? (
+              <span
+                className="role-pill role-pill--nobility"
+                title={nobilityLabel(nobleTier)}
+                style={{
+                  background: nobilityColors(nobleTier).bg,
+                  color: nobilityColors(nobleTier).text,
+                  borderColor: nobilityColors(nobleTier).border,
+                }}
+              >
+                <span className="role-pill__glyph" aria-hidden>
+                  ♛
+                </span>
+                <span className="role-pill__text">
+                  {nobilityLabel(nobleTier)}
+                </span>
+              </span>
             ) : null,
           id: code ? (
             <span

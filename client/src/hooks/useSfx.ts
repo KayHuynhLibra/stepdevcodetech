@@ -26,11 +26,19 @@ export type SfxName =
   | "roll"
   | "move"
   | "capture"
-  | "home";
+  | "home"
+  | "draw";
 
 type SfxChannel = Exclude<AudioChannel, "master">;
 
-export type SfxGameId = "tarot" | "olympus" | "arcana" | "boi" | "ludo";
+export type SfxGameId =
+  | "tarot"
+  | "olympus"
+  | "arcana"
+  | "boi"
+  | "ludo"
+  | "oan-quan"
+  | "uno";
 
 const ALL_SFX_NAMES = new Set<string>([
   "tick",
@@ -49,6 +57,7 @@ const ALL_SFX_NAMES = new Set<string>([
   "move",
   "capture",
   "home",
+  "draw",
 ]);
 
 type SfxRuntime = {
@@ -560,6 +569,13 @@ function playSynth(
   if (name === "home") {
     playChord(ctx, dest, [523, 659, 784], 0.22, "sine", 0.07, 0, 0.05);
     playTone(ctx, dest, 1046, 0.14, "triangle", 0.05, 0.12);
+    return;
+  }
+
+  if (name === "draw") {
+    playNoiseBurst(ctx, dest, 0.05, 0.08, 0, 1600, 1.1);
+    playTone(ctx, dest, 440, 0.06, "triangle", 0.07, 0, 320);
+    playTone(ctx, dest, 560, 0.05, "sine", 0.05, 0.04);
     return;
   }
 }

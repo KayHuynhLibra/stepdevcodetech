@@ -2,6 +2,7 @@
   "name": "sofiaore-tarot-demo",
   "private": true,
   "version": "1.0.0",
+  "license": "UNLICENSED",
   "engines": {
     "node": ">=20"
   },
@@ -11,6 +12,7 @@
     "start": "npm run start -w server",
     "migrate:scale10": "node server/scripts/migrate-scale-div10.mjs",
     "backup:data": "node server/scripts/backup-data.mjs",
+    "backup:offsite": "node server/scripts/backup-offsite.mjs",
     "baseline:100x": "node server/scripts/baseline-100x.mjs",
     "db:migrate": "node server/scripts/db-migrate.mjs",
     "install:all": "npm install",

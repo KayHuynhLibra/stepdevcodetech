@@ -38,6 +38,8 @@ import {
   tutienStakeLimitsStore,
   type TutienMaxByRank,
 } from "./tutienStakeLimitsStore.js";
+import { xuLevelsStore } from "./xuLevelsStore.js";
+import { STARTING_BALANCE } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, "..", "data");
@@ -256,6 +258,7 @@ function normalizePickIds(
 class ArcanaWheelStore {
   private config: ArcanaWheelConfig = defaultConfig();
   private spins: ArcanaSpinEntry[] = [];
+  private guestBalances = new Map<string, number>();
 
   constructor() {
     this.loadConfig();
@@ -468,7 +471,10 @@ class ArcanaWheelStore {
         this.config.streakBonusCapPercent ??
         DEFAULT_STREAK_BONUS.streakBonusCapPercent,
       slots: this.config.slots.map((s) => ({ ...s })),
-      stakeTiers: [...this.config.stakeTiers],
+      stakeTiers: (() => {
+        const fromXu = xuLevelsStore.forGame("arcana");
+        return fromXu.length ? fromXu : [...this.config.stakeTiers];
+      })(),
     };
   }
 
@@ -500,6 +506,35 @@ class ArcanaWheelStore {
       m.set(s.id, W > 0 ? Math.round((w / W) * 1000) / 10 : 0);
     }
     return m;
+  }
+
+  private normalizeGuestId(guestId: string): string {
+    return guestId.trim().toUpperCase();
+  }
+
+  private guestUserId(guestId: string): string {
+    return `guest:${this.normalizeGuestId(guestId)}`;
+  }
+
+  private guestUsername(guestId: string): string {
+    const id = this.normalizeGuestId(guestId);
+    return `Khách ${id.slice(0, 4)}`;
+  }
+
+  getGuestBalance(guestId: string): number {
+    const id = this.normalizeGuestId(guestId);
+    if (!id) return STARTING_BALANCE;
+    if (!this.guestBalances.has(id)) {
+      this.guestBalances.set(id, STARTING_BALANCE);
+    }
+    return this.guestBalances.get(id)!;
+  }
+
+  private setGuestBalance(guestId: string, balance: number): number {
+    const id = this.normalizeGuestId(guestId);
+    const next = Math.max(0, Math.floor(balance));
+    this.guestBalances.set(id, next);
+    return next;
   }
 
   getPublicState(userId?: string) {
@@ -560,6 +595,59 @@ class ArcanaWheelStore {
         outerWon: s.outerWon,
       })),
       mission: userId ? arcanaMissionStore.getProgress(userId) : undefined,
+    };
+  }
+
+  getPublicStateForGuest(guestId: string) {
+    const cfg = this.getConfig();
+    const shares = this.slotWeightShares(cfg.slots);
+    const streakCfg = this.streakBonusConfig();
+    const streakKey = this.guestUserId(guestId);
+    const luckStreak = arcanaStreakStore.get(streakKey);
+    const nextWinBonusPercent = previewNextWinBonusPercent(
+      luckStreak,
+      streakCfg,
+    );
+    return {
+      enabled: cfg.enabled,
+      stakeTiers: cfg.stakeTiers.filter((t) => t <= PUBLIC_MAX_STAKE),
+      publicStakeTiers: cfg.stakeTiers.filter((t) => t <= PUBLIC_MAX_STAKE),
+      pickMin: cfg.pickMin,
+      pickMax: cfg.pickMax,
+      maxStake: cfg.maxStake,
+      payoutScale: cfg.payoutScale,
+      balance: this.getGuestBalance(guestId),
+      luckStreak,
+      streakBonus: {
+        enabled: streakCfg.streakBonusEnabled,
+        minStreak: streakCfg.streakBonusMinStreak,
+        percentPerStep: streakCfg.streakBonusPercentPerStep,
+        capPercent: streakCfg.streakBonusCapPercent,
+        nextWinBonusPercent,
+      },
+      slots: cfg.slots.map(({ id, key, name, nameVi, ratio, image }) => ({
+        id,
+        key,
+        name,
+        nameVi,
+        ratio,
+        image,
+        weightShare: shares.get(id) ?? 0,
+      })),
+      recent: this.spins.slice(0, RECENT_PUBLIC).map((s) => ({
+        id: s.id,
+        at: s.at,
+        winId: s.winId,
+        pickId: s.pickId,
+        pickIds: s.pickIds ?? [s.pickId],
+        won: s.won,
+        stake: s.stake,
+        payout: s.payout,
+        profit: s.profit,
+        outerNumber: s.outerNumber,
+        outerPick: s.outerPick,
+        outerWon: s.outerWon,
+      })),
     };
   }
 
@@ -694,7 +782,8 @@ class ArcanaWheelStore {
   }
 
   spin(input: {
-    userId: string;
+    userId?: string;
+    guestId?: string;
     stake: number;
     pickIds?: unknown;
     /** @deprecated dùng pickIds */
@@ -714,35 +803,50 @@ class ArcanaWheelStore {
     if (!this.config.enabled) {
       return { ok: false, reason: "Bàn Bánh xe Arcana đang tạm khóa" };
     }
+    const hasUser = typeof input.userId === "string" && input.userId.trim().length > 0;
+    const guestId =
+      typeof input.guestId === "string" ? this.normalizeGuestId(input.guestId) : "";
+    const hasGuest = guestId.length > 0;
+    if ((hasUser ? 1 : 0) + (hasGuest ? 1 : 0) !== 1) {
+      return { ok: false, reason: "Cần đúng một định danh user hoặc guest" };
+    }
+    const isGuest = hasGuest;
     const stake = Math.floor(Number(input.stake));
     const useBonus = !!input.useBonusSpin;
     const outerPick = parseOuterPick(input.outerPick);
+    if (isGuest && useBonus) {
+      return { ok: false, reason: "Khách không dùng lượt quay thưởng" };
+    }
     if (useBonus) {
-      if (!arcanaMissionStore.consumeBonusSpin(input.userId)) {
+      if (!input.userId || !arcanaMissionStore.consumeBonusSpin(input.userId)) {
         return { ok: false, reason: "Không còn lượt quay thưởng nhiệm vụ" };
       }
     }
 
-    const userEarly = authStore.getById(input.userId);
-    if (!userEarly) return { ok: false, reason: "User không tồn tại" };
-    if (userEarly.banned) return { ok: false, reason: "Tài khoản bị khóa" };
+    const userEarly = input.userId ? authStore.getById(input.userId) : null;
+    if (!isGuest) {
+      if (!userEarly) return { ok: false, reason: "User không tồn tại" };
+      if (userEarly.banned) return { ok: false, reason: "Tài khoản bị khóa" };
+    }
 
     const tutienMap = tutienStakeLimitsStore.getMap();
     if (
       !useBonus &&
       (!Number.isFinite(stake) ||
         stake <= 0 ||
-        !isStakeAllowedForUser(
-          stake,
-          userEarly,
-          this.config.stakeTiers,
-          tutienMap,
-        ))
+        (isGuest
+          ? !this.config.stakeTiers.includes(stake)
+          : !isStakeAllowedForUser(
+              stake,
+              userEarly!,
+              this.config.stakeTiers,
+              tutienMap,
+            )))
     ) {
       return {
         ok: false,
         reason:
-          stake > PUBLIC_MAX_STAKE
+          !isGuest && stake > PUBLIC_MAX_STAKE
             ? "Mức >1M chỉ dành cho role Tu Tiên đủ cảnh giới"
             : "Mức xu không hợp lệ",
       };
@@ -768,13 +872,20 @@ class ArcanaWheelStore {
     }
 
     const user = userEarly;
+    const actorId = isGuest ? this.guestUserId(guestId) : user!.id;
+    const actorName = isGuest ? this.guestUsername(guestId) : user!.username;
 
-    if (!useBonus && user.balance < effectiveStake) {
+    if (!useBonus && isGuest && this.getGuestBalance(guestId) < effectiveStake) {
+      return { ok: false, reason: "Không đủ xu" };
+    }
+    if (!useBonus && !isGuest && user!.balance < effectiveStake) {
       return { ok: false, reason: "Không đủ xu" };
     }
 
-    let balanceAfter = user.balance;
-    if (!useBonus) {
+    let balanceAfter = isGuest ? this.getGuestBalance(guestId) : user!.balance;
+    if (!useBonus && isGuest) {
+      balanceAfter = this.setGuestBalance(guestId, balanceAfter - effectiveStake);
+    } else if (!useBonus && input.userId) {
       const debit = authStore.adjustBalance(input.userId, -effectiveStake);
       if (!debit.ok) {
         return { ok: false, reason: debit.reason || "Không trừ được xu" };
@@ -787,7 +898,7 @@ class ArcanaWheelStore {
       );
     }
 
-    const streakBefore = arcanaStreakStore.get(input.userId);
+    const streakBefore = arcanaStreakStore.get(actorId);
     const streakCfg = this.streakBonusConfig();
 
     const seed = randomBytes(8).toString("hex");
@@ -813,18 +924,6 @@ class ArcanaWheelStore {
     const winSlot = pickWeighted(this.config.slots);
     const won = pickIds.includes(winSlot.id);
 
-    let wheelDisplayWinId = winSlot.id;
-    let nearMiss = false;
-    if (!won && Math.random() < 0.38) {
-      const candidates = this.config.slots.filter(
-        (s) => s.ratio >= 20 && !pickIds.includes(s.id),
-      );
-      if (candidates.length > 0) {
-        wheelDisplayWinId = pickWeighted(candidates).id;
-        nearMiss = wheelDisplayWinId !== winSlot.id;
-      }
-    }
-
     const payoutBase = won
       ? computeArcanaPayout(
           arcanaStake,
@@ -844,36 +943,40 @@ class ArcanaWheelStore {
     const profit = payout - (useBonus ? 0 : effectiveStake);
 
     if (payout > 0) {
-      const credit = authStore.adjustBalance(input.userId, payout);
-      if (credit.ok) {
-        balanceAfter = credit.user.balance;
-        vaultArcana.recordPayoutOut(
-          payout,
-          credit.user.username,
-          credit.user.id,
-        );
-      } else if (!useBonus) {
-        const refund = authStore.adjustBalance(input.userId, effectiveStake);
-        if (refund.ok) {
-          balanceAfter = refund.user.balance;
-          vaultArcana.recordStakeRefund(
-            effectiveStake,
-            refund.user.username,
-            refund.user.id,
+      if (isGuest) {
+        balanceAfter = this.setGuestBalance(guestId, balanceAfter + payout);
+      } else if (input.userId) {
+        const credit = authStore.adjustBalance(input.userId, payout);
+        if (credit.ok) {
+          balanceAfter = credit.user.balance;
+          vaultArcana.recordPayoutOut(
+            payout,
+            credit.user.username,
+            credit.user.id,
           );
+        } else if (!useBonus) {
+          const refund = authStore.adjustBalance(input.userId, effectiveStake);
+          if (refund.ok) {
+            balanceAfter = refund.user.balance;
+            vaultArcana.recordStakeRefund(
+              effectiveStake,
+              refund.user.username,
+              refund.user.id,
+            );
+          }
+          return {
+            ok: false,
+            reason: "Không trả xu được — đã hoàn xu",
+          };
+        } else {
+          return { ok: false, reason: "Không trả xu được" };
         }
-        return {
-          ok: false,
-          reason: "Không trả xu được — đã hoàn xu",
-        };
-      } else {
-        return { ok: false, reason: "Không trả xu được" };
       }
     }
 
-    const { streakAfter } = arcanaStreakStore.recordSpin(input.userId, won);
+    const { streakAfter } = arcanaStreakStore.recordSpin(actorId, won);
     let missionCompleted = false;
-    if (!useBonus) {
+    if (!isGuest && !useBonus && input.userId) {
       missionCompleted = arcanaMissionStore.recordPaidSpin(
         input.userId,
         effectiveStake,
@@ -883,8 +986,8 @@ class ArcanaWheelStore {
     const entry: ArcanaSpinEntry = {
       id: randomBytes(6).toString("hex"),
       at: Date.now(),
-      userId: user.id,
-      username: user.username,
+      userId: actorId,
+      username: actorName,
       stake: effectiveStake,
       pickId: pickIds[0]!,
       pickIds,
@@ -896,9 +999,6 @@ class ArcanaWheelStore {
       streakBonusPercent: won ? streakBonusPercent : undefined,
       streakBefore,
       streakAfter,
-      nearMiss: nearMiss || undefined,
-      wheelDisplayWinId:
-        wheelDisplayWinId !== winSlot.id ? wheelDisplayWinId : undefined,
       missionCompleted: missionCompleted || undefined,
       usedBonusSpin: useBonus || undefined,
       outerNumber,
@@ -923,7 +1023,9 @@ class ArcanaWheelStore {
       slot: { ...winSlot },
       luckStreak: streakAfter,
       streakBonus: {
-        ...this.getPublicState(input.userId).streakBonus,
+        ...(isGuest
+          ? this.getPublicStateForGuest(guestId).streakBonus
+          : this.getPublicState(input.userId).streakBonus),
       },
     };
   }

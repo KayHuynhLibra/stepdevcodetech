@@ -172,18 +172,31 @@
 
 .oly-nav-wrap--desktop .form-tab {
   flex-shrink: 0;
-  background: rgba(255, 244, 230, 0.1);
-  border-color: rgba(245, 197, 66, 0.35);
-  color: #fff4e6;
   font-size: 0.68rem;
   padding: 0.4rem 0.75rem;
   min-height: 2.15rem;
 }
 
-.oly-nav-wrap--desktop .form-tab.is-on {
-  background: linear-gradient(180deg, #f5c542, #c4891a);
-  color: #1a0e08;
-  border-color: #ffe08a;
+.oly-nav-wrap--desktop .form-tab--game {
+  /* Tone từng game từ --tab-* — nền tối Olympus chỉ làm dịu */
+  background: color-mix(in srgb, var(--tab-soft, #fff4e6) 22%, rgba(20, 10, 30, 0.72));
+  border-color: color-mix(in srgb, var(--tab-accent, #f5c542) 55%, transparent);
+  color: var(--tab-on, #fff4e6);
+}
+
+.oly-nav-wrap--desktop .form-tab--game .game-mark {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: color-mix(in srgb, var(--tab-accent, #f5c542) 60%, transparent);
+}
+
+.oly-nav-wrap--desktop .form-tab--game .game-mark__glyph {
+  color: var(--tab-accent, #f5c542);
+}
+
+.oly-nav-wrap--desktop .form-tab--game.is-on {
+  background: var(--tab-deep, linear-gradient(180deg, #f5c542, #c4891a));
+  color: var(--tab-on, #1a0e08);
+  border-color: var(--tab-accent, #ffe08a);
 }
 
 .oly-nav-wrap--desktop .form-tab--disabled {

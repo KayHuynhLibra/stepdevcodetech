@@ -264,18 +264,48 @@
 
 .game-chrome__lobby {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
   border-radius: 999px;
-  padding: 0.3rem 0.55rem;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--wood-deep);
-  background: rgba(255, 255, 255, 0.85);
-  box-shadow: 0 0 0 1px rgba(138, 90, 43, 0.15);
+  padding: 0.35rem 0.7rem;
+  font-family: "Nunito", "Be Vietnam Pro", system-ui, sans-serif;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #3a2210;
+  background: #fffef8;
+  border: 1.5px solid rgba(201, 162, 39, 0.65);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 1px 3px rgba(40, 20, 8, 0.1);
   text-decoration: none;
+}
+
+.game-chrome__lobby-arrow {
+  font-weight: 900;
+  color: #8b6914;
+  line-height: 1;
 }
 
 .game-chrome__lobby:hover {
   background: #fff;
+  border-color: #c9a227;
+  color: #2a1808;
+}
+
+.game-chrome__title .play-heading {
+  color: #3a2210;
+}
+
+.game-chrome__title .text-\[var\(--play-muted\)\],
+.game-chrome__title [class*="text-[var(--play-muted)]"] {
+  color: #6b5344;
+}
+
+.game-chrome__title [class*="text-[var(--wood-deep)]"] {
+  color: #2f78c4;
+  font-weight: 800;
 }
 
 .game-chrome__nav {
@@ -295,6 +325,23 @@
   flex-wrap: nowrap;
   width: max-content;
   min-width: 100%;
+}
+
+@media (max-width: 639px) {
+  .game-chrome__nav .table-nav {
+    width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+  }
+
+  .game-chrome__nav .form-tab--game {
+    width: 100%;
+    justify-content: flex-start;
+    min-height: 1.85rem;
+    padding: 0.32rem 0.62rem;
+  }
 }
 
 .game-chrome__social {
@@ -2643,7 +2690,40 @@
 }
 
 .form-tab--game {
-  gap: 0.35rem;
+  gap: 0.4rem;
+  padding-left: 0.55rem;
+  padding-right: 0.75rem;
+  color: var(--tab-ink, var(--play-ink));
+  background: var(--tab-soft, rgba(255, 255, 255, 0.88));
+  border-color: color-mix(in srgb, var(--tab-accent, #c9a227) 55%, transparent);
+}
+
+.form-tab--game:hover {
+  background: #fff;
+  border-color: var(--tab-accent, #c9a227);
+  color: var(--tab-ink, var(--play-ink));
+}
+
+.form-tab--game.is-on {
+  color: var(--tab-on, var(--cream));
+  background: var(--tab-deep, var(--wood-deep));
+  border-color: var(--tab-accent, var(--gold));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--tab-accent, #c9a227) 40%, transparent),
+    0 2px 6px rgba(40, 20, 8, 0.18);
+}
+
+.form-tab--game.is-on .game-mark {
+  background: color-mix(in srgb, var(--tab-on, #fff4e0) 18%, transparent);
+  border-color: color-mix(in srgb, var(--tab-accent, #c9a227) 70%, #fff);
+  color: var(--tab-on, #fff4e0);
+}
+
+.form-tab__label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1;
 }
 
 .form-tab__icon {
@@ -2654,11 +2734,74 @@
   flex-shrink: 0;
 }
 
+/* Mark CSS — thay ảnh lobby trên nav / card */
+.game-mark {
+  --gm-size: 1.15rem;
+  display: inline-grid;
+  place-items: center;
+  width: var(--gm-size);
+  height: var(--gm-size);
+  flex-shrink: 0;
+  border-radius: 0.28rem;
+  background: color-mix(in srgb, var(--gm-accent, #c9a227) 18%, #fff);
+  border: 1px solid color-mix(in srgb, var(--gm-accent, #c9a227) 55%, transparent);
+  color: var(--gm-ink, #3a2210);
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.game-mark__glyph {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-weight: 700;
+  color: var(--gm-accent, #c9a227);
+}
+
+.game-mark__ludo {
+  display: block;
+  width: 70%;
+  height: 70%;
+  border-radius: 0.12rem;
+  background:
+    linear-gradient(#2f78c4 50%, #d32f2f 0) 0 0 / 50% 100% no-repeat,
+    linear-gradient(#2e9a52 50%, #e6b00f 0) 100% 0 / 50% 100% no-repeat;
+}
+
+.game-mark--hero {
+  --gm-size: 2.75rem;
+  border-radius: 0.55rem;
+  font-size: 1.35rem;
+  border-width: 1.5px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+
 .table-nav--compact {
   flex-wrap: nowrap;
 }
 
-/* Lobby chọn bàn — lưới rõ trên mobile + desktop */
+@media (max-width: 639px) {
+  .game-chrome__nav {
+    overflow-x: visible;
+  }
+
+  .game-chrome__nav .table-nav.table-nav--stack-mobile {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch;
+    width: 100% !important;
+    min-width: 0 !important;
+    gap: 0.3rem;
+    flex-wrap: nowrap !important;
+  }
+
+  .game-chrome__nav .table-nav--stack-mobile .form-tab,
+  .game-chrome__nav .table-nav--stack-mobile .form-tab--game {
+    display: flex;
+    width: 100% !important;
+    justify-content: flex-start;
+  }
+}
+
+/* Lobby chọn trò chơi — lưới rõ trên mobile + desktop */
 .game-lobby-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2683,35 +2826,71 @@
   border-radius: 0.85rem;
   overflow: hidden;
   text-decoration: none;
-  color: inherit;
+  color: var(--card-ink, var(--play-ink));
   background: linear-gradient(
     165deg,
-    rgba(255, 252, 245, 0.98),
-    rgba(255, 236, 200, 0.88)
+    #fffef9 0%,
+    color-mix(in srgb, var(--card-soft, #fff6e4) 88%, #fff) 100%
   );
-  border: 1.5px solid rgba(120, 70, 30, 0.18);
+  border: 1.5px solid color-mix(in srgb, var(--card-accent, #c9a227) 42%, transparent);
   box-shadow: 0 2px 10px rgba(40, 20, 8, 0.08);
   transition: transform 0.15s ease, border-color 0.15s ease;
 }
 
 a.game-lobby-card:hover {
-  border-color: rgba(180, 120, 40, 0.45);
+  border-color: var(--card-accent, #c9a227);
   transform: translateY(-1px);
 }
 
 .game-lobby-card--muted {
   opacity: 0.72;
-  filter: grayscale(0.35);
+  filter: grayscale(0.25);
 }
 
 .game-lobby-card__art {
+  position: relative;
   aspect-ratio: 16 / 10;
-  background: #2a180c;
+  display: grid;
+  place-items: center;
   overflow: hidden;
+  background:
+    radial-gradient(
+      ellipse 70% 80% at 50% 40%,
+      color-mix(in srgb, var(--card-accent, #c9a227) 35%, transparent),
+      transparent 70%
+    ),
+    linear-gradient(
+      155deg,
+      var(--card-deep, #3a2210),
+      color-mix(in srgb, var(--card-deep, #3a2210) 70%, #000)
+    );
 }
 
 .game-lobby-card__art.is-soon {
   opacity: 0.55;
+}
+
+.game-lobby-card__cover {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.game-lobby-card__watermark {
+  position: absolute;
+  right: 0.55rem;
+  bottom: 0.35rem;
+  font-family: "Cormorant Garamond", "Nunito", Georgia, serif;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--card-on, #fff4e0) 55%, transparent);
+  pointer-events: none;
 }
 
 .game-lobby-card__meta {
@@ -2727,16 +2906,23 @@ a.game-lobby-card:hover {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.88rem;
+  font-family: "Nunito", "Be Vietnam Pro", system-ui, sans-serif;
+  font-size: 0.9rem;
   font-weight: 800;
-  color: var(--play-ink);
+  color: var(--card-ink, var(--play-ink));
   line-height: 1.2;
+}
+
+.game-lobby-card__name.is-serif {
+  font-family: "Cormorant Garamond", "Nunito", Georgia, serif;
+  letter-spacing: 0.01em;
 }
 
 .game-lobby-card__badge {
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
+  font-family: "Nunito", sans-serif;
   font-size: 0.55rem;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -2745,9 +2931,10 @@ a.game-lobby-card:hover {
 }
 
 .game-lobby-card__blurb {
+  font-family: "Nunito", "Be Vietnam Pro", system-ui, sans-serif;
   font-size: 0.65rem;
   line-height: 1.35;
-  color: var(--play-muted);
+  color: color-mix(in srgb, var(--card-ink, #3a2210) 62%, #8a7058);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -2757,15 +2944,35 @@ a.game-lobby-card:hover {
 
 .game-lobby-card__cta {
   margin-top: 0.25rem;
+  font-family: "Nunito", "Be Vietnam Pro", system-ui, sans-serif;
   font-size: 0.62rem;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--play-muted);
+  color: color-mix(in srgb, var(--card-ink, #3a2210) 55%, #8a7058);
 }
 
 .game-lobby-card__cta.is-open {
-  color: var(--wood-deep);
+  color: var(--card-accent, var(--wood-deep));
+}
+
+.gift-shop-card {
+  border-radius: 1rem;
+  border: 1.5px solid rgba(138, 90, 43, 0.16);
+  background: rgba(255, 252, 245, 0.92);
+  padding: 0.55rem;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.75) inset;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.gift-shop-card:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(138, 90, 43, 0.32);
+  box-shadow: 0 6px 16px rgba(58, 34, 16, 0.08);
+}
+
+.gift-shop-card:disabled {
+  opacity: 0.55;
 }
 
 /* Hàng trong khung lobby / danh sách */
@@ -7902,9 +8109,44 @@ input {
   .arcana-aura,
   .arcana-sparkle,
   .vip-fantasy-avatar__aura,
-  .vip-fantasy-avatar__sparkle {
+  .vip-fantasy-avatar__sparkle,
+  .social-seek-chip {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* Quà / xu bay theo ghế bàn nhiều người */
+.social-seek-chip__bubble {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem 0.35rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(12, 18, 28, 0.92);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 214, 10, 0.45);
+  backdrop-filter: blur(6px);
+  white-space: nowrap;
+}
+
+.social-seek-chip__emoji {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.social-seek-chip__img {
+  width: 1.6rem;
+  height: 1.6rem;
+  object-fit: contain;
+}
+
+.social-seek-chip__amt {
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #ffe082;
+  letter-spacing: 0.01em;
 }
 

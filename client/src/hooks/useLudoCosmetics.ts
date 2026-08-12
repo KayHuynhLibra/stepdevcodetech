@@ -13,8 +13,18 @@ import {
   type LudoPlayerColors,
   type LudoViewMode,
 } from "../platform/ludo/cosmeticsCatalog";
+import {
+  normalizeThemeId,
+  themeSeatColors,
+  type LudoThemeId,
+} from "../platform/ludo/themes";
 
 export type LudoPawnColor = LudoColor;
+
+export type LudoThemeBoardAssets = {
+  boardUrl?: string;
+  boardModelUrl?: string;
+};
 
 export type LudoCosmetics = {
   boardUrl: string;
@@ -28,12 +38,12 @@ export type LudoCosmetics = {
   boardModelId: string;
   boardModelUrl: string;
   viewMode: LudoViewMode;
+  themeBoards: Partial<Record<string, LudoThemeBoardAssets>>;
 };
 
-/** Demo art — BG đã tách (`/public/ludo/pawns/clam-boy.png`; admin ghi đè). */
-export const DEMO_PAWN_URLS: Partial<Record<LudoPawnColor, string>> = {
-  red: "/ludo/pawns/clam-boy.png",
-};
+/** Optional demo art — empty by default so 3D uses procedural seat-colored pawns
+ *  (texture URL + outer Suspense previously trapped UI on “Đang tải bàn 3D”). */
+export const DEMO_PAWN_URLS: Partial<Record<LudoPawnColor, string>> = {};
 
 const DEFAULTS: LudoCosmetics = {
   boardUrl: "",
@@ -47,6 +57,7 @@ const DEFAULTS: LudoCosmetics = {
   boardModelId: "procedural",
   boardModelUrl: "",
   viewMode: "orbit",
+  themeBoards: {},
 };
 
 type GameMediaPreset = {
@@ -61,6 +72,7 @@ type GameMediaPreset = {
   boardModelId?: string;
   boardModelUrl?: string;
   viewMode?: string;
+  themeBoards?: Partial<Record<string, LudoThemeBoardAssets>>;
 };
 
 let cached: LudoCosmetics | null = null;
@@ -107,6 +119,7 @@ function fromPreset(g?: GameMediaPreset | null): LudoCosmetics {
     boardModelId: (g.boardModelId || "procedural").trim() || "procedural",
     boardModelUrl: (g.boardModelUrl || "").trim(),
     viewMode: isLudoViewMode(g.viewMode) ? g.viewMode : "orbit",
+    themeBoards: { ...(g.themeBoards ?? {}) },
   };
 }
 
@@ -144,24 +157,62 @@ export function resolvePlayerColors(
   };
 }
 
+/**
+ * Màu ghế/quân trên bàn theo skin phòng (classic / soccer / arena).
+ * Ảnh boardUrl / pawnUrls admin vẫn áp riêng; palette admin không đè skin đã chọn.
+ */
+export function resolveBoardPlayerColors(
+  themeId?: LudoThemeId | string | null,
+  _cosmetics?: LudoCosmetics | null,
+): LudoPlayerColors {
+  return themeSeatColors(normalizeThemeId(themeId));
+}
+
 export function resolvePawnModelUrl(
   cosmetics?: LudoCosmetics | null,
 ): string | null {
-  return resolveCatalogModelUrl(
+  const raw = resolveCatalogModelUrl(
     LUDO_PAWN_MODELS,
     cosmetics?.pawnModelId,
     cosmetics?.pawnModelUrl,
   );
+  if (!raw) return null;
+  if (!/\.(glb|gltf)(\?|#|$)/i.test(raw) && !/\/models\//i.test(raw)) {
+    return null;
+  }
+  return raw;
 }
 
 export function resolveBoardModelUrl(
   cosmetics?: LudoCosmetics | null,
+  themeId?: LudoThemeId | string | null,
 ): string | null {
-  return resolveCatalogModelUrl(
-    LUDO_BOARD_MODELS,
-    cosmetics?.boardModelId,
-    cosmetics?.boardModelUrl,
-  );
+  const tid = normalizeThemeId(themeId);
+  const themed = cosmetics?.themeBoards?.[tid]?.boardModelUrl?.trim();
+  const raw =
+    themed ||
+    resolveCatalogModelUrl(
+      LUDO_BOARD_MODELS,
+      cosmetics?.boardModelId,
+      cosmetics?.boardModelUrl,
+    );
+  if (!raw) return null;
+  /* Only load real glTF — bad URLs hang Suspense forever. */
+  if (!/\.(glb|gltf)(\?|#|$)/i.test(raw) && !/\/models\//i.test(raw)) {
+    return null;
+  }
+  return raw;
+}
+
+/**
+ * Full-board picture skins disabled — boards are procedural CSS / 3D slabs.
+ * Admin may still set a GLB via boardModelUrl / themeBoards.boardModelUrl.
+ */
+export function resolveBoardArtUrl(
+  _themeId?: LudoThemeId | string | null,
+  _cosmetics?: LudoCosmetics | null,
+): string {
+  return "";
 }
 
 /** Cosmetics Ludo từ P+M presets — bàn / quân / xúc xắc / palette / camera. */

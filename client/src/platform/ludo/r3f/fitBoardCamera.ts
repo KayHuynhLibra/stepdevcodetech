@@ -40,30 +40,32 @@ function modeTune(viewMode: LudoViewMode): ModeTune {
     case "screen":
       // Near-orthographic top-down — match 2D reference framing
       return {
-        elev: 1.22,
+        elev: 1.18,
         yawBias: 0,
-        fov: 32,
-        margin: 1.03,
+        fov: 34,
+        margin: 1.04,
         rotate: false,
-        polarPad: 0.04,
+        polarPad: 0.05,
       };
     case "cinema":
+      // Dramatic 3/4 tilt — slabs & pawn height read clearly
       return {
-        elev: 0.74,
-        yawBias: 0.28,
-        fov: 36,
-        margin: 1.08,
+        elev: 0.62,
+        yawBias: 0.38,
+        fov: 34,
+        margin: 1.1,
         rotate: false,
-        polarPad: 0.08,
+        polarPad: 0.1,
       };
     default:
+      // Orbit: wide tilt + zoom so players can inspect sides / pull back
       return {
-        elev: 0.82,
-        yawBias: 0,
-        fov: 42,
-        margin: 1.12,
+        elev: 0.72,
+        yawBias: 0.12,
+        fov: 44,
+        margin: 1.1,
         rotate: true,
-        polarPad: 0.2,
+        polarPad: 0.72,
       };
   }
 }
@@ -155,6 +157,14 @@ export function computeFitCam(
   const z = Math.cos(az) * Math.cos(tune.elev) * dist;
   const target: [number, number, number] = [0, 0.12, 0];
 
+  const orbit = viewMode === "orbit";
+  const minPolar = orbit
+    ? 0.12 // gần nhìn từ trên
+    : Math.max(0.25, tune.elev - tune.polarPad);
+  const maxPolar = orbit
+    ? Math.PI / 2 - 0.08 // sát ngang bàn, chưa chui xuống dưới
+    : Math.min(Math.PI / 2.05, tune.elev + tune.polarPad);
+
   return {
     position: [x, y, z],
     target,
@@ -162,10 +172,10 @@ export function computeFitCam(
     fov: tune.fov,
     elev: tune.elev,
     az,
-    minDist: viewMode === "orbit" ? dist * 0.72 : dist * 0.96,
-    maxDist: viewMode === "orbit" ? dist * 1.55 : dist * 1.12,
-    minPolar: Math.max(0.25, tune.elev - tune.polarPad),
-    maxPolar: Math.min(Math.PI / 2.05, tune.elev + tune.polarPad),
+    minDist: orbit ? dist * 0.55 : dist * 0.96,
+    maxDist: orbit ? dist * 2.35 : dist * 1.12,
+    minPolar,
+    maxPolar,
     rotate: tune.rotate,
   };
 }

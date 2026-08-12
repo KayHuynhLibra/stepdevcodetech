@@ -11,7 +11,14 @@ const DATA_DIR = join(__dirname, "..", "data");
 const PATH = join(DATA_DIR, "play-media-presets.json");
 const TMP = join(DATA_DIR, "play-media-presets.json.tmp");
 
-export type PlayGameId = "tarot" | "olympus" | "arcana" | "boi" | "ludo";
+export type PlayGameId =
+  | "tarot"
+  | "olympus"
+  | "arcana"
+  | "boi"
+  | "ludo"
+  | "oan-quan"
+  | "uno";
 
 export const LUDO_PAWN_COLORS = ["red", "green", "yellow", "blue"] as const;
 export type LudoPawnColor = (typeof LUDO_PAWN_COLORS)[number];
@@ -105,6 +112,16 @@ export type GameMediaPreset = {
   boardModelUrl?: string;
   /** Ludo: camera 3D mặc định — orbit xoay / screen hướng màn hình */
   viewMode?: LudoViewMode;
+  /**
+   * Ludo: per-theme board art / model overrides
+   * keys: classic|soccer|arena|garden|neon|frost
+   */
+  themeBoards?: Partial<
+    Record<
+      string,
+      { boardUrl?: string; boardModelUrl?: string }
+    >
+  >;
   sfx?: {
     masterMuted?: boolean;
     volumes?: Partial<Record<"master" | "ui" | "tarot" | "olympus", number>>;
@@ -135,7 +152,15 @@ export type PlayMediaPresetsSnap = {
   updatedAt: number;
 };
 
-const GAME_IDS: PlayGameId[] = ["tarot", "olympus", "arcana", "boi", "ludo"];
+const GAME_IDS: PlayGameId[] = [
+  "tarot",
+  "olympus",
+  "arcana",
+  "boi",
+  "ludo",
+  "oan-quan",
+  "uno",
+];
 
 function atomicWrite(path: string, data: unknown) {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
@@ -262,6 +287,28 @@ function normalizeGamePreset(raw: unknown): GameMediaPreset {
   ) {
     out.viewMode = o.viewMode as LudoViewMode;
   }
+  if (o.themeBoards && typeof o.themeBoards === "object") {
+    const themes: NonNullable<GameMediaPreset["themeBoards"]> = {};
+    for (const [key, val] of Object.entries(
+      o.themeBoards as Record<string, unknown>,
+    )) {
+      if (!val || typeof val !== "object") continue;
+      const row = val as Record<string, unknown>;
+      const entry: { boardUrl?: string; boardModelUrl?: string } = {};
+      if (typeof row.boardUrl === "string") {
+        const t = row.boardUrl.trim().slice(0, 200);
+        if (t) entry.boardUrl = t;
+      }
+      if (typeof row.boardModelUrl === "string") {
+        const t = row.boardModelUrl.trim().slice(0, 200);
+        if (t) entry.boardModelUrl = t;
+      }
+      if (entry.boardUrl || entry.boardModelUrl) {
+        themes[key.trim().slice(0, 24)] = entry;
+      }
+    }
+    if (Object.keys(themes).length) out.themeBoards = themes;
+  }
   if (o.sfx && typeof o.sfx === "object") {
     const s = o.sfx as Record<string, unknown>;
     const sfx: NonNullable<GameMediaPreset["sfx"]> = {};
@@ -374,7 +421,7 @@ class PlayMediaPresetsStore {
     if (!GAME_IDS.includes(id)) {
       return {
         ok: false,
-        reason: "gameId phải là tarot|olympus|arcana|boi|ludo",
+        reason: "gameId phải là tarot|olympus|arcana|boi|ludo|oan-quan|uno",
       };
     }
     const cur = this.games[id] ?? {};

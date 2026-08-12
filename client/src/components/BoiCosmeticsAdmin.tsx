@@ -28,7 +28,7 @@ const BG_FX: { id: BoiBgFx; label: string }[] = [
 ];
 
 const FLIP_FX: { id: BoiFlipFx; label: string }[] = [
-  { id: "olympus", label: "Olympus" },
+  { id: "olympus", label: "BoltPeak" },
   { id: "cosmic", label: "Cosmic" },
   { id: "alchemy", label: "Alchemy" },
   { id: "off", label: "Tắt" },

@@ -22,7 +22,7 @@ const FALLBACK: GameManifest[] = [
   {
     id: "tarot",
     nameVi: "Tarot",
-    blurb: "Đặt xu đoán lá — bàn chính SOFIAORE.",
+    blurb: "Dùng xu chơi — đoán lá · bàn chính SOFIAORE.",
     status: "live",
     pathSuffix: "play",
     kind: "stake",
@@ -47,8 +47,8 @@ const FALLBACK: GameManifest[] = [
   },
   {
     id: "olympus",
-    nameVi: "Olympus",
-    blurb: "Slot tumble 6×5 — xu chơi · demo giáo dục SOFIAORE.",
+    nameVi: "BoltPeak",
+    blurb: "Slot tumble 6×5 · xu chơi · demo giáo dục SOFIAORE (original).",
     status: "live",
     pathSuffix: "olympus",
     kind: "spin",
@@ -58,27 +58,51 @@ const FALLBACK: GameManifest[] = [
     enabled: true,
   },
   {
+    id: "oan-quan",
+    nameVi: "Ô ăn quan",
+    blurb: "Dân gian Việt — PvP / vs bot · rải dân ăn quan.",
+    status: "live",
+    pathSuffix: "oan-quan",
+    kind: "other",
+    spendLane: "play",
+    coverUrl: "/assets/lobby/oan-quan.svg",
+    sort: 27,
+    enabled: true,
+  },
+  {
+    id: "uno",
+    nameVi: "HueRush",
+    blurb: "Bài 4 màu · 112 lá · 2–10 người · chồng +2/+4 · demo SOFIAORE.",
+    status: "live",
+    pathSuffix: "uno",
+    kind: "other",
+    spendLane: "play",
+    coverUrl: "/assets/lobby/uno.svg",
+    sort: 26,
+    enabled: true,
+  },
+  {
+    id: "ludo",
+    nameVi: "Cờ cá ngựa",
+    blurb: "Bàn 2D/3D · 1v3 bot · lobby · demo SOFIAORE.",
+    status: "live",
+    pathSuffix: "ludo",
+    kind: "other",
+    spendLane: "play",
+    coverUrl: "/assets/lobby/ludo.svg",
+    sort: 28,
+    enabled: true,
+  },
+  {
     id: "boi",
     nameVi: "Bói bài",
-    blurb: "Tarot & chiêm tinh — tra nghĩa, không cược.",
+    blurb: "Theatre 78 lá — xào/rút thật, không cược · giải trí only.",
     status: "live",
     pathSuffix: "boi-bai",
     kind: "oracle",
     spendLane: "play",
     coverUrl: "/assets/lobby/boi.svg",
     sort: 30,
-    enabled: true,
-  },
-  {
-    id: "ludo",
-    nameVi: "Ludo",
-    blurb: "Cờ cá ngựa isometric — 1v3 bot · demo.",
-    status: "beta",
-    pathSuffix: "ludo",
-    kind: "other",
-    spendLane: "play",
-    coverUrl: "/assets/lobby/ludo.svg",
-    sort: 28,
     enabled: true,
   },
 ];
@@ -138,16 +162,24 @@ export function navActiveFromPath(
   if (pathname.includes("/arcana")) return "arcana";
   if (pathname.includes("/boi-bai")) return "boi";
   if (pathname.includes("/olympus")) return "olympus";
+  if (pathname.includes("/oan-quan")) return "oan-quan";
+  if (pathname.includes("/uno")) return "uno";
   if (pathname.includes("/ludo")) return "ludo";
   const m = pathname.match(/\/g\/([a-z0-9_-]+)/i);
   if (m) return m[1].toLowerCase();
   return "home";
 }
 
+/** Tiêu đề lobby — tránh «chọn bàn» (nghe sòng bài) trên copy user-facing US. */
+export const LOBBY_PICK_TITLE = "Chọn trò chơi";
+export const LOBBY_SWITCH_TITLE = "Đổi trò chơi";
+
 export function lobbyCtaLabel(game: GameManifest): string {
   if (game.status === "coming_soon") return "Sắp mở";
   if (game.status === "beta") return `Thử ${game.nameVi}`;
-  return `Vào ${game.nameVi}`;
+  if (game.id === "arcana") return "Vào Bánh xe Arcana";
+  if (game.id === "boi") return "Vào Bói bài";
+  return `Chơi ${game.nameVi}`;
 }
 
 export type { AuthUser };

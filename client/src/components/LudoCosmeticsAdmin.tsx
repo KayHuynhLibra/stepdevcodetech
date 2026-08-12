@@ -16,6 +16,10 @@ import {
   type LudoPaletteId,
   type LudoViewMode,
 } from "../platform/ludo/cosmeticsCatalog";
+import {
+  LUDO_THEME_BOARD_ART,
+  type LudoThemeId,
+} from "../platform/ludo/themes";
 import { ImageUploadPopup } from "./ImageUploadPopup";
 
 type Draft = LudoCosmetics;
@@ -25,6 +29,15 @@ const PAWN_SLOTS: { id: LudoPawnColor; label: string }[] = [
   { id: "green", label: "Xanh lá" },
   { id: "yellow", label: "Vàng" },
   { id: "blue", label: "Xanh dương" },
+];
+
+const THEME_BOARD_SLOTS: { id: LudoThemeId; label: string }[] = [
+  { id: "classic", label: "Cổ điển" },
+  { id: "soccer", label: "Sân bóng" },
+  { id: "arena", label: "Đấu trường" },
+  { id: "garden", label: "Vườn" },
+  { id: "neon", label: "Neon" },
+  { id: "frost", label: "Băng giá" },
 ];
 
 export function LudoCosmeticsAdmin({
@@ -41,8 +54,9 @@ export function LudoCosmeticsAdmin({
   });
   const [busy, setBusy] = useState(false);
   const [upload, setUpload] = useState<{
-    field: "board" | "pawn" | "dice";
+    field: "board" | "pawn" | "dice" | "themeBoard";
     pawnColor?: LudoPawnColor;
+    themeId?: LudoThemeId;
   } | null>(null);
 
   const previewColors = useMemo(() => {
@@ -75,6 +89,7 @@ export function LudoCosmeticsAdmin({
         boardModelId: (g.boardModelId || "procedural").trim() || "procedural",
         boardModelUrl: (g.boardModelUrl || "").trim(),
         viewMode: isLudoViewMode(g.viewMode) ? g.viewMode : "orbit",
+        themeBoards: { ...(g.themeBoards ?? {}) },
       });
     } catch (e) {
       onMsg(e instanceof Error ? e.message : "Lỗi tải Cosmetics Ludo");
@@ -114,6 +129,7 @@ export function LudoCosmeticsAdmin({
             boardModelId: draft.boardModelId,
             boardModelUrl: draft.boardModelUrl,
             viewMode: draft.viewMode,
+            themeBoards: draft.themeBoards,
           },
         }),
       });
@@ -430,6 +446,92 @@ export function LudoCosmeticsAdmin({
         </button>
       </div>
 
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
+          Ảnh bàn theo theme (garden / neon / frost…)
+        </p>
+        <p className="mt-0.5 text-[10px] text-[var(--play-muted)]">
+          Trống = dùng pack mặc định{" "}
+          <code className="text-[9px]">/assets/ludo/&lt;theme&gt;/board.png</code>
+        </p>
+        <div className="mt-2 space-y-2">
+          {THEME_BOARD_SLOTS.map(({ id, label }) => {
+            const url = (draft.themeBoards?.[id]?.boardUrl || "").trim();
+            const fallback = LUDO_THEME_BOARD_ART[id] || "";
+            const preview = url || fallback;
+            return (
+              <div
+                key={id}
+                className="flex flex-wrap items-center gap-2 rounded-xl bg-white/70 px-2.5 py-2 text-xs ring-1 ring-[var(--wood-deep)]/10"
+              >
+                <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-[var(--cream)]">
+                  {preview ? (
+                    <img
+                      src={preview}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-full items-center justify-center text-[9px] text-[var(--play-muted)]">
+                      {id}
+                    </span>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold">
+                    {label}{" "}
+                    <span className="font-mono text-[9px] opacity-60">{id}</span>
+                  </p>
+                  <input
+                    className="app-input mt-1 w-full !py-1 font-mono !text-[10px]"
+                    disabled={!canEdit || busy}
+                    value={url}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        themeBoards: {
+                          ...d.themeBoards,
+                          [id]: {
+                            ...(d.themeBoards?.[id] ?? {}),
+                            boardUrl: e.target.value,
+                          },
+                        },
+                      }))
+                    }
+                    placeholder={fallback || "/uploads/…"}
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={!canEdit || busy}
+                  onClick={() => setUpload({ field: "themeBoard", themeId: id })}
+                  className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15 disabled:opacity-45"
+                >
+                  Upload
+                </button>
+                <button
+                  type="button"
+                  disabled={!canEdit || busy || !url}
+                  onClick={() =>
+                    setDraft((d) => {
+                      const next = { ...d.themeBoards };
+                      const cur = { ...(next[id] ?? {}) };
+                      delete cur.boardUrl;
+                      if (!cur.boardModelUrl) delete next[id];
+                      else next[id] = cur;
+                      return { ...d, themeBoards: next };
+                    })
+                  }
+                  className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-red-700 ring-1 ring-red-200 disabled:opacity-40"
+                >
+                  Xóa
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <label className="flex items-center gap-2 text-[11px] font-semibold">
         <input
           type="checkbox"
@@ -450,7 +552,9 @@ export function LudoCosmeticsAdmin({
             ? `ludo-pawn-${upload.pawnColor}`
             : upload?.field === "dice"
               ? "ludo-dice"
-              : "ludo-board"
+              : upload?.field === "themeBoard"
+                ? `ludo-theme-${upload.themeId}`
+                : "ludo-board"
         }
         onClose={() => setUpload(null)}
         onUploaded={(url) => {
@@ -459,6 +563,18 @@ export function LudoCosmeticsAdmin({
             setDraft((d) => ({ ...d, boardUrl: url }));
           } else if (upload.field === "dice") {
             setDraft((d) => ({ ...d, diceUrl: url }));
+          } else if (upload.field === "themeBoard" && upload.themeId) {
+            const tid = upload.themeId;
+            setDraft((d) => ({
+              ...d,
+              themeBoards: {
+                ...d.themeBoards,
+                [tid]: {
+                  ...(d.themeBoards?.[tid] ?? {}),
+                  boardUrl: url,
+                },
+              },
+            }));
           } else if (upload.pawnColor) {
             setDraft((d) => ({
               ...d,

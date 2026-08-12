@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { AdminModal } from "./admin/AdminModal";
 import {
   buildLevelTable,
   normalizeFormula,
@@ -89,35 +90,14 @@ export function LevelPartPopup({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[80] flex items-end justify-center bg-black/45 sm:items-center sm:px-3"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Chỉnh level ${part.id}`}
-      onClick={onClose}
+    <AdminModal
+      open={open}
+      onClose={onClose}
+      title={`Part · ${part.id}`}
+      subtitle={`metric=${part.metric} · toReach(L)=coef×(L−1)^power`}
+      maxWidthClass="max-w-md"
     >
-      <form
-        className="max-h-[88dvh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-[var(--cream)] p-3 shadow-2xl ring-1 ring-[var(--wood-deep)]/20 sm:rounded-2xl sm:p-4"
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={onSubmit}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="play-heading text-sm">Part · {part.id}</p>
-            <p className="text-[10px] text-[var(--play-muted)]">
-              metric={part.metric} · toReach(L)=coef×(L−1)^power
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/15"
-          >
-            Đóng
-          </button>
-        </div>
-
-        <div className="mt-3 space-y-2">
+      <form className="space-y-3" onSubmit={onSubmit}>
           <label className="block text-[10px] font-bold text-[var(--play-muted)]">
             Tên hiển thị
             <input
@@ -188,7 +168,6 @@ export function LevelPartPopup({
               Bật
             </label>
           </div>
-        </div>
 
         <div className="mt-3">
           <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
@@ -220,6 +199,6 @@ export function LevelPartPopup({
           {busy ? "Đang lưu…" : "Lưu part"}
         </button>
       </form>
-    </div>
+    </AdminModal>
   );
 }

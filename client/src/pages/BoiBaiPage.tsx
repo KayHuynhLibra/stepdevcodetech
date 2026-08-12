@@ -2,23 +2,20 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   api,
   getStoredUser,
-  hasCapability,
-  isMainAdmin,
   type AuthUser,
 } from "../auth";
 import { ensureGuestCode, getGuestCode } from "../guest";
 import { AppShell } from "../components/AppShell";
 import { GameChrome } from "../components/GameChrome";
 import {
-  ORACLE_SUIT_LABEL,
   ORACLE_TRADITION_LABEL,
   type DrawnOracleCard,
   type OracleDeckId,
   type OracleDeckMeta,
   type OracleCard,
   type OracleDrawHistoryRow,
-  type OracleTradition,
-  isOracleEmoji,
+  type OracleSpread,
+  type OracleTimingHint,
 } from "../oracle";
 import { QUESTION_PRESETS, type DeckPool } from "../oracleDeck";
 import { useApplyPlayMediaPresets } from "../hooks/useApplyPlayMediaPresets";
@@ -38,37 +35,13 @@ import {
   updateGuestJournal,
 } from "../boiJournal";
 import { ORACLE_DISCLAIMER, pickMantra } from "../oracleMantras";
+import { theoryForAudience } from "../oracleTheory";
 import { PlayPrefsSheet } from "../components/PlayPrefsSheet";
+import { VirtualPlayFooter } from "../components/VirtualPlayFooter";
 import { useSfx } from "../hooks/useSfx";
+import "../platform/boi/boi-mystic.css";
 
-type PageMode = "draw" | "journal" | "lab";
-
-function CardFace({
-  image,
-  className = "",
-}: {
-  image: string;
-  className?: string;
-}) {
-  return (
-    <div
-      className={`flex items-center justify-center overflow-hidden bg-[var(--cream)] ${className}`}
-    >
-      {isOracleEmoji(image) ? (
-        <span className="text-2xl">{image || "🃏"}</span>
-      ) : (
-        <img
-          src={image}
-          alt=""
-          className="h-full w-full object-cover"
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.opacity = "0.25";
-          }}
-        />
-      )}
-    </div>
-  );
-}
+type PageMode = "draw" | "journal" | "guide";
 
 export default function BoiBaiPage() {
   useApplyPlayMediaPresets("boi");
@@ -77,10 +50,10 @@ export default function BoiBaiPage() {
   const cosmetics = useBoiCosmetics();
   const cardBackUrl = resolveCardBackUrl(cosmetics);
   const [me] = useState<AuthUser | null>(() => getStoredUser());
-  const canLabStaff =
-    !!me && (isMainAdmin(me) || hasCapability(me, "oracle_manage"));
   const [decks, setDecks] = useState<OracleDeckMeta[]>([]);
   const [cards, setCards] = useState<OracleCard[]>([]);
+  const [spreads, setSpreads] = useState<OracleSpread[]>([]);
+  const [timingRules, setTimingRules] = useState<OracleTimingHint[]>([]);
   const [deckId, setDeckId] = useState<OracleDeckId>("tarot");
   const [drawn, setDrawn] = useState<DrawnOracleCard[] | null>(null);
   const [lastReading, setLastReading] = useState<OracleDrawHistoryRow | null>(
@@ -100,27 +73,19 @@ export default function BoiBaiPage() {
   const [question, setQuestion] = useState("");
   const [deckPool, setDeckPool] = useState<"full" | "major" | "minor">("full");
   const [hubSeed] = useState(() => Date.now());
-  const [labQ, setLabQ] = useState("");
-  const [labSuit, setLabSuit] = useState<string>("all");
-  const [traditionFilter, setTraditionFilter] = useState<
-    OracleTradition | "all"
-  >("all");
-  const [browseKey, setBrowseKey] = useState<string | null>(null);
-  const [compareKeys, setCompareKeys] = useState<[string | null, string | null]>([
-    null,
-    null,
-  ]);
-  const [galleryOpen, setGalleryOpen] = useState(true);
-
-  const loadCatalog = async (lab: boolean) => {
-    const q = lab && canLabStaff ? "?lab=1" : "";
+  
+  const loadCatalog = async () => {
     const r = await api<{
       ok: true;
       decks: OracleDeckMeta[];
       cards: OracleCard[];
-    }>(`/api/oracle/catalog${q}`);
+      spreads: OracleSpread[];
+      timingRules: OracleTimingHint[];
+    }>("/api/oracle/catalog");
     setDecks(r.decks ?? []);
     setCards(r.cards ?? []);
+    setSpreads(r.spreads ?? []);
+    setTimingRules(r.timingRules ?? []);
     if (r.decks?.[0]?.id) {
       setDeckId((cur) =>
         r.decks.some((d) => d.id === cur) ? cur : r.decks[0]!.id,
@@ -146,14 +111,14 @@ export default function BoiBaiPage() {
   useEffect(() => {
     void (async () => {
       try {
-        await loadCatalog(mode === "lab");
+        await loadCatalog();
         await loadHistory();
       } catch (e) {
         setMsg(e instanceof Error ? e.message : "Không tải được bộ bài");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, canLabStaff]);
+  }, []);
 
   const activeDeck = decks.find((d) => d.id === deckId);
   const deckCards = useMemo(
@@ -162,50 +127,14 @@ export default function BoiBaiPage() {
   );
 
   const journalRows = me ? history : guestJournal;
+  const supportsPoolSplit = !["lenormand", "tea", "zodiac"].includes(deckId);
+  const guideSections = theoryForAudience("player");
 
-  const labCards = useMemo(() => {
-    let list = deckCards;
-    if (traditionFilter !== "all") {
-      const ok = new Set(
-        decks
-          .filter((d) => (d.tradition ?? "custom") === traditionFilter)
-          .map((d) => d.id),
-      );
-      list = cards.filter((c) => ok.has(c.deckId));
+  useEffect(() => {
+    if (!supportsPoolSplit && deckPool !== "full") {
+      setDeckPool("full");
     }
-    if (labSuit !== "all") {
-      list = list.filter((c) => (c.suit ?? "") === labSuit);
-    }
-    const needle = labQ.trim().toLowerCase();
-    if (needle) {
-      list = list.filter((c) =>
-        `${c.key} ${c.name} ${c.nameVi} ${(c.keywords ?? []).join(" ")} ${(c.tags ?? []).join(" ")} ${c.notes ?? ""} ${c.citations ?? ""}`
-          .toLowerCase()
-          .includes(needle),
-      );
-    }
-    return list;
-  }, [cards, deckCards, decks, labQ, labSuit, traditionFilter]);
-
-  const browse =
-    browseKey != null
-      ? (labCards.find((c) => c.key === browseKey) ??
-        deckCards.find((c) => c.key === browseKey) ??
-        null)
-      : null;
-
-  const compareCards = [
-    compareKeys[0]
-      ? cards.find((c) => c.key === compareKeys[0] && c.deckId === deckId) ||
-        cards.find((c) => c.key === compareKeys[0]) ||
-        null
-      : null,
-    compareKeys[1]
-      ? cards.find((c) => c.key === compareKeys[1] && c.deckId === deckId) ||
-        cards.find((c) => c.key === compareKeys[1]) ||
-        null
-      : null,
-  ] as [OracleCard | null, OracleCard | null];
+  }, [deckPool, supportsPoolSplit]);
 
   const onRitualDealt = (payload: RitualDealtPayload) => {
     setDrawn(payload.cards);
@@ -238,6 +167,7 @@ export default function BoiBaiPage() {
           notes: row.notes,
           title: row.title,
           mantraClose: row.mantraClose,
+          timingHint: row.timingHint,
         }),
       });
       const savedRow: OracleDrawHistoryRow = {
@@ -286,27 +216,14 @@ export default function BoiBaiPage() {
   };
 
   const guestCode = !me ? getGuestCode() || ensureGuestCode() : null;
-  const suitsInDeck = useMemo(() => {
-    const s = new Set<string>();
-    for (const c of deckCards) if (c.suit) s.add(c.suit);
-    return [...s];
-  }, [deckCards]);
-
-  const pickCompare = (key: string) => {
-    setCompareKeys(([a, b]) => {
-      if (a === key) return [null, b];
-      if (b === key) return [a, null];
-      if (!a) return [key, b];
-      if (!b) return [a, key];
-      return [key, b];
-    });
-  };
-
   const hubMantra = pickMantra("hub", hubSeed);
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-lg px-3 pb-10 pt-3">
+      <div className="boi-mystic">
+        <div className="boi-mystic__veil" aria-hidden />
+        <div className="boi-mystic__stars" aria-hidden />
+        <div className="boi-mystic__content mx-auto max-w-lg px-3 pb-10 pt-3">
         <GameChrome
           title="Bói bài"
           active="boi"
@@ -317,10 +234,8 @@ export default function BoiBaiPage() {
               <button
                 type="button"
                 onClick={toggleMute}
-                className={`rounded-lg px-2 py-1 text-[10px] font-bold ring-1 ${
-                  sfxMuted
-                    ? "bg-white/40 text-[var(--play-muted)] ring-[var(--wood-deep)]/15 line-through"
-                    : "bg-white/70 text-[var(--wood-deep)] ring-[var(--wood-deep)]/20"
+                className={`boi-chrome-btn px-2 py-1 text-[10px] ${
+                  sfxMuted ? "is-muted" : ""
                 }`}
               >
                 {sfxMuted ? "Tắt" : "Âm"}
@@ -328,29 +243,28 @@ export default function BoiBaiPage() {
               <button
                 type="button"
                 onClick={() => setPrefsOpen(true)}
-                className="rounded-lg bg-white/70 px-2 py-1 text-[10px] font-bold text-[var(--wood-deep)] ring-1 ring-[var(--wood-deep)]/20"
+                className="boi-chrome-btn px-2 py-1 text-[10px]"
               >
                 Cài
               </button>
             </div>
           }
         />
-        <div className="boi-tabs mb-3 flex gap-1.5">
+        <div className="boi-tabs mb-3 flex flex-wrap gap-1.5">
           {(
             [
               ["draw", "Rút bài"],
-              ["journal", "Sổ kết quả"],
-              ["lab", "Lab"],
+              ["journal", "Sổ"],
+              ["guide", "Hướng dẫn"],
             ] as const
           ).map(([id, label]) => (
             <button
               key={id}
               type="button"
               onClick={() => setMode(id)}
-              className={`flex-1 rounded-full py-2 text-[12px] font-bold ${
-                mode === id
-                  ? "bg-[var(--wood-deep)] text-[var(--cream)]"
-                  : "bg-white ring-1 ring-[var(--wood-deep)]/12"
+              data-on={mode === id ? "1" : "0"}
+              className={`min-w-[22%] flex-1 py-2 text-[12px] font-bold ${
+                mode === id ? "boi-tab--on" : ""
               }`}
             >
               {label}
@@ -375,6 +289,8 @@ export default function BoiBaiPage() {
             <div className="boi-hub__hero">
               <div className="boi-hub__glow" aria-hidden />
               <div className="boi-hub__fx" aria-hidden />
+              <div className="boi-hub__orb" aria-hidden />
+              <p className="boi-hub__eyebrow">SOFIAORE · ORACLE</p>
               <p className="boi-hub__brand">
                 {activeDeck?.nameVi ?? "Bói bài"}
               </p>
@@ -394,7 +310,6 @@ export default function BoiBaiPage() {
                   onClick={() => {
                     setDeckId(d.id);
                     setDrawn(null);
-                    setBrowseKey(null);
                   }}
                   className={`boi-hub__deck ${deckId === d.id ? "on" : ""}`}
                 >
@@ -413,11 +328,13 @@ export default function BoiBaiPage() {
 
             <div className="boi-hub__pools" role="group" aria-label="Cấu hình bộ">
               {(
-                [
-                  ["full", "Full 78"],
-                  ["major", "Major 22"],
-                  ["minor", "Minor 56"],
-                ] as const
+                supportsPoolSplit
+                  ? ([
+                      ["full", "Full 78"],
+                      ["major", "Major 22"],
+                      ["minor", "Minor 56"],
+                    ] as const)
+                  : ([["full", "Full 78"]] as const)
               ).map(([id, label]) => (
                 <button
                   key={id}
@@ -462,11 +379,7 @@ export default function BoiBaiPage() {
               Mở nghi thức
             </button>
             <p className="boi-hub__disc">{ORACLE_DISCLAIMER}</p>
-            {msg ? (
-              <p className="rounded-lg bg-rose-50 px-2 py-1.5 text-[11px] font-semibold text-rose-800">
-                {msg}
-              </p>
-            ) : null}
+            {msg ? <p className="boi-msg">{msg}</p> : null}
 
             {lastReading && !ritualOpen ? (
               <div className="boi-hub__last">
@@ -481,6 +394,7 @@ export default function BoiBaiPage() {
                       : "live"
                   }
                   saved={journalRows.some((r) => r.id === lastReading.id)}
+                  showDeep={false}
                   onSave={
                     journalRows.some((r) => r.id === lastReading.id)
                       ? undefined
@@ -520,6 +434,7 @@ export default function BoiBaiPage() {
             <BoiJournalPanel
               rows={journalRows}
               decks={decks}
+              spreads={spreads}
               guestHint={!me}
               onOpen={(row) => setJournalOpen(row)}
             />
@@ -530,6 +445,7 @@ export default function BoiBaiPage() {
                   decks.find((d) => d.id === journalOpen.deckId)?.nameVi
                 }
                 mode="journal"
+                showDeep={false}
                 onClose={() => setJournalOpen(null)}
                 onNotesChange={(notes) =>
                   void patchNotes(journalOpen.id, notes)
@@ -539,186 +455,41 @@ export default function BoiBaiPage() {
           </section>
         ) : null}
 
-        {mode === "lab" ? (
-          <>
-            <section className="app-panel space-y-3 p-3">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--play-muted)]">
-                Chọn bộ / lọc Lab
+        {mode === "guide" ? (
+          <section className="app-panel space-y-3 p-3">
+            <header className="space-y-1">
+              <p className="play-heading text-sm">Hướng dẫn Bói bài</p>
+              <p
+                className="text-[12px] leading-relaxed"
+                style={{ color: "var(--boi-muted)" }}
+              >
+                Nội dung dành cho người chơi: khung đọc, chọn kiểu trải, xuôi
+                ngược và gợi ý giải trí về thời gian.
               </p>
-              <div className="flex flex-wrap gap-1.5">
-                {decks.map((d) => (
-                  <button
-                    key={d.id}
-                    type="button"
-                    onClick={() => {
-                      setDeckId(d.id);
-                      setBrowseKey(null);
-                      setCompareKeys([null, null]);
-                    }}
-                    className={`rounded-full px-3 py-1.5 text-[11px] font-bold ${
-                      deckId === d.id
-                        ? "bg-[var(--wood-deep)] text-[var(--cream)]"
-                        : "bg-white text-[var(--play-ink)] ring-1 ring-[var(--wood-deep)]/12"
-                    }`}
-                  >
-                    {d.nameVi}
-                  </button>
-                ))}
-              </div>
-              <input
-                className="app-input w-full !py-2 text-[12px]"
-                placeholder="Tìm tên, keyword, tag, notes…"
-                value={labQ}
-                onChange={(e) => setLabQ(e.target.value)}
-              />
-              <div className="flex flex-wrap gap-1.5">
-                <select
-                  className="app-input !w-auto !py-1.5 text-[11px]"
-                  value={traditionFilter}
-                  onChange={(e) =>
-                    setTraditionFilter(
-                      e.target.value as OracleTradition | "all",
-                    )
-                  }
-                >
-                  <option value="all">Tradition: bộ đang chọn</option>
-                  <option value="rider-waite">Rider–Waite</option>
-                  <option value="marseille">Marseille</option>
-                  <option value="thoth">Thoth</option>
-                  <option value="custom">Custom</option>
-                  <option value="zodiac">Chiêm tinh</option>
-                </select>
-                <select
-                  className="app-input !w-auto !py-1.5 text-[11px]"
-                  value={labSuit}
-                  onChange={(e) => setLabSuit(e.target.value)}
-                >
-                  <option value="all">Mọi suit</option>
-                  {suitsInDeck.map((s) => (
-                    <option key={s} value={s}>
-                      {ORACLE_SUIT_LABEL[s] ?? s}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => setGalleryOpen((v) => !v)}
-                  className="rounded-full bg-white px-3 py-1.5 text-[10px] font-bold ring-1 ring-[var(--wood-deep)]/12"
-                >
-                  {galleryOpen ? "Ẩn lưới" : "Hiện lưới"}
-                </button>
-              </div>
-              <p className="text-[10px] text-[var(--play-muted)]">
-                {labCards.length} lá · chạm để xem · chạm 2 lá để so sánh
-              </p>
-            </section>
-
-            <section className="app-panel mt-4 space-y-3 p-3">
-              <p className="play-heading text-sm">Thư viện Lab</p>
-              {galleryOpen ? (
-                <div className="grid max-h-80 grid-cols-4 gap-1.5 overflow-y-auto sm:grid-cols-6">
-                  {labCards.map((c) => {
-                    const on =
-                      browseKey === c.key ||
-                      compareKeys[0] === c.key ||
-                      compareKeys[1] === c.key;
-                    return (
-                      <button
-                        key={`${c.deckId}-${c.key}`}
-                        type="button"
-                        onClick={() => {
-                          setBrowseKey(c.key);
-                          pickCompare(c.key);
-                        }}
-                        className={`overflow-hidden rounded-lg bg-white ring-1 ${
-                          on
-                            ? "ring-[var(--amber)]"
-                            : "ring-[var(--wood-deep)]/10"
-                        }`}
-                      >
-                        <CardFace
-                          image={c.image}
-                          className="aspect-[5/7] w-full"
-                        />
-                        <p className="truncate px-0.5 py-0.5 text-center text-[8px] font-semibold">
-                          {c.nameVi}
-                          {c.draft ? " ·D" : ""}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
-
-              {browse ? (
-                <div className="rounded-lg bg-white/80 p-2.5 text-[12px] ring-1 ring-[var(--wood-deep)]/10">
-                  <div className="flex gap-2">
-                    <CardFace
-                      image={browse.image}
-                      className="h-28 w-20 shrink-0 rounded-lg ring-1 ring-[var(--wood-deep)]/12"
-                    />
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <p className="font-bold">{browse.nameVi}</p>
-                      <p className="text-[10px] text-[var(--play-muted)]">
-                        {browse.name}
-                        {browse.suit
-                          ? ` · ${ORACLE_SUIT_LABEL[browse.suit] ?? browse.suit}`
-                          : ""}
-                      </p>
-                      <p>
-                        <span className="font-semibold">Xuôi: </span>
-                        {browse.upright}
-                      </p>
-                      <p>
-                        <span className="font-semibold">Ngược: </span>
-                        {browse.reversed}
-                      </p>
-                      {browse.notes ? (
-                        <p className="rounded-md bg-amber-50/80 p-1.5 text-[11px]">
-                          <span className="font-semibold">Notes: </span>
-                          {browse.notes}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {(compareCards[0] || compareCards[1]) && (
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <p className="play-heading col-span-full text-xs">
-                    So sánh 2 lá
-                  </p>
-                  {([0, 1] as const).map((i) => {
-                    const c = compareCards[i];
-                    return (
-                      <div
-                        key={i}
-                        className="rounded-lg bg-white/80 p-2 text-[11px] ring-1 ring-[var(--wood-deep)]/10"
-                      >
-                        {c ? (
-                          <>
-                            <CardFace
-                              image={c.image}
-                              className="mb-1 aspect-[5/7] max-h-28 w-full rounded-md"
-                            />
-                            <p className="font-bold">{c.nameVi}</p>
-                            <p className="mt-1 line-clamp-4">{c.upright}</p>
-                          </>
-                        ) : (
-                          <p className="text-[var(--play-muted)]">
-                            Chọn lá {i + 1}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          </>
+            </header>
+            <div className="space-y-2.5">
+              {guideSections.map((sec) => (
+                <article key={sec.id} className="boi-theory-card">
+                  <h3>{sec.title}</h3>
+                  <p>{sec.lead}</p>
+                  <ul>
+                    {sec.bullets.map((b) => (
+                      <li key={b}>{b}</li>
+                    ))}
+                  </ul>
+                </article>
+              ))}
+            </div>
+            <p
+              className="text-[10px] leading-relaxed"
+              style={{ color: "var(--boi-muted)" }}
+            >
+              {ORACLE_DISCLAIMER}
+            </p>
+          </section>
         ) : null}
-      </div>
+        <VirtualPlayFooter className="mt-4" />
+        </div>
 
       <BoiRitualOverlay
         open={ritualOpen}
@@ -726,6 +497,8 @@ export default function BoiBaiPage() {
         catalog={deckCards}
         question={question}
         deckPool={deckPool as DeckPool}
+        spreads={spreads}
+        timingRules={timingRules}
         flipStyle={
           cosmetics.flipFx === "off" ? "olympus" : cosmetics.flipFx
         }
@@ -744,6 +517,7 @@ export default function BoiBaiPage() {
         open={prefsOpen}
         onClose={() => setPrefsOpen(false)}
       />
+      </div>
     </AppShell>
   );
 }

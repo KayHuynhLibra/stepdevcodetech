@@ -9,10 +9,18 @@ export type WorldPos = [number, number, number];
 
 export const GRID = 15;
 export const CELL = 1;
+/** 2D: ô đường đi phóng trong ô lưới (1 = full cell). */
+export const TRACK_CELL_SCALE = 0.98;
+/** 2D: ô start / home stretch. */
+export const LANE_CELL_SCALE = 0.96;
+/** 3D: khe giữa tile track — càng nhỏ ô càng to (0..0.2). */
+export const TRACK_TILE_GAP = 0.03;
+export const TRACK_TILE_HEIGHT = 0.17;
 export const BOARD_HALF = ((GRID - 1) / 2) * CELL; // 7
 /** Outer wood slab size used by R3F mesh (grid + rim). */
 export const BOARD_WORLD_SIZE = GRID * CELL + 0.6;
-export const PAWN_Y = 0.55;
+/** Feet of pawn sit on tile / yard pad top (~0.22–0.28). */
+export const PAWN_Y = 0.3;
 
 export type LudoColor = "red" | "green" | "yellow" | "blue";
 
@@ -286,13 +294,61 @@ function posToCr(
   return HOME_CENTER_CR;
 }
 
+/** Stable key for tokens sharing the same board cell. */
+export function tokenCellKey(
+  color: string,
+  pos: number,
+  tokenIndex: number,
+): string {
+  const [c, r] = posToCr(color, pos, tokenIndex);
+  return `${c.toFixed(2)},${r.toFixed(2)}`;
+}
+
+/**
+ * Fan offset (in cell units) so stacked tokens stay readable.
+ * Yard bases already use distinct pads — n=1 → no offset.
+ */
+export function stackSlotOffset(
+  slotIndex: number,
+  count: number,
+): { dCol: number; dRow: number } {
+  if (count <= 1) return { dCol: 0, dRow: 0 };
+  const a = (slotIndex / count) * Math.PI * 2 - Math.PI / 2;
+  const r = count === 2 ? 0.26 : count === 3 ? 0.3 : 0.34;
+  return { dCol: Math.cos(a) * r, dRow: Math.sin(a) * r };
+}
+
+/** Map token id → { slot, count } for fan layout on shared cells. */
+export function buildTokenStackMap(
+  tokens: { id: string; color: string; pos: number; index: number }[],
+): Map<string, { slot: number; count: number }> {
+  const groups = new Map<string, string[]>();
+  for (const t of tokens) {
+    const key = tokenCellKey(t.color, t.pos, t.index);
+    const list = groups.get(key);
+    if (list) list.push(t.id);
+    else groups.set(key, [t.id]);
+  }
+  const out = new Map<string, { slot: number; count: number }>();
+  for (const ids of groups.values()) {
+    ids.forEach((id, slot) => {
+      out.set(id, { slot, count: ids.length });
+    });
+  }
+  return out;
+}
+
 export function posToXy(
   color: string,
   pos: number,
   tokenIndex: number,
+  stack?: { slot: number; count: number },
 ): BoardXY {
   const [c, r] = posToCr(color, pos, tokenIndex);
-  return crToXy(c, r);
+  const off = stack
+    ? stackSlotOffset(stack.slot, stack.count)
+    : { dCol: 0, dRow: 0 };
+  return crToXy(c + off.dCol, r + off.dRow);
 }
 
 export function posToWorld(
@@ -300,7 +356,11 @@ export function posToWorld(
   pos: number,
   tokenIndex: number,
   y = PAWN_Y,
+  stack?: { slot: number; count: number },
 ): WorldPos {
   const [c, r] = posToCr(color, pos, tokenIndex);
-  return gridToWorld(c, r, y);
+  const off = stack
+    ? stackSlotOffset(stack.slot, stack.count)
+    : { dCol: 0, dRow: 0 };
+  return gridToWorld(c + off.dCol, r + off.dRow, y);
 }

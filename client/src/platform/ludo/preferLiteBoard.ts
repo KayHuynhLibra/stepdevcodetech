@@ -22,7 +22,7 @@ export function writeLudoBoardMode(mode: LudoBoardMode): void {
   }
 }
 
-/** Heuristic: mobile / Save-Data → prefer CSS (unless user forced 3d). */
+/** Heuristic: weak network → CSS lite (unless user forced 3d). Desktop auto → 3D. */
 export function preferLiteBoard(mode: LudoBoardMode = "auto"): boolean {
   if (mode === "lite") return true;
   if (mode === "3d") return false;
@@ -40,7 +40,11 @@ export function preferLiteBoard(mode: LudoBoardMode = "auto"): boolean {
   } catch {
     /* ignore */
   }
-  return window.matchMedia("(max-width: 720px), (pointer: coarse)").matches;
+  /* Phone / coarse pointer still prefer lite for battery; tablet+ desktop → 3D */
+  const narrow = window.matchMedia("(max-width: 520px)").matches;
+  const coarse = window.matchMedia("(pointer: coarse)").matches;
+  if (narrow && coarse) return true;
+  return false;
 }
 
 export function prefetchLudo3D(mode?: LudoBoardMode): void {

@@ -11,6 +11,10 @@ export const AVATARS: string[] = [
   "/assets/avatars/avatar-06.svg",
   "/assets/avatars/avatar-07.svg",
   "/assets/avatars/avatar-08.svg",
+  "/assets/avatars/ludo-p1.svg",
+  "/assets/avatars/ludo-p2.svg",
+  "/assets/avatars/ludo-p3.svg",
+  "/assets/avatars/ludo-p4.svg",
 ];
 
 const CUSTOM_AVATAR_RE =

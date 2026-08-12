@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node scripts/migrate-scale-div10.mjs --auto && tsx src/index.ts",
-    "test:ludo": "tsx --test src/ludoEngine.test.ts"
+    "test:ludo": "tsx --test src/ludoEngine.test.ts",
+    "test:oan-quan": "tsx --test src/oanQuanEngine.test.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

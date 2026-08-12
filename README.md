@@ -4,7 +4,7 @@ Realtime tarot / wheel **web demo** (Vite + React client, Express + Socket.io se
 
 > **Educational / research only.** This is a fictional study project—not a real casino, bank, or licensed gambling service. **No real-money** deposits, withdrawals, or currency conversion. In-app **xu** are virtual points with **no cash value**.
 >
-> **Do not steal this codebase for illicit use.** Learning forks with attribution are fine; copying the repo to run illegal gambling, scams, or to strip authorship is **forbidden** — see [`NOTICE.md`](./NOTICE.md) and [`TERMS.md`](./TERMS.md) §§0.6, 5, 7.
+> **Do not steal this codebase for illicit use.** Learning forks with attribution are fine; copying the repo to run illegal gambling, scams, or to strip authorship is **forbidden** — see [`NOTICE.md`](./NOTICE.md) and [`TERMS.md`](./TERMS.md) (Acceptable use · IP · DMCA).
 
 ## Important (GitHub / learners / operators)
 
@@ -14,11 +14,13 @@ Realtime tarot / wheel **web demo** (Vite + React client, Express + Socket.io se
 | **Source code** | View/learn OK · **No theft** for illicit deployment, fraud, or stripping authorship ([`NOTICE.md`](./NOTICE.md)) |
 | **Currency** | In-app **xu** = virtual points only — **no cash value**, no real-money deposit/withdraw in this codebase |
 | **Age** | **18+** (see in-app gate + [`TERMS.md`](./TERMS.md)) |
-| **Not** | Licensed US / Iowa real-money gambling, money transmitter, or crypto cashout |
-| **Governing law (ToS default)** | State of Iowa, USA — see [`TERMS.md`](./TERMS.md) §0 (educational purpose) + later sections |
-| **Compliance pack** | [`NOTICE.md`](./NOTICE.md) · [`LEGAL.md`](./LEGAL.md) · [`TERMS.md`](./TERMS.md) · [`PRIVACY.md`](./PRIVACY.md) · routes `/terms` `/privacy` |
+| **Not** | Licensed U.S. real-money gambling, money transmitter, or crypto cashout |
+| **Governing law (ToS default)** | United States of America — see [`TERMS.md`](./TERMS.md) (arbitration · class waiver) |
+| **Compliance pack** | **GitHub (canonical EN):** [`TERMS.md`](./TERMS.md) · [`PRIVACY.md`](./PRIVACY.md) · [`RESPONSIBLE.md`](./RESPONSIBLE.md) · [`NOTICE.md`](./NOTICE.md) · [`LEGAL.md`](./LEGAL.md) — **separate from** in-app bilingual summaries at `/terms` `/privacy` `/responsible` |
+| **Study (US ops)** | [`docs/study-us-compliance.md`](./docs/study-us-compliance.md) — checklist học tập, copy an toàn |
+| **Operator** | [`docs/admin/OPERATOR.md`](./docs/admin/OPERATOR.md) · [`docs/admin/GAME_OPS.md`](./docs/admin/GAME_OPS.md) |
 
-This is **not legal advice**. Forks that add real-money payments or cash prizes must get Iowa/U.S. counsel and licensing review before offering the service.
+This is **not legal advice**. Forks that add real-money payments or cash prizes must get U.S. counsel and licensing review before offering the service.
 
 **Do not commit** `server/data/*.json`, `.env`, or player dumps (GitHub AUP / privacy / classroom ethics).
 
@@ -59,14 +61,40 @@ Mount a volume at `/app/server/data`.
 
 ### Backup data
 
-Copy all `server/data/*.json` into a timestamped folder:
+**Local (cùng volume — không cứu volume corrupt):**
 
 ```bash
 npm run backup:data
 # → server/data/backups/YYYYMMDD-HHMMSS/
 ```
 
-On Railway, run this before risky deploys, or schedule a cron that executes the same command / snapshots the volume. Keep `users.json`, `vault.json`, `vault-arcana.json`, `arcana-wheel.json`, `arcana-spins.json`, `tokens.json`, `bets.json`, `coupons.json`, `inter.json`, `history.json`, `audit.json`, `reports.json`, `guest-ips.json`.
+**Off-site (S3 / Cloudflare R2) — bắt buộc cho thảm họa:**
+
+1. Tạo bucket R2 (Cloudflare → R2 → Create bucket) hoặc S3.
+2. Tạo API token có quyền Object Read/Write.
+3. Railway Variables (web service **và** cron service nếu tách):
+
+```env
+BACKUP_S3_BUCKET=your-backup-bucket
+BACKUP_S3_ACCESS_KEY_ID=...
+BACKUP_S3_SECRET_ACCESS_KEY=...
+BACKUP_S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+BACKUP_S3_REGION=auto
+BACKUP_S3_PREFIX=sofiaore-data
+BACKUP_KEEP_REMOTE=14
+```
+
+4. Chạy thử: `npm run backup:offsite` → object `sofiaore-data/<stampUtc>/*.json` trên bucket.
+
+5. **Railway Cron** (khuyến nghị):
+   - New service → cùng repo → **Cron** schedule `0 3 * * *` (03:00 UTC mỗi ngày)
+   - Start command: `node server/scripts/backup-offsite.mjs`
+   - **Mount cùng Volume** vào path chứa `server/data` (giống web service)
+   - Copy các env `BACKUP_S3_*` sang cron service
+
+6. Restore drill: tải folder stamp từ R2 → dừng web → copy `*.json` vào `server/data/` → start → `GET /health` `ready=true`.
+
+Keep at least: `users.json`, `vault.json`, `vault-arcana.json`, `tokens.json`, `history.json`, `coupons.json`, `inter.json`, `audit.json`.
 
 ### Scale migrate (÷10) — one-shot
 
@@ -83,17 +111,13 @@ Writes marker `server/data/migrate-scale-div10.done`.
 
 ### Custom domains
 
-**Live hiện tại:** `https://stepkay.codes` — verify `https://stepkay.codes/health` → `{"ok":true,...}`.
+Gắn domain của **operator** trên Railway (Dashboard → Domains). Dùng placeholder trong docs công khai — không commit domain/DNS thật nếu muốn giảm lộ identity:
 
-**`stepdevcode.tech` (nếu muốn dùng):** Railway custom domain phải gắn sẵn. Tại DNS host (Orderbox / registrar):
+1. Thêm custom domain trên host; lấy CNAME/ALIAS / TXT verify từ Railway.
+2. Trỏ DNS theo hướng dẫn dashboard (không dùng GitHub Pages A records nếu site đã chuyển sang app).
+3. Đợi TLS → verify `https://YOUR_DOMAIN/health` → `{"ok":true,...}`.
 
-1. **Remove** GitHub Pages A records for `@` (`185.199.108.153` … `185.199.111.153`) and any `www` → `*.github.io` CNAME.
-2. **Add** Railway records (check dashboard → Domains):
-   - CNAME/ALIAS for `@` / `www` → target Railway shows (vd. `*.up.railway.app`)
-   - TXT `_railway-verify` với giá trị Railway hiện
-3. Wait for DNS + TLS. Verify: `https://stepdevcode.tech/health` → `{"ok":true,...}`
-
-Optional: disable GitHub Pages on the repo so the old portfolio is not published.
+Chi tiết up/không up GitHub: [`docs/GITHUB_UPLOAD.md`](./docs/GITHUB_UPLOAD.md).
 
 ## Scripts
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { type AuthUser } from "../auth";
 import { guestGamePath } from "../guest";
@@ -7,10 +7,13 @@ import {
   gamePath,
   getCachedPlatformGames,
   isGameOpen,
+  LOBBY_PICK_TITLE,
   type GameManifest,
 } from "../platform/games";
+import { gameTone } from "../platform/gameTones";
+import { GameMark } from "./GameMark";
 
-/** Shell điều hướng bàn chơi — đọc Game Registry (login hoặc guest). */
+/** Shell điều hướng bàn chơi — CSS mark + tone, không ảnh cover. */
 export function TableNav({
   user,
   guestCode,
@@ -50,22 +53,39 @@ export function TableNav({
 
   return (
     <nav
-      className={`table-nav form-tabs ${compact ? "table-nav--compact" : ""}`}
-      aria-label="Chọn bàn"
+      className={`table-nav form-tabs ${compact ? "table-nav--compact table-nav--stack-mobile" : ""}`}
+      aria-label={LOBBY_PICK_TITLE}
     >
       {games.map((g) => {
         const open = isGameOpen(g);
         const on = active === g.id;
-        const cover = g.coverUrl || "/assets/lobby/soon.svg";
+        const tone = gameTone(g.id);
+        const cls = [
+          "form-tab",
+          "form-tab--game",
+          `form-tab--${g.id}`,
+          on ? "is-on" : "",
+          open ? "" : "form-tab--disabled",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        const style = {
+          "--tab-accent": tone.accent,
+          "--tab-ink": tone.ink,
+          "--tab-soft": tone.soft,
+          "--tab-deep": tone.deep,
+          "--tab-on": tone.onDeep,
+          fontFamily:
+            tone.display === "serif"
+              ? '"Cormorant Garamond", "Nunito", Georgia, serif'
+              : '"Nunito", "Be Vietnam Pro", system-ui, sans-serif',
+        } as CSSProperties;
+
         if (!open) {
           return (
-            <span
-              key={g.id}
-              className="form-tab form-tab--disabled form-tab--game"
-              title={g.blurb}
-            >
-              <img src={cover} alt="" className="form-tab__icon" />
-              {g.nameVi}
+            <span key={g.id} className={cls} style={style} title={g.blurb}>
+              <GameMark gameId={g.id} />
+              <span className="form-tab__label">{g.nameVi}</span>
             </span>
           );
         }
@@ -73,11 +93,13 @@ export function TableNav({
           <Link
             key={g.id}
             to={hrefFor(g)}
-            className={`form-tab form-tab--game ${on ? "is-on" : ""}`}
+            className={cls}
+            style={style}
             title={g.blurb}
+            aria-current={on ? "page" : undefined}
           >
-            <img src={cover} alt="" className="form-tab__icon" />
-            {g.nameVi}
+            <GameMark gameId={g.id} />
+            <span className="form-tab__label">{g.nameVi}</span>
           </Link>
         );
       })}
