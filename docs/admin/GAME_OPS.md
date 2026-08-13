@@ -1,22 +1,25 @@
 # Game ops — per-game admin & APIs
 
-Hướng dẫn vận hành từng trò trên SOFIAORE. Xu chơi = điểm ảo (`spendLane: "play"`). Không nạp/rút tiền thật.
+Hướng dẫn vận hành từng trò trên SOFIA. Xu chơi = điểm ảo (`spendLane: "play"`). Không nạp/rút tiền thật.
 
-| Game | Page | Guest | Admin tab | APIs chính | Mức xu / stake |
+Trong AdminDashboard: hub **Trò chơi** gom tab theo game; overview có **Check theo game**.
+
+| Game | Page | Guest | Hub → tab | APIs chính | Mức xu / stake |
 |------|------|-------|-----------|------------|----------------|
-| Tarot | `GamePage` | OK | Inter, Vault, Traffic | `/api/game/*`, Inter admin | stake presets server |
-| Arcana | `ArcanaWheelPage` | OK (auth hoặc `x-guest-id`) | Arcana (`arcana_config`) | `/api/arcana-wheel/*`, `/api/mainadmin/arcana/*` | spin cost config |
-| BoltPeak | `OlympusCasinoPage` | OK | BOLT% (`zeusPct`) | Olympus routes + BOLT % | mức xu UI (không “Cược”) |
-| Cờ cá ngựa | `LudoPage` | OK | Ludo (×3 panel) | Ludo admin APIs | mức xu / presets |
-| Ô ăn quan | `OanQuanPage` | OK | oanQuan | `GET/POST /api/admin/oan-quan/rooms*` | STAKE_PRESETS client |
-| HueRush | `UnoPage` | OK | uno | `GET/POST /api/admin/uno/rooms*` | stake presets |
-| Bói bài | `BoiBaiPage` | OK | oracle | Oracle CMS `/api/admin/oracle/*` | free / xu theo ritual |
+| Tarot | `GamePage` | OK | Trò chơi → Tarot · Inter (+ Vault/Traffic) | `/api/game/*`, Inter admin | stake presets server |
+| Arcana | `ArcanaWheelPage` | OK (auth hoặc `x-guest-id`) | Trò chơi → Bánh xe Arcana | `/api/arcana-wheel/*`, `/api/mainadmin/arcana/*` | spin cost config |
+| BoltPeak | `BoltPeakPage` | OK | Trò chơi → BoltPeak · BOLT% | Olympus routes + BOLT % | mức xu UI (không “Cược”) |
+| Cờ cá ngựa | `LudoPage` | OK | Trò chơi → Cờ cá ngựa | Ludo admin APIs | mức xu / presets |
+| Ô ăn quan | `OanQuanPage` | OK | Trò chơi → Ô ăn quan | `GET/POST /api/admin/oan-quan/rooms*` | STAKE_PRESETS client |
+| HueRush | `UnoPage` | OK | Trò chơi → HueRush | `GET/POST /api/admin/uno/rooms*` | stake presets |
+| Bói bài | `BoiBaiPage` | OK | Trò chơi → Bói bài / Lab (+ P+M) | Oracle CMS `/api/admin/oracle/*` | free / xu theo ritual |
 
 ## Chung
 
 - Lobby: `GET /api/platform/games` + `GameLobby` (`coverUrl` optional).
 - Shell: `GamePlayShell` / `GameChrome` + `VirtualPlayFooter` (18+ · xu ảo · `/responsible`).
-- Registry admin: tab **Games** — `pathSuffix`, `kind`, `vaultKey`, `coverUrl`, `nameVi`, status, sort, enabled.
+- Registry admin: **Trò chơi → Games registry** — `pathSuffix`, `kind`, `vaultKey`, `coverUrl`, `nameVi`, status, sort, enabled.
+- Assets: **Nội dung → P+M**; kho xu: **Kinh tế → Kho xu**.
 - Thêm game mới: [`docs/GAME_MODULE.md`](../GAME_MODULE.md).
 
 ---
@@ -24,6 +27,7 @@ Hướng dẫn vận hành từng trò trên SOFIAORE. Xu chơi = điểm ảo (
 ## Tarot
 
 - **Admin:** Inter (can thiệp phòng), Vault (kho tarot), Traffic.
+- **Context:** mở Inter/Traffic → tự `managedGame=tarot`.
 - **Guest:** `/guest/:code/play` — balance guest session.
 - **Copy:** không gợi nạp tiền thật; coupon nội bộ OK.
 
@@ -31,17 +35,18 @@ Hướng dẫn vận hành từng trò trên SOFIAORE. Xu chơi = điểm ảo (
 
 - **Guest:** route `/guest/:code/arcana`; API nhận token **hoặc** header `x-guest-id`; balance guest trong `arcanaWheelStore`.
 - **Admin:** `ArcanaAdminPanel` — slots, RTP preview, spin log (`arcana_config`).
+- **Context:** mở tab Arcana → tự `managedGame=arcana`.
 - **Vault:** `vaultKey: arcana` khi bật kho riêng.
 
-## Olympus
+## BoltPeak (Olympus)
 
-- **Admin:** tab ZeusPct — chỉnh % / RTP nhà cái.
+- **Admin:** tab BOLT% — Combo / Hũ&FS / Can thiệp.
 - **Copy user:** “Mức xu” / “Mức”, không “Cược” / “Casino” trên UI.
 - **Guest:** OK.
 
 ## Ludo
 
-- **Admin:** tab Ludo (rooms + economy + liên kết cross-nav).
+- **Admin:** tab Cờ cá ngựa (Phòng · Tiền bạc · Cosmetics).
 - **Copy:** “Mức xu” / “Mức chơi”.
 - **Guest:** OK.
 
@@ -53,7 +58,7 @@ Hướng dẫn vận hành từng trò trên SOFIAORE. Xu chơi = điểm ảo (
   - `POST /api/admin/oan-quan/rooms/:id/close` — mainadmin
 - **Store:** `oanQuanRoomStore.listAdmin` / `adminClose`.
 
-## UNO
+## HueRush (UNO)
 
 - **Admin:** `UnoAdminPanel` — rooms, close, bot fill / presets.
 - **API:**
@@ -64,9 +69,10 @@ Hướng dẫn vận hành từng trò trên SOFIAORE. Xu chơi = điểm ảo (
 ## Bói bài (Oracle)
 
 - **Admin:** OracleAdminPanel — decks, spreads, timing, Lab (staff only).
+- **Assets:** P+M → Bói (úp bài · nền · FX).
 - **Roles tài liệu:** `tarot78` = Cards + Library (`oracle_cards`); `book78` = Library + Lab (`oracle_library`); `mainadmin` full.
 - Seed local: `tarot78`, `book78`, `eco`, `audit`, `sgift`, `ring`, `pm`, `onl`, … (env `SEED_*_PASSWORD`).
-- Caps mới: `games_registry`, `coupon_ops`, `oracle_cards`, `oracle_library`.
+- Caps: `games_registry`, `coupon_ops`, `oracle_cards`, `oracle_library`.
 - **API:** `/api/admin/oracle/*` (cards vs library tách cap).
 - **Player:** tabs Rút / Sổ / Hướng dẫn; disclaimer entertainment.
 - Soft-delete card/spread: optional; ưu tiên `enabled` / archive.

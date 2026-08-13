@@ -8,7 +8,7 @@
 > **Canonical English source (GitHub / repository root).**  
 > This Markdown file is the **authoritative English Terms**. The in-app route `/terms` is a **separate bilingual convenience summary** (VI/EN UI) — not a duplicate of this document. If conflict: **this file controls**, except where mandatory consumer law of your residence requires otherwise.
 
-These Terms of Service (“**Terms**”) govern access to and use of the SOFIAORE / Tarot-style web entertainment Service and related features (the “**Service**”). The Service is provided by the entity that deploys and operates the live application (the “**Operator**,” “**we**,” “**us**,” or “**our**”).
+These Terms of Service (“**Terms**”) govern access to and use of the SOFIA / Tarot-style web entertainment Service and related features (the “**Service**”). The Service is provided by the entity that deploys and operates the live application (the “**Operator**,” “**we**,” “**us**,” or “**our**”).
 
 **This is not legal advice.** These Terms are a **multi-layer compliance scaffold**. If real-money deposits, cash prizes, or cash-out are added, stop and obtain U.S. counsel and licensing review before launch.
 
@@ -105,7 +105,7 @@ These Terms of Service (“**Terms**”) govern access to and use of the SOFIAOR
 You will not, and will not assist others to:
 
 5.1. Attack, probe, overload, or interfere with the Service without authorization; scrape or harvest data unlawfully; bypass rate limits, access controls, or security measures (consistent with prohibited unauthorized access under applicable U.S. law, including Computer Fraud and Abuse Act themes where they apply).  
-5.2. Impersonate others (including staff or the Operator); post unlawful, harassing, defamatory, or infringing content; spam; or misuse chat / feedback / voice features.  
+5.2. Impersonate others (including staff or the Operator); post unlawful, harassing, defamatory, or infringing content; spam; or misuse chat / feedback / voice / **live video** features (including non-consensual recording or redistribution of another user’s camera or microphone).  
 5.3. Exploit bugs for unfair advantage and refuse remediation; reverse engineer to circumvent security beyond what applicable law expressly allows.  
 5.4. Use the Service for money laundering, fraud, identity theft, phishing, malware distribution, or **real-money gambling schemes**.  
 5.5. Misappropriate the Service’s source code, assets, branding, or documentation—including stripping copyright / NOTICE / TERMS—to pass the work off as solely your own or to run unlawful services.  
@@ -117,11 +117,11 @@ You will not, and will not assist others to:
 
 ## 6. User content & platform tools — Layer L7
 
-6.1. If you submit chat messages, nicknames, avatars, feedback, reports, voice/audio (if enabled), or other content (“**User Content**”), you retain ownership of your rights in that content, but you grant the Operator a **worldwide, non-exclusive, royalty-free, sublicensable license** to host, store, reproduce, display, transmit, and use User Content as needed to operate, secure, moderate, and improve the Service.  
+6.1. If you submit chat messages, nicknames, avatars, feedback, reports, voice/audio, **live webcam/video** (if you opt in), or other content (“**User Content**”), you retain ownership of your rights in that content, but you grant the Operator a **worldwide, non-exclusive, royalty-free, sublicensable license** to host, store, reproduce, display, transmit, and use User Content as needed to operate, secure, moderate, and improve the Service. Live media is transmitted peer-to-peer to seated users; the Operator does not use it as a stored library in the base product.  
 6.2. You represent you have rights to grant this license and that User Content does not violate law or third-party rights.  
 6.3. The Operator may remove, restrict, or refuse User Content that violates these Terms or applicable law, without liability.  
 6.4. **Platform positioning:** The Operator provides interactive computer services and tools that may include hosting and moderation of third-party User Content. Nothing here waives defenses available under applicable U.S. law (including Communications Decency Act § 230 themes where they apply) or expands liability for User Content authored by others.  
-6.5. Voice/comms features (if any) may be monitored or logged for safety, abuse, and Terms enforcement as described in the Privacy Policy.
+6.5. Voice/Live features (if any): **camera is opt-in per user** after the host enables Live mode. Metadata and moderation actions may be logged for safety as described in the Privacy Policy. Media streams themselves are not server-recorded in the base product. You must be 18+. Do not record or publish others’ Live without consent and law. Host/staff may mute, disable camera, or remove you.
 
 ---
 

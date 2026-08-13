@@ -19,7 +19,7 @@
 
 | Topic | Guidance |
 |-------|----------|
-| Secrets / PII | Never commit `server/data/*.json`, `.env`, tokens, or player dumps |
+| Secrets / PII | Never commit `be/data/*.json`, `.env`, tokens, or player dumps |
 | Player-facing legal | `/terms` · `/privacy` — no personal GitHub links, no staff names, no hosting vendor brand unless required |
 | Contact | In-app Feedback / support only for end users |
 | Infrastructure | Prefer generic “hosting provider” wording in Privacy |
@@ -73,7 +73,7 @@ Publish an operator contact for copyright notices via in-app Feedback (see TERMS
 ## Must-dos before any public launch
 
 1. Keep TERMS / PRIVACY clear that xu are **virtual only**.
-2. Never commit `server/data/*.json`, tokens, or seed passwords.
+2. Never commit `be/data/*.json`, tokens, or seed passwords.
 3. If you add **real money**, stop and get legal + licensing review first (U.S. federal + applicable states).
 4. Prefer a **private** repo if a live instance holds personal data at scale.
 5. Strip personal GitHub / domain / vendor identifiers from player-facing legal UI.
@@ -85,4 +85,5 @@ Publish an operator contact for copyright notices via in-app Feedback (see TERMS
 - In-app: `/terms`, `/privacy`, `/responsible`
 - **Overlapping shield map:** [`docs/LEGAL_SHIELD.md`](./docs/LEGAL_SHIELD.md)
 - **GitHub up / không up:** [`docs/GITHUB_UPLOAD.md`](./docs/GITHUB_UPLOAD.md)
+- **Transparency filter:** [`docs/TRANSPARENCY_FILTER.md`](./docs/TRANSPARENCY_FILTER.md)
 - **Study guide:** [`docs/study-us-compliance.md`](./docs/study-us-compliance.md)

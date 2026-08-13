@@ -76,9 +76,9 @@ Language note: Vietnamese UI pages are a **convenience translation**. If conflic
 [ ] Footer / rules sheets still carry virtual-play one-liner
 [ ] Privacy still lists actual data categories (update if new fields)
 [ ] No personal GitHub / staff phone / home address on legal pages
-[ ] If adding voice/video: disclosure + retention in Privacy + Terms UGC
+[x] If adding voice/video: disclosure + retention in Privacy + Terms UGC
 [ ] If targeting EEA/UK: add GDPR addendum BEFORE ads/geo-target
-[ ] Bump sofiaore_terms_ok_vN when Terms material change
+[ ] Bump sofia_terms_ok_vN when Terms material change
 ```
 
 ---

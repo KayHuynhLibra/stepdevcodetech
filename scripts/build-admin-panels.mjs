@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const root = path.resolve("client/src/components/admin/panels");
+const root = path.resolve("fe/src/components/admin/panels");
 const usersJsx = fs.readFileSync(path.join(root, "_users_jsx.txt"), "utf8");
 const interJsx = fs.readFileSync(path.join(root, "_inter_jsx.txt"), "utf8");
 const vaultJsx = fs.readFileSync(path.join(root, "_vault_jsx.txt"), "utf8");

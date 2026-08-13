@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
   Redeploy Sofiaore / Tarot -> Railway (https://stepkay.codes)
 
@@ -35,7 +35,7 @@ function Write-Help {
   Write-Host "Live:     $LiveUrl"
   Write-Host "Health:   $HealthUrl"
   Write-Host "Project:  tarot-bet-demo (Railway)"
-  Write-Host "Volume:   /app/server/data  (KHONG ghi de bang git)"
+  Write-Host "Volume:   /app/be/data  (KHONG ghi de bang git)"
   Write-Host ""
   Write-Host "Khi nao dung gi?"
   Write-Host "  (1) Typecheck     - truoc khi deploy (server + client tsc)"
@@ -47,7 +47,7 @@ function Write-Help {
   Write-Host ""
   Write-Host "Luu y:"
   Write-Host "  - GitHub auto-deploy doi khi khong chay -> dung (2)"
-  Write-Host "  - Khong commit: server/data/*.json, .env, studying/"
+  Write-Host "  - Khong commit: be/data/*.json, .env, studying/, local/"
   Write-Host "  - Login Railway (mot lan):  npx @railway/cli@latest login"
   Write-Host "  - Sau Deploy complete: Ctrl+F5 tren trinh duyet"
   Write-Host ""
@@ -62,14 +62,14 @@ function Write-Help {
 function Invoke-Typecheck {
   Write-Title "Typecheck"
   Write-Host "-> server..." -ForegroundColor Yellow
-  Push-Location (Join-Path $Root "server")
+  Push-Location (Join-Path $Root "be")
   try {
     npx tsc --noEmit
     if ($LASTEXITCODE -ne 0) { throw "Server typecheck failed (exit $LASTEXITCODE)" }
   } finally { Pop-Location }
 
   Write-Host "-> client..." -ForegroundColor Yellow
-  Push-Location (Join-Path $Root "client")
+  Push-Location (Join-Path $Root "fe")
   try {
     npx tsc --noEmit
     if ($LASTEXITCODE -ne 0) { throw "Client typecheck failed (exit $LASTEXITCODE)" }

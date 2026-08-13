@@ -1,6 +1,6 @@
 node_modules
 dist
-client/dist
+fe/dist
 *.tsbuildinfo
 .DS_Store
 *.log
@@ -19,7 +19,7 @@ coverage/
 *secret*.local.*
 
 # Production / player data
-server/data/
+be/data/
 
 # Temp / caches
 .tmp-img/
@@ -29,25 +29,20 @@ server/data/
 # IDE / local agent
 .cursor/
 agent-transcripts/
+.gitnexus/
+AGENTS.md
+CLAUDE.md
 
-# Tài liệu học tập nội bộ — không commit / không push
-studying/
+# Tài liệu học tập — ngoài be/fe, không deploy
+studying/*
+!studying/README.md
 
-# Cybersecurity notes nội bộ — không commit / không push
-cybersecurity/
-
-# Lab bảo mật chi tiết — local only (scripts, checklist, logs…)
-# Chỉ README giới thiệu được push lên GitHub
-hackmyapp/*
-!hackmyapp/README.md
-
-# Bản chụp Version — chỉ local, không push GitHub
-version 1/
-version 2/
-version 3/
-version 4/
-
-.asset-backup/
+# Local-only tooling / labs / snapshots (ngoài be/fe/studying)
+local/*
+!local/README.md
+!local/hackmyapp/
+local/hackmyapp/*
+!local/hackmyapp/README.md
 
 # OS junk
 Thumbs.db

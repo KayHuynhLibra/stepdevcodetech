@@ -1,11 +1,11 @@
-# GAME_MODULE — thêm game vào SOFIAORE
+# GAME_MODULE — thêm game vào SOFIA
 
 Checklist khi thêm bàn mới vào nền tảng (scale ~50 game). **Không** sửa cả `AdminDashboard.tsx` chỉ để thêm một bàn.
 
 ## 1. Manifest (bắt buộc)
 
-- Server seed / upsert trong `server/src/platformGamesStore.ts` (hoặc Admin tab **Games**).
-- Client đọc qua `GET /api/platform/games` → `client/src/platform/games.ts`.
+- Server seed / upsert trong `be/src/platformGamesStore.ts` (hoặc Admin tab **Games**).
+- Client đọc qua `GET /api/platform/games` → `fe/src/platform/games.ts`.
 - Trường quan trọng:
   - `id`, `nameVi`, `blurb`, `status` (`live` | `beta` | `coming_soon`)
   - `pathSuffix` (vd `play`, `arcana`, `boi-bai`, `g/dice`)
@@ -14,8 +14,8 @@ Checklist khi thêm bàn mới vào nền tảng (scale ~50 game). **Không** s�
 
 ## 2. Route + page
 
-- Thêm route theo mẫu role hiện có trong `client/src/App.tsx`, hoặc Phase 1.5: `.../g/:gameId`.
-- Helper: `gamePath(user, manifest)` từ `client/src/platform/games.ts`.
+- Thêm route theo mẫu role hiện có trong `fe/src/App.tsx`, hoặc Phase 1.5: `.../g/:gameId`.
+- Helper: `gamePath(user, manifest)` từ `fe/src/platform/games.ts`.
 - `TableNav` / Lobby tự hiện từ registry — không hardcode nút.
 
 ## 3. Ví & vault

@@ -1,5 +1,5 @@
 {
-  "name": "sofiaore-tarot-demo",
+  "name": "sofia-tarot-demo",
   "private": true,
   "version": "1.0.0",
   "license": "UNLICENSED",
@@ -7,14 +7,14 @@
     "node": ">=20"
   },
   "scripts": {
-    "demo": "concurrently -n server,client -c magenta,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
-    "build": "npm run build -w client",
-    "start": "npm run start -w server",
-    "migrate:scale10": "node server/scripts/migrate-scale-div10.mjs",
-    "backup:data": "node server/scripts/backup-data.mjs",
-    "backup:offsite": "node server/scripts/backup-offsite.mjs",
-    "baseline:100x": "node server/scripts/baseline-100x.mjs",
-    "db:migrate": "node server/scripts/db-migrate.mjs",
+    "demo": "concurrently -n be,fe -c magenta,cyan \"npm run dev -w be\" \"npm run dev -w fe\"",
+    "build": "npm run build -w fe",
+    "start": "npm run start -w be",
+    "migrate:scale10": "node be/scripts/migrate-scale-div10.mjs",
+    "backup:data": "node be/scripts/backup-data.mjs",
+    "backup:offsite": "node be/scripts/backup-offsite.mjs",
+    "baseline:100x": "node be/scripts/baseline-100x.mjs",
+    "db:migrate": "node be/scripts/db-migrate.mjs",
     "install:all": "npm install",
     "redeploy": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/redeploy.ps1",
     "redeploy:help": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/redeploy.ps1 -Action help",
@@ -23,12 +23,12 @@
     "redeploy:verify": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/redeploy.ps1 -Action verify",
     "redeploy:full": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/redeploy.ps1 -Action full",
     "redeploy:sh": "bash ./scripts/redeploy.sh",
-    "hackmyapp:live": "powershell -NoProfile -ExecutionPolicy Bypass -File ./hackmyapp/scripts/safe-check.ps1 -Target live",
-    "hackmyapp:local": "powershell -NoProfile -ExecutionPolicy Bypass -File ./hackmyapp/scripts/safe-check.ps1 -Target local -LocalPort 3001"
+    "hackmyapp:live": "powershell -NoProfile -ExecutionPolicy Bypass -File ./local/hackmyapp/scripts/safe-check.ps1 -Target live",
+    "hackmyapp:local": "powershell -NoProfile -ExecutionPolicy Bypass -File ./local/hackmyapp/scripts/safe-check.ps1 -Target local -LocalPort 3001"
   },
   "workspaces": [
-    "server",
-    "client"
+    "be",
+    "fe"
   ],
   "devDependencies": {
     "concurrently": "^9.1.2"

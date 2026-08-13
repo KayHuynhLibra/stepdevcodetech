@@ -7,8 +7,8 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const outDir = join(root, "client/public/assets/oracle/tarot");
-const lobbyDir = join(root, "client/public/assets/lobby");
+const outDir = join(root, "fe/public/assets/oracle/tarot");
+const lobbyDir = join(root, "fe/public/assets/lobby");
 mkdirSync(outDir, { recursive: true });
 mkdirSync(lobbyDir, { recursive: true });
 

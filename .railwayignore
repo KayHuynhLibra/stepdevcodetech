@@ -1,6 +1,6 @@
 node_modules
 dist
-client/dist
+fe/dist
 *.tsbuildinfo
 .DS_Store
 *.log
@@ -10,14 +10,13 @@ coverage/
 !.env.example
 *.pem
 *.key
-server/data/
+be/data/
 .tmp-img/
 .tmp-*
 .cursor/
 studying/
-cybersecurity/
-hackmyapp/*
-!hackmyapp/README.md
+local/
+.claude/
 version 1/
 version 2/
 version 3/

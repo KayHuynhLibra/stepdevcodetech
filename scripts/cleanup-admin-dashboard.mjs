@@ -1,6 +1,6 @@
 import fs from "node:fs";
 
-const path = "client/src/pages/AdminDashboard.tsx";
+const path = "fe/src/pages/AdminDashboard.tsx";
 let src = fs.readFileSync(path, "utf8");
 const before = src.split(/\r?\n/).length;
 

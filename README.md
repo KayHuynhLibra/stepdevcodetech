@@ -1,10 +1,23 @@
-# SOFIAORE — Tarot educational / research demo
+# SOFIA — Tarot educational / research demo
 
-Realtime tarot / wheel **web demo** (Vite + React client, Express + Socket.io server) built for **học tập và nghiên cứu (learning & research)**: full-stack practice, realtime game loops, admin tooling, and compliance-copy patterns.
+Realtime tarot / wheel **web demo** (Vite + React FE, Express + Socket.io BE) built for **học tập và nghiên cứu (learning & research)**: full-stack practice, realtime game loops, admin tooling, and compliance-copy patterns.
 
 > **Educational / research only.** This is a fictional study project—not a real casino, bank, or licensed gambling service. **No real-money** deposits, withdrawals, or currency conversion. In-app **xu** are virtual points with **no cash value**.
 >
 > **Do not steal this codebase for illicit use.** Learning forks with attribution are fine; copying the repo to run illegal gambling, scams, or to strip authorship is **forbidden** — see [`NOTICE.md`](./NOTICE.md) and [`TERMS.md`](./TERMS.md) (Acceptable use · IP · DMCA).
+
+## Repo layout
+
+| Folder | Role |
+|--------|------|
+| **`be/`** | Backend — Express + Socket.io + JSON data (`be/data/`) |
+| **`fe/`** | Frontend — Vite + React (`fe/dist` production build) |
+| **`studying/`** | Tài liệu học tập **riêng** — local only, không deploy |
+| **`docs/`** | Operator / game ops (trong repo) |
+| **`scripts/`** | Redeploy / tiện ích root |
+| **`local/`** | Tooling & lab máy bạn (hackmyapp, cybersecurity, version snapshots…) |
+
+npm workspaces: `be` · `fe`. Ứng dụng chỉ nằm trong **`be/`** + **`fe/`** (không giữ bản app song song ngoài 2 folder này).
 
 ## Important (GitHub / learners / operators)
 
@@ -19,10 +32,11 @@ Realtime tarot / wheel **web demo** (Vite + React client, Express + Socket.io se
 | **Compliance pack** | **GitHub (canonical EN):** [`TERMS.md`](./TERMS.md) · [`PRIVACY.md`](./PRIVACY.md) · [`RESPONSIBLE.md`](./RESPONSIBLE.md) · [`NOTICE.md`](./NOTICE.md) · [`LEGAL.md`](./LEGAL.md) — **separate from** in-app bilingual summaries at `/terms` `/privacy` `/responsible` |
 | **Study (US ops)** | [`docs/study-us-compliance.md`](./docs/study-us-compliance.md) — checklist học tập, copy an toàn |
 | **Operator** | [`docs/admin/OPERATOR.md`](./docs/admin/OPERATOR.md) · [`docs/admin/GAME_OPS.md`](./docs/admin/GAME_OPS.md) |
+| **Transparency filter** | [`docs/TRANSPARENCY_FILTER.md`](./docs/TRANSPARENCY_FILTER.md) — sàng lọc up GitHub + red lines pháp lý |
 
 This is **not legal advice**. Forks that add real-money payments or cash prizes must get U.S. counsel and licensing review before offering the service.
 
-**Do not commit** `server/data/*.json`, `.env`, or player dumps (GitHub AUP / privacy / classroom ethics).
+**Do not commit** `be/data/*.json`, `.env`, or player dumps (GitHub AUP / privacy / classroom ethics).
 
 ## Local development
 
@@ -31,15 +45,15 @@ npm install
 npm run demo
 ```
 
-- Client: http://localhost:5173  
-- Server: http://localhost:3001  
+- FE (Vite): http://localhost:5173  
+- BE (API): http://localhost:3001  
 - Dev seed accounts (not created in production without env): `mainadmin` / `mainadmin123`, `admin` / `admin123`, `demo` / `demo123`
 
-Static assets live only under `client/public/` (Vite). Do not add a root `public/` folder.
+Static assets live only under `fe/public/` (Vite). Do not add a root `public/` folder.
 
 ## Production (Railway)
 
-This app runs as **one Node service**: Express serves `/api`, Socket.io, and the built client from `client/dist`.
+This app runs as **one Node service**: Express serves `/api`, Socket.io, and the built FE from `fe/dist`.
 
 ### Environment variables
 
@@ -57,7 +71,9 @@ Mainadmin / admin mới seed được **bắt đổi mật khẩu**. Production:
 
 ### Persist user data
 
-Mount a volume at `/app/server/data`.
+Mount a volume at **`/app/be/data`** (đổi từ `/app/server/data` sau khi tách folder).
+
+> **Live Railway:** sau khi deploy layout mới, **đổi mount path volume** sang `/app/be/data` (hoặc migrate data vào path mới) — nếu quên, app nhìn folder trống.
 
 ### Backup data
 
@@ -65,7 +81,7 @@ Mount a volume at `/app/server/data`.
 
 ```bash
 npm run backup:data
-# → server/data/backups/YYYYMMDD-HHMMSS/
+# → be/data/backups/YYYYMMDD-HHMMSS/
 ```
 
 **Off-site (S3 / Cloudflare R2) — bắt buộc cho thảm họa:**
@@ -80,19 +96,19 @@ BACKUP_S3_ACCESS_KEY_ID=...
 BACKUP_S3_SECRET_ACCESS_KEY=...
 BACKUP_S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 BACKUP_S3_REGION=auto
-BACKUP_S3_PREFIX=sofiaore-data
+BACKUP_S3_PREFIX=sofia-data
 BACKUP_KEEP_REMOTE=14
 ```
 
-4. Chạy thử: `npm run backup:offsite` → object `sofiaore-data/<stampUtc>/*.json` trên bucket.
+4. Chạy thử: `npm run backup:offsite` → object `sofia-data/<stampUtc>/*.json` trên bucket.
 
 5. **Railway Cron** (khuyến nghị):
    - New service → cùng repo → **Cron** schedule `0 3 * * *` (03:00 UTC mỗi ngày)
-   - Start command: `node server/scripts/backup-offsite.mjs`
-   - **Mount cùng Volume** vào path chứa `server/data` (giống web service)
+   - Start command: `node be/scripts/backup-offsite.mjs`
+   - **Mount cùng Volume** vào path chứa `be/data` (giống web service)
    - Copy các env `BACKUP_S3_*` sang cron service
 
-6. Restore drill: tải folder stamp từ R2 → dừng web → copy `*.json` vào `server/data/` → start → `GET /health` `ready=true`.
+6. Restore drill: tải folder stamp từ R2 → dừng web → copy `*.json` vào `be/data/` → start → `GET /health` `ready=true`.
 
 Keep at least: `users.json`, `vault.json`, `vault-arcana.json`, `tokens.json`, `history.json`, `coupons.json`, `inter.json`, `audit.json`.
 
@@ -104,10 +120,10 @@ Manual:
 
 ```bash
 npm run migrate:scale10
-# or: node server/scripts/migrate-scale-div10.mjs --force
+# or: node be/scripts/migrate-scale-div10.mjs --force
 ```
 
-Writes marker `server/data/migrate-scale-div10.done`.
+Writes marker `be/data/migrate-scale-div10.done`.
 
 ### Custom domains
 
@@ -123,13 +139,13 @@ Chi tiết up/không up GitHub: [`docs/GITHUB_UPLOAD.md`](./docs/GITHUB_UPLOAD.m
 
 | Script | Description |
 |--------|-------------|
-| `npm run demo` | Dev: server + Vite client |
-| `npm run build` | Build client to `client/dist` |
-| `npm start` | Production server (serves API + `client/dist`) |
-| `npm run migrate:scale10` | One-shot ÷10 money migrate on `server/data` |
-| `npm run backup:data` | Copy `server/data/*.json` → `server/data/backups/<stamp>/` |
+| `npm run demo` | Dev: BE + Vite FE |
+| `npm run build` | Build FE to `fe/dist` |
+| `npm start` | Production BE (serves API + `fe/dist`) |
+| `npm run migrate:scale10` | One-shot ÷10 money migrate on `be/data` |
+| `npm run backup:data` | Copy `be/data/*.json` → `be/data/backups/<stamp>/` |
 | `npm run install:all` | npm install |
 
 ## Tài liệu kiến trúc & design system
 
-Bản đồ triển khai, design system, **UI pattern catalog (sơ đồ)**, routing, API/Socket, data JSON và checklist phát triển tính năng: [studying/README.md](studying/README.md) (cập nhật 20/07/2026).
+Bản đồ triển khai, design system, UI pattern catalog, routing, API/Socket, data JSON: [`studying/README.md`](./studying/README.md) (local — ngoài BE/FE, không deploy).

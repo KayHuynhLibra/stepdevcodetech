@@ -1,4 +1,4 @@
-# HueRush — kế hoạch module bài 4 màu (SOFIAORE)
+# HueRush — kế hoạch module bài 4 màu (SOFIA)
 
 > Module bài **HueRush** (original brand) · luật kiểu bài màu phổ thông · REST + polling  
 > **Không** dùng thương hiệu bên thứ ba trên UI / docs công khai.
@@ -42,11 +42,11 @@
 ## Kiến trúc file
 
 ```
-server/src/unoEngine.ts       — luật thuần
-server/src/unoRoomStore.ts    — phòng, bot, tick, economy
-server/src/unoRoutes.ts       — REST API
-client/src/pages/UnoPage.tsx
-client/src/platform/uno/
+be/src/unoEngine.ts       — luật thuần
+be/src/unoRoomStore.ts    — phòng, bot, tick, economy
+be/src/unoRoutes.ts       — REST API
+fe/src/pages/UnoPage.tsx
+fe/src/platform/uno/
   UnoBoard.tsx · UnoCardFace.tsx · types.ts · uno.css
 ```
 
@@ -79,7 +79,7 @@ API: `GET/POST /api/uno/rooms`, `play`, `draw`, `color`, `uno`, `reconnect`
 | 19 | **playMediaPresets gameId** | ✅ | `uno` trong store + hook |
 | 20 | **Unit test engine** | ✅ | `unoEngine.test.ts` |
 
-> Chạy test: `cd server && npm test -- unoEngine`
+> Chạy test: `cd be && npm test -- unoEngine`
 
 ---
 

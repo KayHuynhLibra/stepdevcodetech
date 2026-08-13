@@ -7,7 +7,7 @@
 > **Canonical English source (GitHub / repository root).**  
 > This Markdown file is the **authoritative English Privacy Policy**. The in-app route `/privacy` is a **separate bilingual convenience summary** — not a copy of this document. If conflict: **this file controls**, except where mandatory law requires otherwise.
 
-**This is not legal advice.** Describes data practices for the SOFIAORE / Tarot-style entertainment Service as offered by the Operator. Production player data stays on the Operator’s systems—**never** in public source control or public issue trackers.
+**This is not legal advice.** Describes data practices for the SOFIA / Tarot-style entertainment Service as offered by the Operator. Production player data stays on the Operator’s systems—**never** in public source control or public issue trackers.
 
 This Policy is incorporated into the [Terms of Service](./TERMS.md). Capitalized terms have the meanings in the Terms unless defined here.
 
@@ -61,8 +61,11 @@ This Policy covers personal information processed when you visit, register for, 
 | Support / ops | Feedback tickets, reports, admin audit actions | Security and support | Security; compliance |
 | Compliance acknowledgements | Age / Terms acceptance flags (localStorage and/or server `termsAcceptedAt`) | Legal compliance · evidence of Agreement | Legal obligation / contract |
 | Safety / voice (if enabled) | Voice-room metadata, moderation flags, limited session logs | Abuse prevention · Terms enforcement | Security; provide the Service |
+| Live video (if you opt in) | Webcam/mic streams in a voice room; device labels in the browser | Real-time P2P to other seated users only | Provide Live; you must opt in per session |
 
 We do **not** intentionally collect government ID, Social Security numbers, payment card numbers, or crypto wallet keys in this product as offered.
+
+**Live video / voice (WebRTC):** If you enable camera or microphone in a Live/voice room, audio/video is sent **peer-to-peer** to other users currently seated in that room. The Operator’s servers perform **signaling and room state only** and do **not** record, store, or transcribe those media streams in the base product. Other users can see/hear you while your cam/mic is on. Do not record, screenshot, or redistribute others’ Live without their consent and applicable law. Turning cam off, leaving the seat, or the host switching the room to Voice stops your outbound video. Metadata (who sat where, Live vs Voice mode, moderation actions) may be logged as described above.
 
 **Sensitive data:** Do not submit health information, precise geolocation beyond IP coarse lookup, biometric identifiers, or contents of private communications unrelated to gameplay support. The Service is not designed for those categories.
 
@@ -117,6 +120,8 @@ We do not authorize service providers to use personal information for their own 
 ## 8. Retention
 
 Account and game data persist on the Operator’s systems until deleted, anonymized, or the Service is decommissioned. Tokens expire per server configuration. Backups may exist for disaster recovery for a limited period. We retain information as reasonably necessary for the purposes above, legal obligations, dispute resolution, and security.
+
+**Live media streams** are ephemeral (in transit / in the browser). They are not retained as server recordings in the base product. Room metadata and audit logs follow the same retention as other ops data.
 
 **De-identified / aggregated data:** The Operator may retain and use de-identified or aggregated statistics that cannot reasonably identify you, for analytics, capacity planning, and product improvement.
 

@@ -1,10 +1,10 @@
-# MASTER PROMPT — Bánh xe Arcana (SOFIAORE-TAROT)
+# MASTER PROMPT — Bánh xe Arcana (SOFIA-TAROT)
 
 Prompt chi tiết để Cursor/Claude mở rộng mini-game **Bánh xe Arcana** trong monorepo hiện có. **Không** tạo app Flutter/casino mới.
 
 ## 0. Bối cảnh bắt buộc
 
-- Host app: **SOFIAORE-TAROT** (`client/` React+Vite, `server/` Express+Socket.io, JSON data).
+- Host app: **SOFIA-TAROT** (`fe/` React+Vite, `be/` Express+Socket.io, JSON data).
 - UI tiếng Việt; theme jade / gold / wood / night.
 - Hai bàn chơi độc lập; ví xu người chơi **chung**; **hai kho nhà cái riêng**.
 - Cảm hứng layout “Vòng Quay Hệ Số” nhưng skin mystical Tarot — không copy casino.
@@ -21,7 +21,7 @@ Prompt chi tiết để Cursor/Claude mở rộng mini-game **Bánh xe Arcana** 
 6. History spin: `arcana-spins.json` — không ghi `bets.json`.
 7. Helper `arcanaPath(user)` cạnh `playPath()`.
 8. Dashboard player: 2 CTA — “Vào bàn Tarot” / “Vào Bánh xe Arcana”.
-9. Folder gợi ý: `server/src/arcanaWheelStore.ts`, `client/src/pages/ArcanaWheelPage.tsx`.
+9. Folder gợi ý: `be/src/arcanaWheelStore.ts`, `fe/src/pages/ArcanaWheelPage.tsx`.
 10. Guest: P0 yêu cầu login để quay (có thể mở rộng sau).
 11. Rời bàn Arcana không kick bàn Tarot.
 12. Inter modes **chỉ** bàn Tarot.

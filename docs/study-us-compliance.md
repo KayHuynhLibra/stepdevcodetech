@@ -1,4 +1,4 @@
-# US compliance study — SOFIAORE (learning / operators)
+# US compliance study — SOFIA (learning / operators)
 
 **Not legal advice.** Tài liệu học tập cho người vận hành hoặc fork repo khi deploy tại **Hoa Kỳ**. Đọc kèm [`LEGAL.md`](../LEGAL.md), [`TERMS.md`](../TERMS.md), [`PRIVACY.md`](../PRIVACY.md).
 
@@ -17,7 +17,7 @@ Xem thêm bản đồ chồng lớp: [`LEGAL_SHIELD.md`](./LEGAL_SHIELD.md).
 | Chồng lớp tranh chấp | Informal → FAA arbitration → class waiver → US venue |
 | Kill-switch / no vested xu | `TERMS.md` §9 |
 | Bói bài = entertainment | `/responsible`, oracle disclaimers |
-| Không leak player data | `.gitignore` `server/data/` |
+| Không leak player data | `.gitignore` `be/data/` |
 
 **Giữ nguyên các dòng trên** nếu muốn giảm rủi ro UIGEA + luật đánh bạc bang.
 
@@ -38,7 +38,7 @@ Dù xu ảo, FTC và consumer protection vẫn quan tâm **copy gây hiểu lầ
 
 **Đã chỉnh (2026-08):** Olympus UI, Oan Quan, lobby copy, SFX label “Arcade”.
 
-Tên file nội bộ (`OlympusCasinoPage`, `stakeStore`) có thể giữ — **không hiện cho user**.
+Tên file nội bộ (`BoltPeakPage`, `stakeStore`) có thể giữ từ vựng kỹ thuật — **không hiện “casino” cho user**.
 
 ### B. Thêm tiền thật sau này
 
@@ -53,7 +53,7 @@ Chỉ cần **một** trong các hành vi sau → **dừng, thuê luật sư gam
 
 - `PRIVACY.md` đã có khung CCPA + COPPA 13+
 - Operator cần quy trình **xóa/truy cập** qua Feedback
-- Không commit `server/data/*.json`
+- Không commit `be/data/*.json`
 - Backup S3: giới hạn quyền, mã hóa
 
 ### D. UGC (chat / voice)
@@ -93,10 +93,10 @@ Chỉ cần **một** trong các hành vi sau → **dừng, thuê luật sư gam
 
 | Mục | File |
 |-----|------|
-| Copy chung | `client/src/complianceCopy.ts` |
-| Footer UI | `client/src/components/VirtualPlayFooter.tsx` |
-| Gate 18+ | `client/src/components/ComplianceGate.tsx` |
-| Trang pháp lý | `client/src/pages/LegalPage.tsx` |
+| Copy chung | `fe/src/complianceCopy.ts` |
+| Footer UI | `fe/src/components/VirtualPlayFooter.tsx` |
+| Gate 18+ | `fe/src/components/ComplianceGate.tsx` |
+| Trang pháp lý | `fe/src/pages/LegalPage.tsx` |
 | Chơi có trách nhiệm | `/responsible` |
 | Maintainer checklist | `LEGAL.md` |
 | Operator matrix | `docs/admin/OPERATOR.md` |
@@ -116,8 +116,8 @@ Chỉ cần **một** trong các hành vi sau → **dừng, thuê luật sư gam
 
 ## 6. Lab bảo mật local
 
-Folder `hackmyapp/` (README tracked, chi tiết local gitignored): self-test health/TLS/rate-limit — xem [`hackmyapp/README.md`](../hackmyapp/README.md).
+Folder `local/hackmyapp/` (README tracked, chi tiết local gitignored): self-test health/TLS/rate-limit — xem [`local/hackmyapp/README.md`](../local/hackmyapp/README.md).
 
 ---
 
-*Cập nhật: 2026-08-12 · SOFIAORE educational / research positioning*
+*Cập nhật: 2026-08-12 · SOFIA educational / research positioning*

@@ -1,0 +1,1899 @@
+/**
+ * BoltPeak — original tumble slot demo for SOFIA (educational).
+ * Not affiliated with any third-party slot brand.
+ */
+import { randomUUID } from "crypto";
+import type { Express, Request, Response } from "express";
+import { authStore } from "../auth.js";
+import { olympusEconomyStore } from "../olympusEconomyStore.js";
+import { clientIp, rateLimit } from "../rateLimit.js";
+import {
+  appendLedger,
+  clearRateBuckets,
+  dbReady,
+  getKv,
+  kvReady,
+  loadPlatformConfig,
+  query,
+  setKv,
+  upsertUserMirror,
+} from "./olympusPersist.js";
+
+export const OLYMPUS_COLS = 6;
+export const OLYMPUS_ROWS = 5;
+const BOARD = OLYMPUS_COLS * OLYMPUS_ROWS; // 30
+
+/** Original gem set — SOFIA art ids only */
+export const SYMBOLS = [
+  "ruby",
+  "sapphire",
+  "emerald",
+  "amethyst",
+  "topaz",
+  "pearl",
+  "crown",
+  "bolt", // multiplier orb
+  "zeus", // free-spins scatter (internal id; UI label = Peak)
+] as const;
+
+export type OlympusSymbol = (typeof SYMBOLS)[number];
+export type PayMode = "scatter" | "cluster";
+
+function payMult(sym: string): number {
+  if (sym === "bolt" || sym === "zeus") return 0;
+  return olympusEconomyStore.payFor(sym);
+}
+
+function liveBets(): number[] {
+  return olympusEconomyStore.bets();
+}
+
+/** @deprecated use liveBets() — kept for any static import */
+export const OLYMPUS_BETS: readonly number[] = [
+  20, 50, 100, 200, 500, 1_000, 2_000, 5_000,
+];
+
+/** Gate-like orb ladder — weighted toward smaller values */
+const ORB_VALUES = [2, 5, 10, 25, 50, 100, 250, 500] as const;
+const ORB_WEIGHTS = [28, 22, 18, 12, 10, 6, 3, 1];
+
+const FS_CAP = 100;
+function buyBonusMult(): number {
+  return olympusEconomyStore.buyBonusMult();
+}
+function fsAwardN(): number {
+  return olympusEconomyStore.fsAward();
+}
+function fsRetriggerN(): number {
+  return olympusEconomyStore.fsRetrigger();
+}
+function holdTriggerCrowns(): number {
+  return olympusEconomyStore.holdTriggerCrowns();
+}
+const HOLD_LIVES = 3;
+
+type Cell = OlympusSymbol | null;
+
+type OrbHit = { r: number; c: number; value: number };
+
+type LightningTransform = {
+  r: number;
+  c: number;
+  from: string;
+  to: string;
+};
+
+type TumbleStep = {
+  grid: Cell[][];
+  removed: { r: number; c: number }[];
+  win: number;
+  multAdded: number[];
+  orbs?: OrbHit[];
+  combo?: number;
+  cascadeMult?: number;
+  rage?: number;
+  rageGain?: number;
+  lightningTransforms?: LightningTransform[];
+  stormTrigger?: boolean;
+};
+
+type FreeSpinsState = {
+  left: number;
+  totalAwarded: number;
+  accumMult: number;
+  bet: number;
+};
+
+type HoldState = {
+  lives: number;
+  bet: number;
+  /** sticky crown values; null = empty respin cell */
+  cells: (number | null)[][];
+};
+
+export type SpinResult = {
+  spinId: string;
+  bet: number;
+  grid: Cell[][];
+  tumbles: TumbleStep[];
+  totalWin: number;
+  totalMult: number;
+  balance: number;
+  jackpotPool: number;
+  jackpotContrib: number;
+  jackpotHit: null | {
+    tier: "mini" | "major" | "grand";
+    amount: number;
+  };
+  mode: "base" | "free";
+  payMode: PayMode;
+  accumMult: number;
+  freeSpins: FreeSpinsState | null;
+  fsAwarded: number;
+  holdTriggered: boolean;
+  rage: number;
+  maxCombo: number;
+  stormTriggered: boolean;
+  storage: { postgres: boolean; redis: boolean; minio: string; mode: string };
+};
+
+const memBalance = new Map<string, number>();
+const START_BAL = 50_000;
+const fsByPurse = new Map<string, FreeSpinsState>();
+const holdByPurse = new Map<string, HoldState>();
+/** Zeus rage meter 0–100 per purse */
+const rageByPurse = new Map<string, number>();
+
+const RAGE_LIGHTNING_AT_FALLBACK = 70;
+const COMBO_LIGHTNING_AT_FALLBACK = 5;
+const RAGE_FULL = 100;
+
+function rageLightningAt() {
+  try {
+    return olympusEconomyStore.rageLightningAt();
+  } catch {
+    return RAGE_LIGHTNING_AT_FALLBACK;
+  }
+}
+function comboLightningAt() {
+  try {
+    return olympusEconomyStore.comboLightningAt();
+  } catch {
+    return COMBO_LIGHTNING_AT_FALLBACK;
+  }
+}
+
+const MECHANICS = [
+  {
+    id: "scatter_pays",
+    status: "full" as const,
+    note: "6×5 · ≥8 symbol anywhere",
+  },
+  {
+    id: "tumble",
+    status: "full" as const,
+    note: "Winning symbols remove · cascade refill",
+  },
+  {
+    id: "multiplier_orbs",
+    status: "full" as const,
+    note: "bolt ×2…×500 add · apply on winning tumble",
+  },
+  {
+    id: "free_spins",
+    status: "full" as const,
+    note: "≥4 zeus → 15 FS · accumMult across FS · retrigger +5",
+  },
+  {
+    id: "bonus_buy",
+    status: "full" as const,
+    note: `POST /buy-bonus · ${olympusEconomyStore.buyBonusMult()}× bet → 15 FS`,
+  },
+  {
+    id: "hold_and_spin",
+    status: "full" as const,
+    note: `≥${holdTriggerCrowns()} crown hoặc lab · 3 respins · full board jackpot`,
+  },
+  {
+    id: "cluster_pays",
+    status: "full" as const,
+    note: "payMode=cluster · ≥5 4-way adjacent",
+  },
+  {
+    id: "progressive_jackpot",
+    status: "full" as const,
+    note: "3% feed · mini/major/grand",
+  },
+  {
+    id: "zeus_combo_rage",
+    status: "full" as const,
+    note: "Cascade combo · rage 0–100 · HUD meter",
+  },
+  {
+    id: "lightning_wild",
+    status: "full" as const,
+    note: `Rage≥${rageLightningAt()} hoặc combo≥${comboLightningAt()} → 1–3 ô biến thành symbol dẫn`,
+  },
+  {
+    id: "storm_ultimate",
+    status: "full" as const,
+    note: "Rage FULL → Storm: thêm bolt + reset rage",
+  },
+  /* —— Olympus Ultimate roadmap (chưa ship / partial) —— */
+  {
+    id: "ways_megaways",
+    status: "missing" as const,
+    note: "Ways / Megaways / Infinity Reels — planned",
+  },
+  {
+    id: "wild_variants",
+    status: "partial" as const,
+    note: "Lightning wild · Sticky/Walking/Expanding/Giant — roadmap",
+  },
+  {
+    id: "mystery_jackpot_sym",
+    status: "partial" as const,
+    note: "Crown/lab Hold · Mystery / JP symbol — expand",
+  },
+  {
+    id: "combo_multiplier_fs",
+    status: "partial" as const,
+    note: "Accum mult FS · Persistent / Reel / Symbol mult — expand",
+  },
+  {
+    id: "wheel_pick_bonus",
+    status: "missing" as const,
+    note: "Wheel Spin · Pick · Treasure · Card Pick — deferred",
+  },
+  {
+    id: "jp_tiers_fixed",
+    status: "partial" as const,
+    note: "Progressive mini/major/grand · Fixed tiers UI",
+  },
+  {
+    id: "collection_orbs",
+    status: "partial" as const,
+    note: "Orb mult · Gem/Rune/Key collection meta — roadmap",
+  },
+  {
+    id: "meta_progression",
+    status: "missing" as const,
+    note: "XP · Level · Prestige · Skill Tree · Relic loadout",
+  },
+  {
+    id: "boss_battle",
+    status: "missing" as const,
+    note: "HP / multi-phase / World Boss raid — deferred",
+  },
+  {
+    id: "dynamic_reel",
+    status: "missing" as const,
+    note: "Expand / Split / Merge / Portal grid — deferred",
+  },
+  {
+    id: "element_fusion",
+    status: "missing" as const,
+    note: "Fusion · Evolution · Element · Rune · Time Freeze",
+  },
+  {
+    id: "risk_collect",
+    status: "missing" as const,
+    note: "Risk/Collect sau thắng · Dual Grid — deferred",
+  },
+  {
+    id: "liveops_social",
+    status: "missing" as const,
+    note: "Daily · Missions · Pass · Clan · Tournament",
+  },
+  {
+    id: "megaways",
+    status: "missing" as const,
+    note: "Not in this demo",
+  },
+  {
+    id: "sticky_wild",
+    status: "partial" as const,
+    note: "Lightning transform (không sticky giữa spin)",
+  },
+  {
+    id: "walking_wild",
+    status: "missing" as const,
+    note: "Deferred",
+  },
+  {
+    id: "expanding_wild",
+    status: "missing" as const,
+    note: "Deferred",
+  },
+  {
+    id: "wheel_bonus",
+    status: "missing" as const,
+    note: "Deferred",
+  },
+  {
+    id: "pick_bonus",
+    status: "missing" as const,
+    note: "Deferred",
+  },
+];
+
+function bearer(req: Request): string | null {
+  const h = req.headers.authorization;
+  if (!h?.startsWith("Bearer ")) return null;
+  return h.slice(7).trim() || null;
+}
+
+type Purse =
+  | {
+      kind: "auth";
+      id: string;
+      userId: string;
+      bal: () => number;
+      credit: (
+        delta: number,
+      ) => { ok: true; balance: number } | { ok: false; reason: string };
+    }
+  | {
+      kind: "guest" | "anon";
+      id: string;
+      bal: () => number;
+      credit: (
+        delta: number,
+      ) => { ok: true; balance: number } | { ok: false; reason: string };
+    };
+
+function memPurse(id: string, kind: "guest" | "anon"): Purse {
+  return {
+    kind,
+    id,
+    bal: () => {
+      if (!memBalance.has(id)) memBalance.set(id, START_BAL);
+      return memBalance.get(id)!;
+    },
+    credit: (delta) => {
+      const cur = memBalance.has(id) ? memBalance.get(id)! : START_BAL;
+      const next = Math.max(0, Math.round(cur + delta));
+      memBalance.set(id, next);
+      return { ok: true, balance: next };
+    },
+  };
+}
+
+/** Auth thắng guest. Bearer giả + không guest → null (401). */
+function resolvePurse(req: Request): Purse | { error: "bad_token" } {
+  const token = bearer(req);
+  if (token) {
+    const user = authStore.resolveToken(token);
+    if (user) {
+      const userId = user.id;
+      return {
+        kind: "auth",
+        id: `user:${userId}`,
+        userId,
+        bal: () => authStore.getById(userId)?.balance ?? 0,
+        credit: (delta) => {
+          const r = authStore.adjustBalance(userId, delta, {
+            lane: "play",
+            reason: delta < 0 ? "olympus_debit" : "olympus_credit",
+            gameId: "olympus",
+          });
+          if (!r.ok) return r;
+          return { ok: true, balance: r.user.balance };
+        },
+      };
+    }
+    const guest = String(req.headers["x-guest-id"] || "").trim();
+    if (!guest) return { error: "bad_token" };
+  }
+  const guest = String(
+    req.headers["x-guest-id"] || req.body?.guestId || "",
+  ).trim();
+  if (guest) return memPurse(`guest:${guest}`, "guest");
+  return memPurse(`anon:${clientIp(req)}`, "anon");
+}
+
+function isPurse(p: Purse | { error: string }): p is Purse {
+  return !("error" in p);
+}
+
+function pickOrbValue(): number {
+  let t = ORB_WEIGHTS.reduce((a, b) => a + b, 0);
+  let r = Math.random() * t;
+  for (let i = 0; i < ORB_VALUES.length; i++) {
+    r -= ORB_WEIGHTS[i];
+    if (r <= 0) return ORB_VALUES[i];
+  }
+  return 2;
+}
+
+function randSym(opts?: {
+  rareZeus?: boolean;
+  stormBoost?: boolean;
+}): OlympusSymbol {
+  // weights: gems… crown bolt zeus
+  let w = opts?.rareZeus
+    ? [11, 11, 10, 9, 8, 6, 4, 5, 8]
+    : [12, 12, 11, 10, 9, 7, 5, 5, 3];
+  if (opts?.stormBoost) {
+    // more bolts + slightly more zeus during Storm Ultimate
+    w = [9, 9, 8, 7, 6, 5, 4, 14, 6];
+  }
+  let t = w.reduce((a, b) => a + b, 0);
+  let r = Math.random() * t;
+  for (let i = 0; i < SYMBOLS.length; i++) {
+    r -= w[i];
+    if (r <= 0) return SYMBOLS[i];
+  }
+  return "ruby";
+}
+
+function emptyGrid(): Cell[][] {
+  return Array.from({ length: OLYMPUS_ROWS }, () =>
+    Array.from({ length: OLYMPUS_COLS }, () => null),
+  );
+}
+
+function fillGrid(
+  base?: Cell[][],
+  opts?: { rareZeus?: boolean; stormBoost?: boolean },
+): Cell[][] {
+  const g = base ? base.map((row) => [...row]) : emptyGrid();
+  for (let r = 0; r < OLYMPUS_ROWS; r++) {
+    for (let c = 0; c < OLYMPUS_COLS; c++) {
+      if (!g[r][c]) g[r][c] = randSym(opts);
+    }
+  }
+  return g;
+}
+
+function leadingPayingSym(grid: Cell[][]): OlympusSymbol {
+  const cnt = countsPaying(grid);
+  let best: OlympusSymbol = "ruby";
+  let bestN = -1;
+  for (const [sym, n] of cnt) {
+    if (n > bestN) {
+      best = sym;
+      bestN = n;
+    }
+  }
+  return best;
+}
+
+/** Lightning: 1–3 normal cells → leading paying symbol (wild-like assist). */
+function applyLightningTransforms(grid: Cell[][]): {
+  grid: Cell[][];
+  transforms: LightningTransform[];
+} {
+  const g = grid.map((row) => [...row]);
+  const target = leadingPayingSym(g);
+  const candidates: { r: number; c: number }[] = [];
+  for (let r = 0; r < OLYMPUS_ROWS; r++) {
+    for (let c = 0; c < OLYMPUS_COLS; c++) {
+      const s = g[r][c];
+      if (!s || s === "bolt" || s === "zeus" || s === target) continue;
+      candidates.push({ r, c });
+    }
+  }
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+  const n = Math.min(candidates.length, 1 + Math.floor(Math.random() * 3));
+  const transforms: LightningTransform[] = [];
+  for (let i = 0; i < n; i++) {
+    const { r, c } = candidates[i];
+    const from = g[r][c]!;
+    g[r][c] = target;
+    transforms.push({ r, c, from, to: target });
+  }
+  return { grid: g, transforms };
+}
+
+function injectStormBolts(grid: Cell[][]): Cell[][] {
+  const g = grid.map((row) => [...row]);
+  let placed = 0;
+  const want = 2 + Math.floor(Math.random() * 3);
+  let guard = 0;
+  while (placed < want && guard++ < 80) {
+    const r = Math.floor(Math.random() * OLYMPUS_ROWS);
+    const c = Math.floor(Math.random() * OLYMPUS_COLS);
+    const s = g[r][c];
+    if (!s || s === "bolt" || s === "zeus") continue;
+    g[r][c] = "bolt";
+    placed++;
+  }
+  return g;
+}
+
+function syncRageKv(purseId: string, rage: number): void {
+  if (!kvReady()) return;
+  void setKv(`olympus:rage:${purseId}`, String(Math.round(rage)), 86400);
+}
+
+function countSym(grid: Cell[][], sym: OlympusSymbol): number {
+  let n = 0;
+  for (const row of grid) {
+    for (const cell of row) if (cell === sym) n++;
+  }
+  return n;
+}
+
+function countsPaying(grid: Cell[][]): Map<OlympusSymbol, number> {
+  const m = new Map<OlympusSymbol, number>();
+  for (const row of grid) {
+    for (const cell of row) {
+      if (!cell || cell === "bolt" || cell === "zeus") continue;
+      m.set(cell, (m.get(cell) || 0) + 1);
+    }
+  }
+  return m;
+}
+
+function collectOrbs(grid: Cell[][]): OrbHit[] {
+  const out: OrbHit[] = [];
+  for (let r = 0; r < OLYMPUS_ROWS; r++) {
+    for (let c = 0; c < OLYMPUS_COLS; c++) {
+      if (grid[r][c] === "bolt") {
+        out.push({ r, c, value: pickOrbValue() });
+      }
+    }
+  }
+  return out;
+}
+
+/** Scatter pays: ≥8 identical anywhere */
+function markWinsScatter(grid: Cell[][]): { r: number; c: number }[] {
+  const cnt = countsPaying(grid);
+  const winners = new Set<OlympusSymbol>();
+  for (const [sym, n] of cnt) {
+    if (n >= 8) winners.add(sym);
+  }
+  const cells: { r: number; c: number }[] = [];
+  for (let r = 0; r < OLYMPUS_ROWS; r++) {
+    for (let c = 0; c < OLYMPUS_COLS; c++) {
+      const s = grid[r][c];
+      if (s && winners.has(s)) cells.push({ r, c });
+    }
+  }
+  return cells;
+}
+
+function payScatter(grid: Cell[][], bet: number): number {
+  const cnt = countsPaying(grid);
+  let win = 0;
+  for (const [sym, n] of cnt) {
+    if (n < 8) continue;
+    const tier = olympusEconomyStore.scatterTier(n);
+    win += bet * (payMult(sym) || 0.2) * tier;
+  }
+  return Math.round(win);
+}
+
+/** Cluster: ≥5 orthoginally connected same symbol */
+function findClusters(grid: Cell[][]): { r: number; c: number }[] {
+  const seen = Array.from({ length: OLYMPUS_ROWS }, () =>
+    Array(OLYMPUS_COLS).fill(false),
+  );
+  const winCells: { r: number; c: number }[] = [];
+  const dirs = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
+
+  for (let r = 0; r < OLYMPUS_ROWS; r++) {
+    for (let c = 0; c < OLYMPUS_COLS; c++) {
+      const start = grid[r][c];
+      if (
+        !start ||
+        start === "bolt" ||
+        start === "zeus" ||
+        seen[r][c]
+      ) {
+        continue;
+      }
+      const stack: { r: number; c: number }[] = [{ r, c }];
+      const group: { r: number; c: number }[] = [];
+      seen[r][c] = true;
+      while (stack.length) {
+        const cur = stack.pop()!;
+        group.push(cur);
+        for (const [dr, dc] of dirs) {
+          const nr = cur.r + dr;
+          const nc = cur.c + dc;
+          if (
+            nr < 0 ||
+            nr >= OLYMPUS_ROWS ||
+            nc < 0 ||
+            nc >= OLYMPUS_COLS ||
+            seen[nr][nc]
+          ) {
+            continue;
+          }
+          if (grid[nr][nc] === start) {
+            seen[nr][nc] = true;
+            stack.push({ r: nr, c: nc });
+          }
+        }
+      }
+      if (group.length >= 5) winCells.push(...group);
+    }
+  }
+  return winCells;
+}
+
+function payCluster(
+  grid: Cell[][],
+  removed: { r: number; c: number }[],
+  bet: number,
+): number {
+  // group removed by symbol
+  const bySym = new Map<string, number>();
+  for (const { r, c } of removed) {
+    const s = grid[r][c];
+    if (!s) continue;
+    bySym.set(s, (bySym.get(s) || 0) + 1);
+  }
+  let win = 0;
+  for (const [sym, n] of bySym) {
+    const tier = olympusEconomyStore.clusterTier(n);
+    win += bet * (payMult(sym) || 0.2) * tier * Math.max(1, n / 5);
+  }
+  return Math.round(win);
+}
+
+function markWins(grid: Cell[][], payMode: PayMode): { r: number; c: number }[] {
+  return payMode === "cluster" ? findClusters(grid) : markWinsScatter(grid);
+}
+
+function payFor(
+  grid: Cell[][],
+  bet: number,
+  payMode: PayMode,
+  removed: { r: number; c: number }[],
+): number {
+  return payMode === "cluster"
+    ? payCluster(grid, removed, bet)
+    : payScatter(grid, bet);
+}
+
+function tumble(
+  grid: Cell[][],
+  remove: { r: number; c: number }[],
+  opts?: { stormBoost?: boolean },
+): Cell[][] {
+  const g = grid.map((row) => [...row]);
+  for (const { r, c } of remove) g[r][c] = null;
+  if (remove.length) {
+    for (let r = 0; r < OLYMPUS_ROWS; r++) {
+      for (let c = 0; c < OLYMPUS_COLS; c++) {
+        if (g[r][c] === "bolt") g[r][c] = null;
+      }
+    }
+  }
+  for (let c = 0; c < OLYMPUS_COLS; c++) {
+    const stack: Cell[] = [];
+    for (let r = OLYMPUS_ROWS - 1; r >= 0; r--) {
+      if (g[r][c]) stack.push(g[r][c]);
+    }
+    for (let r = OLYMPUS_ROWS - 1; r >= 0; r--) {
+      g[r][c] = stack.shift() ?? null;
+    }
+  }
+  return fillGrid(g, opts);
+}
+
+function maxZeusOnTumbles(tumbles: TumbleStep[]): number {
+  let m = 0;
+  for (const t of tumbles) m = Math.max(m, countSym(t.grid, "zeus"));
+  return m;
+}
+
+type SpinOpts = {
+  bet: number;
+  payMode: PayMode;
+  /** free-spin: use / update session accumMult */
+  free?: FreeSpinsState | null;
+  seed?: Cell[][];
+  /** carried Zeus rage 0–100 */
+  rage?: number;
+};
+
+function runSpin(opts: SpinOpts): {
+  spinId: string;
+  bet: number;
+  grid: Cell[][];
+  tumbles: TumbleStep[];
+  totalWin: number;
+  totalMult: number;
+  maxCrown: number;
+  maxZeus: number;
+  accumMult: number;
+  mode: "base" | "free";
+  payMode: PayMode;
+  rage: number;
+  maxCombo: number;
+  stormTriggered: boolean;
+} {
+  const { bet, payMode } = opts;
+  const inFree = !!(opts.free && opts.free.left > 0);
+  let rage = Math.max(0, Math.min(RAGE_FULL, Math.round(opts.rage ?? 0)));
+  let stormBoost = false;
+  let stormTriggered = false;
+  let maxCombo = 0;
+  let combo = 0;
+
+  const tryStorm = (g: Cell[][]): Cell[][] => {
+    if (stormTriggered || rage < RAGE_FULL) return g;
+    stormTriggered = true;
+    stormBoost = true;
+    rage = 0;
+    return injectStormBolts(g);
+  };
+
+  let grid = opts.seed
+    ? fillGrid(opts.seed.map((row) => [...row]), { stormBoost })
+    : fillGrid(undefined, { stormBoost });
+  grid = tryStorm(grid);
+
+  const tumbles: TumbleStep[] = [];
+  let totalWin = 0;
+  let spinMult = 0; // base: accumulates within this spin only
+  let accumMult = inFree ? opts.free!.accumMult : 0;
+  let maxCrown = 0;
+  let maxZeus = 0;
+  let guard = 0;
+  let lightningUsedThisSpin = 0;
+
+  while (guard++ < 12) {
+    grid = tryStorm(grid);
+
+    let lightningTransforms: LightningTransform[] = [];
+    const wantLightning =
+      (rage >= rageLightningAt() || combo >= comboLightningAt()) &&
+      lightningUsedThisSpin < 4;
+    if (wantLightning) {
+      const lit = applyLightningTransforms(grid);
+      if (lit.transforms.length) {
+        grid = lit.grid;
+        lightningTransforms = lit.transforms;
+        lightningUsedThisSpin++;
+      }
+    }
+
+    const cnt = countsPaying(grid);
+    maxCrown = Math.max(maxCrown, cnt.get("crown") || 0);
+    maxZeus = Math.max(maxZeus, countSym(grid, "zeus"));
+    const removed = markWins(grid, payMode);
+    const orbs = removed.length ? collectOrbs(grid) : [];
+    const mults = orbs.map((o) => o.value);
+    const stepWin = payFor(grid, bet, payMode, removed);
+    const stormStep = stormTriggered && tumbles.every((t) => !t.stormTrigger);
+
+    if (!removed.length) {
+      tumbles.push({
+        grid: grid.map((row) => [...row]),
+        removed: [],
+        win: 0,
+        multAdded: [],
+        orbs: [],
+        combo,
+        cascadeMult: Math.max(1, inFree ? accumMult : spinMult),
+        rage,
+        rageGain: 0,
+        lightningTransforms,
+        stormTrigger: stormStep,
+      });
+      break;
+    }
+
+    const mSum = mults.reduce((a, b) => a + b, 0);
+    let applied: number;
+    let cascadeMult: number;
+    if (inFree) {
+      accumMult += mSum;
+      cascadeMult = Math.max(1, accumMult || 1);
+      applied = stepWin * cascadeMult;
+      spinMult = accumMult;
+    } else {
+      spinMult += mSum;
+      cascadeMult = Math.max(1, spinMult || 1);
+      applied = stepWin * cascadeMult;
+    }
+
+    combo += 1;
+    maxCombo = Math.max(maxCombo, combo);
+    const rageGain = Math.min(18, 4 + combo * 2 + (mSum > 0 ? 2 : 0));
+    rage = Math.min(RAGE_FULL, rage + rageGain);
+
+    totalWin += applied;
+    tumbles.push({
+      grid: grid.map((row) => [...row]),
+      removed,
+      win: applied,
+      multAdded: mults,
+      orbs,
+      combo,
+      cascadeMult,
+      rage,
+      rageGain,
+      lightningTransforms,
+      stormTrigger: stormStep,
+    });
+    grid = tumble(grid, removed, { stormBoost });
+  }
+
+  maxZeus = Math.max(maxZeus, maxZeusOnTumbles(tumbles));
+
+  return {
+    spinId: randomUUID(),
+    bet,
+    grid: tumbles[tumbles.length - 1]?.grid ?? grid,
+    tumbles,
+    totalWin: Math.round(totalWin),
+    totalMult: spinMult,
+    maxCrown,
+    maxZeus,
+    accumMult: inFree ? accumMult : spinMult,
+    mode: inFree ? "free" : "base",
+    payMode,
+    rage,
+    maxCombo,
+    stormTriggered,
+  };
+}
+
+function awardOrRetriggerFs(
+  purseId: string,
+  bet: number,
+  zeusCount: number,
+  existing: FreeSpinsState | null | undefined,
+): { state: FreeSpinsState | null; awarded: number } {
+  if (zeusCount < 4) {
+    return { state: existing ?? null, awarded: 0 };
+  }
+  if (existing && existing.left > 0) {
+    const add = Math.min(fsRetriggerN(), FS_CAP - existing.totalAwarded);
+    if (add <= 0) return { state: existing, awarded: 0 };
+    const next = {
+      ...existing,
+      left: existing.left + add,
+      totalAwarded: existing.totalAwarded + add,
+    };
+    fsByPurse.set(purseId, next);
+    return { state: next, awarded: add };
+  }
+  const next: FreeSpinsState = {
+    left: fsAwardN(),
+    totalAwarded: fsAwardN(),
+    accumMult: 0,
+    bet,
+  };
+  fsByPurse.set(purseId, next);
+  return { state: next, awarded: fsAwardN() };
+}
+
+/** Hũ Olympus — góp từ mỗi ván, nổ theo crown/mult */
+const OLY_JP_START = 80_000;
+function jpFloor(): number {
+  return olympusEconomyStore.jackpotFloor();
+}
+function jpFeed(): number {
+  return olympusEconomyStore.jackpotFeedRate();
+}
+let jackpotPool = OLY_JP_START;
+let jackpotLoaded = false;
+
+async function ensureJackpotLoaded(): Promise<void> {
+  if (jackpotLoaded) return;
+  jackpotLoaded = true;
+  if (kvReady()) {
+    const v = await getKv("olympus:jackpot");
+    if (v != null && Number.isFinite(Number(v))) {
+      jackpotPool = Math.max(jpFloor(), Number(v));
+    }
+  }
+}
+
+async function persistJackpot(): Promise<void> {
+  if (kvReady()) {
+    await setKv("olympus:jackpot", String(Math.round(jackpotPool)), 0);
+  }
+}
+
+function feedJackpot(bet: number): number {
+  const add = Math.max(1, Math.floor(bet * jpFeed()));
+  jackpotPool += add;
+  return add;
+}
+
+function tryExplodeHu(input: {
+  bet: number;
+  totalWin: number;
+  totalMult: number;
+  maxCrown: number;
+}): { tier: "mini" | "major" | "grand"; amount: number } | null {
+  const { bet, totalWin, totalMult, maxCrown } = input;
+  const bigHit =
+    maxCrown >= 12 ||
+    totalMult >= 45 ||
+    (totalWin >= bet * 30 && Math.random() < 0.12);
+  if (!bigHit) {
+    if (Math.random() > 0.004) return null;
+  }
+
+  let tier: "mini" | "major" | "grand";
+  let pct: number;
+  if (maxCrown >= 14 || totalMult >= 80 || Math.random() < 0.1) {
+    tier = "grand";
+    pct = 1;
+  } else if (maxCrown >= 12 || totalMult >= 50 || Math.random() < 0.4) {
+    tier = "major";
+    pct = 0.4;
+  } else {
+    tier = "mini";
+    pct = 0.15;
+  }
+
+  const raw = Math.max(bet * 15, Math.floor(jackpotPool * pct));
+  const amount = Math.min(raw, jackpotPool);
+  if (amount < bet * 5) return null;
+  jackpotPool = Math.max(jpFloor(), jackpotPool - amount);
+  return { tier, amount };
+}
+
+function payHoldJackpot(
+  filled: number,
+  bet: number,
+): { tier: "mini" | "major" | "grand"; amount: number } | null {
+  if (filled < BOARD) return null;
+  const tier: "mini" | "major" | "grand" =
+    Math.random() < 0.15 ? "grand" : Math.random() < 0.45 ? "major" : "mini";
+  const pct = tier === "grand" ? 1 : tier === "major" ? 0.4 : 0.15;
+  const raw = Math.max(bet * 50, Math.floor(jackpotPool * pct));
+  const amount = Math.min(raw, jackpotPool);
+  jackpotPool = Math.max(jpFloor(), jackpotPool - amount);
+  return { tier, amount };
+}
+
+function startHoldFromCrowns(bet: number, crownCount: number): HoldState {
+  const cells: (number | null)[][] = emptyGrid().map((row) =>
+    row.map(() => null as number | null),
+  );
+  let placed = 0;
+  const target = Math.min(BOARD, Math.max(holdTriggerCrowns(), crownCount));
+  while (placed < target) {
+    const r = Math.floor(Math.random() * OLYMPUS_ROWS);
+    const c = Math.floor(Math.random() * OLYMPUS_COLS);
+    if (cells[r][c] != null) continue;
+    cells[r][c] = [1, 2, 3, 5, 8, 10][Math.floor(Math.random() * 6)];
+    placed++;
+  }
+  return { lives: HOLD_LIVES, bet, cells };
+}
+
+function countHoldFilled(cells: (number | null)[][]): number {
+  let n = 0;
+  for (const row of cells) for (const v of row) if (v != null) n++;
+  return n;
+}
+
+function holdCashout(state: HoldState): number {
+  let sum = 0;
+  for (const row of state.cells) {
+    for (const v of row) if (v != null) sum += v;
+  }
+  return Math.round(sum * state.bet);
+}
+
+function syncFsKv(purseId: string, state: FreeSpinsState | null): void {
+  if (!kvReady()) return;
+  void (async () => {
+    if (!state || state.left <= 0) {
+      await setKv(`olympus:fs:${purseId}`, "", 1);
+    } else {
+      await setKv(`olympus:fs:${purseId}`, JSON.stringify(state), 86400);
+    }
+  })();
+}
+
+/** Lab export — bot / scenario harness */
+export function olympusLabSpin(bet: number, payMode: PayMode = "scatter") {
+  return runSpin({ bet, payMode });
+}
+
+export function olympusShapeOk(payload: {
+  tumbles?: TumbleStep[];
+  grid?: Cell[][];
+  totalWin?: number;
+  bet?: number;
+}): string[] {
+  const faults: string[] = [];
+  if (!Array.isArray(payload.tumbles) || !payload.tumbles.length) {
+    faults.push("tumbles trống");
+  }
+  const g = payload.grid;
+  if (!g || g.length !== OLYMPUS_ROWS) faults.push("grid rows != 5");
+  else {
+    for (const row of g) {
+      if (!row || row.length !== OLYMPUS_COLS) faults.push("grid cols != 6");
+      for (const cell of row) {
+        if (cell != null && !(SYMBOLS as readonly string[]).includes(cell)) {
+          faults.push(`symbol lạ:${cell}`);
+        }
+      }
+    }
+  }
+  if (typeof payload.totalWin !== "number" || payload.totalWin < 0) {
+    faults.push("totalWin âm/invalid");
+  }
+  if (payload.bet != null && !olympusEconomyStore.isAllowedBet(payload.bet)) {
+    faults.push("bet ngoài bảng");
+  }
+  for (const step of payload.tumbles ?? []) {
+    if (step.removed?.length && step.win < 0) faults.push("step win âm");
+    for (const p of step.removed ?? []) {
+      if (p.r < 0 || p.r >= OLYMPUS_ROWS || p.c < 0 || p.c >= OLYMPUS_COLS) {
+        faults.push("removed OOB");
+      }
+    }
+  }
+  return faults;
+}
+
+async function persistSpin(
+  userId: string,
+  result: SpinResult,
+): Promise<void> {
+  if (dbReady()) {
+    await query(
+      `INSERT INTO olympus_spins (id, user_id, room_id, bet, win, mult, payload)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+      [
+        result.spinId,
+        userId,
+        "olympus-main",
+        result.bet,
+        result.totalWin,
+        result.totalMult,
+        JSON.stringify({
+          tumbles: result.tumbles.length,
+          balance: result.balance,
+          mode: result.mode,
+        }),
+      ],
+    );
+    await appendLedger({
+      userId,
+      kind: result.totalWin > 0 ? "olympus_win" : "olympus_bet",
+      amount: result.totalWin - (result.mode === "free" ? 0 : result.bet),
+      balanceAfter: result.balance,
+      ref: result.spinId,
+      meta: { game: "olympus", mult: result.totalMult, mode: result.mode },
+    });
+  }
+  if (kvReady()) {
+    await setKv(
+      `olympus:last:${userId}`,
+      JSON.stringify({
+        spinId: result.spinId,
+        win: result.totalWin,
+        at: Date.now(),
+      }),
+      3600,
+    );
+    await setKv(`olympus:bal:${userId}`, String(result.balance), 86400);
+  }
+}
+
+function storageMode(purse: Purse): string {
+  if (purse.kind === "auth") {
+    return dbReady() ? "auth+postgres" : "authStore";
+  }
+  if (dbReady()) return "postgres+ledger";
+  if (kvReady()) return "redis-cache";
+  return "memory";
+}
+
+function parsePayMode(raw: unknown): PayMode {
+  if (raw === "cluster" || raw === "scatter") return raw;
+  return olympusEconomyStore.payModeDefault();
+}
+
+async function hydrateGuestBal(purse: Purse): Promise<void> {
+  if (purse.kind === "auth" || !kvReady()) return;
+  const cached = await getKv(`olympus:bal:${purse.id}`);
+  if (cached != null) {
+    const cur = purse.bal();
+    const want = Number(cached) || cur;
+    if (want !== cur) purse.credit(want - cur);
+  }
+}
+
+export function mountOlympusRoutes(app: Express): void {
+  app.get("/api/olympus/meta", async (_req, res) => {
+    await ensureJackpotLoaded();
+    const cfg = loadPlatformConfig();
+    res.json({
+      ok: true,
+      title: "BoltPeak",
+      aka: "BoltPeak · tumble slot demo giáo dục SOFIA (original)",
+      officialNote:
+        "Original SOFIA educational demo — not affiliated with any third-party slot brand. Virtual xu only.",
+      cols: OLYMPUS_COLS,
+      rows: OLYMPUS_ROWS,
+      symbols: SYMBOLS,
+      bets: liveBets(),
+      orbValues: ORB_VALUES,
+      freeSpinsAward: fsAwardN(),
+      freeSpinsRetrigger: fsRetriggerN(),
+      buyBonusMult: buyBonusMult(),
+      paytable: olympusEconomyStore.publicView().pay,
+      payPct: olympusEconomyStore.publicView().payPct,
+      holdTriggerCrowns: holdTriggerCrowns(),
+      jackpotPool: Math.round(jackpotPool),
+      jackpotFeedRate: jpFeed(),
+      mechanics: MECHANICS,
+      cloud: {
+        postgres: dbReady(),
+        redis: kvReady(),
+        minio: cfg.minioEndpoint,
+        livekit: cfg.livekitUrl,
+      },
+    });
+  });
+
+  app.get("/api/olympus/jackpot", async (_req, res) => {
+    await ensureJackpotLoaded();
+    res.json({
+      ok: true,
+      pool: Math.round(jackpotPool),
+      feedRate: jpFeed(),
+      floor: jpFloor(),
+    });
+  });
+
+  app.get("/api/olympus/session", async (req, res) => {
+    await ensureJackpotLoaded();
+    const purse = resolvePurse(req);
+    if (!isPurse(purse)) {
+      res.status(401).json({ ok: false, reason: "Token không hợp lệ" });
+      return;
+    }
+    await hydrateGuestBal(purse);
+    const fs = fsByPurse.get(purse.id) ?? null;
+    const hold = holdByPurse.get(purse.id) ?? null;
+    if (!rageByPurse.has(purse.id) && kvReady()) {
+      const cached = await getKv(`olympus:rage:${purse.id}`);
+      if (cached != null && Number.isFinite(Number(cached))) {
+        rageByPurse.set(
+          purse.id,
+          Math.max(0, Math.min(RAGE_FULL, Math.round(Number(cached)))),
+        );
+      }
+    }
+    const rage = rageByPurse.get(purse.id) ?? 0;
+    res.json({
+      ok: true,
+      userId: purse.id,
+      wallet: purse.kind,
+      balance: purse.bal(),
+      jackpotPool: Math.round(jackpotPool),
+      bets: liveBets(),
+      rage,
+      freeSpins: fs && fs.left > 0 ? fs : null,
+      hold: hold
+        ? {
+            lives: hold.lives,
+            bet: hold.bet,
+            filled: countHoldFilled(hold.cells),
+            cells: hold.cells,
+          }
+        : null,
+      storage: {
+        postgres: dbReady(),
+        redis: kvReady(),
+        minio: loadPlatformConfig().minioEndpoint,
+        authStore: purse.kind === "auth",
+      },
+    });
+  });
+
+  app.post("/api/olympus/spin", async (req, res) => {
+    try {
+      await ensureJackpotLoaded();
+      const purse = resolvePurse(req);
+      if (!isPurse(purse)) {
+        res.status(401).json({ ok: false, reason: "Token không hợp lệ" });
+        return;
+      }
+      if (holdByPurse.has(purse.id)) {
+        res.status(400).json({
+          ok: false,
+          reason: "Đang Hold & Spin — dùng /api/olympus/hold/spin",
+        });
+        return;
+      }
+      if (!rateLimit(`oly:spin:${purse.id}`, 120, 60_000)) {
+        res.status(429).json({
+          ok: false,
+          reason: "Quá nhiều lần quay — chờ khoảng 1 phút rồi thử lại",
+        });
+        return;
+      }
+
+      const payMode = parsePayMode(req.body?.payMode);
+      let fs = fsByPurse.get(purse.id);
+      const inFree = !!(fs && fs.left > 0);
+      const rawBet = req.body?.bet;
+      const bet = inFree
+        ? fs!.bet
+        : Number(rawBet);
+
+      if (
+        !inFree &&
+        (!Number.isFinite(bet) || !olympusEconomyStore.isAllowedBet(bet))
+      ) {
+        res.status(400).json({ ok: false, reason: "Mức cược không hợp lệ" });
+        return;
+      }
+
+      await hydrateGuestBal(purse);
+
+      let contrib = 0;
+      if (!inFree) {
+        if (purse.bal() < bet) {
+          res.status(400).json({
+            ok: false,
+            reason:
+              purse.kind === "auth" ? "Không đủ xu" : "Không đủ xu demo",
+          });
+          return;
+        }
+        const debit = purse.credit(-bet);
+        if (!debit.ok) {
+          res.status(400).json({ ok: false, reason: debit.reason });
+          return;
+        }
+        contrib = feedJackpot(bet);
+      }
+
+      if (!rageByPurse.has(purse.id) && kvReady()) {
+        const cached = await getKv(`olympus:rage:${purse.id}`);
+        if (cached != null && Number.isFinite(Number(cached))) {
+          rageByPurse.set(
+            purse.id,
+            Math.max(0, Math.min(RAGE_FULL, Math.round(Number(cached)))),
+          );
+        }
+      }
+      const rageIn = rageByPurse.get(purse.id) ?? 0;
+      const raw = runSpin({
+        bet,
+        payMode: inFree ? "scatter" : payMode,
+        free: inFree ? fs! : null,
+        rage: rageIn,
+      });
+      rageByPurse.set(purse.id, raw.rage);
+      syncRageKv(purse.id, raw.rage);
+      const shapeFaults = olympusShapeOk(raw);
+      if (shapeFaults.length) {
+        if (!inFree) {
+          purse.credit(bet);
+          jackpotPool = Math.max(jpFloor(), jackpotPool - contrib);
+        }
+        res.status(500).json({
+          ok: false,
+          reason: `engine shape: ${shapeFaults.join(",")}`,
+        });
+        return;
+      }
+
+      // Free-spin bookkeeping
+      let fsAwarded = 0;
+      if (inFree && fs) {
+        fs = {
+          ...fs,
+          left: fs.left - 1,
+          accumMult: raw.accumMult,
+        };
+        const trig = awardOrRetriggerFs(purse.id, bet, raw.maxZeus, fs);
+        fs = trig.state ?? undefined;
+        fsAwarded = trig.awarded;
+        if (fs && fs.left <= 0) {
+          fsByPurse.delete(purse.id);
+          fs = undefined;
+        } else if (fs) {
+          fsByPurse.set(purse.id, fs);
+        }
+        syncFsKv(purse.id, fs ?? null);
+      } else {
+        const trig = awardOrRetriggerFs(purse.id, bet, raw.maxZeus, null);
+        fs = trig.state ?? undefined;
+        fsAwarded = trig.awarded;
+        syncFsKv(purse.id, fs ?? null);
+      }
+
+      let holdTriggered = false;
+      if (
+        !inFree &&
+        !fsAwarded &&
+        raw.maxCrown >= holdTriggerCrowns() &&
+        !holdByPurse.has(purse.id)
+      ) {
+        holdByPurse.set(
+          purse.id,
+          startHoldFromCrowns(bet, raw.maxCrown),
+        );
+        holdTriggered = true;
+      }
+
+      const hit =
+        inFree || holdTriggered
+          ? null
+          : tryExplodeHu({
+              bet,
+              totalWin: raw.totalWin,
+              totalMult: raw.totalMult,
+              maxCrown: raw.maxCrown,
+            });
+      const jackpotPay = hit?.amount || 0;
+      const credit = purse.credit(raw.totalWin + jackpotPay);
+      if (!credit.ok) {
+        res.status(500).json({ ok: false, reason: credit.reason });
+        return;
+      }
+      await persistJackpot();
+
+      if (purse.kind === "auth" && dbReady()) {
+        const u = authStore.getById(purse.userId);
+        if (u) {
+          await upsertUserMirror({
+            id: u.id,
+            username: u.username,
+            balance: u.balance,
+            gem: u.gemBalance,
+            banned: !!u.banned,
+          });
+        }
+      }
+
+      const cfg = loadPlatformConfig();
+      const {
+        maxCrown: _mc,
+        maxZeus: _mz,
+        ...spinBody
+      } = raw;
+      const result: SpinResult = {
+        ...spinBody,
+        balance: credit.balance,
+        jackpotPool: Math.round(jackpotPool),
+        jackpotContrib: contrib,
+        jackpotHit: hit,
+        freeSpins: fs && fs.left > 0 ? fs : null,
+        fsAwarded,
+        holdTriggered,
+        storage: {
+          postgres: dbReady(),
+          redis: kvReady(),
+          minio: cfg.minioEndpoint,
+          mode: storageMode(purse),
+        },
+      };
+      await persistSpin(purse.id, result);
+      if (hit && dbReady()) {
+        await appendLedger({
+          userId: purse.id,
+          kind: `olympus_jackpot_${hit.tier}`,
+          amount: hit.amount,
+          balanceAfter: credit.balance,
+          ref: raw.spinId,
+          meta: { game: "olympus", tier: hit.tier, poolAfter: jackpotPool },
+        });
+      }
+      res.json({
+        ok: true,
+        wallet: purse.kind,
+        payout: raw.totalWin + jackpotPay,
+        ...result,
+      });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  /** Bonus Buy — 100× bet → 15 Free Spins */
+  app.post("/api/olympus/buy-bonus", async (req, res) => {
+    try {
+      await ensureJackpotLoaded();
+      const purse = resolvePurse(req);
+      if (!isPurse(purse)) {
+        res.status(401).json({ ok: false, reason: "Token không hợp lệ" });
+        return;
+      }
+      if (holdByPurse.has(purse.id)) {
+        res.status(400).json({ ok: false, reason: "Đang Hold & Spin" });
+        return;
+      }
+      const existing = fsByPurse.get(purse.id);
+      if (existing && existing.left > 0) {
+        res.status(400).json({ ok: false, reason: "Đang trong Free Spins" });
+        return;
+      }
+      if (!rateLimit(`oly:buy:${purse.id}`, 20, 60_000)) {
+        res.status(429).json({ ok: false, reason: "Quá nhiều lần mua bonus" });
+        return;
+      }
+      const bet = Number(req.body?.bet);
+      if (!Number.isFinite(bet) || !olympusEconomyStore.isAllowedBet(bet)) {
+        res.status(400).json({ ok: false, reason: "Mức cược không hợp lệ" });
+        return;
+      }
+      await hydrateGuestBal(purse);
+      const cost = bet * buyBonusMult();
+      if (purse.bal() < cost) {
+        res.status(400).json({ ok: false, reason: "Không đủ xu mua Free Spins" });
+        return;
+      }
+      const debit = purse.credit(-cost);
+      if (!debit.ok) {
+        res.status(400).json({ ok: false, reason: debit.reason });
+        return;
+      }
+      feedJackpot(bet);
+      const fs: FreeSpinsState = {
+        left: fsAwardN(),
+        totalAwarded: fsAwardN(),
+        accumMult: 0,
+        bet,
+      };
+      fsByPurse.set(purse.id, fs);
+      syncFsKv(purse.id, fs);
+      await persistJackpot();
+      if (kvReady()) {
+        await setKv(`olympus:bal:${purse.id}`, String(debit.balance), 86400);
+      }
+      res.json({
+        ok: true,
+        cost,
+        balance: debit.balance,
+        freeSpins: fs,
+        jackpotPool: Math.round(jackpotPool),
+      });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  /** Hold & Spin — one respin */
+  app.post("/api/olympus/hold/spin", async (req, res) => {
+    try {
+      await ensureJackpotLoaded();
+      const purse = resolvePurse(req);
+      if (!isPurse(purse)) {
+        res.status(401).json({ ok: false, reason: "Token không hợp lệ" });
+        return;
+      }
+      const hold = holdByPurse.get(purse.id);
+      if (!hold) {
+        res.status(400).json({ ok: false, reason: "Không có phiên Hold & Spin" });
+        return;
+      }
+      if (!rateLimit(`oly:hold:${purse.id}`, 120, 60_000)) {
+        res.status(429).json({ ok: false, reason: "Rate limit hold" });
+        return;
+      }
+
+      let newBonus = 0;
+      const next = hold.cells.map((row) => [...row]);
+      for (let r = 0; r < OLYMPUS_ROWS; r++) {
+        for (let c = 0; c < OLYMPUS_COLS; c++) {
+          if (next[r][c] != null) continue;
+          // ~22% chance new crown
+          if (Math.random() < 0.22) {
+            next[r][c] = [1, 2, 3, 5, 8, 10, 15][
+              Math.floor(Math.random() * 7)
+            ];
+            newBonus++;
+          }
+        }
+      }
+
+      let lives = newBonus > 0 ? HOLD_LIVES : hold.lives - 1;
+      const filled = countHoldFilled(next);
+      let state: HoldState = { ...hold, cells: next, lives };
+      let finished = false;
+      let payout = 0;
+      let jackpotHit: SpinResult["jackpotHit"] = null;
+
+      if (filled >= BOARD) {
+        jackpotHit = payHoldJackpot(filled, hold.bet);
+        payout = (jackpotHit?.amount || 0) + holdCashout(state);
+        finished = true;
+      } else if (lives <= 0) {
+        payout = holdCashout(state);
+        finished = true;
+      }
+
+      if (finished) {
+        holdByPurse.delete(purse.id);
+        const credit = purse.credit(payout);
+        await persistJackpot();
+        if (kvReady() && credit.ok) {
+          await setKv(
+            `olympus:bal:${purse.id}`,
+            String(credit.balance),
+            86400,
+          );
+        }
+        res.json({
+          ok: true,
+          finished: true,
+          newBonus,
+          filled,
+          lives: 0,
+          cells: next,
+          payout,
+          jackpotHit,
+          balance: credit.ok ? credit.balance : purse.bal(),
+          jackpotPool: Math.round(jackpotPool),
+        });
+        return;
+      }
+
+      holdByPurse.set(purse.id, state);
+      res.json({
+        ok: true,
+        finished: false,
+        newBonus,
+        filled,
+        lives: state.lives,
+        cells: next,
+        payout: 0,
+        jackpotHit: null,
+        balance: purse.bal(),
+        jackpotPool: Math.round(jackpotPool),
+      });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  app.post("/api/olympus/topup", async (req, res) => {
+    const purse = resolvePurse(req);
+    if (!isPurse(purse)) {
+      res.status(401).json({ ok: false, reason: "Token không hợp lệ" });
+      return;
+    }
+    if (purse.kind === "auth") {
+      res.status(403).json({
+        ok: false,
+        reason: "Tài khoản login dùng cộng xu ảo hệ thống — không cộng xu demo",
+      });
+      return;
+    }
+    if (!rateLimit(`oly:topup:${purse.id}`, 30, 60_000)) {
+      res.status(429).json({ ok: false, reason: "Quá nhiều lần nạp demo" });
+      return;
+    }
+    const amount = Math.min(
+      100_000,
+      Math.max(1000, Number(req.body?.amount) || 10_000),
+    );
+    const r = purse.credit(amount);
+    if (!r.ok) {
+      res.status(400).json({ ok: false, reason: r.reason });
+      return;
+    }
+    if (kvReady()) await setKv(`olympus:bal:${purse.id}`, String(r.balance), 86400);
+    res.json({ ok: true, balance: r.balance, added: amount });
+  });
+
+  app.post("/api/olympus/lab/set-balance", async (req, res) => {
+    if (process.env.OLYMPUS_LAB !== "1" && process.env.NODE_ENV === "production") {
+      res.status(404).json({ ok: false });
+      return;
+    }
+    const purse = resolvePurse(req);
+    if (!isPurse(purse)) {
+      res.status(401).json({ ok: false, reason: "Token không hợp lệ" });
+      return;
+    }
+    if (purse.kind === "auth") {
+      res.status(403).json({ ok: false, reason: "Lab set-balance chỉ guest" });
+      return;
+    }
+    const bal = Math.max(0, Math.round(Number(req.body?.balance) || 0));
+    const cur = purse.bal();
+    purse.credit(bal - cur);
+    if (kvReady()) await setKv(`olympus:bal:${purse.id}`, String(bal), 86400);
+    res.json({ ok: true, userId: purse.id, balance: bal });
+  });
+
+  app.post("/api/olympus/lab/force-fs", async (req, res) => {
+    if (process.env.NODE_ENV === "production" && process.env.OLYMPUS_LAB !== "1") {
+      res.status(404).json({ ok: false });
+      return;
+    }
+    const purse = resolvePurse(req);
+    if (!isPurse(purse)) {
+      res.status(401).json({ ok: false, reason: "Token không hợp lệ" });
+      return;
+    }
+    const bet = Number(req.body?.bet) || 100;
+    const left = Math.min(
+      FS_CAP,
+      Math.max(1, Math.round(Number(req.body?.left) || fsAwardN())),
+    );
+    const accumMult = Math.max(
+      0,
+      Math.round(Number(req.body?.accumMult) || 0),
+    );
+    const fs: FreeSpinsState = {
+      left,
+      totalAwarded: left,
+      accumMult,
+      bet: olympusEconomyStore.isAllowedBet(bet) ? bet : liveBets()[2] ?? 100,
+    };
+    fsByPurse.set(purse.id, fs);
+    holdByPurse.delete(purse.id);
+    syncFsKv(purse.id, fs);
+    res.json({ ok: true, freeSpins: fs });
+  });
+
+  app.post("/api/olympus/lab/start-hold", async (req, res) => {
+    if (process.env.NODE_ENV === "production" && process.env.OLYMPUS_LAB !== "1") {
+      res.status(404).json({ ok: false });
+      return;
+    }
+    const purse = resolvePurse(req);
+    if (!isPurse(purse)) {
+      res.status(401).json({ ok: false, reason: "Token không hợp lệ" });
+      return;
+    }
+    const bet = Number(req.body?.bet) || 100;
+    const crowns = Math.max(
+      holdTriggerCrowns(),
+      Math.round(Number(req.body?.crowns) || holdTriggerCrowns()),
+    );
+    const hold = startHoldFromCrowns(
+      olympusEconomyStore.isAllowedBet(bet) ? bet : liveBets()[2] ?? 100,
+      crowns,
+    );
+    holdByPurse.set(purse.id, hold);
+    fsByPurse.delete(purse.id);
+    res.json({
+      ok: true,
+      hold: {
+        lives: hold.lives,
+        bet: hold.bet,
+        filled: countHoldFilled(hold.cells),
+        cells: hold.cells,
+      },
+    });
+  });
+
+  app.post("/api/olympus/lab/clear-limits", (_req, res) => {
+    if (process.env.NODE_ENV === "production" && process.env.OLYMPUS_LAB !== "1") {
+      res.status(404).json({ ok: false });
+      return;
+    }
+    const n =
+      clearRateBuckets("oly:") +
+      clearRateBuckets("http-oly:") +
+      clearRateBuckets("http:");
+    res.json({ ok: true, cleared: n });
+  });
+}
+
+/** —— Mainadmin can thiệp (ZEUS% tab) —— */
+function purseIdForAuthUser(userId: string): string {
+  return `user:${userId}`;
+}
+
+function findAuthUser(q: string): { id: string; username: string; balance: number } | null {
+  const key = String(q || "").trim();
+  if (!key) return null;
+  const byId = authStore.getById?.(key);
+  if (byId) {
+    return { id: byId.id, username: byId.username, balance: byId.balance };
+  }
+  const list = authStore.listUsers?.() ?? [];
+  const hit = list.find(
+    (u: { username?: string; id?: string }) =>
+      u.username?.toLowerCase() === key.toLowerCase() || u.id === key,
+  );
+  return hit
+    ? { id: hit.id, username: hit.username, balance: hit.balance }
+    : null;
+}
+
+export async function olympusAdminSnapshot() {
+  await ensureJackpotLoaded();
+  const eco = olympusEconomyStore.publicView();
+  return {
+    ...eco,
+    jackpotPool: Math.round(jackpotPool),
+    jackpotFloor: jpFloor(),
+    jackpotFeedRate: jpFeed(),
+    fsAward: fsAwardN(),
+    fsRetrigger: fsRetriggerN(),
+    holdTriggerCrowns: holdTriggerCrowns(),
+    liveBets: liveBets(),
+    interventions: [
+      "setJackpot",
+      "forceFs",
+      "startHold",
+      "clearPlayer",
+      "setRage",
+      "adjustXu",
+      "clearLimits",
+    ],
+  };
+}
+
+export async function olympusAdminAct(
+  action: string,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  await ensureJackpotLoaded();
+  const act = String(action || "").trim();
+
+  if (act === "setJackpot") {
+    const pool = Math.round(Number(body.pool));
+    if (!Number.isFinite(pool) || pool < 0 || pool > 100_000_000) {
+      return { ok: false, reason: "pool 0–100_000_000" };
+    }
+    jackpotPool = Math.max(jpFloor(), pool);
+    await persistJackpot();
+    return { ok: true, jackpotPool: Math.round(jackpotPool) };
+  }
+
+  if (act === "clearLimits") {
+    const n =
+      clearRateBuckets("oly:") +
+      clearRateBuckets("http-oly:");
+    return { ok: true, cleared: n };
+  }
+
+  const userQ = String(body.userId || body.username || "").trim();
+  const guestId = String(body.guestId || "").trim();
+  let purseId = "";
+  let authUser: { id: string; username: string; balance: number } | null = null;
+
+  if (guestId) {
+    purseId = guestId.startsWith("guest:") ? guestId : `guest:${guestId}`;
+  } else {
+    authUser = findAuthUser(userQ);
+    if (!authUser) {
+      return { ok: false, reason: "Không tìm thấy user (username / id)" };
+    }
+    purseId = purseIdForAuthUser(authUser.id);
+  }
+
+  if (act === "forceFs") {
+    const bet = Number(body.bet) || liveBets()[2] || 100;
+    const left = Math.min(
+      FS_CAP,
+      Math.max(1, Math.round(Number(body.left) || fsAwardN())),
+    );
+    const accumMult = Math.max(0, Math.round(Number(body.accumMult) || 0));
+    const fs: FreeSpinsState = {
+      left,
+      totalAwarded: left,
+      accumMult,
+      bet: olympusEconomyStore.isAllowedBet(bet) ? bet : liveBets()[2] ?? 100,
+    };
+    fsByPurse.set(purseId, fs);
+    holdByPurse.delete(purseId);
+    syncFsKv(purseId, fs);
+    return { ok: true, purseId, freeSpins: fs, user: authUser };
+  }
+
+  if (act === "startHold") {
+    const bet = Number(body.bet) || liveBets()[2] || 100;
+    const crowns = Math.max(
+      holdTriggerCrowns(),
+      Math.round(Number(body.crowns) || holdTriggerCrowns()),
+    );
+    const hold = startHoldFromCrowns(
+      olympusEconomyStore.isAllowedBet(bet) ? bet : liveBets()[2] ?? 100,
+      crowns,
+    );
+    holdByPurse.set(purseId, hold);
+    fsByPurse.delete(purseId);
+    syncFsKv(purseId, null);
+    return {
+      ok: true,
+      purseId,
+      hold: {
+        lives: hold.lives,
+        bet: hold.bet,
+        filled: countHoldFilled(hold.cells),
+      },
+      user: authUser,
+    };
+  }
+
+  if (act === "clearPlayer") {
+    fsByPurse.delete(purseId);
+    holdByPurse.delete(purseId);
+    rageByPurse.delete(purseId);
+    syncFsKv(purseId, null);
+    if (kvReady()) {
+      await setKv(`olympus:rage:${purseId}`, "0", 86400);
+    }
+    return { ok: true, purseId, cleared: true, user: authUser };
+  }
+
+  if (act === "setRage") {
+    const rage = Math.max(
+      0,
+      Math.min(RAGE_FULL, Math.round(Number(body.rage) || 0)),
+    );
+    rageByPurse.set(purseId, rage);
+    if (kvReady()) {
+      await setKv(`olympus:rage:${purseId}`, String(rage), 86400);
+    }
+    return { ok: true, purseId, rage, user: authUser };
+  }
+
+  if (act === "adjustXu") {
+    if (!authUser) {
+      return { ok: false, reason: "adjustXu chỉ cho tài khoản login (không guest)" };
+    }
+    const delta = Math.round(Number(body.delta) || 0);
+    if (!Number.isFinite(delta) || delta === 0) {
+      return { ok: false, reason: "delta xu ≠ 0" };
+    }
+    if (Math.abs(delta) > 50_000_000) {
+      return { ok: false, reason: "delta quá lớn" };
+    }
+    const r = authStore.adjustBalance(authUser.id, delta, {
+      lane: "play",
+      reason: delta > 0 ? "olympus_admin_credit" : "olympus_admin_debit",
+      gameId: "olympus",
+    });
+    if (!r.ok) return { ok: false, reason: r.reason };
+    return {
+      ok: true,
+      user: { id: r.user.id, username: r.user.username, balance: r.user.balance },
+      delta,
+    };
+  }
+
+  if (act === "lookup") {
+    const fs = fsByPurse.get(purseId) ?? null;
+    const hold = holdByPurse.get(purseId) ?? null;
+    const rage = rageByPurse.get(purseId) ?? 0;
+    return {
+      ok: true,
+      purseId,
+      user: authUser,
+      balance: authUser?.balance ?? memBalance.get(purseId) ?? null,
+      freeSpins: fs,
+      hold: hold
+        ? {
+            lives: hold.lives,
+            bet: hold.bet,
+            filled: countHoldFilled(hold.cells),
+          }
+        : null,
+      rage,
+    };
+  }
+
+  return { ok: false, reason: `Action không hỗ trợ: ${act}` };
+}
+
+void (null as unknown as Response);

@@ -29,7 +29,7 @@ help_text() {
 Live:     $LIVE_URL
 Health:   $HEALTH_URL
 Project:  tarot-bet-demo (Railway)
-Volume:   /app/server/data  (KHONG ghi de bang git)
+Volume:   /app/be/data  (KHONG ghi de bang git)
 
 Khi nao dung gi?
   (1) Typecheck     - truoc khi deploy (server + client tsc)
@@ -41,7 +41,7 @@ Khi nao dung gi?
 
 Luu y:
   - GitHub auto-deploy doi khi khong chay -> dung (2)
-  - Khong commit: server/data/*.json, .env, studying/
+  - Khong commit: be/data/*.json, .env, studying/, local/
   - Login Railway (mot lan):  npx @railway/cli@latest login
   - Sau Deploy complete: Ctrl+F5 tren trinh duyet
 
